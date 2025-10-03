@@ -1,0 +1,23 @@
+{
+  "name": "@flowcatalyst/workspace",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "ui-components",
+    "app"
+  ],
+  "scripts": {
+    "dev": "bun run --filter app dev",
+    "build": "bun run --filter '*' build",
+    "ui:dev": "bun run --filter ui-components dev",
+    "app:dev": "bun run --filter app dev"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "bun": ">=1.0.0"
+  }
+}
