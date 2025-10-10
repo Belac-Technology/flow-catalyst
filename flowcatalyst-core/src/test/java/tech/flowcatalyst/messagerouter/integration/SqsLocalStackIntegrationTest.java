@@ -39,6 +39,9 @@ class SqsLocalStackIntegrationTest {
     @Inject
     QueueMetricsService queueMetrics;
 
+    @Inject
+    tech.flowcatalyst.messagerouter.warning.WarningService warningService;
+
     private String testQueueUrl;
     private SqsQueueConsumer consumer;
 
@@ -59,7 +62,11 @@ class SqsLocalStackIntegrationTest {
             testQueueUrl,
             1,
             queueManager,
-            queueMetrics
+            queueMetrics,
+            warningService,
+            10, // maxMessagesPerPoll
+            20, // waitTimeSeconds
+            5   // metricsPollIntervalSeconds
         );
     }
 

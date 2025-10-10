@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 public record ProcessingPool(
     @JsonProperty("code") String code,
-    @JsonProperty("concurrency") int concurrency
+    @JsonProperty("concurrency") int concurrency,
+    @JsonProperty("rateLimitPerMinute") Integer rateLimitPerMinute
 ) {
 }

@@ -15,7 +15,8 @@ public interface ProcessPool {
     void drain();
 
     /**
-     * Submits a message to the process pool's blocking queue
+     * Submits a message to the process pool's blocking queue.
+     * Queue capacity is calculated as max(concurrency × 10, 500).
      *
      * @param message the message to process
      * @return true if message was accepted, false if queue is full
@@ -31,4 +32,9 @@ public interface ProcessPool {
      * Returns the configured concurrency level
      */
     int getConcurrency();
+
+    /**
+     * Returns the configured rate limit per minute (null if not configured)
+     */
+    Integer getRateLimitPerMinute();
 }

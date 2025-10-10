@@ -1,27 +1,68 @@
 package tech.flowcatalyst.messagerouter.consumer;
 
 import jakarta.jms.*;
+import org.apache.activemq.ActiveMQConnection;
+import org.apache.activemq.ActiveMQSession;
+import org.apache.activemq.RedeliveryPolicy;
 import org.jboss.logging.Logger;
 import tech.flowcatalyst.messagerouter.callback.MessageCallback;
 import tech.flowcatalyst.messagerouter.manager.QueueManager;
 import tech.flowcatalyst.messagerouter.model.MessagePointer;
+import tech.flowcatalyst.messagerouter.warning.WarningService;
 
 public class ActiveMqQueueConsumer extends AbstractQueueConsumer {
 
     private static final Logger LOG = Logger.getLogger(ActiveMqQueueConsumer.class);
 
+    // ActiveMQ-specific: Individual acknowledge mode for per-message nack
+    private static final int INDIVIDUAL_ACKNOWLEDGE = ActiveMQSession.INDIVIDUAL_ACKNOWLEDGE;
+
+    // RedeliveryPolicy configuration: 30 second delay, no exponential backoff
+    private static final long INITIAL_REDELIVERY_DELAY_MS = 30_000; // 30 seconds
+    private static final int MAX_REDELIVERIES = -1; // Unlimited (rely on DLQ configuration)
+
     private final ConnectionFactory connectionFactory;
     private final String queueName;
+    private Connection sharedConnection;
+    private final int receiveTimeoutMs;
+    private final int metricsPollIntervalMs;
 
     public ActiveMqQueueConsumer(
             ConnectionFactory connectionFactory,
             String queueName,
             int connections,
             QueueManager queueManager,
-            tech.flowcatalyst.messagerouter.metrics.QueueMetricsService queueMetrics) {
-        super(queueManager, queueMetrics, connections);
+            tech.flowcatalyst.messagerouter.metrics.QueueMetricsService queueMetrics,
+            WarningService warningService,
+            int receiveTimeoutMs,
+            int metricsPollIntervalSeconds) {
+        super(queueManager, queueMetrics, warningService, connections);
         this.connectionFactory = connectionFactory;
         this.queueName = queueName;
+        this.receiveTimeoutMs = receiveTimeoutMs;
+        this.metricsPollIntervalMs = metricsPollIntervalSeconds * 1000;
+
+        // Create shared connection that will be reused by all consumer threads
+        try {
+            this.sharedConnection = connectionFactory.createConnection();
+
+            // Configure RedeliveryPolicy: 30 second delay on redeliveries, no exponential backoff
+            if (this.sharedConnection instanceof ActiveMQConnection activeMqConn) {
+                RedeliveryPolicy redeliveryPolicy = new RedeliveryPolicy();
+                redeliveryPolicy.setInitialRedeliveryDelay(INITIAL_REDELIVERY_DELAY_MS);
+                redeliveryPolicy.setUseExponentialBackOff(false);
+                redeliveryPolicy.setMaximumRedeliveries(MAX_REDELIVERIES);
+                activeMqConn.setRedeliveryPolicy(redeliveryPolicy);
+                LOG.infof("Configured ActiveMQ RedeliveryPolicy for [%s]: initialDelay=%dms, exponentialBackoff=false",
+                    queueName, INITIAL_REDELIVERY_DELAY_MS);
+            }
+
+            this.sharedConnection.start();
+            LOG.infof("Created shared ActiveMQ connection for queue [%s]", queueName);
+        } catch (JMSException e) {
+            LOG.errorf(e, "Failed to create shared ActiveMQ connection for queue [%s]", queueName);
+            throw new RuntimeException("Failed to create ActiveMQ connection", e);
+        }
     }
 
     @Override
@@ -31,21 +72,21 @@ public class ActiveMqQueueConsumer extends AbstractQueueConsumer {
 
     @Override
     protected void consumeMessages() {
-        Connection connection = null;
         Session session = null;
         MessageConsumer consumer = null;
 
         try {
-            connection = connectionFactory.createConnection();
-            connection.start();
-
-            session = connection.createSession(false, Session.CLIENT_ACKNOWLEDGE);
+            // Create session with INDIVIDUAL_ACKNOWLEDGE mode to prevent head-of-line blocking
+            // This allows per-message nack without affecting other messages in the session
+            session = sharedConnection.createSession(false, INDIVIDUAL_ACKNOWLEDGE);
             Queue queue = session.createQueue(queueName);
             consumer = session.createConsumer(queue);
 
+            LOG.debugf("Created ActiveMQ consumer for queue [%s] with INDIVIDUAL_ACKNOWLEDGE mode", queueName);
+
             while (running.get()) {
                 try {
-                    Message jmsMessage = consumer.receive(1000); // 1 second timeout
+                    Message jmsMessage = consumer.receive(receiveTimeoutMs);
                     if (jmsMessage instanceof TextMessage textMessage) {
                         String messageBody = textMessage.getText();
                         processMessage(
@@ -61,20 +102,18 @@ public class ActiveMqQueueConsumer extends AbstractQueueConsumer {
         } catch (Exception e) {
             LOG.error("Error in ActiveMQ consumer", e);
         } finally {
-            closeResources(consumer, session, connection);
+            closeResources(consumer, session);
         }
     }
 
     @Override
     protected void pollQueueMetrics() {
-        Connection connection = null;
         Session session = null;
         QueueBrowser browser = null;
 
         try {
-            connection = connectionFactory.createConnection();
-            connection.start();
-            session = connection.createSession(false, Session.AUTO_ACKNOWLEDGE);
+            // Create session from shared connection for metrics polling
+            session = sharedConnection.createSession(false, Session.AUTO_ACKNOWLEDGE);
             Queue queue = session.createQueue(queueName);
             browser = session.createBrowser(queue);
 
@@ -92,47 +131,63 @@ public class ActiveMqQueueConsumer extends AbstractQueueConsumer {
                     // (would require JMX to get accurate in-flight count)
                     queueMetrics.recordQueueMetrics(queueName, pendingMessages, 0);
 
-                    Thread.sleep(5000); // Poll every 5 seconds
+                    Thread.sleep(metricsPollIntervalMs);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     break;
                 } catch (Exception e) {
                     if (running.get()) {
                         LOG.error("Error polling ActiveMQ queue metrics", e);
-                        Thread.sleep(5000); // Back off on error
+                        Thread.sleep(metricsPollIntervalMs); // Back off on error
                     }
                 }
             }
         } catch (Exception e) {
             LOG.error("Error initializing ActiveMQ metrics polling", e);
         } finally {
-            closeBrowserResources(browser, session, connection);
+            closeBrowserResources(browser, session);
         }
         LOG.debugf("ActiveMQ queue metrics polling for queue [%s] exited cleanly", queueName);
     }
 
-    private void closeResources(MessageConsumer consumer, Session session, Connection connection) {
+    @Override
+    public void stop() {
+        super.stop();
+        // Close shared connection when consumer is stopped
+        try {
+            if (sharedConnection != null) {
+                sharedConnection.close();
+                LOG.infof("Closed shared ActiveMQ connection for queue [%s]", queueName);
+            }
+        } catch (Exception e) {
+            LOG.error("Error closing shared ActiveMQ connection", e);
+        }
+    }
+
+    private void closeResources(MessageConsumer consumer, Session session) {
         try {
             if (consumer != null) consumer.close();
             if (session != null) session.close();
-            if (connection != null) connection.close();
         } catch (Exception e) {
             LOG.error("Error closing ActiveMQ resources", e);
         }
     }
 
-    private void closeBrowserResources(QueueBrowser browser, Session session, Connection connection) {
+    private void closeBrowserResources(QueueBrowser browser, Session session) {
         try {
             if (browser != null) browser.close();
             if (session != null) session.close();
-            if (connection != null) connection.close();
         } catch (Exception e) {
             LOG.error("Error closing ActiveMQ browser resources", e);
         }
     }
 
     /**
-     * Inner class for ActiveMQ-specific message callback
+     * Inner class for ActiveMQ-specific message callback.
+     *
+     * Uses INDIVIDUAL_ACKNOWLEDGE mode to prevent head-of-line blocking:
+     * - ack(): Acknowledges only this specific message
+     * - nack(): NO-OP (like SQS) - message redelivered after 30s delay (RedeliveryPolicy)
      */
     private static class ActiveMqMessageCallback implements MessageCallback {
         private final Message jmsMessage;
@@ -146,22 +201,24 @@ public class ActiveMqQueueConsumer extends AbstractQueueConsumer {
         @Override
         public void ack(MessagePointer message) {
             try {
+                // With INDIVIDUAL_ACKNOWLEDGE, this acknowledges ONLY this message
                 jmsMessage.acknowledge();
                 LOG.debugf("Acknowledged message [%s] in ActiveMQ", message.id());
             } catch (Exception e) {
-                LOG.error("Error acknowledging message in ActiveMQ: " + message.id(), e);
+                LOG.errorf(e, "Error acknowledging message in ActiveMQ: %s", message.id());
             }
         }
 
         @Override
         public void nack(MessagePointer message) {
-            try {
-                // Rollback session to trigger redelivery
-                session.recover();
-                LOG.debugf("Nacked message [%s] - triggered redelivery", message.id());
-            } catch (Exception e) {
-                LOG.error("Error nacking message in ActiveMQ: " + message.id(), e);
-            }
+            // NO-OP - Just like SQS
+            // With INDIVIDUAL_ACKNOWLEDGE, simply NOT acknowledging the message
+            // is sufficient. The message will be redelivered after 30 seconds
+            // (configured via RedeliveryPolicy) when the session closes/times out.
+            //
+            // No exponential backoff - constant 30 second delay between redeliveries.
+            // This does NOT affect other messages (no head-of-line blocking).
+            LOG.debugf("Nacked message [%s] - will be redelivered after 30s delay", message.id());
         }
     }
 }

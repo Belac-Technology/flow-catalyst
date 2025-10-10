@@ -3,9 +3,9 @@ package tech.flowcatalyst.messagerouter.factory;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
-import tech.flowcatalyst.dispatchjob.mediator.DispatchJobMediator;
 import tech.flowcatalyst.messagerouter.mediator.HttpMediator;
 import tech.flowcatalyst.messagerouter.mediator.Mediator;
+import tech.flowcatalyst.messagerouter.model.MediationType;
 
 @ApplicationScoped
 public class MediatorFactoryImpl implements MediatorFactory {
@@ -15,17 +15,12 @@ public class MediatorFactoryImpl implements MediatorFactory {
     @Inject
     HttpMediator httpMediator;
 
-    @Inject
-    DispatchJobMediator dispatchJobMediator;
-
     @Override
-    public Mediator createMediator(String mediationType) {
+    public Mediator createMediator(MediationType mediationType) {
         LOG.debugf("Creating mediator for type: %s", mediationType);
 
-        return switch (mediationType.toUpperCase()) {
-            case "HTTP" -> httpMediator;
-            case "DISPATCH_JOB" -> dispatchJobMediator;
-            default -> throw new IllegalArgumentException("Unsupported mediator type: " + mediationType);
+        return switch (mediationType) {
+            case HTTP -> httpMediator;
         };
     }
 }

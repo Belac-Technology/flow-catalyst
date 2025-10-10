@@ -13,6 +13,7 @@ import tech.flowcatalyst.messagerouter.consumer.QueueConsumer;
 import tech.flowcatalyst.messagerouter.consumer.SqsQueueConsumer;
 import tech.flowcatalyst.messagerouter.manager.QueueManager;
 import tech.flowcatalyst.messagerouter.metrics.QueueMetricsService;
+import tech.flowcatalyst.messagerouter.warning.WarningService;
 
 @ApplicationScoped
 public class QueueConsumerFactoryImpl implements QueueConsumerFactory {
@@ -22,11 +23,26 @@ public class QueueConsumerFactoryImpl implements QueueConsumerFactory {
     @ConfigProperty(name = "message-router.queue-type")
     QueueType queueType;
 
+    @ConfigProperty(name = "message-router.sqs.max-messages-per-poll")
+    int sqsMaxMessagesPerPoll;
+
+    @ConfigProperty(name = "message-router.sqs.wait-time-seconds")
+    int sqsWaitTimeSeconds;
+
+    @ConfigProperty(name = "message-router.activemq.receive-timeout-ms")
+    int activemqReceiveTimeoutMs;
+
+    @ConfigProperty(name = "message-router.metrics.poll-interval-seconds")
+    int metricsPollIntervalSeconds;
+
     @Inject
     QueueManager queueManager;
 
     @Inject
     QueueMetricsService queueMetrics;
+
+    @Inject
+    WarningService warningService;
 
     @Inject
     SqsClient sqsClient;
@@ -43,11 +59,30 @@ public class QueueConsumerFactoryImpl implements QueueConsumerFactory {
                 String queueUrl = queueConfig.queueUri() != null
                     ? queueConfig.queueUri()
                     : queueConfig.queueName();
-                yield new SqsQueueConsumer(sqsClient, queueUrl, connections, queueManager, queueMetrics);
+                yield new SqsQueueConsumer(
+                    sqsClient,
+                    queueUrl,
+                    connections,
+                    queueManager,
+                    queueMetrics,
+                    warningService,
+                    sqsMaxMessagesPerPoll,
+                    sqsWaitTimeSeconds,
+                    metricsPollIntervalSeconds
+                );
             }
             case ACTIVEMQ -> {
                 String queueName = queueConfig.queueName();
-                yield new ActiveMqQueueConsumer(connectionFactory, queueName, connections, queueManager, queueMetrics);
+                yield new ActiveMqQueueConsumer(
+                    connectionFactory,
+                    queueName,
+                    connections,
+                    queueManager,
+                    queueMetrics,
+                    warningService,
+                    activemqReceiveTimeoutMs,
+                    metricsPollIntervalSeconds
+                );
             }
         };
     }

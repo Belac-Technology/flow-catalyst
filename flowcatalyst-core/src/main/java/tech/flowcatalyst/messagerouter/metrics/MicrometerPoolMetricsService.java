@@ -24,6 +24,9 @@ public class MicrometerPoolMetricsService implements PoolMetricsService {
     @Inject
     MeterRegistry meterRegistry;
 
+    @Inject
+    tech.flowcatalyst.messagerouter.warning.WarningService warningService;
+
     private final Map<String, PoolMetricsHolder> poolMetrics = new ConcurrentHashMap<>();
 
     @Override
@@ -39,12 +42,33 @@ public class MicrometerPoolMetricsService implements PoolMetricsService {
     }
 
     @Override
+    public void recordProcessingFinished(String poolCode) {
+        PoolMetricsHolder metrics = getOrCreateMetrics(poolCode);
+        int current = metrics.activeWorkers.decrementAndGet();
+
+        // Defensive check - active workers should never go negative
+        if (current < 0) {
+            LOG.errorf("METRICS DRIFT DETECTED: activeWorkers for pool %s is negative: %d. Resetting to 0.",
+                poolCode, current);
+            metrics.activeWorkers.set(0);
+
+            // Add warning
+            warningService.addWarning(
+                "METRICS_DRIFT",
+                "ERROR",
+                "Active workers count went negative for pool " + poolCode,
+                "MicrometerPoolMetricsService"
+            );
+        }
+    }
+
+    @Override
     public void recordProcessingSuccess(String poolCode, long durationMs) {
         PoolMetricsHolder metrics = getOrCreateMetrics(poolCode);
         metrics.messagesSucceeded.increment();
         metrics.processingTimer.record(Duration.ofMillis(durationMs));
         metrics.totalProcessingTimeMs.addAndGet(durationMs);
-        metrics.activeWorkers.decrementAndGet();
+        metrics.lastActivityTimestamp.set(System.currentTimeMillis());
     }
 
     @Override
@@ -53,7 +77,7 @@ public class MicrometerPoolMetricsService implements PoolMetricsService {
         metrics.messagesFailed.increment();
         metrics.processingTimer.record(Duration.ofMillis(durationMs));
         metrics.totalProcessingTimeMs.addAndGet(durationMs);
-        metrics.activeWorkers.decrementAndGet();
+        metrics.lastActivityTimestamp.set(System.currentTimeMillis());
 
         // Track error type
         Counter errorCounter = Counter.builder("flowcatalyst.pool.errors")
@@ -118,6 +142,55 @@ public class MicrometerPoolMetricsService implements PoolMetricsService {
         return allStats;
     }
 
+    @Override
+    public Long getLastActivityTimestamp(String poolCode) {
+        PoolMetricsHolder metrics = poolMetrics.get(poolCode);
+        if (metrics == null) {
+            return null;
+        }
+        long timestamp = metrics.lastActivityTimestamp.get();
+        return timestamp == 0 ? null : timestamp;
+    }
+
+    @Override
+    public void removePoolMetrics(String poolCode) {
+        PoolMetricsHolder metrics = poolMetrics.remove(poolCode);
+        if (metrics != null) {
+            LOG.infof("Removing Micrometer metrics for pool: %s", poolCode);
+
+            // Remove all counters from registry
+            meterRegistry.remove(metrics.messagesSubmitted.getId());
+            meterRegistry.remove(metrics.messagesSucceeded.getId());
+            meterRegistry.remove(metrics.messagesFailed.getId());
+            meterRegistry.remove(metrics.messagesRateLimited.getId());
+
+            // Remove timer from registry
+            meterRegistry.remove(metrics.processingTimer.getId());
+
+            // Remove gauges from registry
+            // Gauges are identified by name and tags
+            meterRegistry.remove(
+                meterRegistry.find("flowcatalyst.pool.workers.active")
+                    .tag("pool", poolCode)
+                    .meter()
+            );
+            meterRegistry.remove(
+                meterRegistry.find("flowcatalyst.pool.semaphore.available")
+                    .tag("pool", poolCode)
+                    .meter()
+            );
+            meterRegistry.remove(
+                meterRegistry.find("flowcatalyst.pool.queue.size")
+                    .tag("pool", poolCode)
+                    .meter()
+            );
+
+            LOG.infof("Successfully removed all metrics for pool: %s", poolCode);
+        } else {
+            LOG.debugf("No metrics found for pool: %s", poolCode);
+        }
+    }
+
     private PoolMetricsHolder getOrCreateMetrics(String poolCode) {
         return poolMetrics.computeIfAbsent(poolCode, code -> {
             LOG.infof("Creating Micrometer metrics for pool: %s", code);
@@ -167,7 +240,8 @@ public class MicrometerPoolMetricsService implements PoolMetricsService {
                 queueSize,
                 new AtomicInteger(0), // maxConcurrency - will be set on init
                 new AtomicInteger(0), // maxQueueCapacity - will be set on init
-                new AtomicLong(0)
+                new AtomicLong(0),
+                new AtomicLong(0) // lastActivityTimestamp
             );
         });
     }
@@ -186,6 +260,7 @@ public class MicrometerPoolMetricsService implements PoolMetricsService {
         AtomicInteger queueSize,
         AtomicInteger maxConcurrency,
         AtomicInteger maxQueueCapacity,
-        AtomicLong totalProcessingTimeMs
+        AtomicLong totalProcessingTimeMs,
+        AtomicLong lastActivityTimestamp
     ) {}
 }

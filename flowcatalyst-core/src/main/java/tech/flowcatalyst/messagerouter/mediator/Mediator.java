@@ -1,6 +1,7 @@
 package tech.flowcatalyst.messagerouter.mediator;
 
 import tech.flowcatalyst.messagerouter.model.MediationResult;
+import tech.flowcatalyst.messagerouter.model.MediationType;
 import tech.flowcatalyst.messagerouter.model.MessagePointer;
 
 public interface Mediator {
@@ -16,5 +17,5 @@ public interface Mediator {
     /**
      * Returns the mediation type this mediator handles
      */
-    String getMediationType();
+    MediationType getMediationType();
 }

@@ -64,10 +64,8 @@ public class MessageSeedResource {
                 MessagePointer message = new MessagePointer(
                     UUID.randomUUID().toString(),
                     poolCode,
-                    null, // No rate limiting for test messages
-                    null,
                     "test-token-" + UUID.randomUUID(),
-                    "HTTP",
+                    tech.flowcatalyst.messagerouter.model.MediationType.HTTP,
                     targetEndpoint
                 );
 

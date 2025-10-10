@@ -14,6 +14,7 @@ import tech.flowcatalyst.messagerouter.callback.MessageCallback;
 import tech.flowcatalyst.messagerouter.manager.QueueManager;
 import tech.flowcatalyst.messagerouter.metrics.QueueMetricsService;
 import tech.flowcatalyst.messagerouter.model.MessagePointer;
+import tech.flowcatalyst.messagerouter.model.MediationType;
 
 import java.util.List;
 
@@ -29,6 +30,7 @@ class SqsQueueConsumerTest {
     private SqsClient mockSqsClient;
     private QueueManager mockQueueManager;
     private QueueMetricsService mockQueueMetrics;
+    private tech.flowcatalyst.messagerouter.warning.WarningService mockWarningService;
 
     private final String queueUrl = "https://sqs.us-east-1.amazonaws.com/123456789/test-queue";
 
@@ -37,13 +39,18 @@ class SqsQueueConsumerTest {
         mockSqsClient = mock(SqsClient.class);
         mockQueueManager = mock(QueueManager.class);
         mockQueueMetrics = mock(QueueMetricsService.class);
+        mockWarningService = mock(tech.flowcatalyst.messagerouter.warning.WarningService.class);
 
         sqsConsumer = new SqsQueueConsumer(
             mockSqsClient,
             queueUrl,
             1, // 1 connection
             mockQueueManager,
-            mockQueueMetrics
+            mockQueueMetrics,
+            mockWarningService,
+            10, // maxMessagesPerPoll
+            20, // waitTimeSeconds
+            5   // metricsPollIntervalSeconds
         );
     }
 
@@ -61,8 +68,6 @@ class SqsQueueConsumerTest {
             {
                 "id": "msg-1",
                 "poolCode": "POOL-A",
-                "rateLimitPerMinute": null,
-                "rateLimitKey": null,
                 "authToken": "test-token",
                 "mediationType": "HTTP",
                 "mediationTarget": "http://localhost:8080/test"
@@ -133,7 +138,7 @@ class SqsQueueConsumerTest {
         });
 
         MessageCallback callback = callbackCaptor.getValue();
-        MessagePointer testMessage = new MessagePointer("msg-ack", "POOL-A", null, null, "token", "HTTP", "http://test.com");
+        MessagePointer testMessage = new MessagePointer("msg-ack", "POOL-A", "token", MediationType.HTTP, "http://test.com");
         callback.ack(testMessage);
 
         // Then
@@ -180,7 +185,7 @@ class SqsQueueConsumerTest {
         });
 
         MessageCallback callback = callbackCaptor.getValue();
-        MessagePointer testMessage = new MessagePointer("msg-nack", "POOL-A", null, null, "token", "HTTP", "http://test.com");
+        MessagePointer testMessage = new MessagePointer("msg-nack", "POOL-A", "token", MediationType.HTTP, "http://test.com");
         callback.nack(testMessage);
 
         // Then

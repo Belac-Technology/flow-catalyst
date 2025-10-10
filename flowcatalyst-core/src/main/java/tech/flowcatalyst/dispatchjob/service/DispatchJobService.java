@@ -15,6 +15,7 @@ import tech.flowcatalyst.dispatchjob.entity.DispatchJob;
 import tech.flowcatalyst.dispatchjob.model.DispatchAttemptStatus;
 import tech.flowcatalyst.dispatchjob.model.DispatchStatus;
 import tech.flowcatalyst.dispatchjob.repository.DispatchJobRepository;
+import tech.flowcatalyst.messagerouter.model.MediationType;
 import tech.flowcatalyst.messagerouter.model.MessagePointer;
 
 import java.time.Duration;
@@ -32,7 +33,7 @@ public class DispatchJobService {
 
     private static final Logger LOG = Logger.getLogger(DispatchJobService.class);
     private static final String DISPATCH_POOL_CODE = "DISPATCH-POOL";
-    private static final String MEDIATION_TYPE = "DISPATCH_JOB";
+    private static final MediationType MEDIATION_TYPE = MediationType.HTTP;
     private static final String PROCESSING_ENDPOINT = "http://localhost:8080/api/dispatch/process";
 
     @Inject
@@ -72,8 +73,6 @@ public class DispatchJobService {
             MessagePointer messagePointer = new MessagePointer(
                 job.id.toString(),
                 DISPATCH_POOL_CODE,
-                null, // No rate limiting
-                null, // No rate limit key
                 "dispatch-auth-token", // Auth token for internal processing endpoint
                 MEDIATION_TYPE,
                 PROCESSING_ENDPOINT

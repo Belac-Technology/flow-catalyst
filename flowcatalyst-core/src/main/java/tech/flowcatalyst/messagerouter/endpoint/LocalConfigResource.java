@@ -31,10 +31,10 @@ public class LocalConfigResource {
             ),
             1,
             List.of(
-                new ProcessingPool("POOL-HIGH", 10),
-                new ProcessingPool("POOL-MEDIUM", 5),
-                new ProcessingPool("POOL-LOW", 2),
-                new ProcessingPool("DISPATCH-POOL", 5)
+                new ProcessingPool("POOL-HIGH", 10, null),
+                new ProcessingPool("POOL-MEDIUM", 5, null),
+                new ProcessingPool("POOL-LOW", 2, null),
+                new ProcessingPool("DISPATCH-POOL", 5, null)
             )
         );
     }

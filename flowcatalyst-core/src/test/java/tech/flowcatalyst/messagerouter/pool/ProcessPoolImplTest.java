@@ -13,6 +13,7 @@ import tech.flowcatalyst.messagerouter.mediator.Mediator;
 import tech.flowcatalyst.messagerouter.metrics.PoolMetricsService;
 import tech.flowcatalyst.messagerouter.model.MediationResult;
 import tech.flowcatalyst.messagerouter.model.MessagePointer;
+import tech.flowcatalyst.messagerouter.model.MediationType;
 import tech.flowcatalyst.messagerouter.warning.WarningService;
 
 import java.util.concurrent.ConcurrentHashMap;
@@ -45,6 +46,7 @@ class ProcessPoolImplTest {
             "TEST-POOL",
             5, // concurrency
             100, // queue capacity
+            null, // rateLimitPerMinute
             mockMediator,
             mockCallback,
             inPipelineMap,
@@ -66,10 +68,8 @@ class ProcessPoolImplTest {
         MessagePointer message = new MessagePointer(
             "msg-1",
             "TEST-POOL",
-            null,
-            null,
             "test-token",
-            "HTTP",
+            MediationType.HTTP,
             "http://localhost:8080/test"
         );
 
@@ -96,10 +96,8 @@ class ProcessPoolImplTest {
         MessagePointer message = new MessagePointer(
             "msg-2",
             "TEST-POOL",
-            null,
-            null,
             "test-token",
-            "HTTP",
+            MediationType.HTTP,
             "http://localhost:8080/test"
         );
 
@@ -125,24 +123,32 @@ class ProcessPoolImplTest {
 
     @Test
     void shouldEnforceRateLimit() {
-        // Given
+        // Given - create a pool with rate limiting enabled
+        ProcessPoolImpl rateLimitedPool = new ProcessPoolImpl(
+            "RATE-LIMITED-POOL",
+            5,
+            100,
+            1, // 1 per minute rate limit
+            mockMediator,
+            mockCallback,
+            inPipelineMap,
+            mockPoolMetrics,
+            mockWarningService
+        );
+
         MessagePointer message1 = new MessagePointer(
             "msg-rate-1",
-            "TEST-POOL",
-            1, // 1 per minute
-            "test-key",
+            "RATE-LIMITED-POOL",
             "test-token",
-            "HTTP",
+            MediationType.HTTP,
             "http://localhost:8080/test"
         );
 
         MessagePointer message2 = new MessagePointer(
             "msg-rate-2",
-            "TEST-POOL",
-            1, // 1 per minute
-            "test-key", // same key
+            "RATE-LIMITED-POOL",
             "test-token",
-            "HTTP",
+            MediationType.HTTP,
             "http://localhost:8080/test"
         );
 
@@ -151,9 +157,9 @@ class ProcessPoolImplTest {
         inPipelineMap.put(message2.id(), message2);
 
         // When
-        processPool.start();
-        processPool.submit(message1);
-        processPool.submit(message2);
+        rateLimitedPool.start();
+        rateLimitedPool.submit(message1);
+        rateLimitedPool.submit(message2);
 
         // Then - one should be acked, one should be nacked due to rate limit
         await().untilAsserted(() -> {
@@ -163,8 +169,10 @@ class ProcessPoolImplTest {
 
             // One message should be rate limited and nacked
             verify(mockCallback, times(1)).nack(any(MessagePointer.class));
-            verify(mockPoolMetrics).recordRateLimitExceeded("TEST-POOL");
+            verify(mockPoolMetrics).recordRateLimitExceeded("RATE-LIMITED-POOL");
         });
+
+        rateLimitedPool.drain();
     }
 
     @Test
@@ -179,6 +187,7 @@ class ProcessPoolImplTest {
             "SMALL-POOL",
             1,
             1, // Queue capacity of 1
+            null, // rateLimitPerMinute
             mockMediator,
             mockCallback,
             inPipelineMap,
@@ -186,9 +195,9 @@ class ProcessPoolImplTest {
             mockWarningService
         );
 
-        MessagePointer message1 = new MessagePointer("msg-1", "SMALL-POOL", null, null, "token", "HTTP", "http://test.com");
-        MessagePointer message2 = new MessagePointer("msg-2", "SMALL-POOL", null, null, "token", "HTTP", "http://test.com");
-        MessagePointer message3 = new MessagePointer("msg-3", "SMALL-POOL", null, null, "token", "HTTP", "http://test.com");
+        MessagePointer message1 = new MessagePointer("msg-1", "SMALL-POOL", "token", MediationType.HTTP, "http://test.com");
+        MessagePointer message2 = new MessagePointer("msg-2", "SMALL-POOL", "token", MediationType.HTTP, "http://test.com");
+        MessagePointer message3 = new MessagePointer("msg-3", "SMALL-POOL", "token", MediationType.HTTP, "http://test.com");
 
         // When
         smallPool.start();
@@ -219,6 +228,7 @@ class ProcessPoolImplTest {
             "LOW-CONCURRENCY",
             2, // Only 2 concurrent
             100,
+            null, // rateLimitPerMinute
             mockMediator,
             mockCallback,
             inPipelineMap,
@@ -239,10 +249,8 @@ class ProcessPoolImplTest {
             MessagePointer msg = new MessagePointer(
                 "msg-" + i,
                 "LOW-CONCURRENCY",
-                null,
-                null,
                 "token",
-                "HTTP",
+                MediationType.HTTP,
                 "http://test.com"
             );
             inPipelineMap.put(msg.id(), msg);
@@ -269,10 +277,8 @@ class ProcessPoolImplTest {
         MessagePointer message = new MessagePointer(
             "msg-pipeline",
             "TEST-POOL",
-            null,
-            null,
             "test-token",
-            "HTTP",
+            MediationType.HTTP,
             "http://localhost:8080/test"
         );
 
@@ -295,10 +301,8 @@ class ProcessPoolImplTest {
         MessagePointer message = new MessagePointer(
             "msg-drain",
             "TEST-POOL",
-            null,
-            null,
             "test-token",
-            "HTTP",
+            MediationType.HTTP,
             "http://localhost:8080/test"
         );
 
@@ -318,24 +322,21 @@ class ProcessPoolImplTest {
 
     @Test
     void shouldTrackDifferentRateLimitKeysSeparately() {
-        // Given
+        // Given - rate limiting is now pool-level, not message-level
+        // This test now verifies that messages are processed normally when no rate limit is set
         MessagePointer message1 = new MessagePointer(
             "msg-key1",
             "TEST-POOL",
-            1,
-            "key-1",
             "test-token",
-            "HTTP",
+            MediationType.HTTP,
             "http://localhost:8080/test"
         );
 
         MessagePointer message2 = new MessagePointer(
             "msg-key2",
             "TEST-POOL",
-            1,
-            "key-2", // Different key
             "test-token",
-            "HTTP",
+            MediationType.HTTP,
             "http://localhost:8080/test"
         );
 
@@ -348,7 +349,7 @@ class ProcessPoolImplTest {
         processPool.submit(message1);
         processPool.submit(message2);
 
-        // Then - both should be processed (different keys)
+        // Then - both should be processed (no rate limiting)
         await().untilAsserted(() -> {
             verify(mockMediator).process(message1);
             verify(mockMediator).process(message2);

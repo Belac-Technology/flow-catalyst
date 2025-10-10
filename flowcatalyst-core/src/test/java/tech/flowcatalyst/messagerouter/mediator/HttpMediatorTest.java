@@ -7,6 +7,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import tech.flowcatalyst.messagerouter.integration.PostgresTestResource;
 import tech.flowcatalyst.messagerouter.model.MediationResult;
+import tech.flowcatalyst.messagerouter.model.MediationType;
 import tech.flowcatalyst.messagerouter.model.MessagePointer;
 
 import static io.restassured.RestAssured.given;
@@ -43,10 +44,8 @@ class HttpMediatorTest {
         MessagePointer message = new MessagePointer(
             "msg-success",
             "POOL-A",
-            null,
-            null,
             "test-token",
-            "HTTP",
+            MediationType.HTTP,
             "http://localhost:8081/api/test/success"
         );
 
@@ -63,10 +62,8 @@ class HttpMediatorTest {
         MessagePointer message = new MessagePointer(
             "msg-client-error",
             "POOL-A",
-            null,
-            null,
             "test-token",
-            "HTTP",
+            MediationType.HTTP,
             "http://localhost:8081/api/test/client-error"
         );
 
@@ -83,10 +80,8 @@ class HttpMediatorTest {
         MessagePointer message = new MessagePointer(
             "msg-server-error",
             "POOL-A",
-            null,
-            null,
             "test-token",
-            "HTTP",
+            MediationType.HTTP,
             "http://localhost:8081/api/test/server-error"
         );
 
@@ -103,10 +98,8 @@ class HttpMediatorTest {
         MessagePointer message = new MessagePointer(
             "msg-connection-error",
             "POOL-A",
-            null,
-            null,
             "test-token",
-            "HTTP",
+            MediationType.HTTP,
             "http://invalid-host-that-does-not-exist.local:9999/test"
         );
 
@@ -120,10 +113,10 @@ class HttpMediatorTest {
     @Test
     void shouldReturnCorrectMediationType() {
         // When
-        String type = httpMediator.getMediationType();
+        MediationType type = httpMediator.getMediationType();
 
         // Then
-        assertEquals("HTTP", type, "Mediation type should be HTTP");
+        assertEquals(MediationType.HTTP, type, "Mediation type should be HTTP");
     }
 
     @Test
@@ -132,10 +125,8 @@ class HttpMediatorTest {
         MessagePointer message = new MessagePointer(
             "msg-with-auth",
             "POOL-A",
-            null,
-            null,
             "my-secret-token",
-            "HTTP",
+            MediationType.HTTP,
             "http://localhost:8081/api/test/success"
         );
 
@@ -155,10 +146,8 @@ class HttpMediatorTest {
         MessagePointer message = new MessagePointer(
             messageId,
             "POOL-A",
-            null,
-            null,
             "test-token",
-            "HTTP",
+            MediationType.HTTP,
             "http://localhost:8081/api/test/success"
         );
 
@@ -176,10 +165,8 @@ class HttpMediatorTest {
         MessagePointer message = new MessagePointer(
             "msg-fast",
             "POOL-A",
-            null,
-            null,
             "test-token",
-            "HTTP",
+            MediationType.HTTP,
             "http://localhost:8081/api/test/fast"
         );
 
@@ -199,30 +186,24 @@ class HttpMediatorTest {
         MessagePointer message1 = new MessagePointer(
             "msg-seq-1",
             "POOL-A",
-            null,
-            null,
             "test-token",
-            "HTTP",
+            MediationType.HTTP,
             "http://localhost:8081/api/test/success"
         );
 
         MessagePointer message2 = new MessagePointer(
             "msg-seq-2",
             "POOL-A",
-            null,
-            null,
             "test-token",
-            "HTTP",
+            MediationType.HTTP,
             "http://localhost:8081/api/test/client-error"
         );
 
         MessagePointer message3 = new MessagePointer(
             "msg-seq-3",
             "POOL-A",
-            null,
-            null,
             "test-token",
-            "HTTP",
+            MediationType.HTTP,
             "http://localhost:8081/api/test/server-error"
         );
 
@@ -243,10 +224,8 @@ class HttpMediatorTest {
         MessagePointer message = new MessagePointer(
             "msg-empty",
             "POOL-A",
-            null,
-            null,
             "test-token",
-            "HTTP",
+            MediationType.HTTP,
             "http://localhost:8081/api/test/success"
         );
 

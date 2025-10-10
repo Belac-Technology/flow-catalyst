@@ -60,7 +60,7 @@ Flow Catalyst is a high-performance message routing and processing system built 
 **Interface:** `ProcessPool`
 
 **Responsibilities:**
-- Manage BlockingQueue of messages (default capacity: 1000)
+- Manage BlockingQueue of messages (capacity: max(concurrency × 10, 500))
 - Control concurrency via Semaphore
 - Apply rate limiting per rate limit key
 - Process messages through Mediator
@@ -68,9 +68,15 @@ Flow Catalyst is a high-performance message routing and processing system built 
 
 **Architecture:**
 - One pool per pool code (e.g., "POOL-A", "POOL-B")
-- BlockingQueue controls backpressure
+- BlockingQueue controls backpressure (scales with concurrency)
 - N worker threads (= concurrency setting)
 - Each worker: poll queue → acquire semaphore → check rate limit → mediate → ack/nack → release semaphore
+
+**Buffer Sizing:**
+- Queue capacity = max(concurrency × 10, 500)
+- Examples: 5 workers → 500 buffer, 100 workers → 1000 buffer, 200 workers → 2000 buffer
+- Scales processing buffer with processing capacity
+- Rejected messages stay in SQS/ActiveMQ with visibility timeout
 
 **Rate Limiting:**
 - Uses Resilience4j RateLimiter
@@ -158,7 +164,6 @@ Release Semaphore
 # Message Router
 message-router.queue-type=SQS
 message-router.sync-interval=5m
-message-router.queue-capacity=1000
 
 # SQS Configuration
 quarkus.sqs.aws.region=us-east-1
@@ -260,9 +265,11 @@ Benefits:
 - Only retries transient errors
 
 ### Backpressure
-- BlockingQueue in ProcessPool (default 1000)
+- BlockingQueue in ProcessPool (capacity: max(concurrency × 10, 500))
+- Buffer size scales with processing capacity
 - Messages not routed if queue full
-- Rely on queue visibility timeout for redelivery
+- Rejected messages rely on queue visibility timeout for redelivery
+- SQS/ActiveMQ acts as overflow buffer when pools are overwhelmed
 
 ## Deduplication
 

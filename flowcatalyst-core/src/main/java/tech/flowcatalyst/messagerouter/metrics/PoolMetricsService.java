@@ -20,6 +20,12 @@ public interface PoolMetricsService {
     void recordProcessingStarted(String poolCode);
 
     /**
+     * Record that message processing finished (must be called in finally block)
+     * This decrements the active workers counter to prevent metrics drift
+     */
+    void recordProcessingFinished(String poolCode);
+
+    /**
      * Record that a message processing completed successfully
      */
     void recordProcessingSuccess(String poolCode, long durationMs);
@@ -48,4 +54,18 @@ public interface PoolMetricsService {
      * Get statistics for all pools
      */
     Map<String, PoolStats> getAllPoolStats();
+
+    /**
+     * Get the timestamp of the last successful processing for a pool
+     * Returns null if no processing has occurred yet
+     */
+    Long getLastActivityTimestamp(String poolCode);
+
+    /**
+     * Remove all metrics for a pool
+     * Called when a pool is removed during configuration sync
+     *
+     * @param poolCode the pool code to remove metrics for
+     */
+    void removePoolMetrics(String poolCode);
 }

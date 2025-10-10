@@ -1,5 +1,6 @@
 package tech.flowcatalyst.messagerouter.consumer;
 
+import com.fasterxml.jackson.core.JsonParseException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.jboss.logging.Logger;
 import org.jboss.logging.MDC;
@@ -7,6 +8,7 @@ import tech.flowcatalyst.messagerouter.callback.MessageCallback;
 import tech.flowcatalyst.messagerouter.manager.QueueManager;
 import tech.flowcatalyst.messagerouter.metrics.QueueMetricsService;
 import tech.flowcatalyst.messagerouter.model.MessagePointer;
+import tech.flowcatalyst.messagerouter.warning.WarningService;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -19,14 +21,16 @@ public abstract class AbstractQueueConsumer implements QueueConsumer {
 
     protected final QueueManager queueManager;
     protected final QueueMetricsService queueMetrics;
+    protected final WarningService warningService;
     protected final ObjectMapper objectMapper;
     protected final ExecutorService executorService;
     protected final AtomicBoolean running = new AtomicBoolean(false);
     protected final int connections;
 
-    protected AbstractQueueConsumer(QueueManager queueManager, QueueMetricsService queueMetrics, int connections) {
+    protected AbstractQueueConsumer(QueueManager queueManager, QueueMetricsService queueMetrics, WarningService warningService, int connections) {
         this.queueManager = queueManager;
         this.queueMetrics = queueMetrics;
+        this.warningService = warningService;
         this.connections = connections;
         this.objectMapper = new ObjectMapper();
         this.executorService = Executors.newVirtualThreadPerTaskExecutor();
@@ -84,10 +88,12 @@ public abstract class AbstractQueueConsumer implements QueueConsumer {
             // Parse message body to MessagePointer
             MessagePointer messagePointer = objectMapper.readValue(rawMessage, MessagePointer.class);
 
-            // Set MDC context
+            // Set MDC context for structured logging
             MDC.put("messageId", messagePointer.id());
             MDC.put("queueName", queueId);
             MDC.put("poolCode", messagePointer.poolCode());
+            MDC.put("mediationType", messagePointer.mediationType().toString());
+            MDC.put("mediationTarget", messagePointer.mediationTarget());
 
             // Route message to queue manager with callback
             boolean routed = queueManager.routeMessage(messagePointer, callback);
@@ -104,8 +110,33 @@ public abstract class AbstractQueueConsumer implements QueueConsumer {
 
             MDC.clear();
 
+        } catch (JsonParseException e) {
+            // Malformed message - poison pill that will never parse correctly
+            LOG.warnf(e, "Malformed message from queue [%s], acknowledging to remove from queue: %s",
+                queueId, rawMessage.substring(0, Math.min(100, rawMessage.length())));
+
+            warningService.addWarning(
+                "MALFORMED_MESSAGE",
+                "WARN",
+                String.format("Malformed message from queue [%s]: %s",
+                    queueId, e.getMessage()),
+                "AbstractQueueConsumer"
+            );
+
+            queueMetrics.recordMessageProcessed(queueId, false);
+
+            // ACK the message to remove it from the queue and prevent infinite retries
+            callback.ack(new MessagePointer(
+                "unknown",
+                "unknown",
+                null,
+                tech.flowcatalyst.messagerouter.model.MediationType.HTTP,
+                "unknown"
+            ));
+
+            MDC.clear();
         } catch (Exception e) {
-            LOG.error("Error processing message", e);
+            LOG.errorf(e, "Error processing message from queue [%s]", queueId);
             queueMetrics.recordMessageProcessed(queueId, false);
             MDC.clear();
             onMessageError(rawMessage, e);

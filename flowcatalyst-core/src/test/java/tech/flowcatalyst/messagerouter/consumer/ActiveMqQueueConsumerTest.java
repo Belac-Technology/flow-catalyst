@@ -5,6 +5,7 @@ import tech.flowcatalyst.messagerouter.integration.PostgresTestResource;
 import io.quarkus.test.junit.QuarkusTest;
 import tech.flowcatalyst.messagerouter.integration.PostgresTestResource;
 import jakarta.jms.*;
+import org.apache.activemq.ActiveMQSession;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.AfterEach;
@@ -13,6 +14,7 @@ import tech.flowcatalyst.messagerouter.callback.MessageCallback;
 import tech.flowcatalyst.messagerouter.manager.QueueManager;
 import tech.flowcatalyst.messagerouter.metrics.QueueMetricsService;
 import tech.flowcatalyst.messagerouter.model.MessagePointer;
+import tech.flowcatalyst.messagerouter.model.MediationType;
 
 import java.util.Enumeration;
 
@@ -23,8 +25,8 @@ import static org.mockito.Mockito.*;
 /**
  * Comprehensive ActiveMqQueueConsumer tests covering:
  * - Message consumption and routing
- * - ACK behavior (CLIENT_ACKNOWLEDGE)
- * - NACK behavior (session.recover())
+ * - ACK behavior (INDIVIDUAL_ACKNOWLEDGE mode)
+ * - NACK behavior (individual message redelivery without head-of-line blocking)
  * - Queue metrics polling using QueueBrowser
  * - Error handling
  * - Resource cleanup
@@ -42,6 +44,7 @@ class ActiveMqQueueConsumerTest {
     private Queue mockQueue;
     private QueueManager mockQueueManager;
     private QueueMetricsService mockQueueMetrics;
+    private tech.flowcatalyst.messagerouter.warning.WarningService mockWarningService;
 
     private final String queueName = "test.queue";
 
@@ -56,6 +59,7 @@ class ActiveMqQueueConsumerTest {
         mockQueue = mock(Queue.class);
         mockQueueManager = mock(QueueManager.class);
         mockQueueMetrics = mock(QueueMetricsService.class);
+        mockWarningService = mock(tech.flowcatalyst.messagerouter.warning.WarningService.class);
 
         // Setup mock chain for connection creation
         when(mockConnectionFactory.createConnection()).thenReturn(mockConnection);
@@ -69,7 +73,10 @@ class ActiveMqQueueConsumerTest {
             queueName,
             1, // 1 connection
             mockQueueManager,
-            mockQueueMetrics
+            mockQueueMetrics,
+            mockWarningService,
+            1000, // receiveTimeoutMs
+            5     // metricsPollIntervalSeconds
         );
     }
 
@@ -87,8 +94,6 @@ class ActiveMqQueueConsumerTest {
             {
                 "id": "msg-1",
                 "poolCode": "POOL-A",
-                "rateLimitPerMinute": null,
-                "rateLimitKey": null,
                 "authToken": "test-token",
                 "mediationType": "HTTP",
                 "mediationTarget": "http://localhost:8080/test"
@@ -146,7 +151,7 @@ class ActiveMqQueueConsumerTest {
         });
 
         MessageCallback callback = callbackCaptor.getValue();
-        MessagePointer testMessage = new MessagePointer("msg-ack", "POOL-A", null, null, "token", "HTTP", "http://test.com");
+        MessagePointer testMessage = new MessagePointer("msg-ack", "POOL-A", "token", MediationType.HTTP, "http://test.com");
         callback.ack(testMessage);
 
         // Then
@@ -184,17 +189,18 @@ class ActiveMqQueueConsumerTest {
         });
 
         MessageCallback callback = callbackCaptor.getValue();
-        MessagePointer testMessage = new MessagePointer("msg-nack", "POOL-A", null, null, "token", "HTTP", "http://test.com");
+        MessagePointer testMessage = new MessagePointer("msg-nack", "POOL-A", "token", MediationType.HTTP, "http://test.com");
         callback.nack(testMessage);
 
         // Then
-        // Nack should trigger session.recover() to requeue the message
-        verify(mockSession).recover();
+        // With INDIVIDUAL_ACKNOWLEDGE mode, nack does NOT call session.recover()
+        // The message is simply not acknowledged and will be redelivered when session closes
+        verify(mockSession, never()).recover();
         verify(textMessage, never()).acknowledge();
     }
 
     @Test
-    void shouldUseClientAcknowledgeMode() throws Exception {
+    void shouldUseIndividualAcknowledgeMode() throws Exception {
         // Given
         when(mockMessageConsumer.receive(anyLong())).thenReturn(null);
 
@@ -202,8 +208,9 @@ class ActiveMqQueueConsumerTest {
         activeMqConsumer.start();
 
         // Then
+        // Verify INDIVIDUAL_ACKNOWLEDGE mode is used (prevents head-of-line blocking)
         await().untilAsserted(() -> {
-            verify(mockConnection, atLeastOnce()).createSession(false, Session.CLIENT_ACKNOWLEDGE);
+            verify(mockConnection, atLeastOnce()).createSession(false, ActiveMQSession.INDIVIDUAL_ACKNOWLEDGE);
         });
     }
 
@@ -325,19 +332,24 @@ class ActiveMqQueueConsumerTest {
 
     @Test
     void shouldHandleConnectionErrors() throws Exception {
-        // Given
-        when(mockConnectionFactory.createConnection())
+        // Given - create a new connection factory that fails
+        ConnectionFactory failingConnectionFactory = mock(ConnectionFactory.class);
+        when(failingConnectionFactory.createConnection())
             .thenThrow(new JMSException("Connection failed"));
 
-        // When
-        activeMqConsumer.start();
-
-        // Give it time to attempt connection
-        Thread.sleep(100);
-
-        // Then - should handle error gracefully without crashing
-        activeMqConsumer.stop();
-        assertTrue(true, "Should handle connection errors gracefully");
+        // When/Then - constructor should throw when connection creation fails
+        assertThrows(RuntimeException.class, () -> {
+            new ActiveMqQueueConsumer(
+                failingConnectionFactory,
+                queueName,
+                1,
+                mockQueueManager,
+                mockQueueMetrics,
+                mockWarningService,
+                1000,
+                5
+            );
+        });
     }
 
     @Test

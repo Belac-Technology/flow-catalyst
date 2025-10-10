@@ -7,6 +7,7 @@ import org.eclipse.microprofile.faulttolerance.Retry;
 import org.eclipse.microprofile.faulttolerance.Timeout;
 import org.jboss.logging.Logger;
 import tech.flowcatalyst.messagerouter.model.MediationResult;
+import tech.flowcatalyst.messagerouter.model.MediationType;
 import tech.flowcatalyst.messagerouter.model.MessagePointer;
 
 import java.net.URI;
@@ -21,7 +22,6 @@ public class HttpMediator implements Mediator {
 
     private static final Logger LOG = Logger.getLogger(HttpMediator.class);
     private static final int CONNECTION_POOL_SIZE = 200;
-    private static final String MEDIATION_TYPE = "HTTP";
 
     private final HttpClient httpClient;
 
@@ -83,19 +83,19 @@ public class HttpMediator implements Mediator {
             }
 
         } catch (java.net.http.HttpConnectTimeoutException | java.net.ConnectException e) {
-            LOG.error("Connection error processing message: " + message.id(), e);
+            LOG.errorf(e, "Connection error processing message: %s", message.id());
             return MediationResult.ERROR_CONNECTION;
         } catch (java.net.http.HttpTimeoutException e) {
-            LOG.error("Timeout processing message: " + message.id(), e);
+            LOG.errorf(e, "Timeout processing message: %s", message.id());
             return MediationResult.ERROR_CONNECTION;
         } catch (Exception e) {
-            LOG.error("Error processing message: " + message.id(), e);
+            LOG.errorf(e, "Error processing message: %s", message.id());
             return MediationResult.ERROR_SERVER;
         }
     }
 
     @Override
-    public String getMediationType() {
-        return MEDIATION_TYPE;
+    public MediationType getMediationType() {
+        return MediationType.HTTP;
     }
 }

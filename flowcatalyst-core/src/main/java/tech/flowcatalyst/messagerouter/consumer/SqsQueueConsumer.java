@@ -6,27 +6,36 @@ import software.amazon.awssdk.services.sqs.model.*;
 import tech.flowcatalyst.messagerouter.callback.MessageCallback;
 import tech.flowcatalyst.messagerouter.manager.QueueManager;
 import tech.flowcatalyst.messagerouter.model.MessagePointer;
+import tech.flowcatalyst.messagerouter.warning.WarningService;
 
 import java.util.List;
 
 public class SqsQueueConsumer extends AbstractQueueConsumer {
 
     private static final Logger LOG = Logger.getLogger(SqsQueueConsumer.class);
-    private static final int MAX_MESSAGES_PER_POLL = 10;
-    private static final int WAIT_TIME_SECONDS = 20; // Long polling
 
     private final SqsClient sqsClient;
     private final String queueUrl;
+    private final int maxMessagesPerPoll;
+    private final int waitTimeSeconds;
+    private final int metricsPollIntervalMs;
 
     public SqsQueueConsumer(
             SqsClient sqsClient,
             String queueUrl,
             int connections,
             QueueManager queueManager,
-            tech.flowcatalyst.messagerouter.metrics.QueueMetricsService queueMetrics) {
-        super(queueManager, queueMetrics, connections);
+            tech.flowcatalyst.messagerouter.metrics.QueueMetricsService queueMetrics,
+            WarningService warningService,
+            int maxMessagesPerPoll,
+            int waitTimeSeconds,
+            int metricsPollIntervalSeconds) {
+        super(queueManager, queueMetrics, warningService, connections);
         this.sqsClient = sqsClient;
         this.queueUrl = queueUrl;
+        this.maxMessagesPerPoll = maxMessagesPerPoll;
+        this.waitTimeSeconds = waitTimeSeconds;
+        this.metricsPollIntervalMs = metricsPollIntervalSeconds * 1000;
     }
 
     @Override
@@ -40,11 +49,11 @@ public class SqsQueueConsumer extends AbstractQueueConsumer {
             try {
                 ReceiveMessageRequest receiveRequest = ReceiveMessageRequest.builder()
                     .queueUrl(queueUrl)
-                    .maxNumberOfMessages(MAX_MESSAGES_PER_POLL)
-                    .waitTimeSeconds(WAIT_TIME_SECONDS)
+                    .maxNumberOfMessages(maxMessagesPerPoll)
+                    .waitTimeSeconds(waitTimeSeconds)
                     .build();
 
-                // This will block for up to WAIT_TIME_SECONDS
+                // This will block for up to waitTimeSeconds
                 ReceiveMessageResponse response = sqsClient.receiveMessage(receiveRequest);
                 List<Message> messages = response.messages();
 
@@ -110,8 +119,7 @@ public class SqsQueueConsumer extends AbstractQueueConsumer {
                     queueMetrics.recordQueueMetrics(queueUrl, pendingMessages, messagesNotVisible);
                 }
 
-                // Poll every 5 seconds
-                Thread.sleep(5000);
+                Thread.sleep(metricsPollIntervalMs);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 break;
@@ -119,7 +127,7 @@ public class SqsQueueConsumer extends AbstractQueueConsumer {
                 if (running.get()) {
                     LOG.error("Error polling SQS queue metrics", e);
                     try {
-                        Thread.sleep(5000); // Back off on error
+                        Thread.sleep(metricsPollIntervalMs); // Back off on error
                     } catch (InterruptedException ie) {
                         Thread.currentThread().interrupt();
                         break;

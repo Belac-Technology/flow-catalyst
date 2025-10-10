@@ -5,6 +5,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import org.jboss.logging.Logger;
 import tech.flowcatalyst.messagerouter.mediator.Mediator;
 import tech.flowcatalyst.messagerouter.model.MediationResult;
+import tech.flowcatalyst.messagerouter.model.MediationType;
 import tech.flowcatalyst.messagerouter.model.MessagePointer;
 
 import java.net.URI;
@@ -19,7 +20,6 @@ import java.util.concurrent.Executors;
 public class DispatchJobMediator implements Mediator {
 
     private static final Logger LOG = Logger.getLogger(DispatchJobMediator.class);
-    private static final String MEDIATION_TYPE = "DISPATCH_JOB";
 
     private final HttpClient httpClient;
 
@@ -68,19 +68,19 @@ public class DispatchJobMediator implements Mediator {
             }
 
         } catch (java.net.http.HttpConnectTimeoutException | java.net.ConnectException e) {
-            LOG.error("Connection error processing dispatch job: " + message.id(), e);
+            LOG.errorf(e, "Connection error processing dispatch job: %s", message.id());
             return MediationResult.ERROR_CONNECTION;
         } catch (java.net.http.HttpTimeoutException e) {
-            LOG.error("Timeout processing dispatch job: " + message.id(), e);
+            LOG.errorf(e, "Timeout processing dispatch job: %s", message.id());
             return MediationResult.ERROR_CONNECTION;
         } catch (Exception e) {
-            LOG.error("Error processing dispatch job: " + message.id(), e);
+            LOG.errorf(e, "Error processing dispatch job: %s", message.id());
             return MediationResult.ERROR_SERVER;
         }
     }
 
     @Override
-    public String getMediationType() {
-        return MEDIATION_TYPE;
+    public MediationType getMediationType() {
+        return MediationType.HTTP;
     }
 }
