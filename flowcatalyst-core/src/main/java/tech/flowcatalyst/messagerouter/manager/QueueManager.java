@@ -61,6 +61,9 @@ public class QueueManager implements MessageCallback {
     MediatorFactory mediatorFactory;
 
     @Inject
+    tech.flowcatalyst.messagerouter.health.QueueValidationService queueValidationService;
+
+    @Inject
     PoolMetricsService poolMetrics;
 
     @Inject
@@ -445,6 +448,13 @@ public class QueueManager implements MessageCallback {
                 }
             }
 
+            // Validate all queues (raises warnings for missing queues but doesn't stop processing)
+            LOG.info("Validating queue accessibility...");
+            List<String> queueIssues = queueValidationService.validateQueues(config.queues());
+            if (!queueIssues.isEmpty()) {
+                LOG.warnf("Found %d queue validation issues - will attempt to create consumers anyway", queueIssues.size());
+            }
+
             // Start consumers for new queues (leave existing ones running)
             for (QueueConfig queueConfig : config.queues()) {
                 String queueIdentifier = queueConfig.queueName() != null
@@ -539,6 +549,7 @@ public class QueueManager implements MessageCallback {
             LOG.warnf("Failed to submit message [%s] to pool [%s] - queue full", message.id(), message.poolCode());
             inPipelineMap.remove(message.id());
             messageCallbacks.remove(message.id());
+            updateMapSizeGauges(); // Update gauges after removing from maps
             warningService.addWarning(
                 "QUEUE_FULL",
                 "WARN",
