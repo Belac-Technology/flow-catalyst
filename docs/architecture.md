@@ -196,13 +196,12 @@ activemq.username=admin
 activemq.password=admin
 
 # Logging (Dev)
-%dev.quarkus.log.console.json=false
 %dev.quarkus.log.console.format=%d{HH:mm:ss} %-5p [%c{2.}] (%t) %s%e%n
 %dev.quarkus.log.level=INFO
 %dev.quarkus.log.category."tech.flowcatalyst".level=DEBUG
 
 # Logging (Prod - Structured JSON)
-%prod.quarkus.log.console.json=true
+%prod.quarkus.log.console.format=json
 %prod.quarkus.log.console.json.pretty-print=false
 %prod.quarkus.log.level=INFO
 %prod.quarkus.log.console.json.additional-field."service.name".value=flow-catalyst
