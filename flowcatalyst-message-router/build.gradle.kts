@@ -17,11 +17,8 @@ dependencies {
     implementation(enforcedPlatform("${quarkusPlatformGroupId}:${quarkusPlatformArtifactId}:${quarkusPlatformVersion}"))
     implementation(enforcedPlatform("${quarkusPlatformGroupId}:quarkus-amazon-services-bom:${quarkusPlatformVersion}"))
 
-    // Auth module
+    // Auth module (for OIDC endpoints)
     implementation(project(":flowcatalyst-auth"))
-
-    // Message Router module (for dispatch job mediation)
-    implementation(project(":flowcatalyst-message-router"))
 
     // REST API
     implementation("io.quarkus:quarkus-rest")
@@ -30,24 +27,22 @@ dependencies {
     implementation("io.quarkus:quarkus-jackson")
     implementation("io.quarkus:quarkus-arc")
 
-    // SQS (for dispatch jobs to send messages)
+    // Message Queues
     implementation("io.quarkiverse.amazonservices:quarkus-amazon-sqs")
+    implementation("software.amazon.awssdk:url-connection-client")
+    implementation("org.apache.activemq:activemq-client:6.1.7")
 
-    // Database & Persistence (Core only)
-    implementation("io.quarkus:quarkus-hibernate-orm-panache")
-    implementation("io.quarkus:quarkus-jdbc-postgresql")
-    implementation("io.quarkus:quarkus-flyway")
-
-    // Resilience & Fault Tolerance
+    // Resilience
     implementation("io.quarkus:quarkus-smallrye-fault-tolerance")
-
-    // Scheduling
-    implementation("io.quarkus:quarkus-scheduler")
+    implementation("io.github.resilience4j:resilience4j-ratelimiter:${resilience4jVersion}")
 
     // Observability
     implementation("io.quarkus:quarkus-micrometer-registry-prometheus")
     implementation("io.micrometer:micrometer-core")
     implementation("io.quarkus:quarkus-logging-json")
+
+    // Scheduling
+    implementation("io.quarkus:quarkus-scheduler")
 
     // OpenAPI
     implementation("io.quarkus:quarkus-smallrye-openapi")
@@ -58,16 +53,13 @@ dependencies {
     // Validation
     implementation("io.quarkus:quarkus-hibernate-validator")
 
-    // TSID for ID generation
-    implementation("com.github.f4b6a3:tsid-creator:5.2.6")
-
     // Testing
     testImplementation("io.quarkus:quarkus-junit5")
     testImplementation("io.quarkus:quarkus-junit5-mockito")
     testImplementation("io.rest-assured:rest-assured")
     testImplementation("org.awaitility:awaitility:4.2.0")
     testImplementation("org.testcontainers:testcontainers:1.19.7")
-    testImplementation("org.testcontainers:postgresql:1.19.7")
+    testImplementation("org.testcontainers:localstack:1.19.7")
     testImplementation("io.quarkus:quarkus-test-common")
 }
 
@@ -79,7 +71,7 @@ java {
     targetCompatibility = JavaVersion.VERSION_21
 }
 
-// Separate unit and integration tests
+// Unit tests (no @QuarkusTest)
 val unitTest = tasks.test.get().apply {
     useJUnitPlatform {
         excludeTags("integration")
@@ -87,14 +79,13 @@ val unitTest = tasks.test.get().apply {
 
     systemProperty("java.util.logging.manager", "org.jboss.logmanager.LogManager")
 
-    // Quarkus tests must run sequentially (they share the same port)
-    // Future: convert true unit tests to not use @QuarkusTest, then enable parallel execution
-    maxParallelForks = 1
-    systemProperty("junit.jupiter.execution.parallel.enabled", "false")
+    // Pure unit tests can run in parallel
+    maxParallelForks = Runtime.getRuntime().availableProcessors()
 }
 
+// Integration tests
 val integrationTest by tasks.registering(Test::class) {
-    description = "Runs integration tests"
+    description = "Runs integration tests for message router"
     group = "verification"
 
     testClassesDirs = sourceSets["test"].output.classesDirs

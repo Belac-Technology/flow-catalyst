@@ -12,6 +12,11 @@ pluginManagement {
 
 rootProject.name = "flowcatalyst"
 
-// Multi-module structure
+// Library modules (reusable components)
 include("flowcatalyst-auth")
+include("flowcatalyst-message-router")
 include("flowcatalyst-core")
+
+// Application modules (runnable applications)
+include("flowcatalyst-router-app")
+include("flowcatalyst-app")
