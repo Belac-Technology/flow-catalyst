@@ -24,10 +24,10 @@ public class LocalConfigResource {
     public MessageRouterConfig getQueueConfig() {
         return new MessageRouterConfig(
             List.of(
-                new QueueConfig(null, "http://localhost:9324/000000000000/flow-catalyst-high-priority.fifo"),
-                new QueueConfig(null, "http://localhost:9324/000000000000/flow-catalyst-medium-priority.fifo"),
-                new QueueConfig(null, "http://localhost:9324/000000000000/flow-catalyst-low-priority.fifo"),
-                new QueueConfig(null, "http://localhost:9324/000000000000/flow-catalyst-dispatch.fifo")
+                new QueueConfig(null, "http://localhost:4566/000000000000/flow-catalyst-high-priority.fifo", null),
+                new QueueConfig(null, "http://localhost:4566/000000000000/flow-catalyst-medium-priority.fifo", null),
+                new QueueConfig(null, "http://localhost:4566/000000000000/flow-catalyst-low-priority.fifo", null),
+                new QueueConfig(null, "http://localhost:4566/000000000000/flow-catalyst-dispatch.fifo", null)
             ),
             1,
             List.of(

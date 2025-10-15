@@ -35,20 +35,42 @@ An `elasticmq.conf` and `docker-compose.yml` are provided for reference if you w
 
 ### Seeding Messages
 
-Send test messages to queues:
+Send test messages to queues using a JSON body:
 
 ```bash
 # Seed 100 messages randomly across queues
-POST http://localhost:8080/api/seed/messages?count=100
+curl -X POST http://localhost:8080/api/seed/messages \
+  -H "Content-Type: application/json" \
+  -d '{"count": 100, "queue": "random", "endpoint": "random"}'
 
 # Seed to specific queue with specific endpoint
-POST http://localhost:8080/api/seed/messages?count=50&queue=high&endpoint=fast
+curl -X POST http://localhost:8080/api/seed/messages \
+  -H "Content-Type: application/json" \
+  -d '{"count": 50, "queue": "high", "endpoint": "fast"}'
+
+# Defaults apply if no body is provided
+curl -X POST http://localhost:8080/api/seed/messages \
+  -H "Content-Type: application/json" \
+  -d '{}'
 ```
 
-Parameters:
-- `count` - Number of messages to send (default: 10)
-- `queue` - Target queue: `high`, `medium`, `low`, or `random` (default: random)
-- `endpoint` - Target endpoint: `fast`, `slow`, `faulty`, `fail`, or `random` (default: random)
+**Request Body (JSON):**
+```json
+{
+  "count": 10,       // Number of messages (default: 10)
+  "queue": "random", // Target queue: "high", "medium", "low", "random", or full queue name (default: "random")
+  "endpoint": "random" // Target endpoint: "fast", "slow", "faulty", "fail", "random", or full URL (default: "random")
+}
+```
+
+**Response:**
+```json
+{
+  "status": "success",
+  "messagesSent": 50,
+  "totalRequested": 50
+}
+```
 
 ### Configuration Endpoint
 

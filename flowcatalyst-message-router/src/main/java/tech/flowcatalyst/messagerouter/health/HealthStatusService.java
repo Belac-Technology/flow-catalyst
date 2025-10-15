@@ -45,6 +45,9 @@ public class HealthStatusService {
     @Inject
     CircuitBreakerMetricsService circuitBreakerMetricsService;
 
+    @Inject
+    tech.flowcatalyst.messagerouter.manager.QueueManager queueManager;
+
     private final long startTimeMillis = System.currentTimeMillis();
 
     public HealthStatus getHealthStatus() {
@@ -62,6 +65,8 @@ public class HealthStatusService {
         Map<String, PoolStats> poolStats = poolMetricsService.getAllPoolStats();
         List<Warning> warnings = warningService.getUnacknowledgedWarnings();
         Map<String, CircuitBreakerStats> circuitBreakers = circuitBreakerMetricsService.getAllCircuitBreakerStats();
+        Map<String, tech.flowcatalyst.messagerouter.manager.QueueManager.QueueConsumerHealth> consumerHealth =
+            queueManager.getConsumerHealthStatus();
 
         int totalQueues = queueStats.size();
         int healthyQueues = 0;
@@ -73,6 +78,10 @@ public class HealthStatusService {
             .count();
         int circuitBreakersOpen = (int) circuitBreakers.values().stream()
             .filter(cb -> "OPEN".equalsIgnoreCase(cb.state()))
+            .count();
+        int totalConsumers = consumerHealth.size();
+        int healthyConsumers = (int) consumerHealth.values().stream()
+            .filter(tech.flowcatalyst.messagerouter.manager.QueueManager.QueueConsumerHealth::isHealthy)
             .count();
 
         List<String> degradationReasons = new ArrayList<>();
@@ -97,6 +106,16 @@ public class HealthStatusService {
             }
         }
 
+        // Check consumer health
+        for (tech.flowcatalyst.messagerouter.manager.QueueManager.QueueConsumerHealth health : consumerHealth.values()) {
+            if (!health.isHealthy()) {
+                long secondsSinceLastPoll = health.timeSinceLastPollMs() > 0 ?
+                    health.timeSinceLastPollMs() / 1000 : -1;
+                degradationReasons.add(String.format("Consumer for queue %s is unhealthy (last poll %ds ago)",
+                    health.queueIdentifier(), secondsSinceLastPoll));
+            }
+        }
+
         // Check warnings
         if (criticalWarnings > 0) {
             degradationReasons.add(String.format("%d critical warnings", criticalWarnings));
@@ -112,7 +131,8 @@ public class HealthStatusService {
             totalQueues, healthyQueues,
             totalPools, healthyPools,
             activeWarnings, criticalWarnings,
-            circuitBreakersOpen
+            circuitBreakersOpen,
+            totalConsumers, healthyConsumers
         );
 
         long uptimeMillis = System.currentTimeMillis() - startTimeMillis;
@@ -140,7 +160,8 @@ public class HealthStatusService {
             int totalQueues, int healthyQueues,
             int totalPools, int healthyPools,
             int activeWarnings, int criticalWarnings,
-            int circuitBreakersOpen) {
+            int circuitBreakersOpen,
+            int totalConsumers, int healthyConsumers) {
 
         // DEGRADED: Critical issues
         if (criticalWarnings > 0) {
@@ -159,6 +180,11 @@ public class HealthStatusService {
             return "DEGRADED";
         }
 
+        // DEGRADED: All consumers are unhealthy (stalled/hung)
+        if (totalConsumers > 0 && healthyConsumers == 0) {
+            return "DEGRADED";
+        }
+
         // WARNING: Some issues but not critical
         if (activeWarnings > MAX_WARNINGS_WARNING) {
             return "WARNING";
@@ -169,6 +195,11 @@ public class HealthStatusService {
         }
 
         if (totalPools > 0 && healthyPools < totalPools) {
+            return "WARNING";
+        }
+
+        // WARNING: Some consumers are unhealthy
+        if (totalConsumers > 0 && healthyConsumers < totalConsumers) {
             return "WARNING";
         }
 

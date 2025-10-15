@@ -2,7 +2,6 @@ package tech.flowcatalyst.messagerouter.endpoint;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import jakarta.annotation.security.PermitAll;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
@@ -16,7 +15,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 @Path("/api/test")
 @Tag(name = "Test Endpoints", description = "Test endpoints for simulating downstream service responses")
-@PermitAll
 public class TestResponseResource {
 
     private static final Logger LOG = Logger.getLogger(TestResponseResource.class);

@@ -37,21 +37,26 @@ services:
       timeout: 5s
       retries: 5
 
-  # ElasticMQ (Local SQS)
-  elasticmq:
-    image: softwaremill/elasticmq:latest
-    container_name: flowcatalyst-elasticmq
+  # LocalStack (Local AWS Services including SQS)
+  localstack:
+    image: localstack/localstack:latest
+    container_name: flowcatalyst-localstack
     ports:
-      - "9324:9324"
-      - "9325:9325"
+      - "4566:4566"            # LocalStack Gateway
+      - "4510-4559:4510-4559"  # External services port range
+    environment:
+      - SERVICES=sqs
+      - DEBUG=0
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - LOCALSTACK_HOST=localhost:4566
     volumes:
-      - ./elasticmq.conf:/opt/elasticmq.conf
-    command: ["-Dconfig.file=/opt/elasticmq.conf"]
+      - "${TMPDIR:-/tmp}/localstack:/var/lib/localstack"
+      - "/var/run/docker.sock:/var/run/docker.sock"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9324"]
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
       interval: 10s
       timeout: 5s
-      retries: 3
+      retries: 5
 
   # ActiveMQ (Alternative message broker)
   activemq:

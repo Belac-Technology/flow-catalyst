@@ -38,6 +38,8 @@ public class ProcessPoolImpl implements ProcessPool {
     private final BlockingQueue<MessagePointer> messageQueue;
     private final Semaphore semaphore;
     private final ExecutorService executorService;
+    private final ScheduledExecutorService gaugeUpdater;
+    private ScheduledFuture<?> gaugeUpdateTask;
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final RateLimiter rateLimiter;  // Pool-level rate limiter (null if not configured)
     private final Mediator mediator;
@@ -75,11 +77,19 @@ public class ProcessPoolImpl implements ProcessPool {
         this.messageQueue = new LinkedBlockingQueue<>(queueCapacity);
         this.semaphore = new Semaphore(concurrency);
         this.executorService = Executors.newVirtualThreadPerTaskExecutor();
+        this.gaugeUpdater = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "gauge-updater-" + poolCode);
+            t.setDaemon(true);
+            return t;
+        });
         this.mediator = mediator;
         this.messageCallback = messageCallback;
         this.inPipelineMap = inPipelineMap;
         this.poolMetrics = poolMetrics;
         this.warningService = warningService;
+
+        // Initialize pool capacity metrics
+        poolMetrics.initializePoolCapacity(poolCode, concurrency, queueCapacity);
 
         // Create pool-level rate limiter if configured
         if (rateLimitPerMinute != null && rateLimitPerMinute > 0) {
@@ -106,6 +116,13 @@ public class ProcessPoolImpl implements ProcessPool {
             for (int i = 0; i < concurrency; i++) {
                 executorService.submit(this::processMessages);
             }
+            // Start periodic gauge updates (every 500ms for responsive metrics)
+            gaugeUpdateTask = gaugeUpdater.scheduleAtFixedRate(
+                this::updateGauges,
+                0,
+                500,
+                TimeUnit.MILLISECONDS
+            );
         }
     }
 
@@ -155,6 +172,13 @@ public class ProcessPoolImpl implements ProcessPool {
 
     @Override
     public void shutdown() {
+        // Stop gauge updates first
+        if (gaugeUpdateTask != null) {
+            gaugeUpdateTask.cancel(false);
+        }
+        gaugeUpdater.shutdown();
+
+        // Then shutdown worker executor
         executorService.shutdown();
         try {
             if (!executorService.awaitTermination(10, TimeUnit.SECONDS)) {
@@ -183,7 +207,6 @@ public class ProcessPoolImpl implements ProcessPool {
             MessagePointer message = null;
             String messageId = null;
             boolean semaphoreAcquired = false;
-            boolean processingStarted = false;
 
             try {
                 // 1. Poll message from queue
@@ -201,6 +224,12 @@ public class ProcessPoolImpl implements ProcessPool {
                 if (shouldRateLimit(message)) {
                     LOG.warn("Rate limit exceeded, nacking message without acquiring semaphore");
                     poolMetrics.recordRateLimitExceeded(poolCode);
+
+                    // Fast-fail: Set 1-second visibility for quick retry if supported
+                    if (messageCallback instanceof tech.flowcatalyst.messagerouter.callback.MessageVisibilityControl visibilityControl) {
+                        visibilityControl.setFastFailVisibility(message);
+                    }
+
                     nackSafely(message);
                     updateGauges(); // Update gauges since we polled from queue
                     continue; // Don't acquire semaphore, move to next message
@@ -211,9 +240,7 @@ public class ProcessPoolImpl implements ProcessPool {
                 semaphore.acquire();
                 semaphoreAcquired = true;
 
-                // 5. Record processing started and update gauges
-                poolMetrics.recordProcessingStarted(poolCode);
-                processingStarted = true;
+                // 5. Update gauges to reflect semaphore acquisition
                 updateGauges();
 
                 // 6. Process message through mediator
@@ -245,7 +272,7 @@ public class ProcessPoolImpl implements ProcessPool {
 
             } finally {
                 // CRITICAL: Cleanup always happens here, regardless of exception path
-                performCleanup(messageId, semaphoreAcquired, processingStarted);
+                performCleanup(messageId, semaphoreAcquired);
             }
         }
     }
@@ -275,6 +302,18 @@ public class ProcessPoolImpl implements ProcessPool {
      * Handle the result of message mediation
      */
     private void handleMediationResult(MessagePointer message, MediationResult result, long durationMs) {
+        // Defensive: mediator should never return null, but guard against it
+        if (result == null) {
+            LOG.errorf("CRITICAL: Mediator returned null result for message [%s], treating as server error", message.id());
+            result = MediationResult.ERROR_SERVER;
+            warningService.addWarning(
+                "MEDIATOR_NULL_RESULT",
+                "CRITICAL",
+                "Mediator returned null result for message " + message.id(),
+                "ProcessPool:" + poolCode
+            );
+        }
+
         MDC.put("result", result.name());
         MDC.put("durationMs", String.valueOf(durationMs));
 
@@ -282,9 +321,29 @@ public class ProcessPoolImpl implements ProcessPool {
             LOG.infof("Message processed successfully");
             poolMetrics.recordProcessingSuccess(poolCode, durationMs);
             messageCallback.ack(message);
+        } else if (result == MediationResult.ERROR_CONFIG) {
+            // Configuration error (404, etc) - ACK to prevent infinite retries
+            LOG.errorf("Configuration error - ACKing message to prevent retry: %s", result);
+            poolMetrics.recordProcessingFailure(poolCode, durationMs, result.name());
+            messageCallback.ack(message);
+
+            // Generate CRITICAL warning for configuration error
+            warningService.addWarning(
+                "CONFIGURATION",
+                "CRITICAL",
+                String.format("Endpoint configuration error for message %s: %s - Target: %s",
+                    message.id(), result, message.mediationTarget()),
+                "ProcessPool:" + poolCode
+            );
         } else {
             LOG.warnf("Mediation failed with result: %s", result);
             poolMetrics.recordProcessingFailure(poolCode, durationMs, result.name());
+
+            // Real processing failure: Reset visibility to default (30s retry)
+            if (messageCallback instanceof tech.flowcatalyst.messagerouter.callback.MessageVisibilityControl visibilityControl) {
+                visibilityControl.resetVisibilityToDefault(message);
+            }
+
             messageCallback.nack(message);
 
             // Generate warning for failed mediation
@@ -337,7 +396,7 @@ public class ProcessPoolImpl implements ProcessPool {
      * Perform cleanup of all resources
      * This method is called in the finally block and must NEVER throw exceptions
      */
-    private void performCleanup(String messageId, boolean semaphoreAcquired, boolean processingStarted) {
+    private void performCleanup(String messageId, boolean semaphoreAcquired) {
         try {
             // 1. Remove message from pipeline map (prevents memory leak)
             if (messageId != null) {
@@ -352,12 +411,7 @@ public class ProcessPoolImpl implements ProcessPool {
                 semaphore.release();
             }
 
-            // 3. Record processing finished (prevents metrics drift)
-            if (processingStarted) {
-                poolMetrics.recordProcessingFinished(poolCode);
-            }
-
-            // 4. Update gauges and clear MDC
+            // 3. Update gauges and clear MDC
             if (semaphoreAcquired) {
                 updateGauges();
             }

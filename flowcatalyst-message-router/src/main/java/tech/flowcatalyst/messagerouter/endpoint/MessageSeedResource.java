@@ -1,7 +1,6 @@
 package tech.flowcatalyst.messagerouter.endpoint;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import jakarta.annotation.security.PermitAll;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.POST;
@@ -21,16 +20,15 @@ import java.util.UUID;
 
 @Path("/api/seed")
 @Tag(name = "Message Seeding", description = "Endpoints for seeding test messages to queues")
-@PermitAll
 public class MessageSeedResource {
 
     private static final Logger LOG = Logger.getLogger(MessageSeedResource.class);
     private static final Random RANDOM = new Random();
 
     private static final String[] QUEUES = {
-        "http://localhost:9324/000000000000/flow-catalyst-high-priority.fifo",
-        "http://localhost:9324/000000000000/flow-catalyst-medium-priority.fifo",
-        "http://localhost:9324/000000000000/flow-catalyst-low-priority.fifo"
+        "http://localhost:4566/000000000000/flow-catalyst-high-priority.fifo",
+        "http://localhost:4566/000000000000/flow-catalyst-medium-priority.fifo",
+        "http://localhost:4566/000000000000/flow-catalyst-low-priority.fifo"
     };
 
     private static final String[] POOL_CODES = {"POOL-HIGH", "POOL-MEDIUM", "POOL-LOW"};
@@ -58,12 +56,13 @@ public class MessageSeedResource {
         try {
             // Use defaults if request is null
             if (request == null) {
-                request = new SeedMessageRequest(10, "random", "random");
+                request = new SeedMessageRequest(10, "random", "random", "1of8");
             }
 
             int count = request.count();
             String queueParam = request.queue();
             String endpointParam = request.endpoint();
+            String messageGroupMode = request.messageGroupMode();
 
             // Warn if seeding a lot of messages with localhost endpoint (potential deadlock)
             if (count > 100 && endpointParam != null &&
@@ -88,7 +87,7 @@ public class MessageSeedResource {
                 );
 
                 String messageBody = objectMapper.writeValueAsString(message);
-                String messageGroupId = "test-group-" + RANDOM.nextInt(10); // 10 different message groups
+                String messageGroupId = selectMessageGroup(messageGroupMode, i);
 
                 SendMessageRequest sqsRequest = SendMessageRequest.builder()
                     .queueUrl(queueUrl)
@@ -167,5 +166,14 @@ public class MessageSeedResource {
     private String getQueueName(String queueUrl) {
         String[] parts = queueUrl.split("/");
         return parts[parts.length - 1];
+    }
+
+    private String selectMessageGroup(String mode, int messageIndex) {
+        return switch (mode.toLowerCase()) {
+            case "unique" -> "msg-" + messageIndex; // Each message gets unique group (max parallelism)
+            case "1of8" -> "group-" + RANDOM.nextInt(8); // Random selection from 8 groups
+            case "single" -> "single-group"; // All messages in same group (strict FIFO ordering)
+            default -> "group-" + RANDOM.nextInt(8); // Default to 1of8
+        };
     }
 }

@@ -221,7 +221,7 @@
             }
 
             initCharts() {
-                // Queue Success Rate Chart
+                // Queue Success Rate Chart - Horizontal
                 const queueSuccessCtx = document.getElementById('queueSuccessChart').getContext('2d');
                 this.charts.queueSuccess = new Chart(queueSuccessCtx, {
                     type: 'bar',
@@ -236,10 +236,11 @@
                         }]
                     },
                     options: {
+                        indexAxis: 'y',
                         responsive: true,
                         maintainAspectRatio: false,
                         scales: {
-                            y: {
+                            x: {
                                 beginAtZero: true,
                                 max: 100,
                                 title: {
@@ -251,7 +252,7 @@
                     }
                 });
 
-                // Pool Success Rate Chart
+                // Pool Success Rate Chart - Horizontal
                 const poolSuccessCtx = document.getElementById('poolSuccessChart').getContext('2d');
                 this.charts.poolSuccess = new Chart(poolSuccessCtx, {
                     type: 'bar',
@@ -266,10 +267,11 @@
                         }]
                     },
                     options: {
+                        indexAxis: 'y',
                         responsive: true,
                         maintainAspectRatio: false,
                         scales: {
-                            y: {
+                            x: {
                                 beginAtZero: true,
                                 max: 100,
                                 title: {
@@ -385,7 +387,7 @@
                 // Queue Success Rate Chart
                 const queueEntries = Object.entries(this.data.queueStats);
                 const queueNames = queueEntries.map(([name, stats]) => this.extractQueueName(stats.name));
-                const queueSuccessRates = queueEntries.map(([name, stats]) => stats.successRate);
+                const queueSuccessRates = queueEntries.map(([name, stats]) => stats.successRate * 100);
 
                 this.charts.queueSuccess.data.labels = queueNames;
                 this.charts.queueSuccess.data.datasets[0].data = queueSuccessRates;
@@ -394,7 +396,7 @@
                 // Pool Success Rate Chart
                 const poolEntries = Object.entries(this.data.poolStats);
                 const poolNames = poolEntries.map(([name, stats]) => stats.poolCode);
-                const poolSuccessRates = poolEntries.map(([name, stats]) => stats.successRate);
+                const poolSuccessRates = poolEntries.map(([name, stats]) => stats.successRate * 100);
 
                 this.charts.poolSuccess.data.labels = poolNames;
                 this.charts.poolSuccess.data.datasets[0].data = poolSuccessRates;
@@ -425,10 +427,10 @@
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-red-600">${stats.totalFailed.toLocaleString()}</td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                             <span class="px-2 py-1 text-xs font-medium rounded-full ${
-                                stats.successRate >= 90 ? 'bg-green-100 text-green-800' :
-                                stats.successRate >= 75 ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'
+                                stats.successRate * 100 >= 90 ? 'bg-green-100 text-green-800' :
+                                stats.successRate * 100 >= 75 ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'
                             }">
-                                ${stats.successRate.toFixed(1)}%
+                                ${(stats.successRate * 100).toFixed(1)}%
                             </span>
                         </td>
                     </tr>
@@ -454,10 +456,10 @@
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-green-600">${stats.totalSucceeded.toLocaleString()}</td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                             <span class="px-2 py-1 text-xs font-medium rounded-full ${
-                                stats.successRate >= 90 ? 'bg-green-100 text-green-800' :
-                                stats.successRate >= 75 ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'
+                                stats.successRate * 100 >= 90 ? 'bg-green-100 text-green-800' :
+                                stats.successRate * 100 >= 75 ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'
                             }">
-                                ${stats.successRate.toFixed(1)}%
+                                ${(stats.successRate * 100).toFixed(1)}%
                             </span>
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${stats.averageProcessingTimeMs.toFixed(0)}ms</td>

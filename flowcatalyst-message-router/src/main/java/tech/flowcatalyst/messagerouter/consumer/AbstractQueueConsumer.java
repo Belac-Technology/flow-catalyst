@@ -14,10 +14,12 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
 public abstract class AbstractQueueConsumer implements QueueConsumer {
 
     private static final Logger LOG = Logger.getLogger(AbstractQueueConsumer.class);
+    private static final long POLL_TIMEOUT_MS = 60_000; // 60 seconds
 
     protected final QueueManager queueManager;
     protected final QueueMetricsService queueMetrics;
@@ -25,6 +27,7 @@ public abstract class AbstractQueueConsumer implements QueueConsumer {
     protected final ObjectMapper objectMapper;
     protected final ExecutorService executorService;
     protected final AtomicBoolean running = new AtomicBoolean(false);
+    protected final AtomicLong lastPollTime = new AtomicLong(0);
     protected final int connections;
 
     protected AbstractQueueConsumer(QueueManager queueManager, QueueMetricsService queueMetrics, WarningService warningService, int connections) {
@@ -176,5 +179,37 @@ public abstract class AbstractQueueConsumer implements QueueConsumer {
      */
     protected void onMessageError(String rawMessage, Exception error) {
         // Default: do nothing, let queue visibility timeout handle it
+    }
+
+    /**
+     * Updates the heartbeat timestamp to indicate the consumer is actively polling.
+     * Subclasses should call this at the start of each poll iteration.
+     */
+    protected void updateHeartbeat() {
+        lastPollTime.set(System.currentTimeMillis());
+    }
+
+    @Override
+    public long getLastPollTime() {
+        return lastPollTime.get();
+    }
+
+    @Override
+    public boolean isHealthy() {
+        // Consumer is unhealthy if:
+        // 1. It has stopped running
+        if (!running.get()) {
+            return false;
+        }
+
+        // 2. It hasn't polled in the last 60 seconds (stalled/hung)
+        long lastPoll = lastPollTime.get();
+        if (lastPoll == 0) {
+            // Never polled - give it grace period if it just started
+            return true;
+        }
+
+        long timeSinceLastPoll = System.currentTimeMillis() - lastPoll;
+        return timeSinceLastPoll < POLL_TIMEOUT_MS;
     }
 }

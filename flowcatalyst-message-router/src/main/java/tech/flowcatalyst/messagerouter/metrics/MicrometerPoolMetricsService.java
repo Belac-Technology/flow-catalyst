@@ -37,29 +37,14 @@ public class MicrometerPoolMetricsService implements PoolMetricsService {
 
     @Override
     public void recordProcessingStarted(String poolCode) {
-        PoolMetricsHolder metrics = getOrCreateMetrics(poolCode);
-        metrics.activeWorkers.incrementAndGet();
+        // No-op: activeWorkers is now tracked directly via updatePoolGauges()
+        // which calculates it from semaphore state to avoid race conditions
     }
 
     @Override
     public void recordProcessingFinished(String poolCode) {
-        PoolMetricsHolder metrics = getOrCreateMetrics(poolCode);
-        int current = metrics.activeWorkers.decrementAndGet();
-
-        // Defensive check - active workers should never go negative
-        if (current < 0) {
-            LOG.errorf("METRICS DRIFT DETECTED: activeWorkers for pool %s is negative: %d. Resetting to 0.",
-                poolCode, current);
-            metrics.activeWorkers.set(0);
-
-            // Add warning
-            warningService.addWarning(
-                "METRICS_DRIFT",
-                "ERROR",
-                "Active workers count went negative for pool " + poolCode,
-                "MicrometerPoolMetricsService"
-            );
-        }
+        // No-op: activeWorkers is now tracked directly via updatePoolGauges()
+        // which calculates it from semaphore state to avoid race conditions
     }
 
     @Override
@@ -94,6 +79,13 @@ public class MicrometerPoolMetricsService implements PoolMetricsService {
     }
 
     @Override
+    public void initializePoolCapacity(String poolCode, int maxConcurrency, int maxQueueCapacity) {
+        PoolMetricsHolder metrics = getOrCreateMetrics(poolCode);
+        metrics.maxConcurrency.set(maxConcurrency);
+        metrics.maxQueueCapacity.set(maxQueueCapacity);
+    }
+
+    @Override
     public void updatePoolGauges(String poolCode, int activeWorkers, int availablePermits, int queueSize) {
         PoolMetricsHolder metrics = getOrCreateMetrics(poolCode);
         metrics.activeWorkers.set(activeWorkers);
@@ -110,7 +102,7 @@ public class MicrometerPoolMetricsService implements PoolMetricsService {
 
         long totalProcessed = (long) (metrics.messagesSucceeded.count() + metrics.messagesFailed.count());
         double successRate = totalProcessed > 0
-            ? (metrics.messagesSucceeded.count() / totalProcessed) * 100
+            ? (metrics.messagesSucceeded.count() / totalProcessed)
             : 0.0;
 
         double avgProcessingTime = totalProcessed > 0

@@ -27,6 +27,7 @@ import tech.flowcatalyst.messagerouter.pool.ProcessPool;
 import tech.flowcatalyst.messagerouter.pool.ProcessPoolImpl;
 import tech.flowcatalyst.messagerouter.warning.WarningService;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -76,6 +77,7 @@ public class QueueManager implements MessageCallback {
     private final ConcurrentHashMap<String, ProcessPool> processPools = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, QueueConsumer> queueConsumers = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, MessageCallback> messageCallbacks = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, QueueConfig> queueConfigs = new ConcurrentHashMap<>();
 
     // Draining resources that are being phased out asynchronously
     private final ConcurrentHashMap<String, ProcessPool> drainingPools = new ConcurrentHashMap<>();
@@ -87,6 +89,7 @@ public class QueueManager implements MessageCallback {
     private AtomicInteger inPipelineMapSizeGauge;
     private AtomicInteger messageCallbacksMapSizeGauge;
     private AtomicInteger activePoolCountGauge;
+    private io.micrometer.core.instrument.Counter defaultPoolUsageCounter;
 
     /**
      * Default constructor for CDI
@@ -162,6 +165,12 @@ public class QueueManager implements MessageCallback {
             "flowcatalyst.queuemanager.pools.active",
             List.of(Tag.of("type", "pools")),
             activePoolCountGauge
+        );
+
+        // Create counter for default pool usage (indicates missing pool configuration)
+        defaultPoolUsageCounter = meterRegistry.counter(
+            "flowcatalyst.queuemanager.defaultpool.usage",
+            List.of(Tag.of("pool", DEFAULT_POOL_CODE))
         );
 
         LOG.infof("QueueManager metrics initialized (max pools: %d, warning threshold: %d)",
@@ -350,6 +359,82 @@ public class QueueManager implements MessageCallback {
             } else {
                 if (LOG.isDebugEnabled()) {
                     LOG.debugf("Consumer [%s] still stopping", queueId);
+                }
+            }
+        }
+    }
+
+    /**
+     * Periodically monitor consumer health and restart stalled/unhealthy consumers
+     * Runs every 60 seconds to detect and remediate hung consumer threads
+     */
+    @Scheduled(every = "60s")
+    void monitorAndRestartUnhealthyConsumers() {
+        if (!initialized) {
+            return;
+        }
+
+        for (Map.Entry<String, QueueConsumer> entry : queueConsumers.entrySet()) {
+            String queueIdentifier = entry.getKey();
+            QueueConsumer consumer = entry.getValue();
+
+            // Check if consumer is unhealthy (stalled/hung)
+            if (!consumer.isHealthy()) {
+                long lastPollTime = consumer.getLastPollTime();
+                long timeSinceLastPoll = lastPollTime > 0 ?
+                    (System.currentTimeMillis() - lastPollTime) / 1000 : -1;
+
+                LOG.warnf("Consumer for queue [%s] is unhealthy (last poll %ds ago) - initiating restart",
+                    queueIdentifier, timeSinceLastPoll);
+
+                // Add warning for visibility
+                warningService.addWarning(
+                    "CONSUMER_RESTART",
+                    "WARN",
+                    String.format("Consumer for queue [%s] was unhealthy (last poll %ds ago) and has been restarted",
+                        queueIdentifier, timeSinceLastPoll),
+                    "QueueManager"
+                );
+
+                try {
+                    // Get the queue configuration for this consumer
+                    QueueConfig queueConfig = queueConfigs.get(queueIdentifier);
+                    if (queueConfig == null) {
+                        LOG.errorf("Cannot restart consumer [%s] - queue configuration not found", queueIdentifier);
+                        continue;
+                    }
+
+                    // Stop the unhealthy consumer
+                    LOG.infof("Stopping unhealthy consumer for queue [%s]", queueIdentifier);
+                    consumer.stop();
+
+                    // Move to draining for cleanup
+                    queueConsumers.remove(queueIdentifier);
+                    drainingConsumers.put(queueIdentifier, consumer);
+
+                    // Calculate connections (same logic as syncConfiguration)
+                    int connections = queueConfig.connections() != null
+                        ? queueConfig.connections()
+                        : 1; // Default to 1 if not specified
+
+                    // Create and start new consumer
+                    LOG.infof("Creating replacement consumer for queue [%s] with %d connections",
+                        queueIdentifier, connections);
+                    QueueConsumer newConsumer = queueConsumerFactory.createConsumer(queueConfig, connections);
+                    newConsumer.start();
+                    queueConsumers.put(queueIdentifier, newConsumer);
+
+                    LOG.infof("Successfully restarted consumer for queue [%s]", queueIdentifier);
+
+                } catch (Exception e) {
+                    LOG.errorf(e, "Failed to restart consumer for queue [%s]", queueIdentifier);
+                    warningService.addWarning(
+                        "CONSUMER_RESTART_FAILED",
+                        "ERROR",
+                        String.format("Failed to restart consumer for queue [%s]: %s",
+                            queueIdentifier, e.getMessage()),
+                        "QueueManager"
+                    );
                 }
             }
         }
@@ -551,6 +636,7 @@ public class QueueManager implements MessageCallback {
 
                     // Move to draining consumers for async cleanup
                     queueConsumers.remove(queueIdentifier);
+                    queueConfigs.remove(queueIdentifier);
                     drainingConsumers.put(queueIdentifier, consumer);
 
                     LOG.infof("Consumer [%s] moved to draining state", queueIdentifier);
@@ -571,12 +657,18 @@ public class QueueManager implements MessageCallback {
                     : queueConfig.queueUri();
 
                 if (!queueConsumers.containsKey(queueIdentifier)) {
-                    LOG.infof("Creating new queue consumer for [%s] with %d connections",
-                        queueIdentifier, config.connections());
+                    // Use per-queue connections if specified, otherwise fallback to global config
+                    int connections = queueConfig.connections() != null
+                        ? queueConfig.connections()
+                        : config.connections();
 
-                    QueueConsumer consumer = queueConsumerFactory.createConsumer(queueConfig, config.connections());
+                    LOG.infof("Creating new queue consumer for [%s] with %d connections",
+                        queueIdentifier, connections);
+
+                    QueueConsumer consumer = queueConsumerFactory.createConsumer(queueConfig, connections);
                     consumer.start();
                     queueConsumers.put(queueIdentifier, consumer);
+                    queueConfigs.put(queueIdentifier, queueConfig);
                 } else {
                     LOG.debugf("Queue consumer for [%s] already running, leaving unchanged", queueIdentifier);
                 }
@@ -726,6 +818,11 @@ public class QueueManager implements MessageCallback {
             LOG.warnf("No process pool found for code [%s], routing message [%s] to default pool",
                 message.poolCode(), message.id());
 
+            // Increment default pool usage counter
+            if (defaultPoolUsageCounter != null) {
+                defaultPoolUsageCounter.increment();
+            }
+
             // Add warning about missing pool
             warningService.addWarning(
                 "ROUTING",
@@ -745,6 +842,12 @@ public class QueueManager implements MessageCallback {
             inPipelineMap.remove(message.id());
             messageCallbacks.remove(message.id());
             updateMapSizeGauges(); // Update gauges after removing from maps
+
+            // Fast-fail: Set 1-second visibility for quick retry if supported
+            if (callback instanceof tech.flowcatalyst.messagerouter.callback.MessageVisibilityControl visibilityControl) {
+                visibilityControl.setFastFailVisibility(message);
+            }
+
             warningService.addWarning(
                 "QUEUE_FULL",
                 "WARN",
@@ -773,6 +876,47 @@ public class QueueManager implements MessageCallback {
         }
         updateMapSizeGauges();
     }
+
+    /**
+     * Gets the health status of all active queue consumers.
+     *
+     * @return map of queue identifier to consumer health status
+     */
+    public Map<String, QueueConsumerHealth> getConsumerHealthStatus() {
+        Map<String, QueueConsumerHealth> healthStatus = new HashMap<>();
+
+        // Check active consumers
+        for (Map.Entry<String, QueueConsumer> entry : queueConsumers.entrySet()) {
+            String queueId = entry.getKey();
+            QueueConsumer consumer = entry.getValue();
+
+            boolean isHealthy = consumer.isHealthy();
+            long lastPollTime = consumer.getLastPollTime();
+            long timeSinceLastPoll = lastPollTime > 0 ?
+                System.currentTimeMillis() - lastPollTime : -1;
+
+            healthStatus.put(queueId, new QueueConsumerHealth(
+                queueId,
+                isHealthy,
+                lastPollTime,
+                timeSinceLastPoll,
+                !consumer.isFullyStopped()
+            ));
+        }
+
+        return healthStatus;
+    }
+
+    /**
+     * Simple record for consumer health status
+     */
+    public record QueueConsumerHealth(
+        String queueIdentifier,
+        boolean isHealthy,
+        long lastPollTimeMs,
+        long timeSinceLastPollMs,
+        boolean isRunning
+    ) {}
 
     private tech.flowcatalyst.messagerouter.model.MediationType determineMediatorType(String poolCode) {
         // Map pool codes to mediator types

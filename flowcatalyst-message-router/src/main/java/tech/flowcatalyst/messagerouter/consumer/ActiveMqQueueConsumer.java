@@ -86,6 +86,9 @@ public class ActiveMqQueueConsumer extends AbstractQueueConsumer {
 
             while (running.get()) {
                 try {
+                    // Update heartbeat to indicate consumer is alive and polling
+                    updateHeartbeat();
+
                     Message jmsMessage = consumer.receive(receiveTimeoutMs);
                     if (jmsMessage instanceof TextMessage textMessage) {
                         String messageBody = textMessage.getText();

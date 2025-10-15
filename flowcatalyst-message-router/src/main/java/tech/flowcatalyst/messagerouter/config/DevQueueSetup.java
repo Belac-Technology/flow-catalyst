@@ -24,11 +24,12 @@ public class DevQueueSetup {
     private static final String[] QUEUE_NAMES = {
         "flow-catalyst-high-priority.fifo",
         "flow-catalyst-medium-priority.fifo",
-        "flow-catalyst-low-priority.fifo"
+        "flow-catalyst-low-priority.fifo",
+        "flow-catalyst-dispatch.fifo"
     };
 
     void onStart(@Observes StartupEvent event) {
-        LOG.info("Dev mode: Checking/creating SQS queues in ElasticMQ");
+        LOG.info("Dev mode: Checking/creating SQS queues in LocalStack");
 
         for (String queueName : QUEUE_NAMES) {
             try {

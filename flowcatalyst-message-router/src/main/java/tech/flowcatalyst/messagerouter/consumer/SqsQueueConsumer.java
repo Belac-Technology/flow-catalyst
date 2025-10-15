@@ -1,13 +1,16 @@
 package tech.flowcatalyst.messagerouter.consumer;
 
 import org.jboss.logging.Logger;
+import software.amazon.awssdk.awscore.AwsRequestOverrideConfiguration;
 import software.amazon.awssdk.services.sqs.SqsClient;
 import software.amazon.awssdk.services.sqs.model.*;
 import tech.flowcatalyst.messagerouter.callback.MessageCallback;
+import tech.flowcatalyst.messagerouter.callback.MessageVisibilityControl;
 import tech.flowcatalyst.messagerouter.manager.QueueManager;
 import tech.flowcatalyst.messagerouter.model.MessagePointer;
 import tech.flowcatalyst.messagerouter.warning.WarningService;
 
+import java.time.Duration;
 import java.util.List;
 
 public class SqsQueueConsumer extends AbstractQueueConsumer {
@@ -47,13 +50,22 @@ public class SqsQueueConsumer extends AbstractQueueConsumer {
     protected void consumeMessages() {
         while (running.get()) {
             try {
+                // Update heartbeat to indicate consumer is alive and polling
+                updateHeartbeat();
+
+                // Configure per-request timeout (25s = 20s long poll + 5s buffer)
+                AwsRequestOverrideConfiguration overrideConfig = AwsRequestOverrideConfiguration.builder()
+                    .apiCallTimeout(Duration.ofSeconds(25))
+                    .build();
+
                 ReceiveMessageRequest receiveRequest = ReceiveMessageRequest.builder()
                     .queueUrl(queueUrl)
                     .maxNumberOfMessages(maxMessagesPerPoll)
                     .waitTimeSeconds(waitTimeSeconds)
+                    .overrideConfiguration(overrideConfig)
                     .build();
 
-                // This will block for up to waitTimeSeconds
+                // This will block for up to 25 seconds (enforced by SDK timeout)
                 ReceiveMessageResponse response = sqsClient.receiveMessage(receiveRequest);
                 List<Message> messages = response.messages();
 
@@ -98,12 +110,18 @@ public class SqsQueueConsumer extends AbstractQueueConsumer {
     protected void pollQueueMetrics() {
         while (running.get()) {
             try {
+                // Configure per-request timeout for metrics polling (10s is plenty)
+                AwsRequestOverrideConfiguration overrideConfig = AwsRequestOverrideConfiguration.builder()
+                    .apiCallTimeout(Duration.ofSeconds(10))
+                    .build();
+
                 GetQueueAttributesRequest request = GetQueueAttributesRequest.builder()
                     .queueUrl(queueUrl)
                     .attributeNames(
                         QueueAttributeName.APPROXIMATE_NUMBER_OF_MESSAGES,
                         QueueAttributeName.APPROXIMATE_NUMBER_OF_MESSAGES_NOT_VISIBLE
                     )
+                    .overrideConfiguration(overrideConfig)
                     .build();
 
                 GetQueueAttributesResponse response = sqsClient.getQueueAttributes(request);
@@ -139,9 +157,9 @@ public class SqsQueueConsumer extends AbstractQueueConsumer {
     }
 
     /**
-     * Inner class for SQS-specific message callback
+     * Inner class for SQS-specific message callback with visibility control
      */
-    private class SqsMessageCallback implements MessageCallback {
+    private class SqsMessageCallback implements MessageCallback, tech.flowcatalyst.messagerouter.callback.MessageVisibilityControl {
         private final String receiptHandle;
 
         SqsMessageCallback(String receiptHandle) {
@@ -172,6 +190,44 @@ public class SqsQueueConsumer extends AbstractQueueConsumer {
             // For SQS, this is a no-op - we rely on visibility timeout
             // Message will become visible again after timeout
             LOG.debugf("Nacked message [%s] - will become visible after timeout", message.id());
+        }
+
+        @Override
+        public void setFastFailVisibility(MessagePointer message) {
+            try {
+                ChangeMessageVisibilityRequest request = ChangeMessageVisibilityRequest.builder()
+                    .queueUrl(queueUrl)
+                    .receiptHandle(receiptHandle)
+                    .visibilityTimeout(1) // 1 second for fast retry
+                    .build();
+
+                sqsClient.changeMessageVisibility(request);
+                LOG.debugf("Set fast-fail visibility (1s) for message [%s]", message.id());
+            } catch (ReceiptHandleIsInvalidException e) {
+                LOG.debugf("Receipt handle invalid for message [%s], cannot change visibility", message.id());
+            } catch (Exception e) {
+                LOG.warnf(e, "Failed to set fast-fail visibility for message [%s]", message.id());
+            }
+        }
+
+        @Override
+        public void resetVisibilityToDefault(MessagePointer message) {
+            try {
+                // Reset to default visibility (30 seconds) for real processing failures
+                // This provides standard retry backoff for downstream errors
+                ChangeMessageVisibilityRequest request = ChangeMessageVisibilityRequest.builder()
+                    .queueUrl(queueUrl)
+                    .receiptHandle(receiptHandle)
+                    .visibilityTimeout(30) // Standard 30-second visibility for real failures
+                    .build();
+
+                sqsClient.changeMessageVisibility(request);
+                LOG.debugf("Reset visibility to 30s for message [%s]", message.id());
+            } catch (ReceiptHandleIsInvalidException e) {
+                LOG.debugf("Receipt handle invalid for message [%s], cannot change visibility", message.id());
+            } catch (Exception e) {
+                LOG.warnf(e, "Failed to reset visibility for message [%s]", message.id());
+            }
         }
     }
 }

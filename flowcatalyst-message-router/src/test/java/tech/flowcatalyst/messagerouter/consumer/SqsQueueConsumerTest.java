@@ -8,6 +8,7 @@ import org.mockito.ArgumentCaptor;
 import software.amazon.awssdk.services.sqs.SqsClient;
 import software.amazon.awssdk.services.sqs.model.*;
 import tech.flowcatalyst.messagerouter.callback.MessageCallback;
+import tech.flowcatalyst.messagerouter.callback.MessageVisibilityControl;
 import tech.flowcatalyst.messagerouter.manager.QueueManager;
 import tech.flowcatalyst.messagerouter.metrics.QueueMetricsService;
 import tech.flowcatalyst.messagerouter.model.MessagePointer;
@@ -255,5 +256,75 @@ class SqsQueueConsumerTest {
             verify(mockQueueMetrics).recordMessageProcessed(queueUrl, false);
             verify(mockQueueManager, never()).routeMessage(any(), any());
         });
+    }
+
+    @Test
+    void shouldSetFastFailVisibilityTo1SecondThenResetTo30Seconds() {
+        // Given
+        String messageBody = """
+            {
+                "id": "msg-visibility",
+                "poolCode": "POOL-A",
+                "authToken": "test-token",
+                "mediationType": "HTTP",
+                "mediationTarget": "http://localhost:8080/test"
+            }
+            """;
+
+        String receiptHandle = "receipt-visibility-123";
+
+        Message sqsMessage = Message.builder()
+            .body(messageBody)
+            .receiptHandle(receiptHandle)
+            .build();
+
+        ReceiveMessageResponse response = ReceiveMessageResponse.builder()
+            .messages(sqsMessage)
+            .build();
+
+        when(mockSqsClient.receiveMessage(any(ReceiveMessageRequest.class)))
+            .thenReturn(response)
+            .thenReturn(ReceiveMessageResponse.builder().messages(List.of()).build());
+
+        ArgumentCaptor<MessageCallback> callbackCaptor = ArgumentCaptor.forClass(MessageCallback.class);
+        when(mockQueueManager.routeMessage(any(), callbackCaptor.capture())).thenReturn(true);
+
+        // When
+        sqsConsumer.start();
+
+        await().untilAsserted(() -> {
+            verify(mockQueueManager).routeMessage(any(), any());
+        });
+
+        MessageCallback callback = callbackCaptor.getValue();
+        MessagePointer testMessage = new MessagePointer("msg-visibility", "POOL-A", "token", MediationType.HTTP, "http://test.com");
+
+        // Verify callback supports visibility control
+        assertTrue(callback instanceof MessageVisibilityControl, "Callback should implement MessageVisibilityControl");
+
+        MessageVisibilityControl visibilityControl = (MessageVisibilityControl) callback;
+
+        // Scenario 1: Rate limit exceeded - set fast-fail visibility (1 second)
+        visibilityControl.setFastFailVisibility(testMessage);
+
+        ArgumentCaptor<ChangeMessageVisibilityRequest> visibilityCaptor1 = ArgumentCaptor.forClass(ChangeMessageVisibilityRequest.class);
+        verify(mockSqsClient, times(1)).changeMessageVisibility(visibilityCaptor1.capture());
+
+        ChangeMessageVisibilityRequest request1 = visibilityCaptor1.getValue();
+        assertEquals(queueUrl, request1.queueUrl());
+        assertEquals(receiptHandle, request1.receiptHandle());
+        assertEquals(1, request1.visibilityTimeout(), "Fast-fail visibility should be 1 second");
+
+        // Scenario 2: Message processed but failed (real error) - reset to default (30 seconds)
+        visibilityControl.resetVisibilityToDefault(testMessage);
+
+        ArgumentCaptor<ChangeMessageVisibilityRequest> visibilityCaptor2 = ArgumentCaptor.forClass(ChangeMessageVisibilityRequest.class);
+        verify(mockSqsClient, times(2)).changeMessageVisibility(visibilityCaptor2.capture());
+
+        // Get the second call (index 1)
+        ChangeMessageVisibilityRequest request2 = visibilityCaptor2.getAllValues().get(1);
+        assertEquals(queueUrl, request2.queueUrl());
+        assertEquals(receiptHandle, request2.receiptHandle());
+        assertEquals(30, request2.visibilityTimeout(), "Reset visibility should be 30 seconds");
     }
 }

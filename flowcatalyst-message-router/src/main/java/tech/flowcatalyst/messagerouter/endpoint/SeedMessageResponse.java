@@ -7,16 +7,16 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record SeedMessageResponse(
 
-    @Schema(description = "Status of the seeding operation", example = "success")
+    @Schema(description = "Status of the seeding operation", examples = {"success"})
     String status,
 
-    @Schema(description = "Number of messages successfully sent", example = "50")
+    @Schema(description = "Number of messages successfully sent", examples = {"50"})
     Integer messagesSent,
 
-    @Schema(description = "Total number of messages requested", example = "50")
+    @Schema(description = "Total number of messages requested", examples = {"50"})
     Integer totalRequested,
 
-    @Schema(description = "Error message if operation failed", example = "Failed to connect to SQS")
+    @Schema(description = "Error message if operation failed", examples = {"Failed to connect to SQS"})
     String message
 ) {
 

@@ -41,6 +41,11 @@ public interface PoolMetricsService {
     void recordRateLimitExceeded(String poolCode);
 
     /**
+     * Initialize pool capacity settings (called once when pool is created)
+     */
+    void initializePoolCapacity(String poolCode, int maxConcurrency, int maxQueueCapacity);
+
+    /**
      * Update gauge metrics for pool state
      */
     void updatePoolGauges(String poolCode, int activeWorkers, int availablePermits, int queueSize);
