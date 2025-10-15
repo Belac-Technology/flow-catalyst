@@ -74,7 +74,7 @@ public class ProcessPoolImpl implements ProcessPool {
         this.poolCode = poolCode;
         this.concurrency = concurrency;
         this.queueCapacity = queueCapacity;
-        this.messageQueue = new LinkedBlockingQueue<>(queueCapacity);
+        this.messageQueue = new ArrayBlockingQueue<>(queueCapacity);
         this.semaphore = new Semaphore(concurrency);
         this.executorService = Executors.newVirtualThreadPerTaskExecutor();
         this.gaugeUpdater = Executors.newSingleThreadScheduledExecutor(r -> {

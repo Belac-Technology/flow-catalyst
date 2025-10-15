@@ -6,6 +6,7 @@ import io.quarkus.runtime.Quarkus;
 import io.quarkus.runtime.ShutdownEvent;
 import io.quarkus.runtime.StartupEvent;
 import io.quarkus.scheduler.Scheduled;
+import io.smallrye.common.annotation.RunOnVirtualThread;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
 import jakarta.inject.Inject;
@@ -265,6 +266,7 @@ public class QueueManager implements MessageCallback {
      * Runs every 30 seconds to detect anomalies early
      */
     @Scheduled(every = "30s")
+    @RunOnVirtualThread
     void checkForMapLeaks() {
         if (!initialized) {
             // Skip check until system is initialized
@@ -321,6 +323,7 @@ public class QueueManager implements MessageCallback {
      * Runs every 10 seconds to check if old resources can be cleaned up
      */
     @Scheduled(every = "10s")
+    @RunOnVirtualThread
     void cleanupDrainingResources() {
         if (!initialized) {
             return;
@@ -369,6 +372,7 @@ public class QueueManager implements MessageCallback {
      * Runs every 60 seconds to detect and remediate hung consumer threads
      */
     @Scheduled(every = "60s")
+    @RunOnVirtualThread
     void monitorAndRestartUnhealthyConsumers() {
         if (!initialized) {
             return;
@@ -441,6 +445,7 @@ public class QueueManager implements MessageCallback {
     }
 
     @Scheduled(every = "${message-router.sync-interval:5m}", delay = 2, delayUnit = java.util.concurrent.TimeUnit.SECONDS)
+    @RunOnVirtualThread
     void scheduledSync() {
         if (!messageRouterEnabled) {
             if (!initialized) {
