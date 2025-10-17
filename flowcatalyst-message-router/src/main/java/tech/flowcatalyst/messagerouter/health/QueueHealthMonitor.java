@@ -40,6 +40,13 @@ public class QueueHealthMonitor {
 
     // Track queue size history for growth detection
     private final Map<String, QueueSizeHistory> queueHistory = new ConcurrentHashMap<>();
+    private volatile boolean shutdownInProgress = false;
+
+    @jakarta.annotation.PreDestroy
+    void onShutdown() {
+        shutdownInProgress = true;
+        LOG.info("QueueHealthMonitor shutting down - scheduled tasks will exit");
+    }
 
     /**
      * Monitor queue health every 30 seconds
@@ -47,7 +54,7 @@ public class QueueHealthMonitor {
     @Scheduled(every = "30s")
     @RunOnVirtualThread
     void monitorQueueHealth() {
-        if (!monitorEnabled) {
+        if (!monitorEnabled || shutdownInProgress) {
             return;
         }
 

@@ -86,6 +86,7 @@ public class QueueManager implements MessageCallback {
     private final ConcurrentHashMap<String, QueueConsumer> drainingConsumers = new ConcurrentHashMap<>();
 
     private volatile boolean initialized = false;
+    private volatile boolean shutdownInProgress = false;
 
     // Gauges for monitoring map sizes to detect memory leaks
     private AtomicInteger inPipelineMapSizeGauge;
@@ -196,6 +197,19 @@ public class QueueManager implements MessageCallback {
 
     void onShutdown(@Observes ShutdownEvent event) {
         LOG.info("QueueManager shutting down...");
+
+        // FIRST: Stop all background scheduled tasks (metrics, health checks, etc.)
+        shutdownInProgress = true;
+        LOG.info("Shutdown flag set - all scheduled tasks will now exit");
+
+        // Give scheduled tasks a moment to exit cleanly
+        try {
+            Thread.sleep(500);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+
+        // Now do the actual shutdown
         stopAllConsumers();
         drainAllPools();
         cleanupRemainingMessages();
@@ -269,8 +283,8 @@ public class QueueManager implements MessageCallback {
     @Scheduled(every = "30s")
     @RunOnVirtualThread
     void checkForMapLeaks() {
-        if (!initialized) {
-            // Skip check until system is initialized
+        if (!initialized || shutdownInProgress) {
+            // Skip check until system is initialized or during shutdown
             return;
         }
 
@@ -326,7 +340,7 @@ public class QueueManager implements MessageCallback {
     @Scheduled(every = "10s")
     @RunOnVirtualThread
     void cleanupDrainingResources() {
-        if (!initialized) {
+        if (!initialized || shutdownInProgress) {
             return;
         }
 
@@ -375,7 +389,7 @@ public class QueueManager implements MessageCallback {
     @Scheduled(every = "60s")
     @RunOnVirtualThread
     void monitorAndRestartUnhealthyConsumers() {
-        if (!initialized) {
+        if (!initialized || shutdownInProgress) {
             return;
         }
 
@@ -448,6 +462,10 @@ public class QueueManager implements MessageCallback {
     @Scheduled(every = "${message-router.sync-interval:5m}", delay = 2, delayUnit = java.util.concurrent.TimeUnit.SECONDS)
     @RunOnVirtualThread
     void scheduledSync() {
+        if (shutdownInProgress) {
+            return;
+        }
+
         if (!messageRouterEnabled) {
             if (!initialized) {
                 LOG.info("Message router is disabled, skipping initialization");
@@ -692,10 +710,10 @@ public class QueueManager implements MessageCallback {
     private void stopAllConsumers() {
         LOG.info("Stopping all queue consumers during shutdown");
 
-        // Move all active consumers to draining state and stop them
+        // Initiate shutdown for ALL consumers (non-blocking, fast)
         for (QueueConsumer consumer : queueConsumers.values()) {
             try {
-                consumer.stop(); // This will initiate graceful shutdown
+                consumer.stop(); // Sets flag and initiates shutdown, returns immediately
                 drainingConsumers.put(consumer.getQueueIdentifier(), consumer);
             } catch (Exception e) {
                 LOG.errorf(e, "Error stopping consumer: %s", consumer.getQueueIdentifier());
@@ -703,10 +721,11 @@ public class QueueManager implements MessageCallback {
         }
         queueConsumers.clear();
 
-        // Wait briefly for consumers to stop (they have their own 30s timeout in stop())
-        LOG.infof("Waiting for %d consumers to finish stopping...", drainingConsumers.size());
+        // Now wait for all consumers to finish in PARALLEL
+        // Max 25s (enough for SQS 20s long poll + small buffer)
+        LOG.infof("Waiting for %d consumers to finish stopping (in parallel)...", drainingConsumers.size());
         long startTime = System.currentTimeMillis();
-        long maxWaitMs = 35_000; // 35 seconds (consumers have 30s internal timeout)
+        long maxWaitMs = 25_000; // 25 seconds for all consumers to naturally complete current polls
 
         while (!drainingConsumers.isEmpty() && (System.currentTimeMillis() - startTime) < maxWaitMs) {
             List<String> stoppedConsumers = new ArrayList<>();
@@ -716,7 +735,7 @@ public class QueueManager implements MessageCallback {
                 QueueConsumer consumer = entry.getValue();
 
                 if (consumer.isFullyStopped()) {
-                    LOG.infof("Consumer [%s] fully stopped during shutdown", queueId);
+                    LOG.debugf("Consumer [%s] fully stopped during shutdown", queueId);
                     stoppedConsumers.add(queueId);
                 }
             }
@@ -738,11 +757,11 @@ public class QueueManager implements MessageCallback {
         }
 
         if (!drainingConsumers.isEmpty()) {
-            LOG.warnf("%d consumers did not fully stop within timeout", drainingConsumers.size());
+            LOG.warnf("%d consumers did not fully stop within 25s, forcing shutdown now", drainingConsumers.size());
             drainingConsumers.clear();
+        } else {
+            LOG.info("All consumers stopped cleanly");
         }
-
-        LOG.info("All consumers stopped");
     }
 
     private void drainAllPools() {

@@ -53,29 +53,12 @@ public abstract class AbstractQueueConsumer implements QueueConsumer {
 
     @Override
     public void stop() {
-        LOG.infof("Stopping consumer for queue [%s] - allowing current polls to complete", getQueueIdentifier());
+        LOG.infof("Stopping consumer for queue [%s] - current polls will complete naturally", getQueueIdentifier());
         running.set(false);
 
-        // Graceful shutdown - let threads finish their current work
+        // Initiate shutdown but don't wait here
+        // QueueManager will wait for all consumers to finish in parallel
         executorService.shutdown();
-
-        try {
-            // Wait for consumers to finish current poll and process remaining messages
-            if (!executorService.awaitTermination(30, TimeUnit.SECONDS)) {
-                LOG.warnf("Consumer threads for queue [%s] did not terminate within 30 seconds, forcing shutdown", getQueueIdentifier());
-                executorService.shutdownNow();
-                // Wait a bit more for forced shutdown
-                if (!executorService.awaitTermination(5, TimeUnit.SECONDS)) {
-                    LOG.errorf("Consumer threads for queue [%s] did not terminate after forced shutdown", getQueueIdentifier());
-                }
-            } else {
-                LOG.infof("Consumer for queue [%s] stopped cleanly", getQueueIdentifier());
-            }
-        } catch (InterruptedException e) {
-            LOG.warnf("Interrupted while stopping consumer for queue [%s], forcing shutdown", getQueueIdentifier());
-            executorService.shutdownNow();
-            Thread.currentThread().interrupt();
-        }
     }
 
     @Override

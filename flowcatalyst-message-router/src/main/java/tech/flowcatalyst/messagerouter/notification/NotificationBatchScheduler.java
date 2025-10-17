@@ -19,12 +19,24 @@ public class NotificationBatchScheduler {
     @Inject
     BatchingNotificationService batchingService;
 
+    private volatile boolean shutdownInProgress = false;
+
+    @jakarta.annotation.PreDestroy
+    void onShutdown() {
+        shutdownInProgress = true;
+        LOG.info("NotificationBatchScheduler shutting down - scheduled tasks will exit");
+    }
+
     /**
      * Trigger batch send every 5 minutes
      */
     @Scheduled(every = "${notification.batch.interval:5m}")
     @RunOnVirtualThread
     void triggerBatchSend() {
+        if (shutdownInProgress) {
+            return;
+        }
+
         try {
             batchingService.sendBatch();
         } catch (Exception e) {
