@@ -76,7 +76,7 @@ curl -X POST http://localhost:8080/api/seed/messages \
 
 The local dev config endpoint is available at:
 ```
-GET http://localhost:8080/api/message-router/queue-config
+GET http://localhost:8080/api/config
 ```
 
 ## Queue Configuration

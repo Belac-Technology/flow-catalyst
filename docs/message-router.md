@@ -6,7 +6,7 @@
 The message router is responsible for polling messages from configured queues and routing them to appropriate processing pools for concurrent processing.
 
 ## Configuration
-On startup, the application fetches queue configuration from a control endpoint: `/api/message-router/queue-config`
+On startup, the application fetches queue configuration from a control endpoint: `/api/config`
 
 ### Configuration Structure
 
@@ -81,12 +81,13 @@ Supported types:
 message-router.queue-type=SQS
 
 # REST Client Configuration
-quarkus.rest-client.message-router-config.url=${MESSAGE_ROUTER_CONFIG_URL:http://localhost:8080}
+# Full URL including path, e.g., http://localhost:8000/api/config
+quarkus.rest-client.message-router-config.url=${MESSAGE_ROUTER_CONFIG_URL:http://localhost:8080/api/config}
 quarkus.rest-client.message-router-config.scope=jakarta.inject.Singleton
 ```
 
 ### Environment Variables
-- `MESSAGE_ROUTER_CONFIG_URL` - Control endpoint URL (defaults to `http://localhost:8080`)
+- `MESSAGE_ROUTER_CONFIG_URL` - Full URL to config endpoint including path (defaults to `http://localhost:8080/api/config`)
 
 ## Local Development
 For local development and testing, a local configuration endpoint is available when running in dev profile (`quarkus:dev`). This endpoint serves default configuration without requiring an external control endpoint.

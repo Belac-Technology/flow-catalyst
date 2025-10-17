@@ -88,7 +88,9 @@ public class HealthStatusService {
 
         // Check queue health
         for (QueueStats stats : queueStats.values()) {
-            if (stats.successRate() >= QUEUE_SUCCESS_THRESHOLD) {
+            // Only check success rate if queue has processed messages
+            // Empty queues (totalConsumed = 0) should not be marked as degraded
+            if (stats.totalConsumed() == 0 || stats.successRate() >= QUEUE_SUCCESS_THRESHOLD) {
                 healthyQueues++;
             } else {
                 degradationReasons.add(String.format("Queue %s has low success rate: %.1f%%",
@@ -98,7 +100,9 @@ public class HealthStatusService {
 
         // Check pool health
         for (PoolStats stats : poolStats.values()) {
-            if (stats.successRate() >= POOL_SUCCESS_THRESHOLD) {
+            // Only check success rate if pool has processed messages
+            // Empty pools (totalProcessed = 0) should not be marked as degraded
+            if (stats.totalProcessed() == 0 || stats.successRate() >= POOL_SUCCESS_THRESHOLD) {
                 healthyPools++;
             } else {
                 degradationReasons.add(String.format("Pool %s has low success rate: %.1f%%",

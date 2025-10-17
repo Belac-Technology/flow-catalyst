@@ -28,10 +28,17 @@ public class HttpMediator implements Mediator {
     private final HttpClient httpClient;
     private final ExecutorService executorService;
 
-    public HttpMediator() {
+    public HttpMediator(@org.eclipse.microprofile.config.inject.ConfigProperty(name = "mediator.http.version", defaultValue = "HTTP_2") String httpVersion) {
         this.executorService = Executors.newVirtualThreadPerTaskExecutor();
+
+        HttpClient.Version version = "HTTP_1_1".equalsIgnoreCase(httpVersion)
+            ? HttpClient.Version.HTTP_1_1
+            : HttpClient.Version.HTTP_2;
+
+        LOG.infof("Initializing HttpMediator with HTTP version: %s", version);
+
         this.httpClient = HttpClient.newBuilder()
-            .version(HttpClient.Version.HTTP_2)
+            .version(version)
             .connectTimeout(Duration.ofSeconds(30))
             .executor(executorService)
             .build();
@@ -71,16 +78,16 @@ public class HttpMediator implements Mediator {
     @Timeout(value = 900000)
     public MediationResult process(MessagePointer message) {
         try {
-            LOG.debugf("Processing message [%s] via HTTP to [%s]", message.id(), message.mediationTarget());
+            String payload = String.format("{\"messageId\":\"%s\"}", message.id());
+            LOG.debugf("Processing message [%s] via HTTP to [%s] with payload: %s",
+                message.id(), message.mediationTarget(), payload);
 
             // Build HTTP request
             HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(message.mediationTarget()))
                 .header("Authorization", "Bearer " + message.authToken())
                 .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(
-                    String.format("{\"messageId\":\"%s\"}", message.id())
-                ))
+                .POST(HttpRequest.BodyPublishers.ofString(payload))
                 .build();
 
             // Send request

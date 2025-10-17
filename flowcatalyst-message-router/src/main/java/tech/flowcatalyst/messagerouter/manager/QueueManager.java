@@ -28,6 +28,7 @@ import tech.flowcatalyst.messagerouter.pool.ProcessPool;
 import tech.flowcatalyst.messagerouter.pool.ProcessPoolImpl;
 import tech.flowcatalyst.messagerouter.warning.WarningService;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -662,10 +663,10 @@ public class QueueManager implements MessageCallback {
                     : queueConfig.queueUri();
 
                 if (!queueConsumers.containsKey(queueIdentifier)) {
-                    // Use per-queue connections if specified, otherwise fallback to global config
+                    // Use per-queue connections if specified, otherwise default to 1
                     int connections = queueConfig.connections() != null
                         ? queueConfig.connections()
-                        : config.connections();
+                        : 1; // Default to 1 connection per queue
 
                     LOG.infof("Creating new queue consumer for [%s] with %d connections",
                         queueIdentifier, connections);
@@ -708,14 +709,21 @@ public class QueueManager implements MessageCallback {
         long maxWaitMs = 35_000; // 35 seconds (consumers have 30s internal timeout)
 
         while (!drainingConsumers.isEmpty() && (System.currentTimeMillis() - startTime) < maxWaitMs) {
+            List<String> stoppedConsumers = new ArrayList<>();
+
             for (Map.Entry<String, QueueConsumer> entry : drainingConsumers.entrySet()) {
                 String queueId = entry.getKey();
                 QueueConsumer consumer = entry.getValue();
 
                 if (consumer.isFullyStopped()) {
                     LOG.infof("Consumer [%s] fully stopped during shutdown", queueId);
-                    drainingConsumers.remove(queueId);
+                    stoppedConsumers.add(queueId);
                 }
+            }
+
+            // Remove stopped consumers after iteration
+            for (String queueId : stoppedConsumers) {
+                drainingConsumers.remove(queueId);
             }
 
             if (!drainingConsumers.isEmpty()) {
@@ -757,6 +765,8 @@ public class QueueManager implements MessageCallback {
         long maxWaitMs = 60_000; // 60 seconds max wait
 
         while (!drainingPools.isEmpty() && (System.currentTimeMillis() - startTime) < maxWaitMs) {
+            List<String> drainedPools = new ArrayList<>();
+
             for (Map.Entry<String, ProcessPool> entry : drainingPools.entrySet()) {
                 String poolCode = entry.getKey();
                 ProcessPool pool = entry.getValue();
@@ -764,8 +774,13 @@ public class QueueManager implements MessageCallback {
                 if (pool.isFullyDrained()) {
                     LOG.infof("Pool [%s] fully drained during shutdown", poolCode);
                     pool.shutdown();
-                    drainingPools.remove(poolCode);
+                    drainedPools.add(poolCode);
                 }
+            }
+
+            // Remove drained pools after iteration
+            for (String poolCode : drainedPools) {
+                drainingPools.remove(poolCode);
             }
 
             if (!drainingPools.isEmpty()) {

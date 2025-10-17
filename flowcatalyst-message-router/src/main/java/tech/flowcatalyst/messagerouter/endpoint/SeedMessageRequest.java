@@ -8,7 +8,7 @@ public record SeedMessageRequest(
 
     @Schema(description = "Number of messages to send (WARNING: >100 to localhost may cause deadlock)",
             defaultValue = "10",
-            examples = {"10", "50", "1000"})
+            examples = {"10", "50", "100", "1000"})
     @JsonProperty(defaultValue = "10")
     Integer count,
 

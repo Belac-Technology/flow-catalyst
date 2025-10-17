@@ -178,6 +178,45 @@ java -jar flowcatalyst-app/build/quarkus-app/quarkus-run.jar
 - Health: http://localhost:8080/health/ready
 - Metrics: http://localhost:8080/metrics
 
+### Running Router App with Dev Profile
+
+The dev profile provides development-friendly settings including LocalStack SQS, human-readable logs, and debug logging.
+
+**For Development (with hot reload):**
+```bash
+# Use the library module - supports hot reload
+# Specify full URL including path
+MESSAGE_ROUTER_CONFIG_URL=http://localhost:8000/api/config \
+  ./gradlew :flowcatalyst-message-router:quarkusDev
+```
+
+**For Running Built JAR (deployment artifact with dev settings):**
+```bash
+# Build the router app first
+./gradlew :flowcatalyst-router-app:build
+
+# Run with dev profile and custom config (full URL with path)
+MESSAGE_ROUTER_CONFIG_URL=http://localhost:8000/api/config QUARKUS_PROFILE=dev \
+  java -jar flowcatalyst-router-app/build/quarkus-app/quarkus-run.jar
+
+# Or using -D flag
+MESSAGE_ROUTER_CONFIG_URL=http://localhost:8000/api/config \
+  java -Dquarkus.profile=dev -jar flowcatalyst-router-app/build/quarkus-app/quarkus-run.jar
+```
+
+**Dev Profile Features:**
+- LocalStack SQS at `localhost:4566` (instead of AWS)
+- Human-readable console logs (not JSON)
+- DEBUG level logging for `tech.flowcatalyst` packages
+- Mock email notifications
+- Local config endpoint (override with `MESSAGE_ROUTER_CONFIG_URL`)
+
+**Common Environment Variables:**
+- `MESSAGE_ROUTER_CONFIG_URL` - Full URL to config endpoint including path (default: `http://localhost:8080/api/config`)
+  - Example: `http://localhost:8000/api/config` or `http://config-service:8080/v1/router/config`
+- `SQS_ENDPOINT_OVERRIDE` - SQS endpoint for dev/testing (default: `http://localhost:4566` in dev profile)
+- `AWS_REGION` - AWS region (default: `us-east-1`)
+
 ### For Production Deployment
 
 ```bash
@@ -282,7 +321,7 @@ docker run -p 8080:8080 \
   -e POSTGRES_URL=jdbc:postgresql://host.docker.internal:5432/flowcatalyst \
   -e POSTGRES_USER=flowcatalyst \
   -e POSTGRES_PASSWORD=flowcatalyst \
-  -e MESSAGE_ROUTER_CONFIG_URL=http://config-service:8080 \
+  -e MESSAGE_ROUTER_CONFIG_URL=http://config-service:8080/api/config \
   -e SQS_ENDPOINT_OVERRIDE=http://sqs:9324 \
   flowcatalyst-app:1.0.0-SNAPSHOT
 ```
@@ -290,7 +329,7 @@ docker run -p 8080:8080 \
 **Router-Only Application:**
 ```bash
 docker run -p 8080:8080 \
-  -e MESSAGE_ROUTER_CONFIG_URL=http://config-service:8080 \
+  -e MESSAGE_ROUTER_CONFIG_URL=http://config-service:8080/api/config \
   -e SQS_ENDPOINT_OVERRIDE=http://sqs:9324 \
   flowcatalyst-router-app:1.0.0-SNAPSHOT
 ```
@@ -315,7 +354,7 @@ services:
       - "8080:8080"
     environment:
       - POSTGRES_URL=jdbc:postgresql://postgres:5432/flowcatalyst
-      - MESSAGE_ROUTER_CONFIG_URL=http://router:8080
+      - MESSAGE_ROUTER_CONFIG_URL=http://router:8080/api/config
     depends_on:
       - postgres
 ```

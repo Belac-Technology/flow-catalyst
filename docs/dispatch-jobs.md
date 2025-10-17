@@ -470,7 +470,7 @@ quarkus.cache.type=caffeine
 ```
 
 ### Message Router Config
-Add to `/api/message-router/queue-config`:
+Add to `/api/config`:
 ```json
 {
   "queues": [

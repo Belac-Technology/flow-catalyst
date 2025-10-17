@@ -13,12 +13,12 @@ import tech.flowcatalyst.messagerouter.config.QueueConfig;
 
 import java.util.List;
 
-@Path("/api/message-router")
+@Path("/api")
 @Tag(name = "Local Configuration", description = "Local configuration endpoint for development and testing")
 public class LocalConfigResource {
 
     @GET
-    @Path("/queue-config")
+    @Path("/config")
     @Produces(MediaType.APPLICATION_JSON)
     @Operation(summary = "Get queue configuration", description = "Returns the default queue configuration for local development")
     public MessageRouterConfig getQueueConfig() {

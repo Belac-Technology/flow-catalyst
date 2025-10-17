@@ -5,7 +5,11 @@ import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.eclipse.microprofile.openapi.annotations.Operation;
+import org.eclipse.microprofile.openapi.annotations.media.Content;
+import org.eclipse.microprofile.openapi.annotations.media.ExampleObject;
+import org.eclipse.microprofile.openapi.annotations.media.Schema;
 import org.eclipse.microprofile.openapi.annotations.parameters.Parameter;
+import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 import tech.flowcatalyst.messagerouter.health.HealthStatusService;
 import tech.flowcatalyst.messagerouter.metrics.CircuitBreakerMetricsService;
@@ -52,6 +56,54 @@ public class MonitoringResource {
     @Path("/queue-stats")
     @Produces(MediaType.APPLICATION_JSON)
     @Operation(summary = "Get queue statistics", description = "Returns statistics for all queues")
+    @APIResponse(
+        responseCode = "200",
+        description = "Queue statistics",
+        content = @Content(
+            mediaType = MediaType.APPLICATION_JSON,
+            schema = @Schema(implementation = QueueStats.class),
+            examples = @ExampleObject(
+                name = "Queue Statistics Example",
+                value = """
+                {
+                  "flow-catalyst-high-priority.fifo": {
+                    "name": "flow-catalyst-high-priority.fifo",
+                    "totalMessages": 150000,
+                    "totalConsumed": 149950,
+                    "totalFailed": 50,
+                    "successRate": 0.9996666666666667,
+                    "currentSize": 500,
+                    "throughput": 25.5,
+                    "pendingMessages": 500,
+                    "messagesNotVisible": 10
+                  },
+                  "flow-catalyst-medium-priority.fifo": {
+                    "name": "flow-catalyst-medium-priority.fifo",
+                    "totalMessages": 85000,
+                    "totalConsumed": 84980,
+                    "totalFailed": 20,
+                    "successRate": 0.9997647058823529,
+                    "currentSize": 150,
+                    "throughput": 15.2,
+                    "pendingMessages": 150,
+                    "messagesNotVisible": 5
+                  },
+                  "flow-catalyst-low-priority.fifo": {
+                    "name": "flow-catalyst-low-priority.fifo",
+                    "totalMessages": 45000,
+                    "totalConsumed": 44995,
+                    "totalFailed": 5,
+                    "successRate": 0.9998888888888889,
+                    "currentSize": 50,
+                    "throughput": 8.1,
+                    "pendingMessages": 50,
+                    "messagesNotVisible": 2
+                  }
+                }
+                """
+            )
+        )
+    )
     public Map<String, QueueStats> getQueueStats() {
         return queueMetricsService.getAllQueueStats();
     }
@@ -60,6 +112,63 @@ public class MonitoringResource {
     @Path("/pool-stats")
     @Produces(MediaType.APPLICATION_JSON)
     @Operation(summary = "Get pool statistics", description = "Returns statistics for all processing pools")
+    @APIResponse(
+        responseCode = "200",
+        description = "Pool statistics",
+        content = @Content(
+            mediaType = MediaType.APPLICATION_JSON,
+            schema = @Schema(implementation = PoolStats.class),
+            examples = @ExampleObject(
+                name = "Pool Statistics Example",
+                value = """
+                {
+                  "POOL-HIGH": {
+                    "poolCode": "POOL-HIGH",
+                    "totalProcessed": 128647,
+                    "totalSucceeded": 128637,
+                    "totalFailed": 10,
+                    "totalRateLimited": 0,
+                    "successRate": 0.9999222679114165,
+                    "activeWorkers": 10,
+                    "availablePermits": 0,
+                    "maxConcurrency": 10,
+                    "queueSize": 500,
+                    "maxQueueCapacity": 500,
+                    "averageProcessingTimeMs": 103.82261537385249
+                  },
+                  "POOL-MEDIUM": {
+                    "poolCode": "POOL-MEDIUM",
+                    "totalProcessed": 65432,
+                    "totalSucceeded": 65425,
+                    "totalFailed": 7,
+                    "totalRateLimited": 0,
+                    "successRate": 0.9998930481283422,
+                    "activeWorkers": 5,
+                    "availablePermits": 0,
+                    "maxConcurrency": 5,
+                    "queueSize": 250,
+                    "maxQueueCapacity": 500,
+                    "averageProcessingTimeMs": 125.5
+                  },
+                  "POOL-LOW": {
+                    "poolCode": "POOL-LOW",
+                    "totalProcessed": 32100,
+                    "totalSucceeded": 32098,
+                    "totalFailed": 2,
+                    "totalRateLimited": 0,
+                    "successRate": 0.9999376947040498,
+                    "activeWorkers": 2,
+                    "availablePermits": 0,
+                    "maxConcurrency": 2,
+                    "queueSize": 75,
+                    "maxQueueCapacity": 500,
+                    "averageProcessingTimeMs": 95.3
+                  }
+                }
+                """
+            )
+        )
+    )
     public Map<String, PoolStats> getPoolStats() {
         return poolMetricsService.getAllPoolStats();
     }
@@ -126,6 +235,51 @@ public class MonitoringResource {
     @Path("/circuit-breakers")
     @Produces(MediaType.APPLICATION_JSON)
     @Operation(summary = "Get circuit breaker statistics", description = "Returns statistics for all circuit breakers")
+    @APIResponse(
+        responseCode = "200",
+        description = "Circuit breaker statistics",
+        content = @Content(
+            mediaType = MediaType.APPLICATION_JSON,
+            schema = @Schema(implementation = CircuitBreakerStats.class),
+            examples = @ExampleObject(
+                name = "Circuit Breaker Statistics Example",
+                value = """
+                {
+                  "http://localhost:8081/api/slow": {
+                    "name": "http://localhost:8081/api/slow",
+                    "state": "CLOSED",
+                    "successfulCalls": 10000,
+                    "failedCalls": 0,
+                    "rejectedCalls": 0,
+                    "failureRate": 0.0,
+                    "bufferedCalls": 100,
+                    "bufferSize": 100
+                  },
+                  "http://localhost:8081/api/faulty": {
+                    "name": "http://localhost:8081/api/faulty",
+                    "state": "HALF_OPEN",
+                    "successfulCalls": 8500,
+                    "failedCalls": 150,
+                    "rejectedCalls": 25,
+                    "failureRate": 0.017341040462428,
+                    "bufferedCalls": 100,
+                    "bufferSize": 100
+                  },
+                  "https://api.example.com/endpoint": {
+                    "name": "https://api.example.com/endpoint",
+                    "state": "OPEN",
+                    "successfulCalls": 5000,
+                    "failedCalls": 500,
+                    "rejectedCalls": 1500,
+                    "failureRate": 0.09090909090909091,
+                    "bufferedCalls": 100,
+                    "bufferSize": 100
+                  }
+                }
+                """
+            )
+        )
+    )
     public Map<String, CircuitBreakerStats> getCircuitBreakerStats() {
         return circuitBreakerMetricsService.getAllCircuitBreakerStats();
     }

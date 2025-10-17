@@ -1,6 +1,7 @@
 plugins {
     java
     id("io.quarkus")
+    id("org.kordamp.gradle.jandex") version "2.0.0"
 }
 
 repositories {
@@ -40,6 +41,9 @@ dependencies {
 
     // Scheduling
     implementation("io.quarkus:quarkus-scheduler")
+
+    // Notifications
+    implementation("io.quarkus:quarkus-mailer")
 
     // OpenAPI
     implementation("io.quarkus:quarkus-smallrye-openapi")

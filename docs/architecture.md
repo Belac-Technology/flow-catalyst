@@ -156,7 +156,7 @@ Release Semaphore & remove from pipeline map
 
 ### Message Router Config (from control endpoint)
 
-**Endpoint:** `/api/message-router/queue-config`
+**Endpoint:** `/api/config`
 
 **Response:**
 ```json

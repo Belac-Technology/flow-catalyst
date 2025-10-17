@@ -8,11 +8,9 @@ import org.eclipse.microprofile.rest.client.inject.RegisterRestClient;
 import tech.flowcatalyst.messagerouter.config.MessageRouterConfig;
 
 @RegisterRestClient(configKey = "message-router-config")
-@Path("/api/message-router")
 public interface MessageRouterConfigClient {
 
     @GET
-    @Path("/queue-config")
     @Produces(MediaType.APPLICATION_JSON)
     MessageRouterConfig getQueueConfig();
 }
