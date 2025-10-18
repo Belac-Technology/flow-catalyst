@@ -28,6 +28,7 @@ dependencies {
     // Message Queues
     implementation("io.quarkiverse.amazonservices:quarkus-amazon-sqs")
     implementation("software.amazon.awssdk:url-connection-client")
+    implementation("software.amazon.awssdk:netty-nio-client") // Required for SqsAsyncClient
     implementation("org.apache.activemq:activemq-client:6.1.7")
 
     // Resilience

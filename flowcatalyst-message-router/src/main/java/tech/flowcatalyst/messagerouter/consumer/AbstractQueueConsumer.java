@@ -43,11 +43,19 @@ public abstract class AbstractQueueConsumer implements QueueConsumer {
     public void start() {
         if (running.compareAndSet(false, true)) {
             LOG.infof("Starting consumer for queue [%s] with %d connections", getQueueIdentifier(), connections);
-            for (int i = 0; i < connections; i++) {
-                executorService.submit(this::consumeMessages);
-            }
+            startConsumption();
             // Start queue metrics polling if supported
             executorService.submit(this::pollQueueMetrics);
+        }
+    }
+
+    /**
+     * Start the consumption process. Subclasses can override to control threading model.
+     * Default implementation creates N threads that each call consumeMessages().
+     */
+    protected void startConsumption() {
+        for (int i = 0; i < connections; i++) {
+            executorService.submit(this::consumeMessages);
         }
     }
 
