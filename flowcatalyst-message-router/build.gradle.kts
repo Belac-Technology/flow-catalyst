@@ -80,8 +80,8 @@ val unitTest = tasks.test.get().apply {
 
     systemProperty("java.util.logging.manager", "org.jboss.logmanager.LogManager")
 
-    // Pure unit tests can run in parallel
-    maxParallelForks = Runtime.getRuntime().availableProcessors()
+    // Disable parallel execution - @QuarkusTest classes share ports and can't run in parallel
+    maxParallelForks = 1
 }
 
 // Integration tests
