@@ -1,0 +1,334 @@
+name: Build Native Images
+
+on:
+  push:
+    branches: [ main ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      chronicle_enabled:
+        description: 'Build with Chronicle Queue (developer build)'
+        required: false
+        default: 'true'
+        type: boolean
+
+env:
+  JAVA_VERSION: '21'
+  GRAALVM_VERSION: '21'
+
+jobs:
+  build-linux:
+    name: Build Linux Native Image
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup GraalVM
+        uses: graalvm/setup-graalvm@v1
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'graalvm'
+          components: 'native-image'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          cache: 'gradle'
+
+      - name: Print GraalVM version
+        run: |
+          echo "GRAALVM_HOME: $GRAALVM_HOME"
+          echo "JAVA_HOME: $JAVA_HOME"
+          java --version
+          native-image --version
+
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+
+      - name: Build Native Image (with Chronicle)
+        if: ${{ github.event.inputs.chronicle_enabled != 'false' }}
+        run: |
+          ./gradlew :flowcatalyst-message-router:build -Dquarkus.package.type=native \
+            -Dquarkus.profile=chronicle-dev \
+            -Dquarkus.native.additional-build-args="--verbose"
+
+      - name: Build Native Image (production)
+        if: ${{ github.event.inputs.chronicle_enabled == 'false' }}
+        run: |
+          ./gradlew :flowcatalyst-message-router:build -Dquarkus.package.type=native \
+            -Dquarkus.native.additional-build-args="--verbose"
+
+      - name: Test Native Binary
+        run: |
+          BINARY="flowcatalyst-message-router/build/flowcatalyst-message-router-1.0.0-SNAPSHOT-runner"
+          if [ -f "$BINARY" ]; then
+            file "$BINARY"
+            ls -lh "$BINARY"
+            chmod +x "$BINARY"
+            # Quick test that binary can start
+            timeout 10s "$BINARY" --help || true
+          else
+            echo "Binary not found!"
+            ls -la flowcatalyst-message-router/build/
+            exit 1
+          fi
+
+      - name: Rename binary
+        run: |
+          cd flowcatalyst-message-router/build
+          mv flowcatalyst-message-router-1.0.0-SNAPSHOT-runner flowcatalyst-message-router-linux-amd64
+
+      - name: Upload Linux Binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: flowcatalyst-message-router-linux-amd64
+          path: flowcatalyst-message-router/build/flowcatalyst-message-router-linux-amd64
+          retention-days: 30
+
+  build-windows:
+    name: Build Windows Native Image
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup GraalVM
+        uses: graalvm/setup-graalvm@v1
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'graalvm'
+          components: 'native-image'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          cache: 'gradle'
+
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Print GraalVM version
+        run: |
+          echo "GRAALVM_HOME: $env:GRAALVM_HOME"
+          echo "JAVA_HOME: $env:JAVA_HOME"
+          java --version
+          native-image --version
+
+      - name: Build Native Image (with Chronicle)
+        if: ${{ github.event.inputs.chronicle_enabled != 'false' }}
+        run: |
+          .\gradlew.bat :flowcatalyst-message-router:build -Dquarkus.package.type=native `
+            -Dquarkus.profile=chronicle-dev `
+            -Dquarkus.native.additional-build-args="--verbose"
+
+      - name: Build Native Image (production)
+        if: ${{ github.event.inputs.chronicle_enabled == 'false' }}
+        run: |
+          .\gradlew.bat :flowcatalyst-message-router:build -Dquarkus.package.type=native `
+            -Dquarkus.native.additional-build-args="--verbose"
+
+      - name: Test Native Binary
+        shell: pwsh
+        run: |
+          $binary = "flowcatalyst-message-router\build\flowcatalyst-message-router-1.0.0-SNAPSHOT-runner.exe"
+          if (Test-Path $binary) {
+            Write-Host "Binary found: $binary"
+            Get-Item $binary | Select-Object Name, Length, LastWriteTime
+            # Quick test that binary can start (will timeout but that's ok)
+            Start-Process -FilePath $binary -ArgumentList "--help" -NoNewWindow -Wait -TimeoutSec 10 -ErrorAction SilentlyContinue
+          } else {
+            Write-Host "Binary not found!"
+            Get-ChildItem -Path "flowcatalyst-message-router\build\" -Recurse
+            exit 1
+          }
+
+      - name: Rename binary
+        shell: pwsh
+        run: |
+          cd flowcatalyst-message-router\build
+          Move-Item -Path "flowcatalyst-message-router-1.0.0-SNAPSHOT-runner.exe" -Destination "flowcatalyst-message-router-windows-amd64.exe"
+
+      - name: Upload Windows Binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: flowcatalyst-message-router-windows-amd64
+          path: flowcatalyst-message-router\build\flowcatalyst-message-router-windows-amd64.exe
+          retention-days: 30
+
+  build-macos:
+    name: Build macOS Native Image
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup GraalVM
+        uses: graalvm/setup-graalvm@v1
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'graalvm'
+          components: 'native-image'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          cache: 'gradle'
+
+      - name: Print GraalVM version
+        run: |
+          echo "GRAALVM_HOME: $GRAALVM_HOME"
+          echo "JAVA_HOME: $JAVA_HOME"
+          java --version
+          native-image --version
+
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+
+      - name: Build Native Image (with Chronicle)
+        if: ${{ github.event.inputs.chronicle_enabled != 'false' }}
+        run: |
+          ./gradlew :flowcatalyst-message-router:build -Dquarkus.package.type=native \
+            -Dquarkus.profile=chronicle-dev \
+            -Dquarkus.native.additional-build-args="--verbose"
+
+      - name: Build Native Image (production)
+        if: ${{ github.event.inputs.chronicle_enabled == 'false' }}
+        run: |
+          ./gradlew :flowcatalyst-message-router:build -Dquarkus.package.type=native \
+            -Dquarkus.native.additional-build-args="--verbose"
+
+      - name: Test Native Binary
+        run: |
+          BINARY="flowcatalyst-message-router/build/flowcatalyst-message-router-1.0.0-SNAPSHOT-runner"
+          if [ -f "$BINARY" ]; then
+            file "$BINARY"
+            ls -lh "$BINARY"
+            chmod +x "$BINARY"
+            # Quick test that binary can start
+            timeout 10s "$BINARY" --help || true
+          else
+            echo "Binary not found!"
+            ls -la flowcatalyst-message-router/build/
+            exit 1
+          fi
+
+      - name: Rename binary
+        run: |
+          cd flowcatalyst-message-router/build
+          mv flowcatalyst-message-router-1.0.0-SNAPSHOT-runner flowcatalyst-message-router-macos-amd64
+
+      - name: Upload macOS Binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: flowcatalyst-message-router-macos-amd64
+          path: flowcatalyst-message-router/build/flowcatalyst-message-router-macos-amd64
+          retention-days: 30
+
+  create-release:
+    name: Create Release
+    needs: [build-linux, build-windows, build-macos]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./binaries
+
+      - name: Display structure
+        run: ls -R ./binaries
+
+      - name: Create checksums
+        run: |
+          cd binaries
+          for dir in */; do
+            cd "$dir"
+            for file in *; do
+              sha256sum "$file" > "$file.sha256"
+            done
+            cd ..
+          done
+          cd ..
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            binaries/flowcatalyst-message-router-linux-amd64/*
+            binaries/flowcatalyst-message-router-windows-amd64/*
+            binaries/flowcatalyst-message-router-macos-amd64/*
+          body: |
+            ## FlowCatalyst Message Router - Native Binaries
+
+            ### Downloads
+            - **Linux**: `flowcatalyst-message-router-linux-amd64`
+            - **Windows**: `flowcatalyst-message-router-windows-amd64.exe`
+            - **macOS**: `flowcatalyst-message-router-macos-amd64`
+
+            ### Chronicle Queue (Developer Build)
+            This build includes embedded Chronicle Queue for zero-configuration development.
+
+            ### Quick Start
+            ```bash
+            # Linux/macOS
+            chmod +x flowcatalyst-message-router-*-amd64
+            ./flowcatalyst-message-router-*-amd64
+
+            # Windows
+            .\flowcatalyst-message-router-windows-amd64.exe
+            ```
+
+            ### Verify Checksums
+            ```bash
+            sha256sum -c flowcatalyst-message-router-*-amd64.sha256
+            ```
+
+            See [CHRONICLE_QUEUE_API.md](./flowcatalyst-message-router/CHRONICLE_QUEUE_API.md) for API documentation.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  summary:
+    name: Build Summary
+    needs: [build-linux, build-windows, build-macos]
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./binaries
+
+      - name: Generate Summary
+        run: |
+          echo "## Native Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Platform | Status | Size |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|--------|------|" >> $GITHUB_STEP_SUMMARY
+
+          if [ -f "binaries/flowcatalyst-message-router-linux-amd64/flowcatalyst-message-router-linux-amd64" ]; then
+            SIZE=$(ls -lh binaries/flowcatalyst-message-router-linux-amd64/flowcatalyst-message-router-linux-amd64 | awk '{print $5}')
+            echo "| Linux (amd64) | ✅ Success | $SIZE |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Linux (amd64) | ❌ Failed | - |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ -f "binaries/flowcatalyst-message-router-windows-amd64/flowcatalyst-message-router-windows-amd64.exe" ]; then
+            SIZE=$(ls -lh binaries/flowcatalyst-message-router-windows-amd64/flowcatalyst-message-router-windows-amd64.exe | awk '{print $5}')
+            echo "| Windows (amd64) | ✅ Success | $SIZE |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Windows (amd64) | ❌ Failed | - |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ -f "binaries/flowcatalyst-message-router-macos-amd64/flowcatalyst-message-router-macos-amd64" ]; then
+            SIZE=$(ls -lh binaries/flowcatalyst-message-router-macos-amd64/flowcatalyst-message-router-macos-amd64 | awk '{print $5}')
+            echo "| macOS (amd64) | ✅ Success | $SIZE |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| macOS (amd64) | ❌ Failed | - |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Download Artifacts" >> $GITHUB_STEP_SUMMARY
+          echo "Binaries are available in the workflow artifacts section above." >> $GITHUB_STEP_SUMMARY

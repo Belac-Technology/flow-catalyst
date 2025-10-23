@@ -12,11 +12,12 @@ pluginManagement {
 
 rootProject.name = "flowcatalyst"
 
-// Library modules (reusable components)
-include("flowcatalyst-auth")
-include("flowcatalyst-message-router")
-include("flowcatalyst-core")
+// Core Platform Modules (Java/Quarkus)
+include("core:flowcatalyst-auth")
+include("core:flowcatalyst-message-router")
+include("core:flowcatalyst-core")
+include("core:flowcatalyst-router-app")
+include("core:flowcatalyst-app")
 
-// Application modules (runnable applications)
-include("flowcatalyst-router-app")
-include("flowcatalyst-app")
+// Control Plane BFFE
+include("core:flowcatalyst-control-plane-bffe")

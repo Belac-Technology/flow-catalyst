@@ -1,601 +1,291 @@
-# Flow Catalyst
+# FlowCatalyst
 
-Flow Catalyst is a high-performance message routing and webhook dispatch platform built with Quarkus and Java 21 virtual threads.
+**Open Source Platform for Building Event-Driven, Domain-Oriented Applications**
+
+FlowCatalyst is a high-performance message routing and webhook dispatch platform built with Quarkus and Java 21 virtual threads. It provides the core infrastructure for building event-driven applications with reliable message processing, webhook delivery, and platform management tools.
+
+## Platform Overview
+
+FlowCatalyst is designed as an **open source platform** with opt-in components:
+
+### Core Platform (Java/Quarkus)
+The runtime services that power event-driven applications:
+- **Message Router** - High-throughput message processing with SQS/ActiveMQ
+- **Core Services** - Dispatch jobs, webhooks, and database persistence
+- **Authentication** - OIDC-based security (optional)
+- **Control Plane BFFE** - Backend for platform management UI
+
+### Client SDKs
+Multi-language support for platform integration:
+- **TypeScript/JavaScript** - `@flowcatalyst/sdk` (npm)
+- **Python** - `flowcatalyst-sdk` (PyPI)
+- **Go** - `github.com/yourusername/flowcatalyst-sdk-go`
+- **Java** - Built into platform modules
+
+### UI Components (Optional)
+Reusable Vue 3 components for building platform UIs:
+- **Component Library** - `@flowcatalyst/ui-components` (npm)
+- Built with Vue 3, TypeScript, and Tailwind CSS
+- Ready for Tailwind UI Plus integration
+
+### Platform Applications
+Reference applications for platform management:
+- **Control Plane** - Manage event types, subscriptions, and dispatch jobs
+- **Monitoring Dashboard** - Real-time metrics and health status
+
+## Repository Structure
+
+```
+flowcatalyst/
+├── core/                          # Java/Quarkus platform modules
+│   ├── flowcatalyst-core/        # Dispatch jobs, webhooks, persistence
+│   ├── flowcatalyst-message-router/  # Message routing engine
+│   ├── flowcatalyst-auth/        # OIDC authentication
+│   ├── flowcatalyst-router-app/  # Router-only deployment
+│   ├── flowcatalyst-app/         # Full-stack deployment
+│   └── flowcatalyst-control-plane-bffe/  # Control plane backend
+│
+├── clients/                       # Client SDKs
+│   ├── typescript/flowcatalyst-sdk/   # TypeScript/JS SDK
+│   ├── python/flowcatalyst-sdk/       # Python SDK
+│   └── go/flowcatalyst-sdk/           # Go SDK
+│
+└── packages/                      # Frontend packages (Bun workspace)
+    ├── ui-components/            # Shared Vue 3 component library
+    └── control-plane/            # Control plane Vue application
+```
 
 ## Key Features
 
-- **Message Router** - Process messages from SQS/ActiveMQ with concurrency control and rate limiting
-- **Dispatch Jobs** - Reliable webhook delivery with HMAC signing, retries, and full audit trail
-- **Virtual Threads** - Efficient I/O handling using Java 21 virtual threads
-- **Real-time Monitoring** - Dashboard for queue stats, pool metrics, and health status
-- **Modular Architecture** - Deploy router standalone, full-stack, or as microservices
+- **High Performance** - Java 21 virtual threads for efficient I/O handling
+- **Message Group FIFO Ordering** - Strict ordering per business entity, concurrent across entities (see [MESSAGE_GROUP_FIFO.md](docs/MESSAGE_GROUP_FIFO.md))
+- **Modular Architecture** - Use only what you need
+- **Multi-Language SDKs** - TypeScript, Python, Go, and Java support
+- **Reliable Delivery** - HMAC signing, retries, and full audit trail
+- **Real-time Monitoring** - Dashboard for queue stats and health status
+- **Flexible Deployment** - Standalone router, full-stack, or microservices
+
+## Quick Start
+
+### Running the Platform
+
+**Prerequisites:**
+- Java 21+
+- PostgreSQL 16+ (for full mode)
+- SQS (AWS or ElasticMQ) or ActiveMQ
+
+**Start Core Services:**
+```bash
+# Full-stack platform (router + core + webhooks)
+./gradlew :core:flowcatalyst-app:quarkusDev
+
+# Router-only (no database required)
+./gradlew :core:flowcatalyst-router-app:quarkusDev
+```
+
+**Start Control Plane:**
+```bash
+# Control plane (management UI + API)
+./gradlew :core:flowcatalyst-control-plane-bffe:quarkusDev
+# Visit http://localhost:8080
+```
+
+### Using the SDKs
+
+**TypeScript/JavaScript:**
+```bash
+npm install @flowcatalyst/sdk
+```
+
+```typescript
+import { FlowCatalystClient } from '@flowcatalyst/sdk'
+
+const client = new FlowCatalystClient({
+  baseUrl: 'http://localhost:8080',
+})
+
+const { data: eventTypes } = await client.getEventTypes()
+```
+
+**Python:**
+```bash
+pip install flowcatalyst-sdk
+```
+
+```python
+from flowcatalyst import FlowCatalystClient
+
+client = FlowCatalystClient(base_url="http://localhost:8080")
+event_types = client.get_event_types()
+```
+
+**Go:**
+```bash
+go get github.com/yourusername/flowcatalyst-sdk-go
+```
+
+```go
+import flowcatalyst "github.com/yourusername/flowcatalyst-sdk-go"
+
+client := flowcatalyst.NewClient(flowcatalyst.Config{
+    BaseURL: "http://localhost:8080",
+})
+eventTypes, _ := client.GetEventTypes()
+```
+
+### Using UI Components
+
+```bash
+npm install @flowcatalyst/ui-components
+```
+
+```vue
+<script setup lang="ts">
+import { Button, Card } from '@flowcatalyst/ui-components'
+import '@flowcatalyst/ui-components/style.css'
+</script>
+
+<template>
+  <Card variant="elevated">
+    <template #header>My Application</template>
+    <Button variant="primary">Action</Button>
+  </Card>
+</template>
+```
+
+## Development
+
+### Backend Development
+
+```bash
+# Message router development (no database)
+./gradlew :core:flowcatalyst-message-router:quarkusDev
+
+# Core platform development
+./gradlew :core:flowcatalyst-core:quarkusDev
+
+# Full-stack development
+./gradlew :core:flowcatalyst-app:quarkusDev
+```
+
+### Frontend Development
+
+```bash
+cd packages
+
+# Install dependencies
+bun install
+
+# Develop UI components
+bun run ui:dev
+
+# Develop control plane app
+bun run control-plane:dev
+
+# Or run integrated with backend
+./gradlew :core:flowcatalyst-control-plane-bffe:quarkusDev
+```
+
+### Client SDK Development
+
+**TypeScript:**
+```bash
+cd clients/typescript/flowcatalyst-sdk
+npm install
+npm run dev
+```
+
+**Python:**
+```bash
+cd clients/python/flowcatalyst-sdk
+pip install -e ".[dev]"
+```
+
+**Go:**
+```bash
+cd clients/go/flowcatalyst-sdk
+go build
+```
 
 ## Architecture
 
-Flow Catalyst uses a modular architecture with **library modules** (reusable components) and **application modules** (deployment bundles):
+### Platform Modules (Core)
 
 **Library Modules:**
-- `flowcatalyst-auth` - OIDC authentication and security
 - `flowcatalyst-message-router` - Stateless message routing (no database)
 - `flowcatalyst-core` - Dispatch jobs, webhooks, database persistence
+- `flowcatalyst-auth` - OIDC authentication and security
 
 **Application Modules:**
 - `flowcatalyst-router-app` - Router-only deployment (lightweight, stateless)
 - `flowcatalyst-app` - Full-stack deployment (router + core)
+- `flowcatalyst-control-plane-bffe` - Control plane backend + UI
 
-This design enables:
-- **Independent Scaling** - Scale router and core separately
-- **Flexible Deployment** - Deploy only what you need
-- **Clean Dependencies** - Clear separation of concerns
-- **Hot Reload** - Works across all modules in dev mode
+### Publishing Model
+
+FlowCatalyst components are published separately:
+
+**Java Modules** → Maven Central
+- `tech.flowcatalyst:flowcatalyst-core`
+- `tech.flowcatalyst:flowcatalyst-message-router`
+- `tech.flowcatalyst:flowcatalyst-auth`
+
+**Client SDKs** → npm, PyPI, Go modules
+- `@flowcatalyst/sdk` (npm)
+- `flowcatalyst-sdk` (PyPI)
+- `github.com/yourusername/flowcatalyst-sdk-go` (Go)
+
+**UI Components** → npm
+- `@flowcatalyst/ui-components`
+
+**Platform Apps** → Docker Hub
+- `flowcatalyst/control-plane`
+- `flowcatalyst/message-router`
+
+## Building Your Application
+
+External applications integrate with FlowCatalyst by:
+
+1. **Running the platform** - Deploy router and core services
+2. **Using client SDKs** - Integrate with your language of choice
+3. **Optional UI components** - Build management UIs with shared components
+
+**Example: Building an Event-Driven App**
+```bash
+# 1. Run FlowCatalyst platform
+docker run -p 8080:8080 flowcatalyst/message-router
+
+# 2. Integrate with SDK (TypeScript example)
+npm install @flowcatalyst/sdk
+
+# 3. Build your app
+# Your app connects to FlowCatalyst via SDK
+```
 
 ## Documentation
 
-- **[Architecture](docs/architecture.md)** - System architecture and components
-- **[Database Strategy](docs/database-strategy.md)** - Database design decisions and future plans
-- **[Dispatch Jobs](docs/dispatch-jobs.md)** - Webhook delivery system details
+- **[Developer Guide](DEVELOPER_GUIDE.md)** - Complete development guide
+- **[Build Quick Reference](BUILD_QUICK_REFERENCE.md)** - Common build commands
+- **[Architecture](docs/architecture.md)** - System architecture
 - **[Testing Guide](docs/TESTING.md)** - Integration and unit testing
 
-## Quick Start
+### Component-Specific Documentation
+- **[UI Components](packages/ui-components/README.md)** - Vue component library
+- **[Control Plane](packages/control-plane/README.md)** - Management UI
+- **[TypeScript SDK](clients/typescript/flowcatalyst-sdk/README.md)**
+- **[Python SDK](clients/python/flowcatalyst-sdk/README.md)**
+- **[Go SDK](clients/go/flowcatalyst-sdk/README.md)**
 
-### Prerequisites
+## Community & Support
 
-**Full-Stack Application (`flowcatalyst-app`):**
-- PostgreSQL 16+ (port 5432)
-- SQS (AWS or ElasticMQ) OR ActiveMQ Classic (port 61616)
+- **GitHub Issues** - Bug reports and feature requests
+- **Discussions** - Questions and community support
+- **Contributing** - See CONTRIBUTING.md
 
-**Router-Only Application (`flowcatalyst-router-app`):**
-- SQS (AWS or ElasticMQ) OR ActiveMQ Classic (port 61616)
-- No database required!
+## License
 
-### Starting Dependencies
+Apache-2.0 - See LICENSE file for details
 
-```bash
-# PostgreSQL (for full mode)
-docker run -d --name postgres \
-  -e POSTGRES_DB=flowcatalyst \
-  -e POSTGRES_USER=flowcatalyst \
-  -e POSTGRES_PASSWORD=flowcatalyst \
-  -p 5432:5432 \
-  postgres:16-alpine
+## About
 
-# ElasticMQ (local SQS)
-docker run -d --name elasticmq \
-  -p 9324:9324 \
-  softwaremill/elasticmq-native
-
-# OR ActiveMQ Classic
-docker run -d --name activemq \
-  -p 61616:61616 \
-  -p 8161:8161 \
-  apache/activemq-classic:latest
-```
-
-## Development vs Deployment
-
-**IMPORTANT:** Application modules (`flowcatalyst-router-app`, `flowcatalyst-app`) are **thin wrappers for deployment only**. They contain no source code - just configuration and dependency bundling.
-
-**For development, always use the library modules:**
-- `:flowcatalyst-message-router:quarkusDev` - Router development
-- `:flowcatalyst-app:quarkusDev` - Full-stack development (includes both router and core)
-
-## Development Scenarios
-
-### Scenario 1: Message Router Development
-
-Develop router features (consumers, pools, rate limiting). **No database required!**
-
-```bash
-# Run from project root
-./gradlew :flowcatalyst-message-router:quarkusDev
-```
-
-**What you get:**
-- ✅ Message Router (SQS/ActiveMQ)
-- ✅ Processing Pools with concurrency control
-- ✅ Rate limiting and circuit breaker
-- ✅ Monitoring dashboard and health endpoints
-- ✅ Hot reload on code changes
-- ❌ Dispatch Jobs (not included in this module)
-- ❌ PostgreSQL (not needed for router)
-
-### Scenario 2: Full-Stack Development
-
-Develop both router and core features together. **Requires PostgreSQL**.
-
-```bash
-# Run from project root
-./gradlew :flowcatalyst-app:quarkusDev
-```
-
-**What you get:**
-- ✅ Message Router (SQS/ActiveMQ)
-- ✅ Dispatch Jobs (webhook delivery)
-- ✅ Database persistence (PostgreSQL)
-- ✅ All monitoring and health endpoints
-- ✅ Hot reload for changes in both router and core modules
-
-### Scenario 3: Core-Only Development
-
-Develop dispatch jobs and core business logic. **Requires PostgreSQL**.
-
-```bash
-# Run from project root
-./gradlew :flowcatalyst-core:quarkusDev
-```
-
-**What you get:**
-- ✅ Dispatch Jobs (webhook delivery)
-- ✅ Database persistence (PostgreSQL)
-- ✅ Hot reload on code changes
-- ⚠️ Note: Router features are dependencies but config comes from core
-
-## Deployment Scenarios
-
-### Production: Router-Only Deployment
-
-Lightweight stateless router without dispatch jobs. **No database required!**
-
-```bash
-# Build the deployment artifact
-./gradlew :flowcatalyst-router-app:build
-
-# Run in production
-java -jar flowcatalyst-router-app/build/quarkus-app/quarkus-run.jar
-```
-
-### Production: Full-Stack Deployment
-
-Everything together - Message Router + Dispatch Jobs. **Requires PostgreSQL**.
-
-```bash
-# Build the deployment artifact
-./gradlew :flowcatalyst-app:build
-
-# Run in production
-java -jar flowcatalyst-app/build/quarkus-app/quarkus-run.jar
-```
-
-## Quick Start Commands
-
-### For Development (with hot reload)
-
-```bash
-# Message Router only (no database needed)
-./gradlew :flowcatalyst-message-router:quarkusDev
-
-# Full-Stack (requires PostgreSQL running)
-./gradlew :flowcatalyst-app:quarkusDev
-
-# Core only (requires PostgreSQL running)
-./gradlew :flowcatalyst-core:quarkusDev
-```
-
-**Available endpoints:**
-- Application: http://localhost:8080
-- Dashboard: http://localhost:8080/dashboard.html
-- Dev UI: http://localhost:8080/q/dev (live testing, config editor)
-- Health: http://localhost:8080/health/ready
-- Metrics: http://localhost:8080/metrics
-
-### Running Router App with Dev Profile
-
-The dev profile provides development-friendly settings including LocalStack SQS, human-readable logs, and debug logging.
-
-**For Development (with hot reload):**
-```bash
-# Use the library module - supports hot reload
-# Specify full URL including path
-MESSAGE_ROUTER_CONFIG_URL=http://localhost:8000/api/config \
-  ./gradlew :flowcatalyst-message-router:quarkusDev
-```
-
-**For Running Built JAR (deployment artifact with dev settings):**
-```bash
-# Build the router app first
-./gradlew :flowcatalyst-router-app:build
-
-# Run with dev profile and custom config (full URL with path)
-MESSAGE_ROUTER_CONFIG_URL=http://localhost:8000/api/config QUARKUS_PROFILE=dev \
-  java -jar flowcatalyst-router-app/build/quarkus-app/quarkus-run.jar
-
-# Or using -D flag
-MESSAGE_ROUTER_CONFIG_URL=http://localhost:8000/api/config \
-  java -Dquarkus.profile=dev -jar flowcatalyst-router-app/build/quarkus-app/quarkus-run.jar
-```
-
-**Dev Profile Features:**
-- LocalStack SQS at `localhost:4566` (instead of AWS)
-- Human-readable console logs (not JSON)
-- DEBUG level logging for `tech.flowcatalyst` packages
-- Mock email notifications
-- Local config endpoint (override with `MESSAGE_ROUTER_CONFIG_URL`)
-
-**Common Environment Variables:**
-- `MESSAGE_ROUTER_CONFIG_URL` - Full URL to config endpoint including path (default: `http://localhost:8080/api/config`)
-  - Example: `http://localhost:8000/api/config` or `http://config-service:8080/v1/router/config`
-- `SQS_ENDPOINT_OVERRIDE` - SQS endpoint for dev/testing (default: `http://localhost:4566` in dev profile)
-- `AWS_REGION` - AWS region (default: `us-east-1`)
-
-### For Production Deployment
-
-```bash
-# Router-only (no database)
-./gradlew :flowcatalyst-router-app:build
-java -jar flowcatalyst-router-app/build/quarkus-app/quarkus-run.jar
-
-# Full-stack (requires PostgreSQL)
-./gradlew :flowcatalyst-app:build
-java -jar flowcatalyst-app/build/quarkus-app/quarkus-run.jar
-```
-
-## Packaging and Running
-
-### Building Applications
-
-```bash
-# Build all modules
-./gradlew build
-
-# Build specific application
-./gradlew :flowcatalyst-app:build              # Full-stack
-./gradlew :flowcatalyst-router-app:build       # Router-only
-
-# Build library modules
-./gradlew :flowcatalyst-message-router:build
-./gradlew :flowcatalyst-core:build
-```
-
-The build produces a `quarkus-run.jar` in each module's `build/quarkus-app/` directory.
-
-### Running Applications
-
-```bash
-# Full-stack application
-java -jar flowcatalyst-app/build/quarkus-app/quarkus-run.jar
-
-# Router-only application
-java -jar flowcatalyst-router-app/build/quarkus-app/quarkus-run.jar
-```
-
-### Über-jar Build
-
-For a single executable JAR with all dependencies:
-
-```bash
-# Full-stack
-./gradlew :flowcatalyst-app:build -Dquarkus.package.jar.type=uber-jar
-
-# Router-only
-./gradlew :flowcatalyst-router-app:build -Dquarkus.package.jar.type=uber-jar
-```
-
-## Native Executables
-
-Create native executables with GraalVM for faster startup and lower memory usage:
-
-```bash
-# Full-stack application
-./gradlew :flowcatalyst-app:build -Dquarkus.native.enabled=true
-
-# Router-only application
-./gradlew :flowcatalyst-router-app:build -Dquarkus.native.enabled=true
-
-# Build in container (no GraalVM installation needed)
-./gradlew :flowcatalyst-app:build \
-  -Dquarkus.native.enabled=true \
-  -Dquarkus.native.container-build=true
-```
-
-Run native executables:
-
-```bash
-# Full-stack
-./flowcatalyst-app/build/flowcatalyst-app-1.0.0-SNAPSHOT-runner
-
-# Router-only
-./flowcatalyst-router-app/build/flowcatalyst-router-app-1.0.0-SNAPSHOT-runner
-```
-
-Learn more: [Quarkus Native Guide](https://quarkus.io/guides/gradle-tooling)
-
-## Docker Deployment
-
-### Building Container Images
-
-```bash
-# Full-stack application
-./gradlew :flowcatalyst-app:build \
-  -Dquarkus.container-image.build=true
-
-# Router-only application
-./gradlew :flowcatalyst-router-app:build \
-  -Dquarkus.container-image.build=true
-```
-
-### Running Containers
-
-**Full-Stack Application:**
-```bash
-docker run -p 8080:8080 \
-  -e POSTGRES_URL=jdbc:postgresql://host.docker.internal:5432/flowcatalyst \
-  -e POSTGRES_USER=flowcatalyst \
-  -e POSTGRES_PASSWORD=flowcatalyst \
-  -e MESSAGE_ROUTER_CONFIG_URL=http://config-service:8080/api/config \
-  -e SQS_ENDPOINT_OVERRIDE=http://sqs:9324 \
-  flowcatalyst-app:1.0.0-SNAPSHOT
-```
-
-**Router-Only Application:**
-```bash
-docker run -p 8080:8080 \
-  -e MESSAGE_ROUTER_CONFIG_URL=http://config-service:8080/api/config \
-  -e SQS_ENDPOINT_OVERRIDE=http://sqs:9324 \
-  flowcatalyst-router-app:1.0.0-SNAPSHOT
-```
-
-### Microservices Deployment
-
-Deploy router and core as separate services:
-
-**docker-compose.yml:**
-```yaml
-services:
-  router:
-    image: flowcatalyst-router-app:1.0.0-SNAPSHOT
-    ports:
-      - "8081:8080"
-    environment:
-      - SQS_ENDPOINT_OVERRIDE=http://localstack:4566
-
-  core:
-    image: flowcatalyst-app:1.0.0-SNAPSHOT
-    ports:
-      - "8080:8080"
-    environment:
-      - POSTGRES_URL=jdbc:postgresql://postgres:5432/flowcatalyst
-      - MESSAGE_ROUTER_CONFIG_URL=http://router:8080/api/config
-    depends_on:
-      - postgres
-```
-
-## Running Tests
-
-### Quick Start
-
-```bash
-# Run all tests in all modules
-./gradlew test
-
-# Test specific modules
-./gradlew :flowcatalyst-message-router:test
-./gradlew :flowcatalyst-core:test
-
-# Run integration tests
-./gradlew :flowcatalyst-core:integrationTest
-
-# Run unit tests only (fast)
-./gradlew test -x integrationTest
-```
-
-### Specific Tests
-
-```bash
-# Run a specific test class
-./gradlew :flowcatalyst-message-router:test --tests QueueManagerTest
-
-# Run a specific test method
-./gradlew :flowcatalyst-message-router:test --tests ProcessPoolImplTest.shouldEnforceRateLimit
-
-# Run with verbose output
-./gradlew test --info
-```
-
-### Test Suite Overview
-
-**Module Structure:**
-- `flowcatalyst-message-router` - Router unit and integration tests
-- `flowcatalyst-core` - Core business logic tests
-- Application modules have no tests (thin wrappers)
-
-**Test Types:**
-- **Unit Tests** - Fast, isolated component testing with mocks
-- **Integration Tests** - Real dependencies (SQS via LocalStack, PostgreSQL via Testcontainers)
-- **REST Endpoint Tests** - API contract validation
-- **Metrics Tests** - Monitoring and observability validation
-
-For detailed testing documentation, see:
-- [Test Suite Summary](TEST_SUMMARY.md) - Overview of all tests
-- [Testing Guide](docs/TESTING.md) - Comprehensive testing guide
-
-## Development Workflows
-
-### Working on Message Router Features
-
-When developing router-specific features (consumers, pools, rate limiting):
-
-```bash
-# Start message router in dev mode (no database needed!)
-./gradlew :flowcatalyst-message-router:quarkusDev
-
-# In another terminal, run tests
-./gradlew :flowcatalyst-message-router:test
-
-# Your changes automatically hot reload
-```
-
-**Why use the library module?**
-- Direct access to router source code
-- Fast hot reload
-- No database required
-- Isolated testing of router features
-
-### Working on Core Features (Dispatch Jobs)
-
-When developing core features (webhooks, dispatch jobs, database):
-
-```bash
-# Start core in dev mode (requires PostgreSQL running)
-./gradlew :flowcatalyst-core:quarkusDev
-
-# In another terminal, run tests
-./gradlew :flowcatalyst-core:test
-./gradlew :flowcatalyst-core:integrationTest
-
-# Your changes automatically hot reload
-```
-
-### Testing Full Integration
-
-To test how router and core work together as a complete system:
-
-```bash
-# Run the full-stack application (NOT the router-app or app modules)
-./gradlew :flowcatalyst-app:quarkusDev
-
-# Both router and core features are active
-# Changes to either library module hot reload automatically
-```
-
-**Note:** The `:flowcatalyst-app` module bundles both `:flowcatalyst-message-router` and `:flowcatalyst-core`, so Quarkus watches all source files across both modules.
-
-### Module Dependencies
-
-```
-flowcatalyst-app
-├── flowcatalyst-core
-│   ├── flowcatalyst-message-router
-│   │   └── flowcatalyst-auth
-│   └── flowcatalyst-auth
-└── flowcatalyst-message-router (direct)
-
-flowcatalyst-router-app
-└── flowcatalyst-message-router
-    └── flowcatalyst-auth
-```
-
-### Configuration Priority
-
-Configuration files are loaded in this order (later overrides earlier):
-
-1. Library module `application.properties` (e.g., `flowcatalyst-message-router/src/main/resources/application.properties`)
-2. Application module `application.properties` (e.g., `flowcatalyst-app/src/main/resources/application.properties`)
-3. Environment variables (e.g., `POSTGRES_URL`)
-4. System properties (e.g., `-Dquarkus.http.port=9090`)
-
-### Common Commands
-
-```bash
-# Clean build everything
-./gradlew clean build
-
-# Quick compile check (no tests)
-./gradlew classes
-
-# Watch for compilation errors
-./gradlew --continuous classes
-
-# See all modules
-./gradlew projects
-
-# Check dependencies
-./gradlew :flowcatalyst-app:dependencies
-./gradlew :flowcatalyst-message-router:dependencies
-```
-
-## Project Structure
-
-```
-flowcatalyst/
-├── flowcatalyst-auth/              # Library: OIDC authentication
-├── flowcatalyst-message-router/    # Library: Stateless message router
-│   ├── src/main/java/.../messagerouter/
-│   │   ├── consumer/              # Queue consumers (SQS, ActiveMQ)
-│   │   ├── pool/                  # Processing pools
-│   │   ├── manager/               # Pool and queue management
-│   │   ├── health/                # Health checks
-│   │   └── metrics/               # Monitoring and metrics
-│   └── src/test/                  # Router tests
-├── flowcatalyst-core/              # Library: Core business logic
-│   ├── src/main/java/.../core/
-│   │   ├── dispatchjob/           # Webhook dispatch system
-│   │   └── mediator/              # Message mediation
-│   └── src/test/                  # Core tests
-├── flowcatalyst-router-app/        # Application: Router-only deployment
-│   └── src/main/resources/
-│       └── application.properties # Router app config
-├── flowcatalyst-app/               # Application: Full-stack deployment
-│   └── src/main/resources/
-│       └── application.properties # Full-stack config
-└── settings.gradle.kts            # Module definitions
-```
-
-## Performance Characteristics
-
-| Module | Startup Time | Memory (RSS) | Database | Dependencies |
-|--------|-------------|--------------|----------|--------------|
-| flowcatalyst-router-app | ~2s | ~200MB | None | Queue only |
-| flowcatalyst-app | ~3s | ~350MB | PostgreSQL | Queue + DB |
-
-*Native builds reduce startup to <100ms and memory by ~50%*
-
-## Troubleshooting
-
-### Error: "The project has no output yet" when running quarkusDev
-
-**Problem:** You tried to run `./gradlew :flowcatalyst-router-app:quarkusDev` or similar on an application module.
-
-**Solution:** Application modules (`flowcatalyst-router-app`, `flowcatalyst-app`) are thin wrappers with no source code - they're for deployment only. For development, use the library modules:
-
-```bash
-# ❌ DON'T: Application modules can't run in dev mode
-./gradlew :flowcatalyst-router-app:quarkusDev
-
-# ✅ DO: Use library modules for development
-./gradlew :flowcatalyst-message-router:quarkusDev  # Router development
-./gradlew :flowcatalyst-app:quarkusDev              # Full-stack development
-```
-
-### Port 8080 already in use
-
-```bash
-# Kill process on port 8080
-lsof -ti:8080 | xargs kill -9
-
-# Or use a different port
-./gradlew :flowcatalyst-message-router:quarkusDev -Dquarkus.http.port=8081
-```
-
-### PostgreSQL connection errors
-
-Make sure PostgreSQL is running and accessible:
-
-```bash
-# Check if PostgreSQL is running
-docker ps | grep postgres
-
-# Start PostgreSQL if needed
-docker run -d --name postgres \
-  -e POSTGRES_DB=flowcatalyst \
-  -e POSTGRES_USER=flowcatalyst \
-  -e POSTGRES_PASSWORD=flowcatalyst \
-  -p 5432:5432 \
-  postgres:16-alpine
-```
-
-**Tip:** Use `:flowcatalyst-message-router:quarkusDev` for router development - it doesn't need PostgreSQL!
-
-### Module not found errors
-
-```bash
-# Clean and rebuild all modules
-./gradlew clean build
-
-# Verify all modules are recognized
-./gradlew projects
-```
-
-## Related Guides
-
-- REST ([guide](https://quarkus.io/guides/rest)): A Jakarta REST implementation utilizing build time processing and Vert.x. This extension is not compatible with the quarkus-resteasy extension, or any of the extensions that depend on it.
-- REST Jackson ([guide](https://quarkus.io/guides/rest#json-serialisation)): Jackson serialization support for Quarkus REST. This extension is not compatible with the quarkus-resteasy extension, or any of the extensions that depend on it
+FlowCatalyst is an open source platform for building event-driven, domain-oriented applications with reliable message processing and webhook delivery.
