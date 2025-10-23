@@ -76,7 +76,8 @@ public class DispatchJobService {
                 "dispatch-auth-token", // Auth token for internal processing endpoint
                 MEDIATION_TYPE,
                 PROCESSING_ENDPOINT,
-                null  // No message group ordering needed for dispatch jobs (each job is independent)
+                null,  // No message group ordering needed for dispatch jobs (each job is independent)
+                null   // batchId is populated by message router during routing
             );
 
             String messageBody = objectMapper.writeValueAsString(messagePointer);

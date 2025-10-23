@@ -19,5 +19,5 @@ include("core:flowcatalyst-core")
 include("core:flowcatalyst-router-app")
 include("core:flowcatalyst-app")
 
-// Control Plane BFFE
-include("core:flowcatalyst-control-plane-bffe")
+// BFFE (Backend For Frontend)
+include("core:flowcatalyst-bffe")

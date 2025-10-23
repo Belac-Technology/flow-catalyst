@@ -4,13 +4,13 @@
   "private": true,
   "workspaces": [
     "ui-components",
-    "control-plane"
+    "app"
   ],
   "scripts": {
-    "dev": "bun run --filter control-plane dev",
+    "dev": "bun run --filter app dev",
     "build": "bun run --filter '*' build",
     "ui:dev": "bun run --filter ui-components dev",
-    "control-plane:dev": "bun run --filter control-plane dev"
+    "app:dev": "bun run --filter app dev"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",
