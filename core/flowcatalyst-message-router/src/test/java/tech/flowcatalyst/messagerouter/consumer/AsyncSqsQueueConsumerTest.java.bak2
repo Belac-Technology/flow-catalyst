@@ -91,14 +91,17 @@ class AsyncSqsQueueConsumerTest {
                 ReceiveMessageResponse.builder().messages(List.of()).build()
             ));
 
-        doNothing().when(mockQueueManager).routeMessageBatch(anyList());
+        when(mockQueueManager.routeMessageBatch(anyList())).thenReturn(true);
 
         // When
         asyncConsumer.start();
 
         // Then - verify async processing happens
         await().atMost(5, TimeUnit.SECONDS).untilAsserted(() -> {
-            verify(mockQueueManager, atLeastOnce()).routeMessageBatch(anyList());
+            verify(mockQueueManager, atLeastOnce()).routeMessageBatch(
+                any(MessagePointer.class),
+                any(MessageCallback.class)
+            );
             verify(mockQueueMetrics, atLeastOnce()).recordMessageReceived(queueUrl);
         });
     }
@@ -146,14 +149,17 @@ class AsyncSqsQueueConsumerTest {
                 ReceiveMessageResponse.builder().messages(List.of()).build()
             ));
 
-        doNothing().when(mockQueueManager).routeMessageBatch(anyList());
+        when(mockQueueManager.routeMessageBatch(anyList())).thenReturn(true);
 
         // When
         asyncConsumer.start();
 
         // Then - both messages processed
         await().atMost(5, TimeUnit.SECONDS).untilAsserted(() -> {
-            verify(mockQueueManager, atLeastOnce()).routeMessageBatch(anyList());
+            verify(mockQueueManager, times(2)).routeMessageBatch(
+                any(MessagePointer.class),
+                any(MessageCallback.class)
+            );
             verify(mockQueueMetrics, times(2)).recordMessageReceived(queueUrl);
         });
     }
@@ -191,15 +197,14 @@ class AsyncSqsQueueConsumerTest {
 
         // Capture the callback so we can trigger ack
         AtomicInteger routedCount = new AtomicInteger(0);
-        doAnswer(invocation -> {
-            List<QueueManager.BatchMessage> batch = invocation.getArgument(0);
-            for (QueueManager.BatchMessage batchMsg : batch) {
-                // Simulate successful processing - ACK the message
-                batchMsg.callback().ack(batchMsg.message());
-                routedCount.incrementAndGet();
-            }
-            return null;
-        }).when(mockQueueManager).routeMessageBatch(anyList());
+        when(mockQueueManager.routeMessageBatch(anyList())).thenAnswer(invocation -> {
+            MessageCallback callback = invocation.getArgument(1);
+            MessagePointer message = invocation.getArgument(0);
+            // Simulate successful processing - ACK the message
+            callback.ack(message);
+            routedCount.incrementAndGet();
+            return true;
+        });
 
         // When
         asyncConsumer.start();
@@ -288,14 +293,17 @@ class AsyncSqsQueueConsumerTest {
                 ReceiveMessageResponse.builder().messages(List.of()).build()
             ));
 
-        doNothing().when(mockQueueManager).routeMessageBatch(anyList());
+        when(mockQueueManager.routeMessageBatch(anyList())).thenReturn(true);
 
         // When
         asyncConsumer.start();
 
         // Then - should recover and process message after error
         await().atMost(10, TimeUnit.SECONDS).untilAsserted(() -> {
-            verify(mockQueueManager, atLeastOnce()).routeMessageBatch(anyList());
+            verify(mockQueueManager, atLeastOnce()).routeMessageBatch(
+                any(MessagePointer.class),
+                any(MessageCallback.class)
+            );
         });
     }
 
@@ -377,20 +385,19 @@ class AsyncSqsQueueConsumerTest {
             ));
 
         // Capture callback and test visibility control
-        doAnswer(invocation -> {
-            List<QueueManager.BatchMessage> batch = invocation.getArgument(0);
-            for (QueueManager.BatchMessage batchMsg : batch) {
-                tech.flowcatalyst.messagerouter.callback.MessageVisibilityControl callback =
-                    (tech.flowcatalyst.messagerouter.callback.MessageVisibilityControl) batchMsg.callback();
+        when(mockQueueManager.routeMessageBatch(anyList())).thenAnswer(invocation -> {
+            tech.flowcatalyst.messagerouter.callback.MessageVisibilityControl callback =
+                (tech.flowcatalyst.messagerouter.callback.MessageVisibilityControl) invocation.getArgument(1);
+            MessagePointer message = invocation.getArgument(0);
 
-                // Test fast-fail visibility
-                callback.setFastFailVisibility(batchMsg.message());
+            // Test fast-fail visibility
+            callback.setFastFailVisibility(message);
 
-                // Test reset visibility
-                callback.resetVisibilityToDefault(batchMsg.message());
-            }
-            return null;
-        }).when(mockQueueManager).routeMessageBatch(anyList());
+            // Test reset visibility
+            callback.resetVisibilityToDefault(message);
+
+            return true;
+        });
 
         // When
         asyncConsumer.start();

@@ -147,8 +147,9 @@ class ActiveMqQueueConsumerTest {
         });
 
         MessageCallback callback = callbackCaptor.getValue();
-        MessagePointer testMessage = new MessagePointer("msg-ack", "POOL-A", "token", MediationType.HTTP, "http://test.com", null
-            , null);
+        MessagePointer testMessage = new MessagePointer("msg-ack", "POOL-A", "token", MediationType.HTTP, "http://test.com",
+                null
+            );
         callback.ack(testMessage);
 
         // Then
@@ -186,8 +187,9 @@ class ActiveMqQueueConsumerTest {
         });
 
         MessageCallback callback = callbackCaptor.getValue();
-        MessagePointer testMessage = new MessagePointer("msg-nack", "POOL-A", "token", MediationType.HTTP, "http://test.com", null
-            , null);
+        MessagePointer testMessage = new MessagePointer("msg-nack", "POOL-A", "token", MediationType.HTTP, "http://test.com",
+                null
+            );
         callback.nack(testMessage);
 
         // Then

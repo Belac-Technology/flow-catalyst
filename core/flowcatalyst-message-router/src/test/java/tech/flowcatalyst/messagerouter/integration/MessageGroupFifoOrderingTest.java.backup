@@ -446,8 +446,14 @@ class MessageGroupFifoOrderingTest {
 
         // When: Submit 10 messages with null messageGroupId
         for (int i = 0; i < 10; i++) {
-            MessagePointer msg = new MessagePointer("msg-" + i, "COMPAT-TEST", "test-token", MediationType.HTTP, "http://localhost:8080/test", null  // No messageGroupId
-            , null);
+            MessagePointer msg = new MessagePointer(
+                "msg-" + i,
+                "COMPAT-TEST",
+                "test-token",
+                MediationType.HTTP,
+                "http://localhost:8080/test",
+                null  // No messageGroupId
+            );
             inPipelineMap.put(msg.id(), msg);
             pool.submit(msg);
         }
@@ -480,7 +486,13 @@ class MessageGroupFifoOrderingTest {
     }
 
     private MessagePointer createMessage(String id, String poolCode, String messageGroupId) {
-        return new MessagePointer(id, poolCode, "test-token", MediationType.HTTP, "http://localhost:8080/test", messageGroupId
-        , null);
+        return new MessagePointer(
+            id,
+            poolCode,
+            "test-token",
+            MediationType.HTTP,
+            "http://localhost:8080/test",
+            messageGroupId
+        );
     }
 }

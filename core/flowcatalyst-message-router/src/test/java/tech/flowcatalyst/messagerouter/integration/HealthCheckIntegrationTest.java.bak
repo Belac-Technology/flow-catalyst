@@ -136,9 +136,15 @@ class HealthCheckIntegrationTest {
             Long initialTimestamp = poolMetricsService.getLastActivityTimestamp(poolCode);
 
             // When - submit and process a message
-            MessagePointer message = new MessagePointer("test-msg-1", poolCode, "test-token", MediationType.HTTP, "http://localhost:8080/test"
-            , null
-            , null);
+            MessagePointer message = new MessagePointer(
+                "test-msg-1",
+                poolCode,
+                "test-token",
+                MediationType.HTTP,
+                "http://localhost:8080/test"
+            ,
+                null
+            );
 
             inPipelineMap.put(message.id(), message);
             boolean submitted = pool.submit(message);
@@ -206,13 +212,25 @@ class HealthCheckIntegrationTest {
 
         try {
             // When - submit two messages (one success, one failure)
-            MessagePointer message1 = new MessagePointer("test-msg-success", poolCode, "test-token", MediationType.HTTP, "http://localhost:8080/test"
-            , null
-            , null);
+            MessagePointer message1 = new MessagePointer(
+                "test-msg-success",
+                poolCode,
+                "test-token",
+                MediationType.HTTP,
+                "http://localhost:8080/test"
+            ,
+                null
+            );
 
-            MessagePointer message2 = new MessagePointer("test-msg-failure", poolCode, "test-token", MediationType.HTTP, "http://localhost:8080/test"
-            , null
-            , null);
+            MessagePointer message2 = new MessagePointer(
+                "test-msg-failure",
+                poolCode,
+                "test-token",
+                MediationType.HTTP,
+                "http://localhost:8080/test"
+            ,
+                null
+            );
 
             inPipelineMap.put(message1.id(), message1);
             pool.submit(message1);
@@ -287,9 +305,15 @@ class HealthCheckIntegrationTest {
 
         try {
             // When - process a message to set recent timestamp
-            MessagePointer message = new MessagePointer("test-msg-recent", poolCode, "test-token", MediationType.HTTP, "http://localhost:8080/test"
-            , null
-            , null);
+            MessagePointer message = new MessagePointer(
+                "test-msg-recent",
+                poolCode,
+                "test-token",
+                MediationType.HTTP,
+                "http://localhost:8080/test"
+            ,
+                null
+            );
 
             inPipelineMap.put(message.id(), message);
             pool.submit(message);

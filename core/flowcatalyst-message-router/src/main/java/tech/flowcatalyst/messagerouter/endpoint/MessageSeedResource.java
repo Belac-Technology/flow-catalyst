@@ -94,7 +94,8 @@ public class MessageSeedResource {
                     "test-token-" + UUID.randomUUID(),
                     tech.flowcatalyst.messagerouter.model.MediationType.HTTP,
                     targetEndpoint,
-                    messageGroupId  // Add messageGroupId for FIFO ordering
+                    messageGroupId,  // Add messageGroupId for FIFO ordering
+                    null  // batchId is populated by QueueManager during routing
                 );
 
                 String messageBody = objectMapper.writeValueAsString(message);

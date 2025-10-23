@@ -19,16 +19,28 @@ public class TestUtils {
      * Create a test message pointer with sensible defaults
      */
     public static MessagePointer createMessage(String id, String poolCode) {
-        return new MessagePointer(id, poolCode, "test-token", MediationType.HTTP, "http://localhost:8080/test", null
-            , null);
+        return new MessagePointer(
+            id,
+            poolCode,
+            "test-token",
+            MediationType.HTTP,
+            "http://localhost:8080/test",
+            null
+            );
     }
 
     /**
      * Create a test message pointer with custom endpoint
      */
     public static MessagePointer createMessage(String id, String poolCode, String endpoint) {
-        return new MessagePointer(id, poolCode, "test-token", MediationType.HTTP, endpoint, null
-            , null);
+        return new MessagePointer(
+            id,
+            poolCode,
+            "test-token",
+            MediationType.HTTP,
+            endpoint,
+            null
+            );
     }
 
     /**

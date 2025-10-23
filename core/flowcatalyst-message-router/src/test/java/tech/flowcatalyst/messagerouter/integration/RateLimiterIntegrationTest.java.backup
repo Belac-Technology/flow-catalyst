@@ -76,8 +76,14 @@ class RateLimiterIntegrationTest {
 
         // When: Submit 5 messages (well within limit)
         for (int i = 0; i < 5; i++) {
-            MessagePointer message = new MessagePointer("msg-" + i, "RATE-LIMIT-POOL", "token", MediationType.HTTP, "http://localhost:8080/test", null
-            , null);
+            MessagePointer message = new MessagePointer(
+                "msg-" + i,
+                "RATE-LIMIT-POOL",
+                "token",
+                MediationType.HTTP,
+                "http://localhost:8080/test",
+                null
+            );
             inPipelineMap.put(message.id(), message);
             processPool.submit(message);
         }
@@ -111,8 +117,14 @@ class RateLimiterIntegrationTest {
 
         // When: Submit 10 messages quickly (exceeds pool limit of 5/min)
         for (int i = 0; i < 10; i++) {
-            MessagePointer message = new MessagePointer("msg-rate-" + i, "RATE-LIMIT-POOL", "token", MediationType.HTTP, "http://localhost:8080/test", null
-            , null);
+            MessagePointer message = new MessagePointer(
+                "msg-rate-" + i,
+                "RATE-LIMIT-POOL",
+                "token",
+                MediationType.HTTP,
+                "http://localhost:8080/test",
+                null
+            );
             inPipelineMap.put(message.id(), message);
             processPool.submit(message);
         }
@@ -135,8 +147,14 @@ class RateLimiterIntegrationTest {
 
         // When: Submit 50 messages (well within high limit)
         for (int i = 0; i < 50; i++) {
-            MessagePointer message = new MessagePointer("msg-high-" + i, "RATE-LIMIT-POOL", "token", MediationType.HTTP, "http://localhost:8080/test", null
-            , null);
+            MessagePointer message = new MessagePointer(
+                "msg-high-" + i,
+                "RATE-LIMIT-POOL",
+                "token",
+                MediationType.HTTP,
+                "http://localhost:8080/test",
+                null
+            );
             inPipelineMap.put(message.id(), message);
             processPool.submit(message);
         }
@@ -158,8 +176,14 @@ class RateLimiterIntegrationTest {
 
         // When: Submit 10 messages (no rate limiting)
         for (int i = 0; i < 10; i++) {
-            MessagePointer message = new MessagePointer("msg-no-limit-" + i, "RATE-LIMIT-POOL", "token", MediationType.HTTP, "http://localhost:8080/test", null
-            , null);
+            MessagePointer message = new MessagePointer(
+                "msg-no-limit-" + i,
+                "RATE-LIMIT-POOL",
+                "token",
+                MediationType.HTTP,
+                "http://localhost:8080/test",
+                null
+            );
             inPipelineMap.put(message.id(), message);
             processPool.submit(message);
         }

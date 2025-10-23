@@ -40,20 +40,6 @@ class ProcessPoolImplTest {
         mockPoolMetrics = mock(PoolMetricsService.class);
         mockWarningService = mock(WarningService.class);
 
-        // Configure mockCallback to remove from inPipelineMap when ack/nack is called
-        // This simulates QueueManager's behavior
-        doAnswer(invocation -> {
-            MessagePointer msg = invocation.getArgument(0);
-            inPipelineMap.remove(msg.id());
-            return null;
-        }).when(mockCallback).ack(any(MessagePointer.class));
-
-        doAnswer(invocation -> {
-            MessagePointer msg = invocation.getArgument(0);
-            inPipelineMap.remove(msg.id());
-            return null;
-        }).when(mockCallback).nack(any(MessagePointer.class));
-
         processPool = new ProcessPoolImpl(
             "TEST-POOL",
             5, // concurrency
@@ -77,9 +63,15 @@ class ProcessPoolImplTest {
     @Test
     void shouldProcessMessageSuccessfully() {
         // Given
-        MessagePointer message = new MessagePointer("msg-1", "TEST-POOL", "test-token", MediationType.HTTP, "http://localhost:8080/test"
-        , null
-            , null);
+        MessagePointer message = new MessagePointer(
+            "msg-1",
+            "TEST-POOL",
+            "test-token",
+            MediationType.HTTP,
+            "http://localhost:8080/test"
+        ,
+                null
+            );
 
         when(mockMediator.process(message)).thenReturn(MediationResult.SUCCESS);
         inPipelineMap.put(message.id(), message);
@@ -101,9 +93,15 @@ class ProcessPoolImplTest {
     @Test
     void shouldNackMessageOnMediationFailure() {
         // Given
-        MessagePointer message = new MessagePointer("msg-2", "TEST-POOL", "test-token", MediationType.HTTP, "http://localhost:8080/test"
-        , null
-            , null);
+        MessagePointer message = new MessagePointer(
+            "msg-2",
+            "TEST-POOL",
+            "test-token",
+            MediationType.HTTP,
+            "http://localhost:8080/test"
+        ,
+                null
+            );
 
         when(mockMediator.process(message)).thenReturn(MediationResult.ERROR_SERVER);
         inPipelineMap.put(message.id(), message);
@@ -140,13 +138,25 @@ class ProcessPoolImplTest {
             mockWarningService
         );
 
-        MessagePointer message1 = new MessagePointer("msg-rate-1", "RATE-LIMITED-POOL", "test-token", MediationType.HTTP, "http://localhost:8080/test"
-        , null
-            , null);
+        MessagePointer message1 = new MessagePointer(
+            "msg-rate-1",
+            "RATE-LIMITED-POOL",
+            "test-token",
+            MediationType.HTTP,
+            "http://localhost:8080/test"
+        ,
+                null
+            );
 
-        MessagePointer message2 = new MessagePointer("msg-rate-2", "RATE-LIMITED-POOL", "test-token", MediationType.HTTP, "http://localhost:8080/test"
-        , null
-            , null);
+        MessagePointer message2 = new MessagePointer(
+            "msg-rate-2",
+            "RATE-LIMITED-POOL",
+            "test-token",
+            MediationType.HTTP,
+            "http://localhost:8080/test"
+        ,
+                null
+            );
 
         when(mockMediator.process(any())).thenReturn(MediationResult.SUCCESS);
         inPipelineMap.put(message1.id(), message1);
@@ -192,17 +202,14 @@ class ProcessPoolImplTest {
         );
 
         MessagePointer message1 = new MessagePointer("msg-1", "SMALL-POOL", "token", MediationType.HTTP, "http://test.com",
-            null,  // messageGroupId - same group (DEFAULT_GROUP)
-            null   // batchId
-        );
+                null  // Same message group (DEFAULT_GROUP)
+            );
         MessagePointer message2 = new MessagePointer("msg-2", "SMALL-POOL", "token", MediationType.HTTP, "http://test.com",
-            null,  // messageGroupId - same group (DEFAULT_GROUP)
-            null   // batchId
-        );
+                null  // Same message group (DEFAULT_GROUP)
+            );
         MessagePointer message3 = new MessagePointer("msg-3", "SMALL-POOL", "token", MediationType.HTTP, "http://test.com",
-            null,  // messageGroupId - same group (DEFAULT_GROUP)
-            null   // batchId
-        );
+                null  // Same message group (DEFAULT_GROUP)
+            );
 
         // When
         smallPool.start();
@@ -259,9 +266,15 @@ class ProcessPoolImplTest {
         lowConcurrencyPool.start();
 
         for (int i = 0; i < 5; i++) {
-            MessagePointer msg = new MessagePointer("msg-" + i, "LOW-CONCURRENCY", "token", MediationType.HTTP, "http://test.com"
-            , null
-            , null);
+            MessagePointer msg = new MessagePointer(
+                "msg-" + i,
+                "LOW-CONCURRENCY",
+                "token",
+                MediationType.HTTP,
+                "http://test.com"
+            ,
+                null
+            );
             inPipelineMap.put(msg.id(), msg);
             lowConcurrencyPool.submit(msg);
         }
@@ -284,9 +297,15 @@ class ProcessPoolImplTest {
     @Test
     void shouldRemoveFromPipelineMapAfterProcessing() {
         // Given
-        MessagePointer message = new MessagePointer("msg-pipeline", "TEST-POOL", "test-token", MediationType.HTTP, "http://localhost:8080/test"
-        , null
-            , null);
+        MessagePointer message = new MessagePointer(
+            "msg-pipeline",
+            "TEST-POOL",
+            "test-token",
+            MediationType.HTTP,
+            "http://localhost:8080/test"
+        ,
+                null
+            );
 
         when(mockMediator.process(message)).thenReturn(MediationResult.SUCCESS);
         inPipelineMap.put(message.id(), message);
@@ -304,9 +323,15 @@ class ProcessPoolImplTest {
     @Test
     void shouldDrainGracefully() {
         // Given
-        MessagePointer message = new MessagePointer("msg-drain", "TEST-POOL", "test-token", MediationType.HTTP, "http://localhost:8080/test"
-        , null
-            , null);
+        MessagePointer message = new MessagePointer(
+            "msg-drain",
+            "TEST-POOL",
+            "test-token",
+            MediationType.HTTP,
+            "http://localhost:8080/test"
+        ,
+                null
+            );
 
         when(mockMediator.process(message)).thenReturn(MediationResult.SUCCESS);
         inPipelineMap.put(message.id(), message);
@@ -332,13 +357,25 @@ class ProcessPoolImplTest {
     void shouldTrackDifferentRateLimitKeysSeparately() {
         // Given - rate limiting is now pool-level, not message-level
         // This test now verifies that messages are processed normally when no rate limit is set
-        MessagePointer message1 = new MessagePointer("msg-key1", "TEST-POOL", "test-token", MediationType.HTTP, "http://localhost:8080/test"
-        , null
-            , null);
+        MessagePointer message1 = new MessagePointer(
+            "msg-key1",
+            "TEST-POOL",
+            "test-token",
+            MediationType.HTTP,
+            "http://localhost:8080/test"
+        ,
+                null
+            );
 
-        MessagePointer message2 = new MessagePointer("msg-key2", "TEST-POOL", "test-token", MediationType.HTTP, "http://localhost:8080/test"
-        , null
-            , null);
+        MessagePointer message2 = new MessagePointer(
+            "msg-key2",
+            "TEST-POOL",
+            "test-token",
+            MediationType.HTTP,
+            "http://localhost:8080/test"
+        ,
+                null
+            );
 
         when(mockMediator.process(any())).thenReturn(MediationResult.SUCCESS);
         inPipelineMap.put(message1.id(), message1);
@@ -362,218 +399,5 @@ class ProcessPoolImplTest {
     void shouldGetPoolCodeAndConcurrency() {
         assertEquals("TEST-POOL", processPool.getPoolCode());
         assertEquals(5, processPool.getConcurrency());
-    }
-
-    // ========================================
-    // Batch+Group FIFO Enforcement Tests
-    // ========================================
-
-    @Test
-    void shouldNackSubsequentMessagesWhenBatchGroupFails() {
-        // Given - Three messages in same batch+group
-        String batchId = "batch-123";
-        String messageGroupId = "order-456";
-
-        MessagePointer message1 = new MessagePointer(
-            "msg-batch-1",
-            "TEST-POOL",
-            "test-token",
-            MediationType.HTTP,
-            "http://localhost:8080/test",
-            messageGroupId,
-            batchId
-        );
-
-        MessagePointer message2 = new MessagePointer(
-            "msg-batch-2",
-            "TEST-POOL",
-            "test-token",
-            MediationType.HTTP,
-            "http://localhost:8080/test",
-            messageGroupId,
-            batchId
-        );
-
-        MessagePointer message3 = new MessagePointer(
-            "msg-batch-3",
-            "TEST-POOL",
-            "test-token",
-            MediationType.HTTP,
-            "http://localhost:8080/test",
-            messageGroupId,
-            batchId
-        );
-
-        // First message succeeds, second fails, third should be auto-nacked
-        when(mockMediator.process(message1)).thenReturn(MediationResult.SUCCESS);
-        when(mockMediator.process(message2)).thenReturn(MediationResult.ERROR_SERVER);
-        when(mockMediator.process(message3)).thenReturn(MediationResult.SUCCESS);
-
-        inPipelineMap.put(message1.id(), message1);
-        inPipelineMap.put(message2.id(), message2);
-        inPipelineMap.put(message3.id(), message3);
-
-        // When
-        processPool.start();
-        processPool.submit(message1);
-        processPool.submit(message2);
-        processPool.submit(message3);
-
-        // Then
-        await().untilAsserted(() -> {
-            // Message 1 should be processed and acked
-            verify(mockMediator).process(message1);
-            verify(mockCallback).ack(message1);
-
-            // Message 2 should be processed and nacked (failure)
-            verify(mockMediator).process(message2);
-            verify(mockCallback).nack(message2);
-
-            // Message 3 should be nacked WITHOUT processing (pre-flight check)
-            verify(mockMediator, never()).process(message3);
-            verify(mockCallback).nack(message3);
-        });
-    }
-
-    @Test
-    void shouldAllowDifferentBatchGroupsToProcessIndependently() {
-        // Given - Messages from different batch+groups
-        MessagePointer message1 = new MessagePointer(
-            "msg-batch-1",
-            "TEST-POOL",
-            "test-token",
-            MediationType.HTTP,
-            "http://localhost:8080/test",
-            "order-111",
-            "batch-aaa"
-        );
-
-        MessagePointer message2 = new MessagePointer(
-            "msg-batch-2",
-            "TEST-POOL",
-            "test-token",
-            MediationType.HTTP,
-            "http://localhost:8080/test",
-            "order-222",  // Different message group
-            "batch-bbb"   // Different batch
-        );
-
-        // First message fails, second should still process (different batch+group)
-        when(mockMediator.process(message1)).thenReturn(MediationResult.ERROR_SERVER);
-        when(mockMediator.process(message2)).thenReturn(MediationResult.SUCCESS);
-
-        inPipelineMap.put(message1.id(), message1);
-        inPipelineMap.put(message2.id(), message2);
-
-        // When
-        processPool.start();
-        processPool.submit(message1);
-        processPool.submit(message2);
-
-        // Then
-        await().untilAsserted(() -> {
-            // Message 1 should be nacked
-            verify(mockMediator).process(message1);
-            verify(mockCallback).nack(message1);
-
-            // Message 2 should be processed normally (different batch+group)
-            verify(mockMediator).process(message2);
-            verify(mockCallback).ack(message2);
-        });
-    }
-
-    @Test
-    void shouldCleanupBatchGroupTrackingOnSuccess() {
-        // Given - Messages in same batch+group that all succeed
-        String batchId = "batch-success";
-        String messageGroupId = "order-success";
-
-        MessagePointer message1 = new MessagePointer(
-            "msg-success-1",
-            "TEST-POOL",
-            "test-token",
-            MediationType.HTTP,
-            "http://localhost:8080/test",
-            messageGroupId,
-            batchId
-        );
-
-        MessagePointer message2 = new MessagePointer(
-            "msg-success-2",
-            "TEST-POOL",
-            "test-token",
-            MediationType.HTTP,
-            "http://localhost:8080/test",
-            messageGroupId,
-            batchId
-        );
-
-        when(mockMediator.process(message1)).thenReturn(MediationResult.SUCCESS);
-        when(mockMediator.process(message2)).thenReturn(MediationResult.SUCCESS);
-
-        inPipelineMap.put(message1.id(), message1);
-        inPipelineMap.put(message2.id(), message2);
-
-        // When
-        processPool.start();
-        processPool.submit(message1);
-        processPool.submit(message2);
-
-        // Then - both should be processed and acked
-        await().untilAsserted(() -> {
-            verify(mockMediator).process(message1);
-            verify(mockCallback).ack(message1);
-
-            verify(mockMediator).process(message2);
-            verify(mockCallback).ack(message2);
-
-            // Pipeline should be clean
-            assertTrue(inPipelineMap.isEmpty());
-        });
-    }
-
-    @Test
-    void shouldHandleNullBatchIdGracefully() {
-        // Given - Messages without batchId (legacy behavior)
-        MessagePointer message1 = new MessagePointer(
-            "msg-no-batch-1",
-            "TEST-POOL",
-            "test-token",
-            MediationType.HTTP,
-            "http://localhost:8080/test",
-            "order-789",
-            null  // No batchId
-        );
-
-        MessagePointer message2 = new MessagePointer(
-            "msg-no-batch-2",
-            "TEST-POOL",
-            "test-token",
-            MediationType.HTTP,
-            "http://localhost:8080/test",
-            "order-789",
-            null  // No batchId
-        );
-
-        // First fails, second should still process (no batch tracking)
-        when(mockMediator.process(message1)).thenReturn(MediationResult.ERROR_SERVER);
-        when(mockMediator.process(message2)).thenReturn(MediationResult.SUCCESS);
-
-        inPipelineMap.put(message1.id(), message1);
-        inPipelineMap.put(message2.id(), message2);
-
-        // When
-        processPool.start();
-        processPool.submit(message1);
-        processPool.submit(message2);
-
-        // Then - both should be processed (no batch+group enforcement without batchId)
-        await().untilAsserted(() -> {
-            verify(mockMediator).process(message1);
-            verify(mockCallback).nack(message1);
-
-            verify(mockMediator).process(message2);
-            verify(mockCallback).ack(message2);
-        });
     }
 }

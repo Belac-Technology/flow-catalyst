@@ -1,5 +1,6 @@
 package tech.flowcatalyst.messagerouter.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 /**
@@ -24,10 +25,13 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  *                       </ul>
  *                       See <a href="../../../../../../MESSAGE_GROUP_FIFO.md">MESSAGE_GROUP_FIFO.md</a>
  *                       for detailed documentation.
- * @param batchId Internal batch identifier (not from queue message, populated during routing).
+ * @param batchId Internal batch identifier (NOT part of external contract, populated during routing).
  *                Used to track messages from the same batch for FIFO ordering enforcement.
  *                When a message in a batch+group fails, all subsequent messages in that
  *                batch+group are automatically nacked to preserve FIFO guarantees.
+ *                <p><b>IMPORTANT:</b> This field is marked with @JsonIgnore and is never
+ *                serialized/deserialized. It is purely for internal processing within the
+ *                message router after messages are pulled from the queue.
  */
 public record MessagePointer(
     @JsonProperty("id") String id,
@@ -35,7 +39,7 @@ public record MessagePointer(
     @JsonProperty("authToken") String authToken,
     @JsonProperty("mediationType") MediationType mediationType,
     @JsonProperty("mediationTarget") String mediationTarget,
-    @JsonProperty("messageGroupId") String messageGroupId,
-    @JsonProperty(value = "batchId", access = JsonProperty.Access.WRITE_ONLY) String batchId
+    @JsonProperty(value = "messageGroupId", required = false) String messageGroupId,
+    @JsonIgnore String batchId  // Internal only - never part of queue message contract
 ) {
 }

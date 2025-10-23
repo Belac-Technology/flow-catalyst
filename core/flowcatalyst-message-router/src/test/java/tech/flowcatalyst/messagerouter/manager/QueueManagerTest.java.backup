@@ -113,9 +113,15 @@ class QueueManagerTest {
         // Given
         ProcessPool pool = createAndRegisterPool("TEST-POOL", 5, 100);
 
-        MessagePointer message = new MessagePointer("msg-1", "TEST-POOL", "test-token", MediationType.HTTP, "http://localhost:8080/test"
-        , null
-            , null);
+        MessagePointer message = new MessagePointer(
+            "msg-1",
+            "TEST-POOL",
+            "test-token",
+            MediationType.HTTP,
+            "http://localhost:8080/test"
+        ,
+                null
+            );
 
         MessageCallback mockCallback = mock(MessageCallback.class);
         when(mockMediator.process(message)).thenReturn(MediationResult.SUCCESS);
@@ -139,9 +145,15 @@ class QueueManagerTest {
         // Given
         ProcessPool pool = createAndRegisterPool("TEST-POOL", 5, 100);
 
-        MessagePointer message = new MessagePointer("msg-duplicate", "TEST-POOL", "test-token", MediationType.HTTP, "http://localhost:8080/test"
-        , null
-            , null);
+        MessagePointer message = new MessagePointer(
+            "msg-duplicate",
+            "TEST-POOL",
+            "test-token",
+            MediationType.HTTP,
+            "http://localhost:8080/test"
+        ,
+                null
+            );
 
         MessageCallback mockCallback1 = mock(MessageCallback.class);
         MessageCallback mockCallback2 = mock(MessageCallback.class);
@@ -171,14 +183,18 @@ class QueueManagerTest {
             return MediationResult.SUCCESS;
         });
 
-        MessagePointer message1 = new MessagePointer("msg-1", "SMALL-POOL", "token", MediationType.HTTP, "http://test.com", null
-            , null);
-        MessagePointer message2 = new MessagePointer("msg-2", "SMALL-POOL", "token", MediationType.HTTP, "http://test.com", null
-            , null);
-        MessagePointer message3 = new MessagePointer("msg-3", "SMALL-POOL", "token", MediationType.HTTP, "http://test.com", null
-            , null);
-        MessagePointer message4 = new MessagePointer("msg-4", "SMALL-POOL", "token", MediationType.HTTP, "http://test.com", null
-            , null);
+        MessagePointer message1 = new MessagePointer("msg-1", "SMALL-POOL", "token", MediationType.HTTP, "http://test.com",
+                null
+            );
+        MessagePointer message2 = new MessagePointer("msg-2", "SMALL-POOL", "token", MediationType.HTTP, "http://test.com",
+                null
+            );
+        MessagePointer message3 = new MessagePointer("msg-3", "SMALL-POOL", "token", MediationType.HTTP, "http://test.com",
+                null
+            );
+        MessagePointer message4 = new MessagePointer("msg-4", "SMALL-POOL", "token", MediationType.HTTP, "http://test.com",
+                null
+            );
 
         MessageCallback mockCallback = mock(MessageCallback.class);
 
@@ -216,9 +232,15 @@ class QueueManagerTest {
         // Given
         ProcessPool pool = createAndRegisterPool("TEST-POOL", 5, 100);
 
-        MessagePointer message = new MessagePointer("msg-ack", "TEST-POOL", "test-token", MediationType.HTTP, "http://localhost:8080/test"
-        , null
-            , null);
+        MessagePointer message = new MessagePointer(
+            "msg-ack",
+            "TEST-POOL",
+            "test-token",
+            MediationType.HTTP,
+            "http://localhost:8080/test"
+        ,
+                null
+            );
 
         MessageCallback mockCallback = mock(MessageCallback.class);
         when(mockMediator.process(message)).thenReturn(MediationResult.SUCCESS);
@@ -244,9 +266,15 @@ class QueueManagerTest {
         // Given
         ProcessPool pool = createAndRegisterPool("TEST-POOL", 5, 100);
 
-        MessagePointer message = new MessagePointer("msg-nack", "TEST-POOL", "test-token", MediationType.HTTP, "http://localhost:8080/test"
-        , null
-            , null);
+        MessagePointer message = new MessagePointer(
+            "msg-nack",
+            "TEST-POOL",
+            "test-token",
+            MediationType.HTTP,
+            "http://localhost:8080/test"
+        ,
+                null
+            );
 
         MessageCallback mockCallback = mock(MessageCallback.class);
         when(mockMediator.process(message)).thenReturn(MediationResult.ERROR_SERVER);
@@ -270,9 +298,15 @@ class QueueManagerTest {
     @Test
     void shouldHandleAckWithoutCallback() {
         // Given
-        MessagePointer message = new MessagePointer("msg-orphan", "TEST-POOL", "test-token", MediationType.HTTP, "http://localhost:8080/test"
-        , null
-            , null);
+        MessagePointer message = new MessagePointer(
+            "msg-orphan",
+            "TEST-POOL",
+            "test-token",
+            MediationType.HTTP,
+            "http://localhost:8080/test"
+        ,
+                null
+            );
 
         // When - ack without registering callback first
         assertDoesNotThrow(() -> queueManager.ack(message));
@@ -283,9 +317,15 @@ class QueueManagerTest {
     @Test
     void shouldHandleNackWithoutCallback() {
         // Given
-        MessagePointer message = new MessagePointer("msg-orphan-nack", "TEST-POOL", "test-token", MediationType.HTTP, "http://localhost:8080/test"
-        , null
-            , null);
+        MessagePointer message = new MessagePointer(
+            "msg-orphan-nack",
+            "TEST-POOL",
+            "test-token",
+            MediationType.HTTP,
+            "http://localhost:8080/test"
+        ,
+                null
+            );
 
         // When - nack without registering callback first
         assertDoesNotThrow(() -> queueManager.nack(message));
@@ -299,10 +339,12 @@ class QueueManagerTest {
         ProcessPool pool1 = createAndRegisterPool("POOL-1", 5, 100);
         ProcessPool pool2 = createAndRegisterPool("POOL-2", 5, 100);
 
-        MessagePointer message1 = new MessagePointer("msg-1", "POOL-1", "token", MediationType.HTTP, "http://test.com", null
-            , null);
-        MessagePointer message2 = new MessagePointer("msg-2", "POOL-2", "token", MediationType.HTTP, "http://test.com", null
-            , null);
+        MessagePointer message1 = new MessagePointer("msg-1", "POOL-1", "token", MediationType.HTTP, "http://test.com",
+                null
+            );
+        MessagePointer message2 = new MessagePointer("msg-2", "POOL-2", "token", MediationType.HTTP, "http://test.com",
+                null
+            );
 
         MessageCallback mockCallback1 = mock(MessageCallback.class);
         MessageCallback mockCallback2 = mock(MessageCallback.class);

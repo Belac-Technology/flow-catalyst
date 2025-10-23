@@ -364,7 +364,22 @@ public class ProcessPoolImpl implements ProcessPool {
                     // 2. Set MDC context for structured logging
                     setMDCContext(message);
 
-                    // 3. Check rate limiting BEFORE acquiring semaphore
+                    // 3. Check if batch+group has already failed (FIFO enforcement)
+                    // If a previous message in this batch+group failed, nack all subsequent messages
+                    String batchId = message.batchId();
+                    String messageGroupId = message.messageGroupId() != null ? message.messageGroupId() : DEFAULT_GROUP;
+                    String batchGroupKey = batchId != null ? batchId + "|" + messageGroupId : null;
+
+                    if (batchGroupKey != null && failedBatchGroups.containsKey(batchGroupKey)) {
+                        LOG.warnf("Message [%s] from failed batch+group [%s], nacking to preserve FIFO ordering",
+                            message.id(), batchGroupKey);
+                        nackSafely(message);
+                        decrementAndCleanupBatchGroup(batchGroupKey);
+                        updateGauges(); // Update gauges since we polled from queue
+                        continue; // Skip to next message
+                    }
+
+                    // 4. Check rate limiting BEFORE acquiring semaphore
                     // This prevents rate-limited messages from blocking concurrency slots
                     if (shouldRateLimit(message)) {
                         LOG.warn("Rate limit exceeded, nacking message without acquiring semaphore");
@@ -376,24 +391,30 @@ public class ProcessPoolImpl implements ProcessPool {
                         }
 
                         nackSafely(message);
+
+                        // Decrement batch+group count on rate limit nack
+                        if (batchGroupKey != null) {
+                            decrementAndCleanupBatchGroup(batchGroupKey);
+                        }
+
                         updateGauges(); // Update gauges since we polled from queue
                         continue; // Don't acquire semaphore, move to next message
                     }
 
-                    // 4. Acquire semaphore permit for pool-level concurrency control
+                    // 5. Acquire semaphore permit for pool-level concurrency control
                     // This ensures we don't exceed the configured concurrency limit
                     semaphore.acquire();
                     semaphoreAcquired = true;
 
-                    // 5. Update gauges to reflect semaphore acquisition
+                    // 6. Update gauges to reflect semaphore acquisition
                     updateGauges();
 
-                    // 6. Process message through mediator
+                    // 7. Process message through mediator
                     long startTime = System.currentTimeMillis();
                     MediationResult result = mediator.process(message);
                     long durationMs = System.currentTimeMillis() - startTime;
 
-                    // 7. Handle mediation result
+                    // 8. Handle mediation result
                     handleMediationResult(message, result, durationMs);
 
                 } catch (InterruptedException e) {
@@ -402,6 +423,14 @@ public class ProcessPoolImpl implements ProcessPool {
                     // Nack message if we have one
                     if (message != null) {
                         nackSafely(message);
+
+                        // Decrement batch+group count on interruption
+                        String intBatchId = message.batchId();
+                        if (intBatchId != null && !intBatchId.isBlank()) {
+                            String intMessageGroupId = message.messageGroupId() != null ? message.messageGroupId() : DEFAULT_GROUP;
+                            String intBatchGroupKey = intBatchId + "|" + intMessageGroupId;
+                            decrementAndCleanupBatchGroup(intBatchGroupKey);
+                        }
                     }
                     break; // Exit thread
 
@@ -413,6 +442,14 @@ public class ProcessPoolImpl implements ProcessPool {
                     if (message != null) {
                         nackSafely(message);
                         recordProcessingError(message, e);
+
+                        // Decrement batch+group count on exception
+                        String exBatchId = message.batchId();
+                        if (exBatchId != null && !exBatchId.isBlank()) {
+                            String exMessageGroupId = message.messageGroupId() != null ? message.messageGroupId() : DEFAULT_GROUP;
+                            String exBatchGroupKey = exBatchId + "|" + exMessageGroupId;
+                            decrementAndCleanupBatchGroup(exBatchGroupKey);
+                        }
                     }
 
                 } finally {
@@ -466,15 +503,30 @@ public class ProcessPoolImpl implements ProcessPool {
         MDC.put("result", result.name());
         MDC.put("durationMs", String.valueOf(durationMs));
 
+        // Get batch+group key for FIFO tracking
+        String batchId = message.batchId();
+        String messageGroupId = message.messageGroupId() != null ? message.messageGroupId() : DEFAULT_GROUP;
+        String batchGroupKey = batchId != null ? batchId + "|" + messageGroupId : null;
+
         if (result == MediationResult.SUCCESS) {
             LOG.infof("Message processed successfully");
             poolMetrics.recordProcessingSuccess(poolCode, durationMs);
             messageCallback.ack(message);
+
+            // Decrement batch+group count on success
+            if (batchGroupKey != null) {
+                decrementAndCleanupBatchGroup(batchGroupKey);
+            }
         } else if (result == MediationResult.ERROR_CONFIG) {
             // Configuration error (404, etc) - ACK to prevent infinite retries
             LOG.errorf("Configuration error - ACKing message to prevent retry: %s", result);
             poolMetrics.recordProcessingFailure(poolCode, durationMs, result.name());
             messageCallback.ack(message);
+
+            // Decrement batch+group count (config error is treated as ack)
+            if (batchGroupKey != null) {
+                decrementAndCleanupBatchGroup(batchGroupKey);
+            }
 
             // Generate CRITICAL warning for configuration error
             warningService.addWarning(
@@ -494,6 +546,16 @@ public class ProcessPoolImpl implements ProcessPool {
             }
 
             messageCallback.nack(message);
+
+            // Mark batch+group as failed to trigger cascading nacks
+            if (batchGroupKey != null) {
+                boolean wasAlreadyFailed = failedBatchGroups.putIfAbsent(batchGroupKey, Boolean.TRUE) != null;
+                if (!wasAlreadyFailed) {
+                    LOG.warnf("Batch+group [%s] marked as failed - all remaining messages in this batch+group will be nacked",
+                        batchGroupKey);
+                }
+                decrementAndCleanupBatchGroup(batchGroupKey);
+            }
 
             // Generate warning for failed mediation
             warningService.addWarning(
@@ -571,5 +633,30 @@ public class ProcessPoolImpl implements ProcessPool {
         int queueSize = totalQueuedMessages.get();
         int messageGroupCount = messageGroupQueues.size();
         poolMetrics.updatePoolGauges(poolCode, activeWorkers, availablePermits, queueSize, messageGroupCount);
+    }
+
+    /**
+     * Decrement the message count for a batch+group and clean up tracking maps when count reaches zero.
+     * This method is called when:
+     * - A message is successfully processed
+     * - A message fails and is nacked
+     * - A message submission fails
+     *
+     * @param batchGroupKey the batch+group key in format "batchId|messageGroupId"
+     */
+    private void decrementAndCleanupBatchGroup(String batchGroupKey) {
+        AtomicInteger counter = batchGroupMessageCount.get(batchGroupKey);
+        if (counter != null) {
+            int remaining = counter.decrementAndGet();
+            LOG.debugf("Batch+group [%s] count decremented, remaining: %d", batchGroupKey, remaining);
+
+            if (remaining <= 0) {
+                // All messages in this batch+group have been processed
+                // Clean up both tracking maps
+                batchGroupMessageCount.remove(batchGroupKey);
+                failedBatchGroups.remove(batchGroupKey);
+                LOG.debugf("Batch+group [%s] fully processed, cleaned up tracking maps", batchGroupKey);
+            }
+        }
     }
 }

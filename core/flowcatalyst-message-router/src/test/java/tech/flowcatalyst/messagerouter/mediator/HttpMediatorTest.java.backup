@@ -38,9 +38,15 @@ class HttpMediatorTest {
     @Test
     void shouldReturnSuccessFor200Response() {
         // Given
-        MessagePointer message = new MessagePointer("msg-success", "POOL-A", "test-token", MediationType.HTTP, "http://localhost:8081/api/test/success"
-        , null
-            , null);
+        MessagePointer message = new MessagePointer(
+            "msg-success",
+            "POOL-A",
+            "test-token",
+            MediationType.HTTP,
+            "http://localhost:8081/api/test/success"
+        ,
+                null
+            );
 
         // When
         MediationResult result = httpMediator.process(message);
@@ -52,9 +58,15 @@ class HttpMediatorTest {
     @Test
     void shouldReturnErrorProcessFor400Response() {
         // Given
-        MessagePointer message = new MessagePointer("msg-client-error", "POOL-A", "test-token", MediationType.HTTP, "http://localhost:8081/api/test/client-error"
-        , null
-            , null);
+        MessagePointer message = new MessagePointer(
+            "msg-client-error",
+            "POOL-A",
+            "test-token",
+            MediationType.HTTP,
+            "http://localhost:8081/api/test/client-error"
+        ,
+                null
+            );
 
         // When
         MediationResult result = httpMediator.process(message);
@@ -66,9 +78,15 @@ class HttpMediatorTest {
     @Test
     void shouldReturnErrorServerFor500Response() {
         // Given
-        MessagePointer message = new MessagePointer("msg-server-error", "POOL-A", "test-token", MediationType.HTTP, "http://localhost:8081/api/test/server-error"
-        , null
-            , null);
+        MessagePointer message = new MessagePointer(
+            "msg-server-error",
+            "POOL-A",
+            "test-token",
+            MediationType.HTTP,
+            "http://localhost:8081/api/test/server-error"
+        ,
+                null
+            );
 
         // When
         MediationResult result = httpMediator.process(message);
@@ -80,9 +98,15 @@ class HttpMediatorTest {
     @Test
     void shouldReturnErrorConnectionForInvalidHost() {
         // Given - invalid host that will cause connection error
-        MessagePointer message = new MessagePointer("msg-connection-error", "POOL-A", "test-token", MediationType.HTTP, "http://invalid-host-that-does-not-exist.local:9999/test"
-        , null
-            , null);
+        MessagePointer message = new MessagePointer(
+            "msg-connection-error",
+            "POOL-A",
+            "test-token",
+            MediationType.HTTP,
+            "http://invalid-host-that-does-not-exist.local:9999/test"
+        ,
+                null
+            );
 
         // When
         MediationResult result = httpMediator.process(message);
@@ -103,9 +127,15 @@ class HttpMediatorTest {
     @Test
     void shouldSendAuthorizationHeader() {
         // Given
-        MessagePointer message = new MessagePointer("msg-with-auth", "POOL-A", "my-secret-token", MediationType.HTTP, "http://localhost:8081/api/test/success"
-        , null
-            , null);
+        MessagePointer message = new MessagePointer(
+            "msg-with-auth",
+            "POOL-A",
+            "my-secret-token",
+            MediationType.HTTP,
+            "http://localhost:8081/api/test/success"
+        ,
+                null
+            );
 
         // When
         MediationResult result = httpMediator.process(message);
@@ -120,9 +150,15 @@ class HttpMediatorTest {
     void shouldSendMessageIdInBody() {
         // Given
         String messageId = "msg-with-id-123";
-        MessagePointer message = new MessagePointer(messageId, "POOL-A", "test-token", MediationType.HTTP, "http://localhost:8081/api/test/success"
-        , null
-            , null);
+        MessagePointer message = new MessagePointer(
+            messageId,
+            "POOL-A",
+            "test-token",
+            MediationType.HTTP,
+            "http://localhost:8081/api/test/success"
+        ,
+                null
+            );
 
         // When
         MediationResult result = httpMediator.process(message);
@@ -135,9 +171,15 @@ class HttpMediatorTest {
     @Test
     void shouldHandleFastEndpoint() {
         // Given
-        MessagePointer message = new MessagePointer("msg-fast", "POOL-A", "test-token", MediationType.HTTP, "http://localhost:8081/api/test/fast"
-        , null
-            , null);
+        MessagePointer message = new MessagePointer(
+            "msg-fast",
+            "POOL-A",
+            "test-token",
+            MediationType.HTTP,
+            "http://localhost:8081/api/test/fast"
+        ,
+                null
+            );
 
         // When
         long startTime = System.currentTimeMillis();
@@ -152,17 +194,35 @@ class HttpMediatorTest {
     @Test
     void shouldProcessMultipleMessagesInSequence() {
         // Given
-        MessagePointer message1 = new MessagePointer("msg-seq-1", "POOL-A", "test-token", MediationType.HTTP, "http://localhost:8081/api/test/success"
-        , null
-            , null);
+        MessagePointer message1 = new MessagePointer(
+            "msg-seq-1",
+            "POOL-A",
+            "test-token",
+            MediationType.HTTP,
+            "http://localhost:8081/api/test/success"
+        ,
+                null
+            );
 
-        MessagePointer message2 = new MessagePointer("msg-seq-2", "POOL-A", "test-token", MediationType.HTTP, "http://localhost:8081/api/test/client-error"
-        , null
-            , null);
+        MessagePointer message2 = new MessagePointer(
+            "msg-seq-2",
+            "POOL-A",
+            "test-token",
+            MediationType.HTTP,
+            "http://localhost:8081/api/test/client-error"
+        ,
+                null
+            );
 
-        MessagePointer message3 = new MessagePointer("msg-seq-3", "POOL-A", "test-token", MediationType.HTTP, "http://localhost:8081/api/test/server-error"
-        , null
-            , null);
+        MessagePointer message3 = new MessagePointer(
+            "msg-seq-3",
+            "POOL-A",
+            "test-token",
+            MediationType.HTTP,
+            "http://localhost:8081/api/test/server-error"
+        ,
+                null
+            );
 
         // When
         MediationResult result1 = httpMediator.process(message1);
@@ -178,9 +238,15 @@ class HttpMediatorTest {
     @Test
     void shouldHandleEmptyResponseBody() {
         // Given - the test endpoints always return JSON, but testing the mediator can handle various responses
-        MessagePointer message = new MessagePointer("msg-empty", "POOL-A", "test-token", MediationType.HTTP, "http://localhost:8081/api/test/success"
-        , null
-            , null);
+        MessagePointer message = new MessagePointer(
+            "msg-empty",
+            "POOL-A",
+            "test-token",
+            MediationType.HTTP,
+            "http://localhost:8081/api/test/success"
+        ,
+                null
+            );
 
         // When
         MediationResult result = httpMediator.process(message);

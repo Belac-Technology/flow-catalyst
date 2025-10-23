@@ -93,13 +93,15 @@ public abstract class AbstractQueueConsumer implements QueueConsumer {
                 MessagePointer parsedMessage = objectMapper.readValue(raw.body(), MessagePointer.class);
 
                 // Add messageGroupId from queue attributes (for FIFO ordering)
+                // batchId is null here - it will be populated by QueueManager during routing
                 MessagePointer messagePointer = new MessagePointer(
                     parsedMessage.id(),
                     parsedMessage.poolCode(),
                     parsedMessage.authToken(),
                     parsedMessage.mediationType(),
                     parsedMessage.mediationTarget(),
-                    raw.messageGroupId()  // Add messageGroupId from SQS attributes
+                    raw.messageGroupId(),  // Add messageGroupId from SQS attributes
+                    null  // batchId populated by QueueManager.routeMessageBatch()
                 );
 
                 // Add to batch
@@ -131,7 +133,8 @@ public abstract class AbstractQueueConsumer implements QueueConsumer {
                     null,
                     tech.flowcatalyst.messagerouter.model.MediationType.HTTP,
                     "unknown",
-                    null  // No messageGroupId for unparseable messages
+                    null,  // No messageGroupId for unparseable messages
+                    null   // No batchId for unparseable messages
                 ));
 
             } catch (Exception e) {
@@ -163,13 +166,15 @@ public abstract class AbstractQueueConsumer implements QueueConsumer {
             MessagePointer parsedMessage = objectMapper.readValue(rawMessage, MessagePointer.class);
 
             // Add messageGroupId from queue attributes (for FIFO ordering)
+            // batchId is null here - legacy single-message routing doesn't use batching
             MessagePointer messagePointer = new MessagePointer(
                 parsedMessage.id(),
                 parsedMessage.poolCode(),
                 parsedMessage.authToken(),
                 parsedMessage.mediationType(),
                 parsedMessage.mediationTarget(),
-                messageGroupId  // Add messageGroupId from SQS attributes
+                messageGroupId,  // Add messageGroupId from SQS attributes
+                null  // No batchId for single-message routing
             );
 
             // Set MDC context for structured logging
@@ -217,7 +222,8 @@ public abstract class AbstractQueueConsumer implements QueueConsumer {
                 null,
                 tech.flowcatalyst.messagerouter.model.MediationType.HTTP,
                 "unknown",
-                null  // No messageGroupId for unparseable messages
+                null,  // No messageGroupId for unparseable messages
+                null   // No batchId for unparseable messages
             ));
 
             MDC.clear();

@@ -84,14 +84,14 @@ class SqsQueueConsumerTest {
             .thenReturn(response)
             .thenReturn(ReceiveMessageResponse.builder().messages(List.of()).build()); // Empty on second call
 
-        doNothing().when(mockQueueManager).routeMessageBatch(anyList());
+        when(mockQueueManager.routeMessage(any(), any())).thenReturn(true);
 
         // When
         sqsConsumer.start();
 
         // Then
         await().untilAsserted(() -> {
-            verify(mockQueueManager).routeMessageBatch(anyList());
+            verify(mockQueueManager).routeMessage(any(MessagePointer.class), any(MessageCallback.class));
             verify(mockQueueMetrics).recordMessageReceived(queueUrl);
         });
     }
@@ -124,21 +124,20 @@ class SqsQueueConsumerTest {
             .thenReturn(response)
             .thenReturn(ReceiveMessageResponse.builder().messages(List.of()).build());
 
-        ArgumentCaptor<List<QueueManager.BatchMessage>> batchCaptor = ArgumentCaptor.forClass(List.class);
-        doNothing().when(mockQueueManager).routeMessageBatch(batchCaptor.capture());
+        ArgumentCaptor<MessageCallback> callbackCaptor = ArgumentCaptor.forClass(MessageCallback.class);
+        when(mockQueueManager.routeMessage(any(), callbackCaptor.capture())).thenReturn(true);
 
         // When
         sqsConsumer.start();
 
         await().untilAsserted(() -> {
-            verify(mockQueueManager).routeMessageBatch(anyList());
+            verify(mockQueueManager).routeMessage(any(), any());
         });
 
-        // Extract callback from captured batch
-        List<QueueManager.BatchMessage> batch = batchCaptor.getValue();
-        assertFalse(batch.isEmpty());
-        MessageCallback callback = batch.get(0).callback();
-        MessagePointer testMessage = new MessagePointer("msg-ack", "POOL-A", "token", MediationType.HTTP, "http://test.com", null, null);
+        MessageCallback callback = callbackCaptor.getValue();
+        MessagePointer testMessage = new MessagePointer("msg-ack", "POOL-A", "token", MediationType.HTTP, "http://test.com",
+                null
+            );
         callback.ack(testMessage);
 
         // Then
@@ -174,21 +173,20 @@ class SqsQueueConsumerTest {
             .thenReturn(response)
             .thenReturn(ReceiveMessageResponse.builder().messages(List.of()).build());
 
-        ArgumentCaptor<List<QueueManager.BatchMessage>> batchCaptor = ArgumentCaptor.forClass(List.class);
-        doNothing().when(mockQueueManager).routeMessageBatch(batchCaptor.capture());
+        ArgumentCaptor<MessageCallback> callbackCaptor = ArgumentCaptor.forClass(MessageCallback.class);
+        when(mockQueueManager.routeMessage(any(), callbackCaptor.capture())).thenReturn(true);
 
         // When
         sqsConsumer.start();
 
         await().untilAsserted(() -> {
-            verify(mockQueueManager).routeMessageBatch(anyList());
+            verify(mockQueueManager).routeMessage(any(), any());
         });
 
-        // Extract callback from captured batch
-        List<QueueManager.BatchMessage> batch = batchCaptor.getValue();
-        assertFalse(batch.isEmpty());
-        MessageCallback callback = batch.get(0).callback();
-        MessagePointer testMessage = new MessagePointer("msg-nack", "POOL-A", "token", MediationType.HTTP, "http://test.com", null, null);
+        MessageCallback callback = callbackCaptor.getValue();
+        MessagePointer testMessage = new MessagePointer("msg-nack", "POOL-A", "token", MediationType.HTTP, "http://test.com",
+                null
+            );
         callback.nack(testMessage);
 
         // Then
@@ -292,21 +290,20 @@ class SqsQueueConsumerTest {
             .thenReturn(response)
             .thenReturn(ReceiveMessageResponse.builder().messages(List.of()).build());
 
-        ArgumentCaptor<List<QueueManager.BatchMessage>> batchCaptor = ArgumentCaptor.forClass(List.class);
-        doNothing().when(mockQueueManager).routeMessageBatch(batchCaptor.capture());
+        ArgumentCaptor<MessageCallback> callbackCaptor = ArgumentCaptor.forClass(MessageCallback.class);
+        when(mockQueueManager.routeMessage(any(), callbackCaptor.capture())).thenReturn(true);
 
         // When
         sqsConsumer.start();
 
         await().untilAsserted(() -> {
-            verify(mockQueueManager).routeMessageBatch(anyList());
+            verify(mockQueueManager).routeMessage(any(), any());
         });
 
-        // Extract callback from captured batch
-        List<QueueManager.BatchMessage> batch = batchCaptor.getValue();
-        assertFalse(batch.isEmpty());
-        MessageCallback callback = batch.get(0).callback();
-        MessagePointer testMessage = new MessagePointer("msg-visibility", "POOL-A", "token", MediationType.HTTP, "http://test.com", null, null);
+        MessageCallback callback = callbackCaptor.getValue();
+        MessagePointer testMessage = new MessagePointer("msg-visibility", "POOL-A", "token", MediationType.HTTP, "http://test.com",
+                null
+            );
 
         // Verify callback supports visibility control
         assertTrue(callback instanceof MessageVisibilityControl, "Callback should implement MessageVisibilityControl");
