@@ -27,15 +27,19 @@ public class HttpMediator implements Mediator {
 
     private final HttpClient httpClient;
     private final ExecutorService executorService;
+    private final long timeoutMillis;
 
-    public HttpMediator(@org.eclipse.microprofile.config.inject.ConfigProperty(name = "mediator.http.version", defaultValue = "HTTP_2") String httpVersion) {
+    public HttpMediator(
+            @org.eclipse.microprofile.config.inject.ConfigProperty(name = "mediator.http.version", defaultValue = "HTTP_2") String httpVersion,
+            @org.eclipse.microprofile.config.inject.ConfigProperty(name = "mediator.http.timeout.ms", defaultValue = "900000") long timeoutMillis) {
         this.executorService = Executors.newVirtualThreadPerTaskExecutor();
+        this.timeoutMillis = timeoutMillis;
 
         HttpClient.Version version = "HTTP_1_1".equalsIgnoreCase(httpVersion)
             ? HttpClient.Version.HTTP_1_1
             : HttpClient.Version.HTTP_2;
 
-        LOG.infof("Initializing HttpMediator with HTTP version: %s", version);
+        LOG.infof("Initializing HttpMediator with HTTP version: %s, timeout: %dms", version, timeoutMillis);
 
         this.httpClient = HttpClient.newBuilder()
             .version(version)
@@ -75,18 +79,18 @@ public class HttpMediator implements Mediator {
         jitter = 500,
         retryOn = {java.net.http.HttpTimeoutException.class, java.io.IOException.class}
     )
-    @Timeout(value = 900000)
     public MediationResult process(MessagePointer message) {
         try {
             String payload = String.format("{\"messageId\":\"%s\"}", message.id());
             LOG.debugf("Processing message [%s] via HTTP to [%s] with payload: %s",
                 message.id(), message.mediationTarget(), payload);
 
-            // Build HTTP request
+            // Build HTTP request with configurable timeout
             HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(message.mediationTarget()))
                 .header("Authorization", "Bearer " + message.authToken())
                 .header("Content-Type", "application/json")
+                .timeout(Duration.ofMillis(timeoutMillis))
                 .POST(HttpRequest.BodyPublishers.ofString(payload))
                 .build();
 

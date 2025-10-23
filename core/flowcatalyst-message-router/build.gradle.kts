@@ -67,6 +67,7 @@ dependencies {
     testImplementation("org.testcontainers:testcontainers:1.19.7")
     testImplementation("org.testcontainers:localstack:1.19.7")
     testImplementation("io.quarkus:quarkus-test-common")
+    testImplementation("org.wiremock:wiremock:3.3.1")
 }
 
 group = "tech.flowcatalyst"
