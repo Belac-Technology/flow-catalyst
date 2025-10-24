@@ -1,5 +1,6 @@
 package tech.flowcatalyst.postbox.service;
 
+import io.micrometer.core.instrument.Timer;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.client.Client;
@@ -9,6 +10,8 @@ import jakarta.ws.rs.core.Response;
 import org.jboss.logging.Logger;
 import tech.flowcatalyst.postbox.config.PostboxPollerConfig;
 import tech.flowcatalyst.postbox.entity.PostboxMessage;
+import tech.flowcatalyst.postbox.handler.MessageHandlerFactory;
+import tech.flowcatalyst.postbox.metrics.PostboxMetrics;
 import tech.flowcatalyst.postbox.model.MessageStatus;
 import tech.flowcatalyst.postbox.repository.PostboxMessageRepository;
 
@@ -28,6 +31,12 @@ public class PartitionPoller {
 
     @Inject
     PostboxPollerConfig config;
+
+    @Inject
+    MessageHandlerFactory handlerFactory;
+
+    @Inject
+    PostboxMetrics metrics;
 
     private final Long tenantId;
     private final String partitionId;
@@ -77,32 +86,42 @@ public class PartitionPoller {
     }
 
     public void processMessage(PostboxMessage message) {
+        Timer.Sample sample = metrics.startProcessingTimer();
         try {
             // Send message to consumer endpoint
             // In Phase 3, this will route to actual event handlers
-            // For now, just mark as processed
             sendMessage(message);
+            metrics.recordMessageProcessed(message);
         } catch (Exception e) {
             log.errorf(e, "Failed to process message %s", message.id);
+            metrics.recordMessageFailed(message);
             repository.updateStatusWithError(
                     message.id,
                     MessageStatus.FAILED,
                     Instant.now(),
                     "Processing error: " + e.getMessage()
             );
+        } finally {
+            metrics.stopProcessingTimer(sample);
         }
     }
 
-    private void sendMessage(PostboxMessage message) {
-        // Placeholder for future message routing
-        // Phase 3 will implement actual event handlers
+    private void sendMessage(PostboxMessage message) throws Exception {
+        try {
+            // Route to appropriate handler based on message type
+            var handler = handlerFactory.getHandler(message.type);
+            handler.handle(message);
 
-        // For now, mark as processed immediately
-        repository.updateStatus(
-                message.id,
-                MessageStatus.PROCESSED,
-                Instant.now()
-        );
+            // Mark as processed after successful handling
+            repository.updateStatus(
+                    message.id,
+                    MessageStatus.PROCESSED,
+                    Instant.now()
+            );
+        } catch (Exception e) {
+            log.errorf(e, "Error sending message %s", message.id);
+            throw e;
+        }
     }
 
     /**

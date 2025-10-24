@@ -5,6 +5,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
 import tech.flowcatalyst.postbox.config.PostboxPollerConfig;
+import tech.flowcatalyst.postbox.metrics.PostboxMetrics;
 import tech.flowcatalyst.postbox.repository.PostboxMessageRepository;
 
 import java.time.Instant;
@@ -22,6 +23,9 @@ public class PollerDiscovery {
 
     @Inject
     PostboxPollerConfig config;
+
+    @Inject
+    PostboxMetrics metrics;
 
     // Map of "tenantId:partitionId" -> PartitionPoller instance
     private final Map<String, PartitionPoller> activePollers = new ConcurrentHashMap<>();
@@ -62,6 +66,9 @@ public class PollerDiscovery {
             activePollers.keySet().stream()
                     .filter(key -> !activePartitionKeys.contains(key))
                     .forEach(this::stopPoller);
+
+            // Record poller count for metrics
+            metrics.recordPollerCount(activePollers.size());
 
             log.debugf("Discovery complete: %d active pollers", activePollers.size());
         } catch (Exception e) {

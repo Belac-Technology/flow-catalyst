@@ -39,6 +39,12 @@ dependencies {
     // Scheduling for poller discovery
     implementation("io.quarkus:quarkus-scheduler")
 
+    // Health checks
+    implementation("io.quarkus:quarkus-smallrye-health")
+
+    // Metrics
+    implementation("io.quarkus:quarkus-micrometer-registry-prometheus")
+
     // Caching
     implementation("io.quarkus:quarkus-cache")
 
