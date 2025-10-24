@@ -15,6 +15,7 @@ rootProject.name = "flowcatalyst"
 // Core Platform Modules (Java/Quarkus)
 include("core:flowcatalyst-auth")
 include("core:flowcatalyst-message-router")
+include("core:flowcatalyst-postbox")
 include("core:flowcatalyst-core")
 include("core:flowcatalyst-router-app")
 include("core:flowcatalyst-app")

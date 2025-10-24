@@ -20,6 +20,9 @@ dependencies {
     // Auth module
     implementation(project(":core:flowcatalyst-auth"))
 
+    // Postbox module (for transactional outbox pattern)
+    implementation(project(":core:flowcatalyst-postbox"))
+
     // Message Router module (for dispatch job mediation)
     implementation(project(":core:flowcatalyst-message-router"))
 
