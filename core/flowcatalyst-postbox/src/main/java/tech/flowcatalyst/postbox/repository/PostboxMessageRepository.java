@@ -2,6 +2,8 @@ package tech.flowcatalyst.postbox.repository;
 
 import io.quarkus.hibernate.orm.panache.PanacheRepository;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.persistence.EntityManager;
+import jakarta.inject.Inject;
 import tech.flowcatalyst.postbox.entity.PostboxMessage;
 import tech.flowcatalyst.postbox.model.MessageStatus;
 
@@ -11,6 +13,9 @@ import java.util.List;
 @ApplicationScoped
 public class PostboxMessageRepository implements PanacheRepository<PostboxMessage> {
 
+    @Inject
+    EntityManager em;
+
     public List<PostboxMessage> findPendingMessages(Long tenantId, String partitionId, Integer limit) {
         return find("tenantId = ?1 and partitionId = ?2 and status = ?3 order by payloadSize, createdAt",
                 tenantId, partitionId, MessageStatus.PENDING)
@@ -18,10 +23,14 @@ public class PostboxMessageRepository implements PanacheRepository<PostboxMessag
                 .list();
     }
 
+    @SuppressWarnings("unchecked")
     public List<Object[]> findActivePartitions(Instant since) {
-        return find("select distinct tenantId, partitionId from PostboxMessage where createdAt > ?1", since)
-                .project(Object[].class)
-                .list();
+        return em.createQuery(
+                "select distinct m.tenantId, m.partitionId from PostboxMessage m " +
+                "where m.createdAt > :since order by m.tenantId, m.partitionId"
+        )
+        .setParameter("since", since)
+        .getResultList();
     }
 
     public void updateStatus(String messageId, MessageStatus status, Instant processedAt) {
@@ -38,6 +47,10 @@ public class PostboxMessageRepository implements PanacheRepository<PostboxMessag
 
     public void updateRetryCountAndError(String messageId, String errorReason) {
         update("retryCount = retryCount + 1, errorReason = ?1 where id = ?2", errorReason, messageId);
+    }
+
+    public PostboxMessage findByMessageId(String messageId) {
+        return find("id = ?1", messageId).firstResult();
     }
 
 }

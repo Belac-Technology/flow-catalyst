@@ -29,6 +29,10 @@ dependencies {
     implementation("io.quarkus:quarkus-rest")
     implementation("io.quarkus:quarkus-rest-jackson")
 
+    // REST client for poller
+    implementation("io.quarkus:quarkus-rest-client")
+    implementation("io.quarkus:quarkus-rest-client-jackson")
+
     // Validation
     implementation("io.quarkus:quarkus-hibernate-validator")
 
