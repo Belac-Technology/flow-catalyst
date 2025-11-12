@@ -83,123 +83,136 @@
             </div>
         </div>
 
-        <!-- Charts Section -->
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-            <!-- Queue Success Rate Chart -->
-            <div class="bg-white rounded-lg shadow p-6">
-                <h3 class="text-lg font-semibold text-gray-900 mb-4">Queue Success Rate</h3>
-                <div class="h-64">
-                    <canvas id="queueSuccessChart"></canvas>
-                </div>
-            </div>
-
-            <!-- Pool Success Rate Chart -->
-            <div class="bg-white rounded-lg shadow p-6">
-                <h3 class="text-lg font-semibold text-gray-900 mb-4">Pool Success Rate</h3>
-                <div class="h-64">
-                    <canvas id="poolSuccessChart"></canvas>
-                </div>
-            </div>
-        </div>
-
-        <!-- Statistics Tables -->
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-            <!-- Queue Statistics -->
-            <div class="bg-white rounded-lg shadow">
-                <div class="px-6 py-4 border-b border-gray-200">
-                    <h3 class="text-lg font-semibold text-gray-900">Queue Statistics</h3>
-                    <p class="text-sm text-gray-600">Messages processed per queue</p>
-                </div>
-                <!-- Queue Filter -->
-                <div class="px-6 py-4 border-b border-gray-200 bg-white">
-                    <input type="text" id="queueFilterInput" placeholder="Filter by queue name..."
-                           class="border border-gray-300 rounded px-3 py-2 text-sm w-64">
-                </div>
-                <div class="overflow-x-auto">
-                    <table class="min-w-full divide-y divide-gray-200">
-                        <thead class="bg-gray-50">
-                            <tr>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Queue</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Pending</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">In-Flight</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Success</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Failed</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Success Rate</th>
-                            </tr>
-                        </thead>
-                        <tbody id="queueStatsTable" class="bg-white divide-y divide-gray-200">
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-
-            <!-- Pool Statistics -->
-            <div class="bg-white rounded-lg shadow">
-                <div class="px-6 py-4 border-b border-gray-200">
-                    <h3 class="text-lg font-semibold text-gray-900">Pool Statistics</h3>
-                    <p class="text-sm text-gray-600">Message processing pools</p>
-                </div>
-                <!-- Pool Filter -->
-                <div class="px-6 py-4 border-b border-gray-200 bg-white">
-                    <input type="text" id="poolFilterInput" placeholder="Filter by pool name..."
-                           class="border border-gray-300 rounded px-3 py-2 text-sm w-64">
-                </div>
-                <div class="overflow-x-auto">
-                    <table class="min-w-full divide-y divide-gray-200">
-                        <thead class="bg-gray-50">
-                            <tr>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" data-sort="poolCode">Pool</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Workers</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Queue</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" data-sort="totalRateLimited">Rate Limited</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" data-sort="totalProcessed">Total</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" data-sort="totalSucceeded">Success</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" data-sort="successRate">Success Rate</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" data-sort="averageProcessingTimeMs">Avg Time</th>
-                            </tr>
-                        </thead>
-                        <tbody id="poolStatsTable" class="bg-white divide-y divide-gray-200">
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-
-        <!-- Warnings Table -->
+        <!-- Tabbed Content Section -->
         <div class="bg-white rounded-lg shadow">
-            <div class="px-6 py-4 border-b border-gray-200">
-                <div class="flex justify-between items-center">
-                    <h3 class="text-lg font-semibold text-gray-900">Active Warnings</h3>
-                    <div class="flex space-x-4">
-                        <select id="severityFilter" class="border border-gray-300 rounded px-3 py-2 text-sm">
-                            <option value="">All Severities</option>
-                            <option value="ERROR">ERROR</option>
-                            <option value="WARN">WARN</option>
-                            <option value="INFO">INFO</option>
-                        </select>
-                        <input type="text" id="searchFilter" placeholder="Search warnings..."
+            <!-- Tab Navigation -->
+            <div class="border-b border-gray-200">
+                <nav class="flex -mb-px">
+                    <button id="tabQueues" class="tab-button active px-6 py-4 text-sm font-medium border-b-2 border-blue-500 text-blue-600">
+                        Queue Statistics
+                    </button>
+                    <button id="tabPools" class="tab-button px-6 py-4 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300">
+                        Pool Statistics
+                    </button>
+                    <button id="tabWarnings" class="tab-button px-6 py-4 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300">
+                        Warnings
+                    </button>
+                </nav>
+            </div>
+
+            <!-- Tab Content -->
+            <div id="tabContent">
+                <!-- Queue Statistics Tab -->
+                <div id="contentQueues" class="tab-content">
+                    <div class="px-6 py-4 border-b border-gray-200">
+                        <h3 class="text-lg font-semibold text-gray-900">Queue Statistics</h3>
+                        <p class="text-sm text-gray-600">Messages processed per queue</p>
+                    </div>
+                    <!-- Queue Success Rate Chart -->
+                    <div class="px-6 py-4 border-b border-gray-200 bg-gray-50">
+                        <h4 class="text-base font-semibold text-gray-900 mb-4">Queue Success Rate</h4>
+                        <div class="h-64">
+                            <canvas id="queueSuccessChart"></canvas>
+                        </div>
+                    </div>
+                    <!-- Queue Filter -->
+                    <div class="px-6 py-4 border-b border-gray-200 bg-white">
+                        <input type="text" id="queueFilterInput" placeholder="Filter by queue name..."
                                class="border border-gray-300 rounded px-3 py-2 text-sm w-64">
                     </div>
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Queue</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" data-sort="pendingMessages">Pending</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" data-sort="messagesNotVisible">In-Flight</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" data-sort="totalMessages">Total</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" data-sort="totalConsumed">Success</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" data-sort="totalFailed">Failed</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" data-sort="successRate">Success Rate</th>
+                                </tr>
+                            </thead>
+                            <tbody id="queueStatsTable" class="bg-white divide-y divide-gray-200">
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
-            </div>
-            <div class="overflow-x-auto">
-                <table class="min-w-full divide-y divide-gray-200">
-                    <thead class="bg-gray-50">
-                        <tr>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Severity</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Source</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Message</th>
-                        </tr>
-                    </thead>
-                    <tbody id="warningsTableBody" class="bg-white divide-y divide-gray-200">
-                    </tbody>
-                </table>
-            </div>
-            <div id="noWarnings" class="hidden px-6 py-8 text-center text-gray-500">
-                No active warnings
+
+                <!-- Pool Statistics Tab -->
+                <div id="contentPools" class="tab-content hidden">
+                    <div class="px-6 py-4 border-b border-gray-200">
+                        <h3 class="text-lg font-semibold text-gray-900">Pool Statistics</h3>
+                        <p class="text-sm text-gray-600">Message processing pools</p>
+                    </div>
+                    <!-- Pool Success Rate Chart -->
+                    <div class="px-6 py-4 border-b border-gray-200 bg-gray-50">
+                        <h4 class="text-base font-semibold text-gray-900 mb-4">Pool Success Rate</h4>
+                        <div class="h-64">
+                            <canvas id="poolSuccessChart"></canvas>
+                        </div>
+                    </div>
+                    <!-- Pool Filter -->
+                    <div class="px-6 py-4 border-b border-gray-200 bg-white">
+                        <input type="text" id="poolFilterInput" placeholder="Filter by pool name..."
+                               class="border border-gray-300 rounded px-3 py-2 text-sm w-64">
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" data-sort="poolCode">Pool</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Workers</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Queue</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" data-sort="totalRateLimited">Rate Limited</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" data-sort="totalProcessed">Total</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" data-sort="totalSucceeded">Success</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" data-sort="successRate">Success Rate</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" data-sort="averageProcessingTimeMs">Avg Time</th>
+                                </tr>
+                            </thead>
+                            <tbody id="poolStatsTable" class="bg-white divide-y divide-gray-200">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Warnings Tab -->
+                <div id="contentWarnings" class="tab-content hidden">
+                    <div class="px-6 py-4 border-b border-gray-200">
+                        <div class="flex justify-between items-center">
+                            <h3 class="text-lg font-semibold text-gray-900">Active Warnings</h3>
+                            <div class="flex space-x-4">
+                                <select id="severityFilter" class="border border-gray-300 rounded px-3 py-2 text-sm">
+                                    <option value="">All Severities</option>
+                                    <option value="ERROR">ERROR</option>
+                                    <option value="WARN">WARN</option>
+                                    <option value="INFO">INFO</option>
+                                </select>
+                                <input type="text" id="searchFilter" placeholder="Search warnings..."
+                                       class="border border-gray-300 rounded px-3 py-2 text-sm w-64">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Severity</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Source</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Message</th>
+                                </tr>
+                            </thead>
+                            <tbody id="warningsTableBody" class="bg-white divide-y divide-gray-200">
+                            </tbody>
+                        </table>
+                    </div>
+                    <div id="noWarnings" class="hidden px-6 py-8 text-center text-gray-500">
+                        No active warnings
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -222,12 +235,16 @@
                     poolName: ''
                 };
                 this.sorting = {
+                    queueSortField: null,
+                    queueSortDir: 'asc',
                     poolSortField: null,
                     poolSortDir: 'asc'
                 };
+                this.activeTab = 'Queues';
 
                 this.init();
                 this.setupEventListeners();
+                this.setupTabListeners();
                 this.startPeriodicRefresh();
             }
 
@@ -300,6 +317,40 @@
                 });
             }
 
+            setupTabListeners() {
+                const tabs = ['Queues', 'Pools', 'Warnings'];
+
+                tabs.forEach(tab => {
+                    document.getElementById(`tab${tab}`).addEventListener('click', () => {
+                        this.switchTab(tab);
+                    });
+                });
+            }
+
+            switchTab(tabName) {
+                // Update active tab state
+                this.activeTab = tabName;
+
+                // Remove active styling from all tabs
+                document.querySelectorAll('.tab-button').forEach(btn => {
+                    btn.classList.remove('border-blue-500', 'text-blue-600');
+                    btn.classList.add('border-transparent', 'text-gray-500');
+                });
+
+                // Add active styling to selected tab
+                const activeBtn = document.getElementById(`tab${tabName}`);
+                activeBtn.classList.remove('border-transparent', 'text-gray-500');
+                activeBtn.classList.add('border-blue-500', 'text-blue-600');
+
+                // Hide all tab content
+                document.querySelectorAll('.tab-content').forEach(content => {
+                    content.classList.add('hidden');
+                });
+
+                // Show selected tab content
+                document.getElementById(`content${tabName}`).classList.remove('hidden');
+            }
+
             setupEventListeners() {
                 document.getElementById('refreshBtn').addEventListener('click', () => {
                     this.loadData();
@@ -327,8 +378,23 @@
                     this.updatePoolStatsTable();
                 });
 
+                // Queue table column sorting
+                document.querySelectorAll('#contentQueues table thead th[data-sort]').forEach(header => {
+                    header.addEventListener('click', () => {
+                        const field = header.getAttribute('data-sort');
+                        if (this.sorting.queueSortField === field) {
+                            this.sorting.queueSortDir = this.sorting.queueSortDir === 'asc' ? 'desc' : 'asc';
+                        } else {
+                            this.sorting.queueSortField = field;
+                            this.sorting.queueSortDir = 'asc';
+                        }
+                        this.updateQueueSortIndicators();
+                        this.updateQueueStatsTable();
+                    });
+                });
+
                 // Pool table column sorting
-                document.querySelectorAll('table thead th[data-sort]').forEach(header => {
+                document.querySelectorAll('#contentPools table thead th[data-sort]').forEach(header => {
                     header.addEventListener('click', () => {
                         const field = header.getAttribute('data-sort');
                         if (this.sorting.poolSortField === field) {
@@ -376,6 +442,7 @@
                 this.updateMetrics();
                 this.updateCharts();
                 this.updateStatsTables();
+                this.updateQueueSortIndicators();
                 this.updatePoolSortIndicators();
                 this.updateWarningsTable();
             }
@@ -474,6 +541,24 @@
                     return;
                 }
 
+                // Apply sorting
+                if (this.sorting.queueSortField) {
+                    queueEntries.sort(([_, a], [__, b]) => {
+                        let aVal = a[this.sorting.queueSortField];
+                        let bVal = b[this.sorting.queueSortField];
+
+                        // Handle numeric values
+                        if (typeof aVal === 'number' && typeof bVal === 'number') {
+                            return this.sorting.queueSortDir === 'asc' ? aVal - bVal : bVal - aVal;
+                        }
+
+                        // Handle string values
+                        aVal = String(aVal).toLowerCase();
+                        bVal = String(bVal).toLowerCase();
+                        return this.sorting.queueSortDir === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+                    });
+                }
+
                 tbody.innerHTML = queueEntries.map(([queueName, stats]) => `
                     <tr>
                         <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${this.extractQueueName(stats.name)}</td>
@@ -494,9 +579,27 @@
                 `).join('');
             }
 
+            updateQueueSortIndicators() {
+                // Clear all sort indicators
+                document.querySelectorAll('#contentQueues table thead th[data-sort]').forEach(header => {
+                    const html = header.innerHTML;
+                    // Remove any existing sort indicator
+                    header.innerHTML = html.replace(/\s*[↑↓]/g, '');
+                });
+
+                // Add indicator to active sort column
+                if (this.sorting.queueSortField) {
+                    const activeHeader = document.querySelector(`#contentQueues table thead th[data-sort="${this.sorting.queueSortField}"]`);
+                    if (activeHeader) {
+                        const indicator = this.sorting.queueSortDir === 'asc' ? ' ↑' : ' ↓';
+                        activeHeader.innerHTML += indicator;
+                    }
+                }
+            }
+
             updatePoolSortIndicators() {
                 // Clear all sort indicators
-                document.querySelectorAll('table thead th[data-sort]').forEach(header => {
+                document.querySelectorAll('#contentPools table thead th[data-sort]').forEach(header => {
                     const html = header.innerHTML;
                     // Remove any existing sort indicator
                     header.innerHTML = html.replace(/\s*[↑↓]/g, '');
@@ -504,7 +607,7 @@
 
                 // Add indicator to active sort column
                 if (this.sorting.poolSortField) {
-                    const activeHeader = document.querySelector(`table thead th[data-sort="${this.sorting.poolSortField}"]`);
+                    const activeHeader = document.querySelector(`#contentPools table thead th[data-sort="${this.sorting.poolSortField}"]`);
                     if (activeHeader) {
                         const indicator = this.sorting.poolSortDir === 'asc' ? ' ↑' : ' ↓';
                         activeHeader.innerHTML += indicator;
