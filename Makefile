@@ -27,7 +27,7 @@ clean-router-build:
 
 build-router-jar:
 	@echo "Building router JAR (skipping tests)..."
-	./gradlew clean :$(ROUTER_PROJECT):build -x test -x integrationTest
+	./gradlew clean :core:flowcatalyst-message-router:build -x test -x integrationTest
 
 docker-build-router:
 	@echo "Building Docker image with platform linux/amd64..."
