@@ -184,9 +184,9 @@ public class SqsQueueConsumer extends AbstractQueueConsumer {
                 sqsClient.deleteMessage(deleteRequest);
                 LOG.debugf("Deleted message [%s] from SQS", message.id());
             } catch (ReceiptHandleIsInvalidException e) {
-                // Receipt handle is invalid - message may have already been deleted or visibility timeout expired
-                // This is not necessarily an error in distributed systems
-                LOG.debugf("Receipt handle invalid for message [%s] - may already be deleted or timeout expired", message.id());
+                // Receipt handle expired - message will reappear in queue
+                // Mediator will handle idempotency on next arrival
+                LOG.debugf("Receipt handle invalid for message [%s] (visibility expired)", message.id());
             } catch (Exception e) {
                 LOG.errorf(e, "Unexpected error deleting message from SQS: %s", message.id());
             }
