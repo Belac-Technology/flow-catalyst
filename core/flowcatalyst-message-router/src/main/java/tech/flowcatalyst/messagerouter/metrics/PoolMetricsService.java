@@ -41,6 +41,13 @@ public interface PoolMetricsService {
     void recordRateLimitExceeded(String poolCode);
 
     /**
+     * Record that message processing encountered a transient error (will be retried).
+     * These should NOT count against success rate since they may eventually succeed.
+     * Examples: 200 with ack=false (not ready yet), 5xx errors (infrastructure issues)
+     */
+    void recordProcessingTransient(String poolCode, long durationMs);
+
+    /**
      * Initialize pool capacity settings (called once when pool is created)
      */
     void initializePoolCapacity(String poolCode, int maxConcurrency, int maxQueueCapacity);

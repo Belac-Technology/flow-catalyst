@@ -544,6 +544,8 @@ public class ProcessPoolImpl implements ProcessPool {
                     // Nack message if we have one
                     if (message != null) {
                         nackSafely(message);
+                        // Record this as a processing failure in metrics
+                        poolMetrics.recordProcessingFailure(poolCode, 0, "INTERRUPTED");
 
                         // Decrement batch+group count on interruption
                         String intBatchId = message.batchId();
@@ -652,7 +654,31 @@ public class ProcessPoolImpl implements ProcessPool {
             if (batchGroupKey != null) {
                 decrementAndCleanupBatchGroup(batchGroupKey);
             }
+        } else if (result == MediationResult.ERROR_PROCESS) {
+            // Transient error: Message will be retried via queue visibility timeout
+            // Do NOT count as failure - these may eventually succeed
+            // Examples: 200 with ack=false (not ready yet), 5xx errors (infrastructure issues)
+            LOG.debugf("Message encountered transient error, will be retried: %s", result);
+            poolMetrics.recordProcessingTransient(poolCode, durationMs);
+
+            // Reset visibility to default (30s retry)
+            if (messageCallback instanceof tech.flowcatalyst.messagerouter.callback.MessageVisibilityControl visibilityControl) {
+                visibilityControl.resetVisibilityToDefault(message);
+            }
+
+            messageCallback.nack(message);
+
+            // Mark batch+group as failed to trigger cascading nacks
+            if (batchGroupKey != null) {
+                boolean wasAlreadyFailed = failedBatchGroups.putIfAbsent(batchGroupKey, Boolean.TRUE) != null;
+                if (!wasAlreadyFailed) {
+                    LOG.warnf("Batch+group [%s] marked as failed - all remaining messages in this batch+group will be nacked",
+                        batchGroupKey);
+                }
+                decrementAndCleanupBatchGroup(batchGroupKey);
+            }
         } else {
+            // ERROR_SERVER or other unexpected errors - count as actual failure
             LOG.warnf("Mediation failed with result: %s", result);
             poolMetrics.recordProcessingFailure(poolCode, durationMs, result.name());
 
@@ -674,10 +700,6 @@ public class ProcessPoolImpl implements ProcessPool {
             }
 
             // Generate warning for unexpected errors (ERROR_SERVER)
-            // Note: We don't warn for ERROR_PROCESS because:
-            // 1. It's a transient error that will be retried via queue visibility timeout
-            // 2. It may eventually succeed (e.g., ack=false from endpoint, which is normal processing)
-            // 3. HttpMediator generates detailed warnings for actual configuration errors (ERROR_CONFIG)
             if (result == MediationResult.ERROR_SERVER) {
                 warningService.addWarning(
                     "MEDIATION",

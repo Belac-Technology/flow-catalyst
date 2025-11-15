@@ -113,7 +113,7 @@ public class MicrometerQueueMetricsService implements QueueMetricsService {
 
         double successRate = totalMessages > 0
             ? (double) totalConsumed / totalMessages
-            : 0.0;
+            : 1.0;  // Empty queues show 100% (no failures yet)
 
         // Calculate throughput: messages per second over last minute
         long now = System.currentTimeMillis();

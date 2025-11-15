@@ -79,6 +79,16 @@ public class MicrometerPoolMetricsService implements PoolMetricsService {
     }
 
     @Override
+    public void recordProcessingTransient(String poolCode, long durationMs) {
+        PoolMetricsHolder metrics = getOrCreateMetrics(poolCode);
+        metrics.messagesTransient.increment();
+        metrics.processingTimer.record(Duration.ofMillis(durationMs));
+        metrics.totalProcessingTimeMs.addAndGet(durationMs);
+        // Note: Do NOT update lastActivityTimestamp for transient errors
+        // These are retrying and not "completed" yet
+    }
+
+    @Override
     public void initializePoolCapacity(String poolCode, int maxConcurrency, int maxQueueCapacity) {
         PoolMetricsHolder metrics = getOrCreateMetrics(poolCode);
         metrics.maxConcurrency.set(maxConcurrency);
@@ -98,13 +108,13 @@ public class MicrometerPoolMetricsService implements PoolMetricsService {
     public PoolStats getPoolStats(String poolCode) {
         PoolMetricsHolder metrics = poolMetrics.get(poolCode);
         if (metrics == null) {
-            return new PoolStats(poolCode, 0, 0, 0, 0, 0.0, 0, 0, 0, 0, 0, 0.0);
+            return new PoolStats(poolCode, 0, 0, 0, 0, 1.0, 0, 0, 0, 0, 0, 0.0);  // 1.0 = 100% for empty pools
         }
 
         long totalProcessed = (long) (metrics.messagesSucceeded.count() + metrics.messagesFailed.count());
         double successRate = totalProcessed > 0
             ? (metrics.messagesSucceeded.count() / totalProcessed)
-            : 0.0;
+            : 1.0;  // Empty pools show 100% (no failures yet)
 
         double avgProcessingTime = totalProcessed > 0
             ? metrics.totalProcessingTimeMs.get() / (double) totalProcessed
@@ -213,6 +223,11 @@ public class MicrometerPoolMetricsService implements PoolMetricsService {
                 .description("Total messages rejected due to rate limiting")
                 .register(meterRegistry);
 
+            Counter transientCounter = Counter.builder("flowcatalyst.pool.messages.transient")
+                .tag("pool", code)
+                .description("Total messages with transient errors (will be retried)")
+                .register(meterRegistry);
+
             Timer processingTimer = Timer.builder("flowcatalyst.pool.processing.duration")
                 .tag("pool", code)
                 .description("Message processing duration")
@@ -235,6 +250,7 @@ public class MicrometerPoolMetricsService implements PoolMetricsService {
                 succeeded,
                 failed,
                 rateLimited,
+                transientCounter,
                 processingTimer,
                 activeWorkers,
                 availablePermits,
@@ -256,6 +272,7 @@ public class MicrometerPoolMetricsService implements PoolMetricsService {
         Counter messagesSucceeded,
         Counter messagesFailed,
         Counter messagesRateLimited,
+        Counter messagesTransient,
         Timer processingTimer,
         AtomicInteger activeWorkers,
         AtomicInteger availablePermits,
