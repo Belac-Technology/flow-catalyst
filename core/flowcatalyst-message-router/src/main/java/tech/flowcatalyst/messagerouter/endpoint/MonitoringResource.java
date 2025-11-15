@@ -44,6 +44,9 @@ public class MonitoringResource {
     @Inject
     HealthStatusService healthStatusService;
 
+    @Inject
+    tech.flowcatalyst.messagerouter.manager.QueueManager queueManager;
+
     @GET
     @Path("/health")
     @Produces(MediaType.APPLICATION_JSON)
@@ -315,5 +318,26 @@ public class MonitoringResource {
     public Response resetAllCircuitBreakers() {
         circuitBreakerMetricsService.resetAllCircuitBreakers();
         return Response.ok("{\"status\":\"success\"}").build();
+    }
+
+    @GET
+    @Path("/in-flight-messages")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Operation(summary = "Get in-flight messages", description = "Returns messages currently being processed by the router")
+    @APIResponse(
+        responseCode = "200",
+        description = "List of in-flight messages",
+        content = @Content(
+            mediaType = MediaType.APPLICATION_JSON,
+            schema = @Schema(implementation = tech.flowcatalyst.messagerouter.model.InFlightMessage.class)
+        )
+    )
+    public List<tech.flowcatalyst.messagerouter.model.InFlightMessage> getInFlightMessages(
+            @jakarta.ws.rs.QueryParam("limit") @jakarta.ws.rs.DefaultValue("100")
+            @Parameter(description = "Maximum number of messages to return (oldest first)") int limit,
+
+            @jakarta.ws.rs.QueryParam("messageId")
+            @Parameter(description = "Filter by message ID (optional)") String messageId) {
+        return queueManager.getInFlightMessages(limit, messageId);
     }
 }

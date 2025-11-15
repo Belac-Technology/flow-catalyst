@@ -493,6 +493,8 @@ public class ProcessPoolImpl implements ProcessPool {
                         LOG.warnf("Message [%s] from failed batch+group [%s], nacking to preserve FIFO ordering",
                             message.id(), batchGroupKey);
                         nackSafely(message);
+                        // Record this as a processing failure in metrics
+                        poolMetrics.recordProcessingFailure(poolCode, 0, "BATCH_GROUP_FAILED");
                         decrementAndCleanupBatchGroup(batchGroupKey);
                         updateGauges(); // Update gauges since we polled from queue
                         continue; // Skip to next message
@@ -639,7 +641,9 @@ public class ProcessPoolImpl implements ProcessPool {
                 decrementAndCleanupBatchGroup(batchGroupKey);
             }
         } else if (result == MediationResult.ERROR_CONFIG) {
-            // Configuration error (404, etc) - ACK to prevent infinite retries
+            // Configuration error (4xx) - ACK to prevent infinite retries
+            // Note: HttpMediator generates detailed warnings with actual HTTP status codes,
+            // so we don't generate a duplicate generic warning here
             LOG.errorf("Configuration error - ACKing message to prevent retry: %s", result);
             poolMetrics.recordProcessingFailure(poolCode, durationMs, result.name());
             messageCallback.ack(message);
@@ -648,15 +652,6 @@ public class ProcessPoolImpl implements ProcessPool {
             if (batchGroupKey != null) {
                 decrementAndCleanupBatchGroup(batchGroupKey);
             }
-
-            // Generate CRITICAL warning for configuration error
-            warningService.addWarning(
-                "CONFIGURATION",
-                "CRITICAL",
-                String.format("Endpoint configuration error for message %s: %s - Target: %s",
-                    message.id(), result, message.mediationTarget()),
-                "ProcessPool:" + poolCode
-            );
         } else {
             LOG.warnf("Mediation failed with result: %s", result);
             poolMetrics.recordProcessingFailure(poolCode, durationMs, result.name());
@@ -678,13 +673,19 @@ public class ProcessPoolImpl implements ProcessPool {
                 decrementAndCleanupBatchGroup(batchGroupKey);
             }
 
-            // Generate warning for failed mediation
-            warningService.addWarning(
-                "MEDIATION",
-                "ERROR",
-                String.format("Mediation failed for message %s: %s", message.id(), result),
-                "ProcessPool:" + poolCode
-            );
+            // Generate warning for unexpected errors (ERROR_SERVER)
+            // Note: We don't warn for ERROR_PROCESS because:
+            // 1. It's a transient error that will be retried via queue visibility timeout
+            // 2. It may eventually succeed (e.g., ack=false from endpoint, which is normal processing)
+            // 3. HttpMediator generates detailed warnings for actual configuration errors (ERROR_CONFIG)
+            if (result == MediationResult.ERROR_SERVER) {
+                warningService.addWarning(
+                    "MEDIATION",
+                    "ERROR",
+                    String.format("Unexpected error processing message %s: %s", message.id(), result),
+                    "ProcessPool:" + poolCode
+                );
+            }
         }
     }
 
@@ -705,7 +706,7 @@ public class ProcessPoolImpl implements ProcessPool {
     private void logExceptionContext(MessagePointer message, Exception e) {
         warningService.addWarning(
             "PROCESSING",
-            "ERROR",
+            "WARN",
             String.format("Unexpected error processing message %s: %s",
                 message != null ? message.id() : "unknown",
                 e.getMessage()),

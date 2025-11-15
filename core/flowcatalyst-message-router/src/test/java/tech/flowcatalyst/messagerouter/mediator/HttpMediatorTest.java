@@ -13,10 +13,11 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Comprehensive HttpMediator tests covering:
- * - Success (200) responses
- * - Client error (400) responses -> ERROR_PROCESS
- * - Server error (500) responses -> ERROR_SERVER
- * - Connection/timeout errors -> ERROR_CONNECTION
+ * - Success (200 with ack: true) responses -> SUCCESS
+ * - Client error (400) responses -> ERROR_CONFIG (permanent)
+ * - Server error (500) responses -> ERROR_PROCESS (transient)
+ * - Connection/timeout errors -> ERROR_PROCESS (transient, after retries)
+ * - Pending responses (200 with ack: false) -> ERROR_PROCESS (transient)
  * - Retry behavior
  * - Circuit breaker behavior
  */
@@ -50,7 +51,7 @@ class HttpMediatorTest {
     }
 
     @Test
-    void shouldReturnErrorProcessFor400Response() {
+    void shouldReturnErrorConfigFor400Response() {
         // Given
         MessagePointer message = new MessagePointer("msg-client-error", "POOL-A", "test-token", MediationType.HTTP, "http://localhost:8081/api/test/client-error"
         , null
@@ -60,12 +61,12 @@ class HttpMediatorTest {
         MediationResult result = httpMediator.process(message);
 
         // Then
-        assertEquals(MediationResult.ERROR_PROCESS, result, "Should return ERROR_PROCESS for 400 response");
+        assertEquals(MediationResult.ERROR_CONFIG, result, "Should return ERROR_CONFIG for 400 response (permanent error)");
     }
 
     @Test
-    void shouldReturnErrorServerFor500Response() {
-        // Given
+    void shouldReturnErrorProcessFor500Response() {
+        // Given - 5xx errors are transient, so they return ERROR_PROCESS for retry via visibility timeout
         MessagePointer message = new MessagePointer("msg-server-error", "POOL-A", "test-token", MediationType.HTTP, "http://localhost:8081/api/test/server-error"
         , null
             , null);
@@ -74,12 +75,12 @@ class HttpMediatorTest {
         MediationResult result = httpMediator.process(message);
 
         // Then
-        assertEquals(MediationResult.ERROR_SERVER, result, "Should return ERROR_SERVER for 500 response");
+        assertEquals(MediationResult.ERROR_PROCESS, result, "Should return ERROR_PROCESS for 500 response (transient error)");
     }
 
     @Test
-    void shouldReturnErrorConnectionForInvalidHost() {
-        // Given - invalid host that will cause connection error
+    void shouldReturnErrorProcessForInvalidHost() {
+        // Given - invalid host that will cause connection error (transient, will retry via visibility timeout)
         MessagePointer message = new MessagePointer("msg-connection-error", "POOL-A", "test-token", MediationType.HTTP, "http://invalid-host-that-does-not-exist.local:9999/test"
         , null
             , null);
@@ -88,7 +89,8 @@ class HttpMediatorTest {
         MediationResult result = httpMediator.process(message);
 
         // Then
-        assertEquals(MediationResult.ERROR_CONNECTION, result, "Should return ERROR_CONNECTION for connection failure");
+        // Connection errors are transient, so they return ERROR_PROCESS after retries are exhausted
+        assertEquals(MediationResult.ERROR_PROCESS, result, "Should return ERROR_PROCESS for connection failure (transient error)");
     }
 
     @Test
@@ -171,8 +173,8 @@ class HttpMediatorTest {
 
         // Then
         assertEquals(MediationResult.SUCCESS, result1);
-        assertEquals(MediationResult.ERROR_PROCESS, result2);
-        assertEquals(MediationResult.ERROR_SERVER, result3);
+        assertEquals(MediationResult.ERROR_CONFIG, result2); // 400 errors are permanent, return ERROR_CONFIG
+        assertEquals(MediationResult.ERROR_PROCESS, result3); // 5xx errors are transient, return ERROR_PROCESS
     }
 
     @Test
@@ -192,16 +194,31 @@ class HttpMediatorTest {
     @Test
     void shouldHandleDifferentStatusCodes() {
         // Test various HTTP status codes and their mapping
-        // SUCCESS: 200
-        // ERROR_PROCESS: 400-499
-        // ERROR_SERVER: 500+
+        // SUCCESS: 200 with ack: true
+        // ERROR_PROCESS: 200 with ack: false, 500-599, connection errors (after retries)
+        // ERROR_CONFIG: 400, 401, 403, 404, 405, 501
 
         // Already tested:
-        // - 200 -> SUCCESS (shouldReturnSuccessFor200Response)
-        // - 400 -> ERROR_PROCESS (shouldReturnErrorProcessFor400Response)
-        // - 500 -> ERROR_SERVER (shouldReturnErrorServerFor500Response)
+        // - 200 (ack: true) -> SUCCESS (shouldReturnSuccessFor200Response)
+        // - 200 (ack: false) -> ERROR_PROCESS (shouldReturnErrorProcessFor200WithAckFalse)
+        // - 400 -> ERROR_CONFIG (shouldReturnErrorConfigFor400Response)
+        // - 500 -> ERROR_PROCESS (shouldReturnErrorProcessFor500Response)
 
         // This test serves as documentation that the mediator maps these ranges
         assertTrue(true, "Status code mapping documented in other tests");
+    }
+
+    @Test
+    void shouldReturnErrorProcessFor200WithAckFalse() {
+        // Given - endpoint returns 200 but ack: false (message not ready to be processed yet, e.g., notBefore time)
+        MessagePointer message = new MessagePointer("msg-pending", "POOL-A", "test-token", MediationType.HTTP, "http://localhost:8081/api/test/pending"
+        , null
+            , null);
+
+        // When
+        MediationResult result = httpMediator.process(message);
+
+        // Then
+        assertEquals(MediationResult.ERROR_PROCESS, result, "Should return ERROR_PROCESS for 200 with ack: false (will retry)");
     }
 }

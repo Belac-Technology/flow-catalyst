@@ -1,13 +1,16 @@
 package tech.flowcatalyst.messagerouter.mediator;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.smallrye.faulttolerance.api.CircuitBreakerName;
 import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
 import org.eclipse.microprofile.faulttolerance.CircuitBreaker;
 import org.jboss.logging.Logger;
+import tech.flowcatalyst.messagerouter.model.MediationResponse;
 import tech.flowcatalyst.messagerouter.model.MediationResult;
 import tech.flowcatalyst.messagerouter.model.MediationType;
 import tech.flowcatalyst.messagerouter.model.MessagePointer;
+import tech.flowcatalyst.messagerouter.warning.WarningService;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -26,12 +29,16 @@ public class HttpMediator implements Mediator {
     private final HttpClient httpClient;
     private final ExecutorService executorService;
     private final long timeoutMillis;
+    private final WarningService warningService;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     public HttpMediator(
             @org.eclipse.microprofile.config.inject.ConfigProperty(name = "mediator.http.version", defaultValue = "HTTP_2") String httpVersion,
-            @org.eclipse.microprofile.config.inject.ConfigProperty(name = "mediator.http.timeout.ms", defaultValue = "900000") long timeoutMillis) {
+            @org.eclipse.microprofile.config.inject.ConfigProperty(name = "mediator.http.timeout.ms", defaultValue = "900000") long timeoutMillis,
+            WarningService warningService) {
         this.executorService = Executors.newVirtualThreadPerTaskExecutor();
         this.timeoutMillis = timeoutMillis;
+        this.warningService = warningService;
 
         HttpClient.Version version = "HTTP_1_1".equalsIgnoreCase(httpVersion)
             ? HttpClient.Version.HTTP_1_1
@@ -111,6 +118,7 @@ public class HttpMediator implements Mediator {
                 .uri(URI.create(message.mediationTarget()))
                 .header("Authorization", "Bearer " + message.authToken())
                 .header("Content-Type", "application/json")
+                .header("Accept", "application/json")
                 .timeout(Duration.ofMillis(timeoutMillis))
                 .POST(HttpRequest.BodyPublishers.ofString(payload))
                 .build();
@@ -124,40 +132,104 @@ public class HttpMediator implements Mediator {
             // Evaluate response
             int statusCode = response.statusCode();
 
+            // Log full response details for debugging
+            if (statusCode >= 400) {
+                LOG.debugf("HTTP Response Status: %d, Body: %s", statusCode, response.body());
+            }
+
             if (statusCode == 200) {
-                LOG.debugf("Message [%s] processed successfully", message.id());
-                return MediationResult.SUCCESS;
+                // Parse response to check acknowledgment status
+                try {
+                    MediationResponse mediationResponse = objectMapper.readValue(response.body(), MediationResponse.class);
+
+                    if (mediationResponse.ack()) {
+                        LOG.debugf("Message [%s] processed successfully with ack=true", message.id());
+                        return MediationResult.SUCCESS;
+                    } else {
+                        // ack=false means message is accepted but not ready to process yet (e.g., notBefore time not reached)
+                        // Treat as transient, will be retried via queue visibility timeout
+                        LOG.debugf("Message [%s] received 200 OK but ack=false - will be retried. Reason: %s",
+                            message.id(), mediationResponse.message());
+                        return MediationResult.ERROR_PROCESS;
+                    }
+                } catch (Exception e) {
+                    // If response is not valid JSON or missing ack field, treat as success (backward compatibility)
+                    LOG.debugf("Message [%s] received 200 OK but response was not valid MediationResponse - treating as success", message.id());
+                    return MediationResult.SUCCESS;
+                }
             } else if (statusCode == 501) {
                 // 501 Not Implemented - endpoint doesn't support this operation, should ACK to prevent retry
                 LOG.errorf("Message [%s] failed with 501 Not Implemented - operation not supported at endpoint: %s",
                     message.id(), message.mediationTarget());
+                warningService.addWarning(
+                    "CONFIGURATION",
+                    "CRITICAL",
+                    String.format("Endpoint configuration error for message %s: HTTP 501 Not Implemented - Target: %s",
+                        message.id(), message.mediationTarget()),
+                    "HttpMediator"
+                );
                 return MediationResult.ERROR_CONFIG;
             } else if (statusCode >= 500) {
-                // 5xx Server errors (except 501) - transient infrastructure issues, quick retry
-                LOG.warnf("Message [%s] failed with server error: %d - will quick retry", message.id(), statusCode);
-                throw new RetryableException("Server error: " + statusCode);
-            } else if (statusCode == 400) {
-                // 400 Bad Request - potentially transient issue, NACK for SQS visibility timeout retry
-                LOG.warnf("Message [%s] failed with 400 Bad Request - will be retried via queue visibility timeout", message.id());
+                // 5xx Server errors (except 501) - transient infrastructure issues
+                // Let SQS visibility timeout handle retries rather than quick retries
+                LOG.warnf("Message [%s] failed with server error: %d - will be retried via queue visibility timeout", message.id(), statusCode);
                 return MediationResult.ERROR_PROCESS;
+            } else if (statusCode == 400) {
+                // 400 Bad Request - permanent configuration/data error, ACK to prevent retry
+                // Extract reason from response body if available
+                String reason = extractReasonFromResponse(response.body());
+                LOG.errorf("Message [%s] failed with 400 Bad Request - configuration error: %s",
+                    message.id(), reason);
+                warningService.addWarning(
+                    "CONFIGURATION",
+                    "ERROR",
+                    String.format("Bad request for message %s: HTTP 400 - %s - Target: %s",
+                        message.id(), reason, message.mediationTarget()),
+                    "HttpMediator"
+                );
+                return MediationResult.ERROR_CONFIG;
+            } else if (statusCode == 404) {
+                // 404 Not Found - configuration error (endpoint doesn't exist at this URL)
+                LOG.errorf("Message [%s] failed with 404 Not Found - configuration error: endpoint not found", message.id());
+                warningService.addWarning(
+                    "CONFIGURATION",
+                    "ERROR",
+                    String.format("Endpoint not found for message %s: HTTP 404 - Target: %s",
+                        message.id(), message.mediationTarget()),
+                    "HttpMediator"
+                );
+                return MediationResult.ERROR_CONFIG;
             } else if (statusCode >= 401 && statusCode < 500) {
                 // All other 4xx errors indicate configuration problems:
-                // 401 Unauthorized, 403 Forbidden, 404 Not Found, 405 Method Not Allowed, etc.
+                // 401 Unauthorized, 403 Forbidden, 405 Method Not Allowed, etc.
                 // These are permanent errors, should ACK to prevent retry
-                LOG.errorf("Message [%s] failed with %d %s - configuration error at endpoint: %s",
-                    message.id(), statusCode, getStatusDescription(statusCode), message.mediationTarget());
+                // (Note: 404 is handled separately above as a configuration error)
+                String reason = extractReasonFromResponse(response.body());
+                LOG.errorf("Message [%s] failed with %d %s - configuration error: %s",
+                    message.id(), statusCode, getStatusDescription(statusCode), reason);
+                warningService.addWarning(
+                    "CONFIGURATION",
+                    "ERROR",
+                    String.format("Configuration error for message %s: HTTP %d %s - %s - Target: %s",
+                        message.id(), statusCode, getStatusDescription(statusCode), reason, message.mediationTarget()),
+                    "HttpMediator"
+                );
                 return MediationResult.ERROR_CONFIG;
             } else {
                 LOG.warnf("Message [%s] received unexpected status: %d - will be retried via queue visibility timeout", message.id(), statusCode);
                 return MediationResult.ERROR_PROCESS;
             }
 
-        } catch (java.net.http.HttpConnectTimeoutException | java.net.ConnectException e) {
+        } catch (java.net.http.HttpConnectTimeoutException | java.net.ConnectException | java.nio.channels.UnresolvedAddressException e) {
             LOG.errorf(e, "Connection error processing message: %s", message.id());
             throw new RetryableException("Connection error", e);
         } catch (java.net.http.HttpTimeoutException e) {
             LOG.errorf(e, "Timeout processing message: %s", message.id());
             throw new RetryableException("HTTP timeout", e);
+        } catch (java.io.IOException e) {
+            // Catch other IO errors (like UnresolvedAddressException wrapped in IOException)
+            LOG.errorf(e, "IO error processing message: %s", message.id());
+            throw new RetryableException("IO error", e);
         } catch (Exception e) {
             LOG.errorf(e, "Unexpected error processing message: %s", message.id());
             return MediationResult.ERROR_SERVER;
@@ -204,6 +276,29 @@ public class HttpMediator implements Mediator {
             case 451 -> "Unavailable For Legal Reasons";
             default -> "Client Error";
         };
+    }
+
+    /**
+     * Extract reason/message from response body (typically JSON with "message" or "error" field)
+     * Falls back to a default message if parsing fails
+     */
+    private String extractReasonFromResponse(String responseBody) {
+        try {
+            // Try to parse as JSON and extract message or error field
+            if (responseBody != null && !responseBody.isEmpty()) {
+                var jsonNode = objectMapper.readTree(responseBody);
+                if (jsonNode.has("message")) {
+                    return jsonNode.get("message").asText("Unknown error");
+                } else if (jsonNode.has("error")) {
+                    return jsonNode.get("error").asText("Unknown error");
+                } else if (jsonNode.has("reason")) {
+                    return jsonNode.get("reason").asText("Unknown error");
+                }
+            }
+        } catch (Exception e) {
+            // Ignore parsing errors, return generic message
+        }
+        return responseBody != null && !responseBody.isEmpty() ? responseBody : "Unknown error";
     }
 
     /**

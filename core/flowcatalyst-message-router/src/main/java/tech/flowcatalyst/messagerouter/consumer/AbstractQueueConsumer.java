@@ -186,7 +186,7 @@ public abstract class AbstractQueueConsumer implements QueueConsumer {
             MDC.put("mediationTarget", messagePointer.mediationTarget());
 
             // Route message to queue manager with callback
-            boolean routed = queueManager.routeMessage(messagePointer, callback);
+            boolean routed = queueManager.routeMessage(messagePointer, callback, getQueueIdentifier());
 
             // If not routed (already in pipeline or pool full), just discard
             if (!routed) {

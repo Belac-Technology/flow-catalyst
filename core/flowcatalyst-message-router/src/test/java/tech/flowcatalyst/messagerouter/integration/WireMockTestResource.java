@@ -89,19 +89,19 @@ public class WireMockTestResource implements QuarkusTestResourceLifecycleManager
      * Tests can override these or add additional stubs as needed.
      */
     private void configureDefaultStubs() {
-        // Success endpoint - returns 200 OK immediately
+        // Success endpoint - returns 200 OK with ack: true
         wireMockServer.stubFor(post(urlEqualTo("/webhook/success"))
             .willReturn(aResponse()
                 .withStatus(200)
                 .withHeader("Content-Type", "application/json")
-                .withBody("{\"status\":\"success\"}")));
+                .withBody("{\"ack\":true,\"message\":\"\"}")));
 
-        // Slow endpoint - returns 200 OK after 5 second delay
+        // Slow endpoint - returns 200 OK with ack: true after 5 second delay
         wireMockServer.stubFor(post(urlEqualTo("/webhook/slow"))
             .willReturn(aResponse()
                 .withStatus(200)
                 .withHeader("Content-Type", "application/json")
-                .withBody("{\"status\":\"success\"}")
+                .withBody("{\"ack\":true,\"message\":\"\"}")
                 .withFixedDelay(5000)));
 
         // Server error endpoint - returns 500 Internal Server Error
@@ -116,7 +116,14 @@ public class WireMockTestResource implements QuarkusTestResourceLifecycleManager
             .willReturn(aResponse()
                 .withStatus(400)
                 .withHeader("Content-Type", "application/json")
-                .withBody("{\"error\":\"Bad request\"}")));
+                .withBody("{\"error\":\"Record not found\"}")));
+
+        // Pending endpoint - returns 200 OK with ack: false (message not ready yet)
+        wireMockServer.stubFor(post(urlEqualTo("/webhook/pending"))
+            .willReturn(aResponse()
+                .withStatus(200)
+                .withHeader("Content-Type", "application/json")
+                .withBody("{\"ack\":false,\"message\":\"notBefore time not reached\"}")));
 
         // Timeout endpoint - never responds (useful for testing timeouts)
         wireMockServer.stubFor(post(urlEqualTo("/webhook/timeout"))

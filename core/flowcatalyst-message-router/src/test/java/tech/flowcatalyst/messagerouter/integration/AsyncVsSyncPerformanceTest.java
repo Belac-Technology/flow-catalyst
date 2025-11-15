@@ -314,6 +314,7 @@ class AsyncVsSyncPerformanceTest {
 
         org.mockito.Mockito.when(mockQueueManager.routeMessage(
             org.mockito.Mockito.any(),
+            org.mockito.Mockito.any(),
             org.mockito.Mockito.any()
         )).thenAnswer(invocation -> {
             tech.flowcatalyst.messagerouter.model.MessagePointer message =

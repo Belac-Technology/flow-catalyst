@@ -121,7 +121,7 @@ class QueueManagerTest {
         when(mockMediator.process(message)).thenReturn(MediationResult.SUCCESS);
 
         // When
-        boolean routed = queueManager.routeMessage(message, mockCallback);
+        boolean routed = queueManager.routeMessage(message, mockCallback, "test-queue");
 
         // Then
         assertTrue(routed, "Message should be routed successfully");
@@ -149,8 +149,8 @@ class QueueManagerTest {
         when(mockMediator.process(message)).thenReturn(MediationResult.SUCCESS);
 
         // When
-        boolean firstRoute = queueManager.routeMessage(message, mockCallback1);
-        boolean secondRoute = queueManager.routeMessage(message, mockCallback2);
+        boolean firstRoute = queueManager.routeMessage(message, mockCallback1, "test-queue");
+        boolean secondRoute = queueManager.routeMessage(message, mockCallback2, "test-queue");
 
         // Then
         assertTrue(firstRoute, "First message should be routed");
@@ -183,15 +183,15 @@ class QueueManagerTest {
         MessageCallback mockCallback = mock(MessageCallback.class);
 
         // When - submit 3 messages to fill the pool (1 processing + 2 queued)
-        boolean routed1 = queueManager.routeMessage(message1, mockCallback);
-        boolean routed2 = queueManager.routeMessage(message2, mockCallback);
-        boolean routed3 = queueManager.routeMessage(message3, mockCallback);
+        boolean routed1 = queueManager.routeMessage(message1, mockCallback, "test-queue");
+        boolean routed2 = queueManager.routeMessage(message2, mockCallback, "test-queue");
+        boolean routed3 = queueManager.routeMessage(message3, mockCallback, "test-queue");
 
         // Give time for processing to start and queue to fill
         try { Thread.sleep(100); } catch (InterruptedException e) {}
 
         // Now submit 4th message - should be rejected
-        boolean routed4 = queueManager.routeMessage(message4, mockCallback);
+        boolean routed4 = queueManager.routeMessage(message4, mockCallback, "test-queue");
 
         // Then
         assertTrue(routed1, "First message should be routed");
@@ -224,7 +224,7 @@ class QueueManagerTest {
         when(mockMediator.process(message)).thenReturn(MediationResult.SUCCESS);
 
         // Route the message
-        queueManager.routeMessage(message, mockCallback);
+        queueManager.routeMessage(message, mockCallback, "test-queue");
 
         // Wait for processing to complete
         await().untilAsserted(() -> {
@@ -252,7 +252,7 @@ class QueueManagerTest {
         when(mockMediator.process(message)).thenReturn(MediationResult.ERROR_SERVER);
 
         // Route the message
-        queueManager.routeMessage(message, mockCallback);
+        queueManager.routeMessage(message, mockCallback, "test-queue");
 
         // Wait for processing to complete
         await().untilAsserted(() -> {
@@ -310,8 +310,8 @@ class QueueManagerTest {
         when(mockMediator.process(any())).thenReturn(MediationResult.SUCCESS);
 
         // When
-        boolean routed1 = queueManager.routeMessage(message1, mockCallback1);
-        boolean routed2 = queueManager.routeMessage(message2, mockCallback2);
+        boolean routed1 = queueManager.routeMessage(message1, mockCallback1, "test-queue");
+        boolean routed2 = queueManager.routeMessage(message2, mockCallback2, "test-queue");
 
         // Then
         assertTrue(routed1, "Message 1 should be routed to POOL-1");

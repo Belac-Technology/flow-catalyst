@@ -103,14 +103,14 @@ class ActiveMqQueueConsumerTest {
             .thenReturn(textMessage)
             .thenReturn(null); // Stop polling after first message
 
-        when(mockQueueManager.routeMessage(any(), any())).thenReturn(true);
+        when(mockQueueManager.routeMessage(any(MessagePointer.class), any(MessageCallback.class), any(String.class))).thenReturn(true);
 
         // When
         activeMqConsumer.start();
 
         // Then
         await().untilAsserted(() -> {
-            verify(mockQueueManager).routeMessage(any(MessagePointer.class), any(MessageCallback.class));
+            verify(mockQueueManager).routeMessage(any(MessagePointer.class), any(MessageCallback.class), any(String.class));
             verify(mockQueueMetrics).recordMessageReceived(queueUri);
             verify(mockQueueMetrics).recordMessageProcessed(queueUri, true);
         });
@@ -137,13 +137,13 @@ class ActiveMqQueueConsumerTest {
             .thenReturn(null);
 
         ArgumentCaptor<MessageCallback> callbackCaptor = ArgumentCaptor.forClass(MessageCallback.class);
-        when(mockQueueManager.routeMessage(any(), callbackCaptor.capture())).thenReturn(true);
+        when(mockQueueManager.routeMessage(any(MessagePointer.class), callbackCaptor.capture(), any(String.class))).thenReturn(true);
 
         // When
         activeMqConsumer.start();
 
         await().untilAsserted(() -> {
-            verify(mockQueueManager).routeMessage(any(), any());
+            verify(mockQueueManager).routeMessage(any(MessagePointer.class), any(MessageCallback.class), any(String.class));
         });
 
         MessageCallback callback = callbackCaptor.getValue();
@@ -176,13 +176,13 @@ class ActiveMqQueueConsumerTest {
             .thenReturn(null);
 
         ArgumentCaptor<MessageCallback> callbackCaptor = ArgumentCaptor.forClass(MessageCallback.class);
-        when(mockQueueManager.routeMessage(any(), callbackCaptor.capture())).thenReturn(true);
+        when(mockQueueManager.routeMessage(any(MessagePointer.class), callbackCaptor.capture(), any(String.class))).thenReturn(true);
 
         // When
         activeMqConsumer.start();
 
         await().untilAsserted(() -> {
-            verify(mockQueueManager).routeMessage(any(), any());
+            verify(mockQueueManager).routeMessage(any(MessagePointer.class), any(MessageCallback.class), any(String.class));
         });
 
         MessageCallback callback = callbackCaptor.getValue();
@@ -272,7 +272,7 @@ class ActiveMqQueueConsumerTest {
         await().untilAsserted(() -> {
             verify(mockQueueMetrics).recordMessageReceived(queueUri);
             verify(mockQueueMetrics).recordMessageProcessed(queueUri, false);
-            verify(mockQueueManager, never()).routeMessage(any(), any());
+            verify(mockQueueManager, never()).routeMessage(any(MessagePointer.class), any(MessageCallback.class), any(String.class));
         });
     }
 
@@ -291,7 +291,7 @@ class ActiveMqQueueConsumerTest {
         // Then
         await().untilAsserted(() -> {
             // Should ignore non-text messages
-            verify(mockQueueManager, never()).routeMessage(any(), any());
+            verify(mockQueueManager, never()).routeMessage(any(MessagePointer.class), any(MessageCallback.class), any(String.class));
         });
     }
 
@@ -316,14 +316,14 @@ class ActiveMqQueueConsumerTest {
             .thenReturn(null);
 
         // Message not routed (pool full or duplicate)
-        when(mockQueueManager.routeMessage(any(), any())).thenReturn(false);
+        when(mockQueueManager.routeMessage(any(MessagePointer.class), any(MessageCallback.class), any(String.class))).thenReturn(false);
 
         // When
         activeMqConsumer.start();
 
         // Then
         await().untilAsserted(() -> {
-            verify(mockQueueManager).routeMessage(any(), any());
+            verify(mockQueueManager).routeMessage(any(MessagePointer.class), any(MessageCallback.class), any(String.class));
             verify(mockQueueMetrics).recordMessageProcessed(queueUri, false);
         });
     }

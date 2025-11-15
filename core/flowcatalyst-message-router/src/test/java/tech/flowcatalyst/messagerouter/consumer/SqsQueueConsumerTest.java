@@ -260,7 +260,7 @@ class SqsQueueConsumerTest {
         await().untilAsserted(() -> {
             verify(mockQueueMetrics).recordMessageReceived(queueUrl);
             verify(mockQueueMetrics).recordMessageProcessed(queueUrl, false);
-            verify(mockQueueManager, never()).routeMessage(any(), any());
+            verify(mockQueueManager, never()).routeMessage(any(MessagePointer.class), any(MessageCallback.class), any(String.class));
         });
     }
 

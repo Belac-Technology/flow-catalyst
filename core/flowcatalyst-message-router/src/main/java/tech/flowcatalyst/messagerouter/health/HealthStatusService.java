@@ -74,7 +74,7 @@ public class HealthStatusService {
         int healthyPools = 0;
         int activeWarnings = warnings.size();
         int criticalWarnings = (int) warnings.stream()
-            .filter(w -> "ERROR".equalsIgnoreCase(w.severity()))
+            .filter(w -> "CRITICAL".equalsIgnoreCase(w.severity()))
             .count();
         int circuitBreakersOpen = (int) circuitBreakers.values().stream()
             .filter(cb -> "OPEN".equalsIgnoreCase(cb.state()))
@@ -167,51 +167,48 @@ public class HealthStatusService {
             int circuitBreakersOpen,
             int totalConsumers, int healthyConsumers) {
 
-        // DEGRADED: Critical issues
+        // DEGRADED: Infrastructure is broken or unable to process messages
+        // Only check for critical infrastructure issues, not operational warnings
+
         if (criticalWarnings > 0) {
-            return "DEGRADED";
+            return "DEGRADED";  // Critical infrastructure failures (restart failures, pool limits, etc)
         }
 
         if (circuitBreakersOpen > 0) {
-            return "DEGRADED";
+            return "DEGRADED";  // Circuit breakers open = infrastructure issue
         }
 
         if (totalQueues > 0 && healthyQueues == 0) {
-            return "DEGRADED";
+            return "DEGRADED";  // All queues unhealthy = cannot process
         }
 
         if (totalPools > 0 && healthyPools == 0) {
-            return "DEGRADED";
+            return "DEGRADED";  // All pools unhealthy = cannot process
         }
 
         // DEGRADED: All consumers are unhealthy (stalled/hung)
         if (totalConsumers > 0 && healthyConsumers == 0) {
-            return "DEGRADED";
+            return "DEGRADED";  // All consumers stalled = cannot fetch messages
         }
 
-        // WARNING: Some issues but not critical
-        if (activeWarnings > MAX_WARNINGS_WARNING) {
-            return "WARNING";
-        }
-
+        // WARNING: Some pools/queues are unhealthy, but system can still process
         if (totalQueues > 0 && healthyQueues < totalQueues) {
-            return "WARNING";
+            return "WARNING";  // Some queues have issues, but not all
         }
 
         if (totalPools > 0 && healthyPools < totalPools) {
-            return "WARNING";
+            return "WARNING";  // Some pools have issues, but not all
         }
 
         // WARNING: Some consumers are unhealthy
         if (totalConsumers > 0 && healthyConsumers < totalConsumers) {
-            return "WARNING";
+            return "WARNING";  // Some consumers stalled, but not all
         }
 
-        if (activeWarnings > MAX_WARNINGS_HEALTHY) {
-            return "WARNING";
-        }
-
-        // HEALTHY: All good
+        // HEALTHY: Router is operational
+        // Note: Active warnings are not included - warnings are for visibility only,
+        // not for determining if the router is working. Message processing failures
+        // are operational issues, not router failures.
         return "HEALTHY";
     }
 }

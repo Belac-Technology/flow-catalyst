@@ -6,6 +6,9 @@ import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.eclipse.microprofile.openapi.annotations.Operation;
+import org.eclipse.microprofile.openapi.annotations.media.Content;
+import org.eclipse.microprofile.openapi.annotations.media.Schema;
+import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 import org.jboss.logging.Logger;
 
@@ -14,7 +17,11 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 @Path("/api/test")
-@Tag(name = "Test Endpoints", description = "Test endpoints for simulating downstream service responses")
+@Tag(
+    name = "Test Endpoints",
+    description = "Test endpoints that simulate downstream service responses and document the expected mediation target format. " +
+                  "These endpoints return MediationResponse (ack: true|false) format that HttpMediator expects from real downstream services."
+)
 public class TestResponseResource {
 
     private static final Logger LOG = Logger.getLogger(TestResponseResource.class);
@@ -151,12 +158,54 @@ public class TestResponseResource {
     @Path("/success")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
-    @Operation(summary = "Always success endpoint (200)")
+    @Operation(
+        summary = "Success endpoint - ready to process",
+        description = "Returns 200 OK with MediationResponse indicating message is ready (ack: true)"
+    )
+    @APIResponse(
+        responseCode = "200",
+        description = "Message successfully processed and ready",
+        content = @Content(
+            mediaType = MediaType.APPLICATION_JSON,
+            schema = @Schema(
+                example = "{\"ack\":true,\"message\":\"\"}",
+                description = "MediationResponse - ack: true means message is ready for processing"
+            )
+        )
+    )
     public Response success(String body) {
         int requestId = requestCounter.incrementAndGet();
         LOG.infof("Success endpoint - Request #%d completed", requestId);
         return Response.ok()
-            .entity("{\"status\":\"success\",\"endpoint\":\"success\",\"requestId\":" + requestId + "}")
+            .entity("{\"ack\":true,\"message\":\"\"}")
+            .build();
+    }
+
+    @POST
+    @Path("/pending")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    @Operation(
+        summary = "Pending endpoint - not ready yet",
+        description = "Returns 200 OK with MediationResponse indicating message is NOT ready (ack: false). " +
+                      "This is useful for messages that should be retried later (e.g., notBefore time not reached)"
+    )
+    @APIResponse(
+        responseCode = "200",
+        description = "Message not ready yet - will be retried via queue visibility timeout",
+        content = @Content(
+            mediaType = MediaType.APPLICATION_JSON,
+            schema = @Schema(
+                example = "{\"ack\":false,\"message\":\"notBefore time not reached\"}",
+                description = "MediationResponse - ack: false means message should be retried (transient state)"
+            )
+        )
+    )
+    public Response pending(String body) {
+        int requestId = requestCounter.incrementAndGet();
+        LOG.infof("Pending endpoint - Request #%d returning 200 with ack: false", requestId);
+        return Response.ok()
+            .entity("{\"ack\":false,\"message\":\"notBefore time not reached\"}")
             .build();
     }
 
@@ -169,7 +218,7 @@ public class TestResponseResource {
         int requestId = requestCounter.incrementAndGet();
         LOG.warnf("Client error endpoint - Request #%d returning 400", requestId);
         return Response.status(400)
-            .entity("{\"status\":\"error\",\"endpoint\":\"client-error\",\"requestId\":" + requestId + "}")
+            .entity("{\"status\":\"error\",\"endpoint\":\"client-error\",\"requestId\":" + requestId + ",\"error\":\"Record not found\"}")
             .build();
     }
 

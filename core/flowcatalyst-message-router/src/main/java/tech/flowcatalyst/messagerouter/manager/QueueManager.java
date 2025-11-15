@@ -81,6 +81,8 @@ public class QueueManager implements MessageCallback {
     MeterRegistry meterRegistry;
 
     private final ConcurrentHashMap<String, MessagePointer> inPipelineMap = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Long> inPipelineTimestamps = new ConcurrentHashMap<>();  // Track when each message entered the pipeline
+    private final ConcurrentHashMap<String, String> inPipelineQueueIds = new ConcurrentHashMap<>();  // Track which queue each message came from
     private final ConcurrentHashMap<String, ProcessPool> processPools = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, QueueConsumer> queueConsumers = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, MessageCallback> messageCallbacks = new ConcurrentHashMap<>();
@@ -260,8 +262,10 @@ public class QueueManager implements MessageCallback {
             }
         }
 
-        // Clear both maps
+        // Clear all tracking maps
         inPipelineMap.clear();
+        inPipelineTimestamps.clear();
+        inPipelineQueueIds.clear();
         messageCallbacks.clear();
 
         // Update gauges one final time
@@ -456,7 +460,7 @@ public class QueueManager implements MessageCallback {
                     LOG.errorf(e, "Failed to restart consumer for queue [%s]", queueIdentifier);
                     warningService.addWarning(
                         "CONSUMER_RESTART_FAILED",
-                        "ERROR",
+                        "CRITICAL",
                         String.format("Failed to restart consumer for queue [%s]: %s",
                             queueIdentifier, e.getMessage()),
                         "QueueManager"
@@ -618,7 +622,7 @@ public class QueueManager implements MessageCallback {
                             poolConfig.code(), currentPoolCount, maxPools);
                         warningService.addWarning(
                             "POOL_LIMIT",
-                            "ERROR",
+                            "CRITICAL",
                             String.format("Max pool limit reached (%d/%d) - cannot create pool [%s]",
                                 currentPoolCount, maxPools, poolConfig.code()),
                             "QueueManager"
@@ -1012,6 +1016,7 @@ public class QueueManager implements MessageCallback {
 
                     // Add to pipeline
                     inPipelineMap.put(enrichedMessage.id(), enrichedMessage);
+                    inPipelineTimestamps.put(enrichedMessage.id(), System.currentTimeMillis());
                     messageCallbacks.put(enrichedMessage.id(), callback);
 
                     // Try to submit to pool
@@ -1022,6 +1027,8 @@ public class QueueManager implements MessageCallback {
 
                         // Remove from pipeline since we're nacking
                         inPipelineMap.remove(enrichedMessage.id());
+                        inPipelineTimestamps.remove(enrichedMessage.id());
+                        inPipelineQueueIds.remove(enrichedMessage.id());
                         messageCallbacks.remove(enrichedMessage.id());
 
                         // Nack this message
@@ -1046,9 +1053,10 @@ public class QueueManager implements MessageCallback {
      *
      * @param message the message to route
      * @param callback the callback to invoke for ack/nack
+     * @param queueIdentifier the queue this message came from
      * @return true if message was routed successfully, false otherwise
      */
-    public boolean routeMessage(MessagePointer message, MessageCallback callback) {
+    public boolean routeMessage(MessagePointer message, MessageCallback callback, String queueIdentifier) {
         // Check if message is already in pipeline (deduplication)
         if (inPipelineMap.containsKey(message.id())) {
             LOG.debugf("Message [%s] already in pipeline, discarding", message.id());
@@ -1057,6 +1065,8 @@ public class QueueManager implements MessageCallback {
 
         // Add to pipeline map
         inPipelineMap.put(message.id(), message);
+        inPipelineTimestamps.put(message.id(), System.currentTimeMillis());
+        inPipelineQueueIds.put(message.id(), queueIdentifier);
         messageCallbacks.put(message.id(), callback);
 
         // Update gauges
@@ -1090,6 +1100,8 @@ public class QueueManager implements MessageCallback {
         if (!submitted) {
             LOG.warnf("Failed to submit message [%s] to pool [%s] - queue full", message.id(), message.poolCode());
             inPipelineMap.remove(message.id());
+            inPipelineTimestamps.remove(message.id());
+            inPipelineQueueIds.remove(message.id());
             messageCallbacks.remove(message.id());
             updateMapSizeGauges(); // Update gauges after removing from maps
 
@@ -1128,6 +1140,8 @@ public class QueueManager implements MessageCallback {
     public void ack(MessagePointer message) {
         MessageCallback callback = messageCallbacks.remove(message.id());
         inPipelineMap.remove(message.id());
+        inPipelineTimestamps.remove(message.id());
+        inPipelineQueueIds.remove(message.id());
         if (callback != null) {
             callback.ack(message);
         }
@@ -1138,6 +1152,8 @@ public class QueueManager implements MessageCallback {
     public void nack(MessagePointer message) {
         MessageCallback callback = messageCallbacks.remove(message.id());
         inPipelineMap.remove(message.id());
+        inPipelineTimestamps.remove(message.id());
+        inPipelineQueueIds.remove(message.id());
         if (callback != null) {
             callback.nack(message);
         }
@@ -1222,5 +1238,38 @@ public class QueueManager implements MessageCallback {
             pool.start();
             return pool;
         });
+    }
+
+    /**
+     * Get in-flight messages sorted by timestamp (oldest first)
+     *
+     * @param limit maximum number of messages to return
+     * @param messageIdFilter optional message ID to filter by
+     * @return list of in-flight messages
+     */
+    public java.util.List<tech.flowcatalyst.messagerouter.model.InFlightMessage> getInFlightMessages(
+            int limit, String messageIdFilter) {
+        return inPipelineMap.entrySet().stream()
+            .map(entry -> {
+                String msgId = entry.getKey();
+                MessagePointer msg = entry.getValue();
+                Long timestamp = inPipelineTimestamps.get(msgId);
+                if (timestamp == null) {
+                    timestamp = System.currentTimeMillis();
+                }
+                String queueId = inPipelineQueueIds.getOrDefault(msgId, "unknown");
+                return tech.flowcatalyst.messagerouter.model.InFlightMessage.from(
+                    msgId,
+                    queueId,
+                    timestamp,
+                    msg.poolCode()
+                );
+            })
+            .filter(msg -> messageIdFilter == null || messageIdFilter.isEmpty() ||
+                    msg.messageId().toLowerCase().contains(messageIdFilter.toLowerCase()))
+            .sorted(java.util.Comparator.comparingLong(
+                tech.flowcatalyst.messagerouter.model.InFlightMessage::elapsedTimeMs).reversed())
+            .limit(limit)
+            .collect(java.util.stream.Collectors.toList());
     }
 }

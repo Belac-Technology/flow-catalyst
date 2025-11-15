@@ -121,12 +121,13 @@ class ResilienceIntegrationTest {
 
         // Create custom mediator that tracks timeouts
         Mediator timeoutTrackingMediator = new Mediator() {
-            private final HttpMediator httpMediator = new HttpMediator("HTTP_2", 10000); // 10 second timeout
+            private final HttpMediator httpMediator = new HttpMediator("HTTP_2", 10000, warningService); // 10 second timeout
 
             @Override
             public MediationResult process(MessagePointer message) {
                 MediationResult result = httpMediator.process(message);
-                if (result == MediationResult.ERROR_CONNECTION) {
+                if (result == MediationResult.ERROR_PROCESS) {
+                    // Timeout errors return ERROR_PROCESS (transient, will be retried via visibility timeout)
                     timeoutCount.incrementAndGet();
                 }
                 return result;
@@ -180,8 +181,10 @@ class ResilienceIntegrationTest {
         inPipelineMap.put(timeoutMessage.id(), timeoutMessage);
         processPool.submit(timeoutMessage);
 
-        // Then: Wait for timeout and NACK (HttpMediator has 10s timeout, allow some overhead)
-        await().atMost(15, SECONDS).until(() -> nackedMessages.contains("msg-timeout-1"));
+        // Then: Wait for timeout and NACK
+        // HttpMediator has 10s timeout, with 3 retries and backoff delays (1s, 2s, 3s)
+        // Total time: ~10s + 1s + ~10s + 2s + ~10s = ~33s, plus overhead
+        await().atMost(45, SECONDS).until(() -> nackedMessages.contains("msg-timeout-1"));
 
         // Verify timeout behavior
         await().atMost(5, SECONDS).until(() -> inPipelineMap.isEmpty());
@@ -227,12 +230,13 @@ class ResilienceIntegrationTest {
         AtomicInteger serverErrorCount = new AtomicInteger(0);
 
         Mediator errorTrackingMediator = new Mediator() {
-            private final HttpMediator httpMediator = new HttpMediator("HTTP_2", 10000);
+            private final HttpMediator httpMediator = new HttpMediator("HTTP_2", 10000, warningService);
 
             @Override
             public MediationResult process(MessagePointer message) {
                 MediationResult result = httpMediator.process(message);
-                if (result == MediationResult.ERROR_SERVER) {
+                if (result == MediationResult.ERROR_PROCESS) {
+                    // 5xx server errors return ERROR_PROCESS (transient, will be retried via visibility timeout)
                     serverErrorCount.incrementAndGet();
                 }
                 return result;
@@ -326,14 +330,14 @@ class ResilienceIntegrationTest {
      *
      * <p>Validates handling of client errors:
      * <ul>
-     *   <li>400 Bad Request → NACK (potentially transient, worth retrying)</li>
+     *   <li>400 Bad Request → ACK (permanent error, like "Record not found")</li>
      *   <li>404 Not Found → ACK (configuration error, don't retry)</li>
      *   <li>Pool continues processing</li>
      * </ul>
      *
-     * <p><b>Note:</b> ERROR_CONFIG results (404, 401, etc.) are ACKed to prevent
-     * infinite retries of configuration errors. ERROR_PROCESS (400) is NACKed as
-     * it could be transient.
+     * <p><b>Note:</b> Both 400 and 404 now return ERROR_CONFIG and are ACKed
+     * to prevent infinite retries. Transient errors that need retry use the
+     * 200 response format with ack:false field instead of returning 4xx errors.
      */
     @Test
     void shouldHandleHttpClientErrors() {
@@ -354,7 +358,7 @@ class ResilienceIntegrationTest {
         AtomicInteger configErrorCount = new AtomicInteger(0);
 
         Mediator errorTrackingMediator = new Mediator() {
-            private final HttpMediator httpMediator = new HttpMediator("HTTP_2", 10000);
+            private final HttpMediator httpMediator = new HttpMediator("HTTP_2", 10000, warningService);
 
             @Override
             public MediationResult process(MessagePointer message) {
@@ -431,11 +435,12 @@ class ResilienceIntegrationTest {
         // Then: Wait for processing
         await().atMost(10, SECONDS).until(() -> inPipelineMap.isEmpty());
 
-        // Verify 400 error was NACKed (ERROR_PROCESS - could be transient)
-        assertTrue(nackedMessages.contains("msg-400"),
-            "400 error should result in NACK (ERROR_PROCESS)");
-        assertFalse(ackedMessages.contains("msg-400"),
-            "400 error should not be ACKed");
+        // Verify 400 error was ACKed (ERROR_CONFIG - permanent configuration error)
+        // With new ack:false response format, 400 is now treated as permanent error
+        assertTrue(ackedMessages.contains("msg-400"),
+            "400 error should result in ACK (ERROR_CONFIG - permanent error)");
+        assertFalse(nackedMessages.contains("msg-400"),
+            "400 error should not be NACKed");
 
         // Verify 404 error was ACKed (ERROR_CONFIG - configuration error, don't retry)
         assertTrue(ackedMessages.contains("msg-404"),
@@ -443,10 +448,10 @@ class ResilienceIntegrationTest {
         assertFalse(nackedMessages.contains("msg-404"),
             "404 error should not be NACKed");
 
-        assertEquals(1, processErrorCount.get(),
-            "Should have detected 1 process error (400)");
-        assertEquals(1, configErrorCount.get(),
-            "Should have detected 1 config error (404)");
+        assertEquals(0, processErrorCount.get(),
+            "Should have detected 0 process errors (400 and 404 are both permanent errors)");
+        assertEquals(2, configErrorCount.get(),
+            "Should have detected 2 config errors (400 and 404)");
 
         // Verify WireMock received both requests
         verify(postRequestedFor(urlEqualTo("/webhook/error-400")));
@@ -485,7 +490,7 @@ class ResilienceIntegrationTest {
         AtomicInteger processedCount = new AtomicInteger(0);
 
         Mediator simpleMediator = new Mediator() {
-            private final HttpMediator httpMediator = new HttpMediator("HTTP_2", 10000);
+            private final HttpMediator httpMediator = new HttpMediator("HTTP_2", 10000, warningService);
 
             @Override
             public MediationResult process(MessagePointer message) {
@@ -598,7 +603,7 @@ class ResilienceIntegrationTest {
         AtomicInteger processedCount = new AtomicInteger(0);
 
         Mediator slowMediator = new Mediator() {
-            private final HttpMediator httpMediator = new HttpMediator("HTTP_2", 10000);
+            private final HttpMediator httpMediator = new HttpMediator("HTTP_2", 10000, warningService);
 
             @Override
             public MediationResult process(MessagePointer message) {
@@ -730,7 +735,7 @@ class ResilienceIntegrationTest {
         AtomicInteger attemptCount = new AtomicInteger(0);
 
         Mediator trackingMediator = new Mediator() {
-            private final HttpMediator httpMediator = new HttpMediator("HTTP_2", 10000);
+            private final HttpMediator httpMediator = new HttpMediator("HTTP_2", 10000, warningService);
 
             @Override
             public MediationResult process(MessagePointer message) {
