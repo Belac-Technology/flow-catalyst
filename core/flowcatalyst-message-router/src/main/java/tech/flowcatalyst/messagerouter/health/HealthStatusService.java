@@ -29,6 +29,8 @@ public class HealthStatusService {
     private static final double POOL_SUCCESS_THRESHOLD = 0.90; // 90%
     private static final int MAX_WARNINGS_HEALTHY = 5;
     private static final int MAX_WARNINGS_WARNING = 20;
+    private static final long HEALTH_STATUS_TIMEOUT_MINUTES = 30;  // Warnings older than 30 min don't count for health
+    private static final long AUTO_ACKNOWLEDGE_TIMEOUT_HOURS = 8;  // Auto-clear warnings older than 8 hours
 
     @ConfigProperty(name = "message-router.enabled", defaultValue = "true")
     boolean messageRouterEnabled;
@@ -63,7 +65,31 @@ public class HealthStatusService {
 
         Map<String, QueueStats> queueStats = queueMetricsService.getAllQueueStats();
         Map<String, PoolStats> poolStats = poolMetricsService.getAllPoolStats();
-        List<Warning> warnings = warningService.getUnacknowledgedWarnings();
+        List<Warning> allWarnings = warningService.getUnacknowledgedWarnings();
+
+        long now = System.currentTimeMillis();
+        long thirtyMinutesAgoMs = now - (HEALTH_STATUS_TIMEOUT_MINUTES * 60 * 1000);
+        long eightHoursAgoMs = now - (AUTO_ACKNOWLEDGE_TIMEOUT_HOURS * 60 * 60 * 1000);
+
+        // Auto-acknowledge and remove warnings older than 8 hours
+        int autoAcknowledgedCount = 0;
+        for (Warning warning : allWarnings) {
+            if (warning.timestamp().toEpochMilli() < eightHoursAgoMs && !warning.acknowledged()) {
+                warningService.acknowledgeWarning(warning.id());
+                autoAcknowledgedCount++;
+            }
+        }
+        if (autoAcknowledgedCount > 0) {
+            LOG.infof("Auto-acknowledged %d warnings older than %d hours", autoAcknowledgedCount, AUTO_ACKNOWLEDGE_TIMEOUT_HOURS);
+        }
+
+        // Filter out warnings older than 30 minutes for health status calculation
+        // This prevents stale warnings from keeping the system in WARNING status
+        // but they're still visible in the dashboard and logs
+        List<Warning> warnings = allWarnings.stream()
+            .filter(w -> w.timestamp().toEpochMilli() >= thirtyMinutesAgoMs)
+            .toList();
+
         Map<String, CircuitBreakerStats> circuitBreakers = circuitBreakerMetricsService.getAllCircuitBreakerStats();
         Map<String, tech.flowcatalyst.messagerouter.manager.QueueManager.QueueConsumerHealth> consumerHealth =
             queueManager.getConsumerHealthStatus();
