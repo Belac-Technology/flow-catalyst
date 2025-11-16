@@ -13,7 +13,7 @@
         <div class="mb-8">
             <h1 class="text-3xl font-bold text-gray-900 mb-2">Flow Catalyst Dashboard</h1>
             <div class="flex items-center space-x-4">
-                <div class="flex items-center">
+                <div id="statusContainer" class="flex items-center cursor-pointer hover:opacity-70">
                     <div id="statusIndicator" class="w-3 h-3 rounded-full mr-2"></div>
                     <span id="statusText" class="text-sm font-medium">Loading...</span>
                 </div>
@@ -21,6 +21,24 @@
                 <button id="refreshBtn" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded text-sm">
                     Refresh
                 </button>
+            </div>
+        </div>
+
+        <!-- Health Status Modal -->
+        <div id="healthModal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
+            <div class="bg-white rounded-lg shadow-lg max-w-md w-full mx-4">
+                <div class="px-6 py-4 border-b border-gray-200">
+                    <h3 class="text-lg font-semibold text-gray-900">System Status Details</h3>
+                </div>
+                <div class="px-6 py-4">
+                    <div id="modalContent" class="space-y-3">
+                    </div>
+                </div>
+                <div class="px-6 py-4 border-t border-gray-200 flex justify-end">
+                    <button onclick="document.getElementById('healthModal').classList.add('hidden')" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded text-sm">
+                        Close
+                    </button>
+                </div>
             </div>
         </div>
 
@@ -80,6 +98,19 @@
                         <p id="circuitBreakersOpen" class="text-2xl font-semibold text-gray-900">-</p>
                     </div>
                 </div>
+            </div>
+        </div>
+
+        <!-- Time Period Filter -->
+        <div class="mb-6 bg-white rounded-lg shadow p-6">
+            <div class="flex items-center space-x-4">
+                <label for="timePeriodSelect" class="text-sm font-medium text-gray-700">Time Period:</label>
+                <select id="timePeriodSelect" class="border border-gray-300 rounded px-3 py-2 text-sm">
+                    <option value="5min">Last 5 Minutes</option>
+                    <option value="30min" selected>Last 30 Minutes (Default)</option>
+                    <option value="all-time">All Time</option>
+                </select>
+                <span class="text-sm text-gray-500 ml-4">Note: Total Processed and System Health always show current state</span>
             </div>
         </div>
 
@@ -278,11 +309,13 @@
                     poolSortField: null,
                     poolSortDir: 'asc'
                 };
+                this.timePeriod = '30min'; // Default to 30 minutes
                 this.activeTab = 'Queues';
 
                 this.init();
                 this.setupEventListeners();
                 this.setupTabListeners();
+                this.setupTimePeriodSelector();
                 this.startPeriodicRefresh();
             }
 
@@ -402,7 +435,21 @@
                 document.getElementById(`content${tabName}`).classList.remove('hidden');
             }
 
+            setupTimePeriodSelector() {
+                const selector = document.getElementById('timePeriodSelect');
+                selector.addEventListener('change', (e) => {
+                    this.timePeriod = e.target.value;
+                    this.updateCharts();
+                    this.updateStatsTables();
+                });
+            }
+
             setupEventListeners() {
+                // Status container click to show modal
+                document.getElementById('statusContainer').addEventListener('click', () => {
+                    this.showHealthModal();
+                });
+
                 document.getElementById('refreshBtn').addEventListener('click', () => {
                     this.loadData();
                 });
@@ -546,10 +593,35 @@
             }
 
             updateCharts() {
+                // Select the appropriate metrics based on time period
+                const getQueueMetrics = (stats) => {
+                    switch(this.timePeriod) {
+                        case '5min':
+                            return stats.successRate5min;
+                        case '30min':
+                            return stats.successRate30min;
+                        case 'all-time':
+                        default:
+                            return stats.successRate;
+                    }
+                };
+
+                const getPoolMetrics = (stats) => {
+                    switch(this.timePeriod) {
+                        case '5min':
+                            return stats.successRate5min;
+                        case '30min':
+                            return stats.successRate30min;
+                        case 'all-time':
+                        default:
+                            return stats.successRate;
+                    }
+                };
+
                 // Queue Success Rate Chart
                 const queueEntries = Object.entries(this.data.queueStats);
                 const queueNames = queueEntries.map(([name, stats]) => this.extractQueueName(stats.name));
-                const queueSuccessRates = queueEntries.map(([name, stats]) => stats.successRate * 100);
+                const queueSuccessRates = queueEntries.map(([name, stats]) => getQueueMetrics(stats) * 100);
 
                 this.charts.queueSuccess.data.labels = queueNames;
                 this.charts.queueSuccess.data.datasets[0].data = queueSuccessRates;
@@ -558,7 +630,7 @@
                 // Pool Success Rate Chart
                 const poolEntries = Object.entries(this.data.poolStats);
                 const poolNames = poolEntries.map(([name, stats]) => stats.poolCode);
-                const poolSuccessRates = poolEntries.map(([name, stats]) => stats.successRate * 100);
+                const poolSuccessRates = poolEntries.map(([name, stats]) => getPoolMetrics(stats) * 100);
 
                 this.charts.poolSuccess.data.labels = poolNames;
                 this.charts.poolSuccess.data.datasets[0].data = poolSuccessRates;
@@ -610,24 +682,38 @@
                     });
                 }
 
-                tbody.innerHTML = queueEntries.map(([queueName, stats]) => `
+                tbody.innerHTML = queueEntries.map(([queueName, stats]) => {
+                    const getMetrics = () => {
+                        switch(this.timePeriod) {
+                            case '5min':
+                                return { consumed: stats.totalConsumed5min, failed: stats.totalFailed5min, rate: stats.successRate5min };
+                            case '30min':
+                                return { consumed: stats.totalConsumed30min, failed: stats.totalFailed30min, rate: stats.successRate30min };
+                            case 'all-time':
+                            default:
+                                return { consumed: stats.totalConsumed, failed: stats.totalFailed, rate: stats.successRate };
+                        }
+                    };
+                    const metrics = getMetrics();
+                    return `
                     <tr>
                         <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${this.extractQueueName(stats.name)}</td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-blue-600">${stats.pendingMessages.toLocaleString()}</td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-orange-600">${stats.messagesNotVisible.toLocaleString()}</td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${stats.totalMessages.toLocaleString()}</td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-green-600">${stats.totalConsumed.toLocaleString()}</td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-red-600">${stats.totalFailed.toLocaleString()}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-green-600">${metrics.consumed.toLocaleString()}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-red-600">${metrics.failed.toLocaleString()}</td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                             <span class="px-2 py-1 text-xs font-medium rounded-full ${
-                                stats.successRate * 100 >= 90 ? 'bg-green-100 text-green-800' :
-                                stats.successRate * 100 >= 75 ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'
+                                metrics.rate * 100 >= 90 ? 'bg-green-100 text-green-800' :
+                                metrics.rate * 100 >= 75 ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'
                             }">
-                                ${(stats.successRate * 100).toFixed(1)}%
+                                ${(metrics.rate * 100).toFixed(1)}%
                             </span>
                         </td>
                     </tr>
-                `).join('');
+                `;
+                }).join('');
             }
 
             updateQueueSortIndicators() {
@@ -705,25 +791,39 @@
                     });
                 }
 
-                tbody.innerHTML = poolEntries.map(([poolCode, stats]) => `
+                tbody.innerHTML = poolEntries.map(([poolCode, stats]) => {
+                    const getMetrics = () => {
+                        switch(this.timePeriod) {
+                            case '5min':
+                                return { processed: stats.totalProcessed5min, succeeded: stats.totalSucceeded5min, rate: stats.successRate5min };
+                            case '30min':
+                                return { processed: stats.totalProcessed30min, succeeded: stats.totalSucceeded30min, rate: stats.successRate30min };
+                            case 'all-time':
+                            default:
+                                return { processed: stats.totalProcessed, succeeded: stats.totalSucceeded, rate: stats.successRate };
+                        }
+                    };
+                    const metrics = getMetrics();
+                    return `
                     <tr>
                         <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${stats.poolCode}</td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${stats.activeWorkers}/${stats.maxConcurrency}</td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-purple-600">${stats.queueSize}/${stats.maxQueueCapacity}</td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-orange-600">${stats.totalRateLimited.toLocaleString()}</td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${stats.totalProcessed.toLocaleString()}</td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-green-600">${stats.totalSucceeded.toLocaleString()}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-green-600">${metrics.succeeded.toLocaleString()}</td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                             <span class="px-2 py-1 text-xs font-medium rounded-full ${
-                                stats.successRate * 100 >= 90 ? 'bg-green-100 text-green-800' :
-                                stats.successRate * 100 >= 75 ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'
+                                metrics.rate * 100 >= 90 ? 'bg-green-100 text-green-800' :
+                                metrics.rate * 100 >= 75 ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'
                             }">
-                                ${(stats.successRate * 100).toFixed(1)}%
+                                ${(metrics.rate * 100).toFixed(1)}%
                             </span>
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${stats.averageProcessingTimeMs.toFixed(0)}ms</td>
                     </tr>
-                `).join('');
+                `;
+                }).join('');
             }
 
             updateWarningsTable() {
@@ -867,6 +967,39 @@
                 }
 
                 this.renderInFlightMessages(filtered);
+            }
+
+            showHealthModal() {
+                const modal = document.getElementById('healthModal');
+                const modalContent = document.getElementById('modalContent');
+                const health = this.data.health;
+
+                if (!health) {
+                    modalContent.innerHTML = '<p class="text-gray-600">No health information available</p>';
+                } else if (health.status === 'HEALTHY') {
+                    modalContent.innerHTML = '<p class="text-green-600 font-medium">✓ System is operating normally with no degradation</p>';
+                } else {
+                    const reasons = health.details?.degradationReasons || 'No details available';
+                    const reasonsList = reasons ? reasons.split('; ').map(r => `<li class="text-red-600">• ${r}</li>`).join('') : '<li class="text-gray-600">No degradation reasons available</li>';
+
+                    modalContent.innerHTML = `
+                        <div class="space-y-3">
+                            <p class="font-semibold text-gray-900">Reasons for ${health.status} status:</p>
+                            <ul class="space-y-2">
+                                ${reasonsList}
+                            </ul>
+                            <p class="text-sm text-gray-600 mt-4 pt-4 border-t border-gray-200">
+                                <strong>Details:</strong><br>
+                                Queues: ${health.details?.totalQueues || 0} total, ${health.details?.healthyQueues || 0} healthy<br>
+                                Pools: ${health.details?.totalPools || 0} total, ${health.details?.healthyPools || 0} healthy<br>
+                                Active Warnings: ${health.details?.activeWarnings || 0} (${health.details?.criticalWarnings || 0} critical)<br>
+                                Circuit Breakers Open: ${health.details?.circuitBreakersOpen || 0}
+                            </p>
+                        </div>
+                    `;
+                }
+
+                modal.classList.remove('hidden');
             }
 
             startPeriodicRefresh() {

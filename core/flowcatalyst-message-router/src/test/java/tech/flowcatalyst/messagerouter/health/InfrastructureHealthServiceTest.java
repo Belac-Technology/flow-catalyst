@@ -204,7 +204,15 @@ class InfrastructureHealthServiceTest {
             5,     // maxConcurrency
             10,    // queueSize
             100,   // maxQueueCapacity
-            150.0  // averageProcessingTimeMs
+            150.0, // averageProcessingTimeMs
+            100L,  // totalProcessed5min
+            90L,   // totalSucceeded5min
+            10L,   // totalFailed5min
+            0.9,   // successRate5min
+            100L,  // totalProcessed30min
+            90L,   // totalSucceeded30min
+            10L,   // totalFailed30min
+            0.9    // successRate30min
         );
     }
 }

@@ -7,6 +7,8 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
@@ -33,6 +35,10 @@ public class MicrometerQueueMetricsService implements QueueMetricsService {
             metrics.messagesFailed.increment();
         }
         metrics.lastProcessedTime = System.currentTimeMillis();
+
+        // Track timestamped outcome for 30-minute rolling window
+        long now = System.currentTimeMillis();
+        metrics.recordedOutcomes.add(new TimestampedQueueOutcome(now, success));
     }
 
     @Override
@@ -122,6 +128,44 @@ public class MicrometerQueueMetricsService implements QueueMetricsService {
             ? (double) totalConsumed / elapsedSeconds
             : 0.0;
 
+        // Calculate rolling window metrics
+        long fiveMinutesAgoMs = now - (5 * 60 * 1000);
+        long thirtyMinutesAgoMs = now - (30 * 60 * 1000);
+
+        long consumed5min = 0;
+        long failed5min = 0;
+        long consumed30min = 0;
+        long failed30min = 0;
+
+        // Clean up old outcomes and count recent ones
+        synchronized(metrics.recordedOutcomes) {
+            metrics.recordedOutcomes.removeIf(outcome -> outcome.timestamp < thirtyMinutesAgoMs);
+
+            for (TimestampedQueueOutcome outcome : metrics.recordedOutcomes) {
+                if (outcome.success) {
+                    if (outcome.timestamp >= fiveMinutesAgoMs) {
+                        consumed5min++;
+                    }
+                    consumed30min++;
+                } else {
+                    if (outcome.timestamp >= fiveMinutesAgoMs) {
+                        failed5min++;
+                    }
+                    failed30min++;
+                }
+            }
+        }
+
+        long totalMessages5min = consumed5min + failed5min;
+        double successRate5min = totalMessages5min > 0
+            ? (double) consumed5min / totalMessages5min
+            : 1.0;  // Empty window shows 100%
+
+        long totalMessages30min = consumed30min + failed30min;
+        double successRate30min = totalMessages30min > 0
+            ? (double) consumed30min / totalMessages30min
+            : 1.0;  // Empty window shows 100%
+
         return new QueueStats(
             queueIdentifier,
             totalMessages,
@@ -131,7 +175,15 @@ public class MicrometerQueueMetricsService implements QueueMetricsService {
             currentSize,
             throughput,
             metrics.pendingMessages.get(),
-            metrics.messagesNotVisible.get()
+            metrics.messagesNotVisible.get(),
+            totalMessages5min,
+            consumed5min,
+            failed5min,
+            successRate5min,
+            totalMessages30min,
+            consumed30min,
+            failed30min,
+            successRate30min
         );
     }
 
@@ -144,6 +196,7 @@ public class MicrometerQueueMetricsService implements QueueMetricsService {
         final AtomicLong messagesNotVisible;
         final long startTime;
         volatile long lastProcessedTime;
+        final List<TimestampedQueueOutcome> recordedOutcomes;
 
         QueueMetricsHolder(Counter received, Counter consumed, Counter failed, AtomicLong depth,
                           AtomicLong pending, AtomicLong notVisible) {
@@ -155,6 +208,20 @@ public class MicrometerQueueMetricsService implements QueueMetricsService {
             this.messagesNotVisible = notVisible;
             this.startTime = System.currentTimeMillis();
             this.lastProcessedTime = System.currentTimeMillis();
+            this.recordedOutcomes = new ArrayList<>();
+        }
+    }
+
+    /**
+     * Timestamped outcome for 30-minute rolling window calculation
+     */
+    private static class TimestampedQueueOutcome {
+        final long timestamp;
+        final boolean success;
+
+        TimestampedQueueOutcome(long timestamp, boolean success) {
+            this.timestamp = timestamp;
+            this.success = success;
         }
     }
 }

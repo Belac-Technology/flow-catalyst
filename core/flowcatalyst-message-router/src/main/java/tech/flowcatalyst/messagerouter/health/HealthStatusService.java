@@ -112,27 +112,27 @@ public class HealthStatusService {
 
         List<String> degradationReasons = new ArrayList<>();
 
-        // Check queue health
+        // Check queue health - use 30-minute rolling window success rate
         for (QueueStats stats : queueStats.values()) {
-            // Only check success rate if queue has processed messages
-            // Empty queues (totalConsumed = 0) should not be marked as degraded
-            if (stats.totalConsumed() == 0 || stats.successRate() >= QUEUE_SUCCESS_THRESHOLD) {
+            // Use 30-minute success rate for health calculation
+            // Only check if there's been activity in the last 30 minutes
+            if (stats.totalConsumed30min() == 0 || stats.successRate30min() >= QUEUE_SUCCESS_THRESHOLD) {
                 healthyQueues++;
             } else {
-                degradationReasons.add(String.format("Queue %s has low success rate: %.1f%%",
-                    stats.name(), stats.successRate()));
+                degradationReasons.add(String.format("Queue %s has low success rate (last 30min): %.1f%%",
+                    stats.name(), stats.successRate30min()));
             }
         }
 
-        // Check pool health
+        // Check pool health - use 30-minute rolling window success rate
         for (PoolStats stats : poolStats.values()) {
-            // Only check success rate if pool has processed messages
-            // Empty pools (totalProcessed = 0) should not be marked as degraded
-            if (stats.totalProcessed() == 0 || stats.successRate() >= POOL_SUCCESS_THRESHOLD) {
+            // Use 30-minute success rate for health calculation
+            // Only check if there's been activity in the last 30 minutes
+            if (stats.totalProcessed30min() == 0 || stats.successRate30min() >= POOL_SUCCESS_THRESHOLD) {
                 healthyPools++;
             } else {
-                degradationReasons.add(String.format("Pool %s has low success rate: %.1f%%",
-                    stats.poolCode(), stats.successRate()));
+                degradationReasons.add(String.format("Pool %s has low success rate (last 30min): %.1f%%",
+                    stats.poolCode(), stats.successRate30min()));
             }
         }
 
