@@ -686,12 +686,12 @@
                     const getMetrics = () => {
                         switch(this.timePeriod) {
                             case '5min':
-                                return { consumed: stats.totalConsumed5min, failed: stats.totalFailed5min, rate: stats.successRate5min };
+                                return { total: stats.totalMessages5min, consumed: stats.totalConsumed5min, failed: stats.totalFailed5min, rate: stats.successRate5min };
                             case '30min':
-                                return { consumed: stats.totalConsumed30min, failed: stats.totalFailed30min, rate: stats.successRate30min };
+                                return { total: stats.totalMessages30min, consumed: stats.totalConsumed30min, failed: stats.totalFailed30min, rate: stats.successRate30min };
                             case 'all-time':
                             default:
-                                return { consumed: stats.totalConsumed, failed: stats.totalFailed, rate: stats.successRate };
+                                return { total: stats.totalMessages, consumed: stats.totalConsumed, failed: stats.totalFailed, rate: stats.successRate };
                         }
                     };
                     const metrics = getMetrics();
@@ -700,7 +700,7 @@
                         <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${this.extractQueueName(stats.name)}</td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-blue-600">${stats.pendingMessages.toLocaleString()}</td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-orange-600">${stats.messagesNotVisible.toLocaleString()}</td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${stats.totalMessages.toLocaleString()}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${metrics.total.toLocaleString()}</td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-green-600">${metrics.consumed.toLocaleString()}</td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-red-600">${metrics.failed.toLocaleString()}</td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
@@ -810,7 +810,7 @@
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${stats.activeWorkers}/${stats.maxConcurrency}</td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-purple-600">${stats.queueSize}/${stats.maxQueueCapacity}</td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-orange-600">${stats.totalRateLimited.toLocaleString()}</td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${stats.totalProcessed.toLocaleString()}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${metrics.processed.toLocaleString()}</td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-green-600">${metrics.succeeded.toLocaleString()}</td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                             <span class="px-2 py-1 text-xs font-medium rounded-full ${

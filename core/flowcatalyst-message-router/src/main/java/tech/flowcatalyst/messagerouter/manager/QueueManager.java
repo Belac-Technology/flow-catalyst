@@ -1272,4 +1272,13 @@ public class QueueManager implements MessageCallback {
             .limit(limit)
             .collect(java.util.stream.Collectors.toList());
     }
+
+    /**
+     * Check if a message is already in the pipeline (redelivery detection)
+     * @param messageId The message ID to check
+     * @return true if message is already in pipeline (redelivery), false if new message
+     */
+    public boolean isMessageInPipeline(String messageId) {
+        return inPipelineMap.containsKey(messageId);
+    }
 }

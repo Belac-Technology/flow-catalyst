@@ -86,11 +86,18 @@ public abstract class AbstractQueueConsumer implements QueueConsumer {
         // Parse all messages and build batch
         for (RawMessage raw : rawMessages) {
             try {
-                // Record message received
-                queueMetrics.recordMessageReceived(queueId);
-
-                // Parse message body to MessagePointer
+                // Parse message body to MessagePointer first (to get message ID)
                 MessagePointer parsedMessage = objectMapper.readValue(raw.body(), MessagePointer.class);
+                String messageId = parsedMessage.id();
+
+                // Only record metrics for NEW messages (not redeliveries)
+                // If message is already in pipeline, it's a redelivery due to SQS visibility timeout
+                if (!queueManager.isMessageInPipeline(messageId)) {
+                    queueMetrics.recordMessageReceived(queueId);
+                } else {
+                    // Log redelivery without counting it as a new message exchange
+                    LOG.debugf("Message [%s] is a redelivery (already in pipeline), not counting as new exchange", messageId);
+                }
 
                 // Add messageGroupId from queue attributes (for FIFO ordering)
                 // batchId is null here - it will be populated by QueueManager during routing
@@ -159,11 +166,16 @@ public abstract class AbstractQueueConsumer implements QueueConsumer {
         String queueId = getQueueIdentifier();
 
         try {
-            // Record message received
-            queueMetrics.recordMessageReceived(queueId);
-
-            // Parse message body to MessagePointer
+            // Parse message body to MessagePointer first (to get message ID)
             MessagePointer parsedMessage = objectMapper.readValue(rawMessage, MessagePointer.class);
+
+            // Only record metrics for NEW messages (not redeliveries)
+            // If message is already in pipeline, it's a redelivery due to SQS visibility timeout
+            if (!queueManager.isMessageInPipeline(parsedMessage.id())) {
+                queueMetrics.recordMessageReceived(queueId);
+            } else {
+                LOG.debugf("Message [%s] is a redelivery (already in pipeline), not counting as new exchange", parsedMessage.id());
+            }
 
             // Add messageGroupId from queue attributes (for FIFO ordering)
             // batchId is null here - legacy single-message routing doesn't use batching
