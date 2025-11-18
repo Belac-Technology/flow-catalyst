@@ -20,6 +20,7 @@ import tech.flowcatalyst.messagerouter.model.CircuitBreakerStats;
 import tech.flowcatalyst.messagerouter.model.HealthStatus;
 import tech.flowcatalyst.messagerouter.model.PoolStats;
 import tech.flowcatalyst.messagerouter.model.Warning;
+import tech.flowcatalyst.messagerouter.security.Protected;
 import tech.flowcatalyst.messagerouter.warning.WarningService;
 
 import java.util.List;
@@ -27,6 +28,7 @@ import java.util.Map;
 
 @Path("/monitoring")
 @Tag(name = "Monitoring", description = "Monitoring and metrics endpoints for dashboard")
+@Protected("Monitoring endpoints requiring authentication")
 public class MonitoringResource {
 
     @Inject
@@ -46,6 +48,9 @@ public class MonitoringResource {
 
     @Inject
     tech.flowcatalyst.messagerouter.manager.QueueManager queueManager;
+
+    @jakarta.inject.Inject
+    jakarta.enterprise.inject.Instance<tech.flowcatalyst.messagerouter.standby.StandbyService> standbyServiceInstance;
 
     @GET
     @Path("/health")
@@ -339,5 +344,49 @@ public class MonitoringResource {
             @jakarta.ws.rs.QueryParam("messageId")
             @Parameter(description = "Filter by message ID (optional)") String messageId) {
         return queueManager.getInFlightMessages(limit, messageId);
+    }
+
+    @GET
+    @Path("/standby-status")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Operation(summary = "Get standby status", description = "Returns current standby mode status (if enabled)")
+    public Response getStandbyStatus() {
+        var standbyService = standbyServiceInstance.isResolvable() ? standbyServiceInstance.get() : null;
+        if (standbyService == null || !standbyService.isStandbyEnabled()) {
+            return Response.ok(Map.of(
+                    "standbyEnabled", false
+            )).build();
+        }
+
+        var status = standbyService.getStatus();
+        return Response.ok(Map.of(
+                "standbyEnabled", true,
+                "instanceId", status.instanceId,
+                "role", status.isPrimary ? "PRIMARY" : "STANDBY",
+                "redisAvailable", status.redisAvailable,
+                "currentLockHolder", status.currentLockHolder,
+                "lastSuccessfulRefresh", status.lastSuccessfulRefresh,
+                "hasWarning", status.hasWarning
+        )).build();
+    }
+
+    @GET
+    @Path("/dashboard")
+    @Produces(MediaType.TEXT_HTML)
+    @Operation(summary = "Dashboard UI", description = "Returns the monitoring dashboard HTML page")
+    public Response getDashboard() {
+        try {
+            var dashboardHtml = getClass().getResourceAsStream("/META-INF/resources/dashboard.html");
+            if (dashboardHtml == null) {
+                return Response.status(Response.Status.NOT_FOUND)
+                        .entity("Dashboard not found")
+                        .build();
+            }
+            return Response.ok(dashboardHtml).build();
+        } catch (Exception e) {
+            return Response.serverError()
+                    .entity("Error loading dashboard: " + e.getMessage())
+                    .build();
+        }
     }
 }

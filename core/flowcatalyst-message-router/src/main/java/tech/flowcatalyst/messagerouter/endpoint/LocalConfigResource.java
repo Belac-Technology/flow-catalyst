@@ -10,11 +10,13 @@ import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 import tech.flowcatalyst.messagerouter.config.MessageRouterConfig;
 import tech.flowcatalyst.messagerouter.config.ProcessingPool;
 import tech.flowcatalyst.messagerouter.config.QueueConfig;
+import tech.flowcatalyst.messagerouter.security.Protected;
 
 import java.util.List;
 
 @Path("/api")
 @Tag(name = "Local Configuration", description = "Local configuration endpoint for development and testing")
+@Protected("Config endpoint requiring authentication")
 public class LocalConfigResource {
 
     @GET

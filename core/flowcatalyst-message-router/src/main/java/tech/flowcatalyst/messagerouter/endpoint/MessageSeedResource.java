@@ -17,12 +17,14 @@ import software.amazon.awssdk.services.sqs.model.SendMessageRequest;
 import tech.flowcatalyst.messagerouter.config.QueueType;
 import tech.flowcatalyst.messagerouter.embedded.EmbeddedQueuePublisher;
 import tech.flowcatalyst.messagerouter.model.MessagePointer;
+import tech.flowcatalyst.messagerouter.security.Protected;
 
 import java.util.Random;
 import java.util.UUID;
 
 @Path("/api/seed")
 @Tag(name = "Message Seeding", description = "Endpoints for seeding test messages to queues")
+@Protected("Message seeding endpoints requiring authentication")
 public class MessageSeedResource {
 
     private static final Logger LOG = Logger.getLogger(MessageSeedResource.class);

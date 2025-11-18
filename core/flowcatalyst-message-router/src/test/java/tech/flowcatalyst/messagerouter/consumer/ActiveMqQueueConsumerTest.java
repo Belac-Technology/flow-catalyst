@@ -270,7 +270,9 @@ class ActiveMqQueueConsumerTest {
 
         // Then
         await().untilAsserted(() -> {
-            verify(mockQueueMetrics).recordMessageReceived(queueUri);
+            // Malformed messages should NOT be counted in recordMessageReceived
+            // They're data quality issues that should be caught upstream
+            verify(mockQueueMetrics, never()).recordMessageReceived(queueUri);
             verify(mockQueueMetrics).recordMessageProcessed(queueUri, false);
             verify(mockQueueManager, never()).routeMessage(any(MessagePointer.class), any(MessageCallback.class), any(String.class));
         });

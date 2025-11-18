@@ -5,14 +5,11 @@ import jakarta.inject.Inject;
 import jakarta.jms.ConnectionFactory;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
-import software.amazon.awssdk.services.sqs.SqsAsyncClient;
 import software.amazon.awssdk.services.sqs.SqsClient;
 import tech.flowcatalyst.messagerouter.config.QueueConfig;
 import tech.flowcatalyst.messagerouter.config.QueueType;
-import tech.flowcatalyst.messagerouter.config.SqsConsumerMode;
 import io.agroal.api.AgroalDataSource;
 import tech.flowcatalyst.messagerouter.consumer.ActiveMqQueueConsumer;
-import tech.flowcatalyst.messagerouter.consumer.AsyncSqsQueueConsumer;
 import tech.flowcatalyst.messagerouter.consumer.QueueConsumer;
 import tech.flowcatalyst.messagerouter.consumer.SqsQueueConsumer;
 import tech.flowcatalyst.messagerouter.embedded.EmbeddedQueueConsumer;
@@ -27,9 +24,6 @@ public class QueueConsumerFactoryImpl implements QueueConsumerFactory {
 
     @ConfigProperty(name = "message-router.queue-type")
     QueueType queueType;
-
-    @ConfigProperty(name = "message-router.sqs.consumer-mode", defaultValue = "ASYNC")
-    SqsConsumerMode sqsConsumerMode;
 
     @ConfigProperty(name = "message-router.sqs.max-messages-per-poll")
     int sqsMaxMessagesPerPoll;
@@ -62,9 +56,6 @@ public class QueueConsumerFactoryImpl implements QueueConsumerFactory {
     SqsClient sqsClient;
 
     @Inject
-    SqsAsyncClient sqsAsyncClient;
-
-    @Inject
     ConnectionFactory connectionFactory;
 
     @Inject
@@ -78,33 +69,18 @@ public class QueueConsumerFactoryImpl implements QueueConsumerFactory {
         return switch (queueType) {
             case SQS -> {
                 String queueUrl = queueConfig.queueUri();
-                if (sqsConsumerMode == SqsConsumerMode.ASYNC) {
-                    LOG.infof("Using ASYNC SQS consumer for queue [%s]", queueUrl);
-                    yield new AsyncSqsQueueConsumer(
-                        sqsAsyncClient,
-                        queueUrl,
-                        connections,
-                        queueManager,
-                        queueMetrics,
-                        warningService,
-                        sqsMaxMessagesPerPoll,
-                        sqsWaitTimeSeconds,
-                        metricsPollIntervalSeconds
-                    );
-                } else {
-                    LOG.infof("Using SYNC SQS consumer for queue [%s]", queueUrl);
-                    yield new SqsQueueConsumer(
-                        sqsClient,
-                        queueUrl,
-                        connections,
-                        queueManager,
-                        queueMetrics,
-                        warningService,
-                        sqsMaxMessagesPerPoll,
-                        sqsWaitTimeSeconds,
-                        metricsPollIntervalSeconds
-                    );
-                }
+                LOG.infof("Using SYNC SQS consumer for queue [%s]", queueUrl);
+                yield new SqsQueueConsumer(
+                    sqsClient,
+                    queueUrl,
+                    connections,
+                    queueManager,
+                    queueMetrics,
+                    warningService,
+                    sqsMaxMessagesPerPoll,
+                    sqsWaitTimeSeconds,
+                    metricsPollIntervalSeconds
+                );
             }
             case ACTIVEMQ -> {
                 String queueUri = queueConfig.queueUri();

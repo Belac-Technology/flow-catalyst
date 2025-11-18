@@ -4,14 +4,21 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Flow Catalyst Dashboard</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/tailwind.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body class="bg-gray-100 min-h-screen">
+    <!-- Login handled by server-side authentication (OIDC or BasicAuth) -->
+
     <div class="container mx-auto px-4 py-8">
         <!-- Header -->
         <div class="mb-8">
-            <h1 class="text-3xl font-bold text-gray-900 mb-2">Flow Catalyst Dashboard</h1>
+            <div class="flex justify-between items-start mb-4">
+                <h1 class="text-3xl font-bold text-gray-900">Flow Catalyst Dashboard</h1>
+                <button id="logoutBtn" class="hidden bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded text-sm">
+                    Logout
+                </button>
+            </div>
             <div class="flex items-center space-x-4">
                 <div id="statusContainer" class="flex items-center cursor-pointer hover:opacity-70">
                     <div id="statusIndicator" class="w-3 h-3 rounded-full mr-2"></div>
@@ -287,6 +294,152 @@
     </div>
 
     <script>
+        class AuthenticationManager {
+            constructor() {
+                // Authentication is handled server-side
+                // If page loaded, user is already authenticated
+                // Don't initialize dashboard here - will be done after authManager is created
+            }
+
+            async checkAuthStatus() {
+                // Check if we have stored BasicAuth credentials
+                const stored = localStorage.getItem('flowcatalyst_auth');
+                if (stored) {
+                    this.basicAuth = stored;
+                }
+
+                // Try to load dashboard data
+                try {
+                    const response = await fetch('/monitoring/queue-stats', {
+                        credentials: 'include',
+                        redirect: 'manual', // Don't auto-follow redirects
+                        headers: this.basicAuth ? {
+                            'Authorization': 'Basic ' + this.basicAuth
+                        } : {}
+                    });
+
+                    if (response.ok) {
+                        // Successfully authenticated - show dashboard
+                        this.showDashboard();
+                        return;
+                    }
+
+                    // Check for redirect (302/307) - OIDC mode
+                    if (response.type === 'opaqueredirect' || response.status === 0 ||
+                        response.status === 302 || response.status === 307) {
+                        console.log('OIDC redirect detected - navigating to login flow...');
+                        // Follow the redirect by doing a full page navigation
+                        window.location.href = '/monitoring/queue-stats';
+                        return;
+                    }
+
+                    if (response.status === 401 || response.status === 403) {
+                        // Check if BasicAuth mode
+                        const authMode = response.headers.get('X-Auth-Mode');
+
+                        if (authMode === 'BASIC') {
+                            // BasicAuth - show login form
+                            this.showLoginModal();
+                        } else {
+                            // OIDC mode - trigger navigation
+                            console.log('OIDC auth required - navigating...');
+                            window.location.href = '/monitoring/queue-stats';
+                        }
+                        return;
+                    }
+
+                    this.showLoginModal();
+                } catch (error) {
+                    console.error('Error checking auth status:', error);
+                    this.showLoginModal();
+                }
+            }
+
+            async checkOidcSession() {
+                // Check if we have an OIDC session by trying to fetch with OIDC credentials
+                try {
+                    const response = await fetch('/monitoring/health');
+                    return response.ok;
+                } catch {
+                    return false;
+                }
+            }
+
+            redirectToOidcLogin(config) {
+                // Let Quarkus OIDC handle the redirect by accessing a protected endpoint
+                // Quarkus will automatically redirect to the configured OIDC provider
+                // (works with Microsoft Entra, Keycloak, Auth0, etc.)
+                console.log('Redirecting to OIDC login via Quarkus...');
+                window.location.href = '/monitoring/health';
+            }
+
+            showLoginModal() {
+                document.getElementById('loginModal').classList.remove('hidden');
+                document.getElementById('loginBtn').addEventListener('click', () => this.handleLogin());
+                document.getElementById('loginPassword').addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') this.handleLogin();
+                });
+            }
+
+            async handleLogin() {
+                const username = document.getElementById('loginUsername').value.trim();
+                const password = document.getElementById('loginPassword').value;
+                const errorDiv = document.getElementById('loginError');
+
+                if (!username || !password) {
+                    errorDiv.textContent = 'Please enter both username and password';
+                    errorDiv.classList.remove('hidden');
+                    return;
+                }
+
+                // Encode credentials in base64
+                const encoded = btoa(`${username}:${password}`);
+                const auth = `Basic ${encoded}`;
+
+                // Test the auth with a simple request
+                try {
+                    const response = await fetch('/monitoring/health', {
+                        headers: { 'Authorization': auth }
+                    });
+
+                    if (response.ok) {
+                        this.basicAuth = auth;
+                        localStorage.setItem('flowcatalyst_auth', auth);
+                        errorDiv.classList.add('hidden');
+                        document.getElementById('loginModal').classList.add('hidden');
+                        this.showDashboard();
+                    } else if (response.status === 401 || response.status === 403) {
+                        errorDiv.textContent = 'Invalid username or password';
+                        errorDiv.classList.remove('hidden');
+                    } else {
+                        errorDiv.textContent = 'Login failed: ' + response.statusText;
+                        errorDiv.classList.remove('hidden');
+                    }
+                } catch (error) {
+                    errorDiv.textContent = 'Network error: ' + error.message;
+                    errorDiv.classList.remove('hidden');
+                }
+            }
+
+            logout() {
+                localStorage.removeItem('flowcatalyst_auth');
+                this.basicAuth = null;
+                window.location.reload();
+            }
+
+            showDashboard() {
+                // Authentication is handled server-side, just initialize dashboard
+                if (window.dashboard === undefined) {
+                    window.dashboard = new Dashboard();
+                }
+            }
+
+            getAuthHeaders() {
+                if (!this.basicAuth) return {};
+                return { 'Authorization': this.basicAuth };
+            }
+        }
+
         class Dashboard {
             constructor() {
                 this.charts = {};
@@ -317,6 +470,9 @@
                 this.setupTabListeners();
                 this.setupTimePeriodSelector();
                 this.startPeriodicRefresh();
+
+                // Setup logout
+                document.getElementById('logoutBtn').addEventListener('click', () => authManager.logout());
             }
 
             async init() {
@@ -509,13 +665,22 @@
 
             async loadData() {
                 try {
+                    const headers = authManager.getAuthHeaders();
                     const responses = await Promise.all([
-                        fetch('/monitoring/health'),
-                        fetch('/monitoring/queue-stats'),
-                        fetch('/monitoring/pool-stats'),
-                        fetch('/monitoring/warnings'),
-                        fetch('/monitoring/circuit-breakers')
+                        fetch('/monitoring/health', { headers }),
+                        fetch('/monitoring/queue-stats', { headers }),
+                        fetch('/monitoring/pool-stats', { headers }),
+                        fetch('/monitoring/warnings', { headers }),
+                        fetch('/monitoring/circuit-breakers', { headers })
                     ]);
+
+                    // Check for auth errors
+                    for (const response of responses) {
+                        if (response.status === 401 || response.status === 403) {
+                            authManager.logout();
+                            return;
+                        }
+                    }
 
                     const [health, queueStats, poolStats, warnings, circuitBreakers] =
                         await Promise.all(responses.map(r => r.json()));
@@ -899,7 +1064,12 @@
 
             async loadInFlightMessages() {
                 try {
-                    const response = await fetch('/monitoring/in-flight-messages?limit=100');
+                    const headers = authManager.getAuthHeaders();
+                    const response = await fetch('/monitoring/in-flight-messages?limit=100', { headers });
+                    if (response.status === 401 || response.status === 403) {
+                        authManager.logout();
+                        return;
+                    }
                     if (!response.ok) {
                         throw new Error('Failed to load in-flight messages');
                     }
@@ -979,7 +1149,7 @@
                 } else if (health.status === 'HEALTHY') {
                     modalContent.innerHTML = '<p class="text-green-600 font-medium">✓ System is operating normally with no degradation</p>';
                 } else {
-                    const reasons = health.details?.degradationReasons || 'No details available';
+                    const reasons = health.details?.degradationReason || 'No details available';
                     const reasonsList = reasons ? reasons.split('; ').map(r => `<li class="text-red-600">• ${r}</li>`).join('') : '<li class="text-gray-600">No degradation reasons available</li>';
 
                     modalContent.innerHTML = `
@@ -1009,10 +1179,10 @@
             }
         }
 
-        // Initialize dashboard when page loads
-        document.addEventListener('DOMContentLoaded', () => {
-            new Dashboard();
-        });
+        // Initialize auth manager and dashboard
+        const authManager = new AuthenticationManager();
+        // Now that authManager exists, initialize the dashboard
+        authManager.showDashboard();
     </script>
 </body>
 </html>

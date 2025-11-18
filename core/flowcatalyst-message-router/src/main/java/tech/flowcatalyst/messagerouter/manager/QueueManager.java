@@ -80,6 +80,14 @@ public class QueueManager implements MessageCallback {
     @Inject
     MeterRegistry meterRegistry;
 
+    // StandbyService is optional - injected if standby is enabled
+    @jakarta.inject.Inject
+    jakarta.enterprise.inject.Instance<tech.flowcatalyst.messagerouter.standby.StandbyService> standbyServiceInstance;
+
+    private tech.flowcatalyst.messagerouter.standby.StandbyService standbyService() {
+        return standbyServiceInstance.isResolvable() ? standbyServiceInstance.get() : null;
+    }
+
     private final ConcurrentHashMap<String, MessagePointer> inPipelineMap = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Long> inPipelineTimestamps = new ConcurrentHashMap<>();  // Track when each message entered the pipeline
     private final ConcurrentHashMap<String, String> inPipelineQueueIds = new ConcurrentHashMap<>();  // Track which queue each message came from
@@ -474,6 +482,16 @@ public class QueueManager implements MessageCallback {
     @RunOnVirtualThread
     void scheduledSync() {
         if (shutdownInProgress) {
+            return;
+        }
+
+        // Check standby status - only primary processes messages
+        var standby = standbyService();
+        if (standby != null && !standby.isPrimary()) {
+            if (!initialized) {
+                LOG.info("In standby mode, waiting for primary lock...");
+                initialized = true;
+            }
             return;
         }
 

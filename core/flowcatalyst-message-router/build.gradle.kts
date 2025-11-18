@@ -26,6 +26,17 @@ dependencies {
     implementation("io.quarkus:quarkus-jackson")
     implementation("io.quarkus:quarkus-arc")
 
+    // Security
+    implementation("io.quarkus:quarkus-security")
+    implementation("io.quarkus:quarkus-oidc")
+
+    // Hot Standby (optional, only loaded if standby.enabled=true)
+    // Using Redisson for proper distributed lock support with clean API
+    implementation("org.redisson:redisson-quarkus-30:3.40.2")
+
+    // Health checks
+    implementation("io.quarkus:quarkus-smallrye-health")
+
     // Message Queues
     implementation("io.quarkiverse.amazonservices:quarkus-amazon-sqs")
     implementation("software.amazon.awssdk:url-connection-client") // Required by Quarkus extension for default sync client
@@ -93,6 +104,7 @@ val unitTest = tasks.test.get().apply {
 
     // Disable parallel execution - @QuarkusTest classes share ports and can't run in parallel
     maxParallelForks = 1
+    systemProperty("junit.jupiter.execution.parallel.enabled", "false")
 }
 
 // Integration tests
