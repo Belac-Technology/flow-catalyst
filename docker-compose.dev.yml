@@ -1,0 +1,41 @@
+version: '3.8'
+
+# Local development environment for FlowCatalyst
+# Usage: docker compose -f docker-compose.dev.yml up -d
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: flowcatalyst-postgres
+    environment:
+      POSTGRES_USER: flowcatalyst
+      POSTGRES_PASSWORD: flowcatalyst
+      POSTGRES_DB: flowcatalyst
+    ports:
+      - "5432:5432"
+    volumes:
+      - flowcatalyst-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U flowcatalyst"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Optional: pgAdmin for database management
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: flowcatalyst-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@flowcatalyst.local
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+    profiles:
+      - tools
+
+volumes:
+  flowcatalyst-postgres-data:
+    name: flowcatalyst-postgres-data

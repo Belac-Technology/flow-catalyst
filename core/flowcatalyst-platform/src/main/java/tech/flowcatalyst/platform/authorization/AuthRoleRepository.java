@@ -1,0 +1,46 @@
+package tech.flowcatalyst.platform.authorization;
+
+import io.quarkus.hibernate.orm.panache.PanacheRepositoryBase;
+import jakarta.enterprise.context.ApplicationScoped;
+
+import java.util.List;
+import java.util.Optional;
+
+/**
+ * Repository for AuthRole entities.
+ */
+@ApplicationScoped
+public class AuthRoleRepository implements PanacheRepositoryBase<AuthRole, Long> {
+
+    public Optional<AuthRole> findByName(String name) {
+        return find("name", name).firstResultOptional();
+    }
+
+    public List<AuthRole> findByApplicationId(Long applicationId) {
+        return find("application.id", applicationId).list();
+    }
+
+    public List<AuthRole> findByApplicationCode(String applicationCode) {
+        return find("application.code", applicationCode).list();
+    }
+
+    public List<AuthRole> findBySource(AuthRole.RoleSource source) {
+        return find("source", source).list();
+    }
+
+    public List<AuthRole> findClientManagedRoles() {
+        return find("clientManaged", true).list();
+    }
+
+    public boolean existsByName(String name) {
+        return count("name", name) > 0;
+    }
+
+    public long deleteByName(String name) {
+        return delete("name", name);
+    }
+
+    public long deleteByApplicationIdAndSource(Long applicationId, AuthRole.RoleSource source) {
+        return delete("application.id = ?1 and source = ?2", applicationId, source);
+    }
+}

@@ -1,0 +1,165 @@
+package tech.flowcatalyst.platform.admin;
+
+import io.quarkus.test.junit.QuarkusTest;
+import io.restassured.http.ContentType;
+import jakarta.inject.Inject;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import tech.flowcatalyst.platform.authentication.JwtKeyService;
+import tech.flowcatalyst.platform.principal.Principal;
+import tech.flowcatalyst.platform.principal.UserService;
+
+import java.util.Set;
+
+import static io.restassured.RestAssured.given;
+import static org.hamcrest.Matchers.*;
+
+/**
+ * Integration tests for RoleAdminResource.
+ * Tests the read-only role and permission listing endpoints.
+ */
+@QuarkusTest
+class RoleAdminResourceTest {
+
+    @Inject
+    UserService userService;
+
+    @Inject
+    JwtKeyService jwtKeyService;
+
+    private String adminToken;
+
+    @BeforeEach
+    void setUp() {
+        // Create an admin user and get a token
+        String uniqueId = String.valueOf(System.currentTimeMillis());
+        Principal adminUser = userService.createInternalUser(
+            "role-admin-" + uniqueId + "@test.com",
+            "Password123!",
+            "Admin User",
+            null
+        );
+
+        adminToken = jwtKeyService.issueSessionToken(adminUser.id, adminUser.userIdentity.email, Set.of("platform:admin"));
+    }
+
+    // ==================== List Roles ====================
+
+    @Test
+    @DisplayName("List roles should return all defined roles")
+    void listRoles_shouldReturnAllRoles_whenAuthenticated() {
+        given()
+            .header("Authorization", "Bearer " + adminToken)
+            .contentType(ContentType.JSON)
+        .when()
+            .get("/api/admin/platform/roles")
+        .then()
+            .statusCode(200)
+            .body("roles", notNullValue())
+            .body("total", greaterThanOrEqualTo(1))
+            .body("roles.role", hasItem("platform:tenant-admin"));
+    }
+
+    @Test
+    @DisplayName("List roles should return 401 when not authenticated")
+    void listRoles_shouldReturn401_whenNotAuthenticated() {
+        given()
+            .contentType(ContentType.JSON)
+        .when()
+            .get("/api/admin/platform/roles")
+        .then()
+            .statusCode(401);
+    }
+
+    // ==================== Get Role ====================
+
+    @Test
+    @DisplayName("Get role should return role with permissions when exists")
+    void getRole_shouldReturnRole_whenExists() {
+        given()
+            .header("Authorization", "Bearer " + adminToken)
+            .contentType(ContentType.JSON)
+        .when()
+            .get("/api/admin/platform/roles/platform:tenant-admin")
+        .then()
+            .statusCode(200)
+            .body("role", equalTo("platform:tenant-admin"))
+            .body("subdomain", equalTo("platform"))
+            .body("name", equalTo("tenant-admin"))
+            .body("permissions", notNullValue())
+            .body("permissions.size()", greaterThanOrEqualTo(1));
+    }
+
+    @Test
+    @DisplayName("Get role should return 404 when not found")
+    void getRole_shouldReturn404_whenNotFound() {
+        given()
+            .header("Authorization", "Bearer " + adminToken)
+            .contentType(ContentType.JSON)
+        .when()
+            .get("/api/admin/platform/roles/nonexistent:role")
+        .then()
+            .statusCode(404)
+            .body("error", containsString("not found"));
+    }
+
+    // ==================== List Permissions ====================
+
+    @Test
+    @DisplayName("List permissions should return all defined permissions")
+    void listPermissions_shouldReturnAllPermissions_whenAuthenticated() {
+        given()
+            .header("Authorization", "Bearer " + adminToken)
+            .contentType(ContentType.JSON)
+        .when()
+            .get("/api/admin/platform/roles/permissions")
+        .then()
+            .statusCode(200)
+            .body("permissions", notNullValue())
+            .body("total", greaterThanOrEqualTo(1));
+    }
+
+    @Test
+    @DisplayName("List permissions should return 401 when not authenticated")
+    void listPermissions_shouldReturn401_whenNotAuthenticated() {
+        given()
+            .contentType(ContentType.JSON)
+        .when()
+            .get("/api/admin/platform/roles/permissions")
+        .then()
+            .statusCode(401);
+    }
+
+    // ==================== Get Permission ====================
+
+    @Test
+    @DisplayName("Get permission should return permission when exists")
+    void getPermission_shouldReturnPermission_whenExists() {
+        given()
+            .header("Authorization", "Bearer " + adminToken)
+            .contentType(ContentType.JSON)
+        .when()
+            .get("/api/admin/platform/roles/permissions/platform:tenant:user:create")
+        .then()
+            .statusCode(200)
+            .body("permission", equalTo("platform:tenant:user:create"))
+            .body("subdomain", equalTo("platform"))
+            .body("context", equalTo("tenant"))
+            .body("aggregate", equalTo("user"))
+            .body("action", equalTo("create"));
+    }
+
+    @Test
+    @DisplayName("Get permission should return 404 when not found")
+    void getPermission_shouldReturn404_whenNotFound() {
+        given()
+            .header("Authorization", "Bearer " + adminToken)
+            .contentType(ContentType.JSON)
+        .when()
+            .get("/api/admin/platform/roles/permissions/nonexistent:permission")
+        .then()
+            .statusCode(404)
+            .body("error", containsString("not found"));
+    }
+}

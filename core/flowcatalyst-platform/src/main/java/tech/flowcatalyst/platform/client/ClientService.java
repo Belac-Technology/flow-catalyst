@@ -1,0 +1,289 @@
+package tech.flowcatalyst.platform.client;
+
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+import jakarta.transaction.Transactional;
+import jakarta.ws.rs.BadRequestException;
+import jakarta.ws.rs.NotFoundException;
+import tech.flowcatalyst.platform.principal.Principal;
+import tech.flowcatalyst.platform.principal.PrincipalRepository;
+import tech.flowcatalyst.platform.shared.TsidGenerator;
+
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
+
+/**
+ * Service for client CRUD operations and access management.
+ */
+@ApplicationScoped
+public class ClientService {
+
+    @Inject
+    ClientRepository clientRepo;
+
+    @Inject
+    ClientAccessGrantRepository grantRepo;
+
+    @Inject
+    PrincipalRepository principalRepo;
+
+    @Inject
+    ClientAccessService clientAccessService;
+
+    /**
+     * Create a new client.
+     *
+     * @param name Client display name
+     * @param identifier Unique client identifier/slug (e.g., "acme-corp")
+     * @return Created client
+     * @throws BadRequestException if identifier already exists
+     */
+    @Transactional
+    public Client createClient(String name, String identifier) {
+        // Validate identifier uniqueness
+        if (clientRepo.findByIdentifier(identifier).isPresent()) {
+            throw new BadRequestException("Client identifier already exists: " + identifier);
+        }
+
+        // Create client
+        Client client = new Client();
+        client.id = TsidGenerator.generate();
+        client.name = name;
+        client.identifier = identifier;
+        client.status = ClientStatus.ACTIVE;
+
+        clientRepo.persist(client);
+        return client;
+    }
+
+    /**
+     * Update client name.
+     *
+     * @param clientId Client ID
+     * @param name New client name
+     * @return Updated client
+     * @throws NotFoundException if client not found
+     */
+    @Transactional
+    public Client updateClient(Long clientId, String name) {
+        Client client = clientRepo.findByIdOptional(clientId)
+            .orElseThrow(() -> new NotFoundException("Client not found"));
+
+        client.name = name;
+        return client;
+    }
+
+    /**
+     * Change client status.
+     *
+     * @param clientId Client ID
+     * @param status New status
+     * @param reason Status reason (e.g., "ACCOUNT_NOT_PAID")
+     * @param note Optional note to add to audit trail
+     * @param changedBy Principal ID of who made the change
+     * @throws NotFoundException if client not found
+     */
+    @Transactional
+    public void changeClientStatus(Long clientId, ClientStatus status, String reason, String note, String changedBy) {
+        Client client = clientRepo.findByIdOptional(clientId)
+            .orElseThrow(() -> new NotFoundException("Client not found"));
+
+        client.changeStatus(status, reason, note, changedBy);
+    }
+
+    /**
+     * Deactivate a client (soft delete).
+     * Deactivated clients cannot be accessed.
+     *
+     * @param clientId Client ID
+     * @param reason Reason for deactivation
+     * @param changedBy Who deactivated the client
+     * @throws NotFoundException if client not found
+     */
+    @Transactional
+    public void deactivateClient(Long clientId, String reason, String changedBy) {
+        changeClientStatus(clientId, ClientStatus.INACTIVE, reason,
+            "Client deactivated: " + reason, changedBy);
+    }
+
+    /**
+     * Suspend a client.
+     *
+     * @param clientId Client ID
+     * @param reason Reason for suspension
+     * @param changedBy Who suspended the client
+     * @throws NotFoundException if client not found
+     */
+    @Transactional
+    public void suspendClient(Long clientId, String reason, String changedBy) {
+        changeClientStatus(clientId, ClientStatus.SUSPENDED, reason,
+            "Client suspended: " + reason, changedBy);
+    }
+
+    /**
+     * Activate a client (un-suspend or un-deactivate).
+     *
+     * @param clientId Client ID
+     * @param changedBy Who activated the client
+     * @throws NotFoundException if client not found
+     */
+    @Transactional
+    public void activateClient(Long clientId, String changedBy) {
+        changeClientStatus(clientId, ClientStatus.ACTIVE, null,
+            "Client activated", changedBy);
+    }
+
+    /**
+     * Grant a principal access to a client.
+     * Used for partners who need access to multiple customer clients.
+     *
+     * @param principalId Principal ID
+     * @param clientId Client ID
+     * @return Created grant
+     * @throws NotFoundException if principal or client not found
+     * @throws BadRequestException if grant already exists or if principal already belongs to client
+     */
+    @Transactional
+    public ClientAccessGrant grantClientAccess(Long principalId, Long clientId) {
+        // Validate principal exists
+        Principal principal = principalRepo.findByIdOptional(principalId)
+            .orElseThrow(() -> new NotFoundException("Principal not found"));
+
+        // Validate client exists
+        Client client = clientRepo.findByIdOptional(clientId)
+            .orElseThrow(() -> new NotFoundException("Client not found"));
+
+        // Check if principal already belongs to this client as home client
+        if (principal.clientId != null && principal.clientId.equals(clientId)) {
+            throw new BadRequestException("Principal already belongs to this client as home client");
+        }
+
+        // Check if grant already exists
+        long existingGrants = grantRepo.count("principalId = ?1 AND clientId = ?2", principalId, clientId);
+        if (existingGrants > 0) {
+            throw new BadRequestException("Client access grant already exists");
+        }
+
+        // Create grant
+        ClientAccessGrant grant = new ClientAccessGrant();
+        grant.id = TsidGenerator.generate();
+        grant.principalId = principalId;
+        grant.clientId = clientId;
+
+        grantRepo.persist(grant);
+        return grant;
+    }
+
+    /**
+     * Revoke a principal's access to a client.
+     *
+     * @param principalId Principal ID
+     * @param clientId Client ID
+     * @throws NotFoundException if grant not found
+     */
+    @Transactional
+    public void revokeClientAccess(Long principalId, Long clientId) {
+        long deleted = grantRepo.delete("principalId = ?1 AND clientId = ?2", principalId, clientId);
+        if (deleted == 0) {
+            throw new NotFoundException("Client access grant not found");
+        }
+    }
+
+    /**
+     * Get all clients accessible by a principal.
+     * Uses ClientAccessService to calculate accessible clients.
+     *
+     * @param principalId Principal ID
+     * @return Set of accessible client IDs
+     * @throws NotFoundException if principal not found
+     */
+    public Set<Long> getAccessibleClients(Long principalId) {
+        Principal principal = principalRepo.findByIdOptional(principalId)
+            .orElseThrow(() -> new NotFoundException("Principal not found"));
+
+        return clientAccessService.getAccessibleClients(principal);
+    }
+
+    /**
+     * Get all principals who have access to a specific client.
+     *
+     * @param clientId Client ID
+     * @return List of principals
+     */
+    public List<Principal> getPrincipalsWithAccess(Long clientId) {
+        // Get all grants for this client
+        List<ClientAccessGrant> grants = grantRepo.findByClientId(clientId);
+
+        // Get principals for those grants
+        List<Long> principalIds = grants.stream()
+            .map(g -> g.principalId)
+            .toList();
+
+        // Also include users who have this as their home client
+        List<Principal> principals = principalRepo.find("clientId", clientId).list();
+
+        // Add granted principals
+        if (!principalIds.isEmpty()) {
+            List<Principal> grantedPrincipals = principalRepo.find("id in ?1", principalIds).list();
+            principals.addAll(grantedPrincipals);
+        }
+
+        return principals;
+    }
+
+    /**
+     * Find client by ID.
+     *
+     * @param clientId Client ID
+     * @return Optional containing the client if found
+     */
+    public Optional<Client> findById(Long clientId) {
+        return clientRepo.findByIdOptional(clientId);
+    }
+
+    /**
+     * Find client by identifier.
+     *
+     * @param identifier Client identifier/slug
+     * @return Optional containing the client if found
+     */
+    public Optional<Client> findByIdentifier(String identifier) {
+        return clientRepo.findByIdentifier(identifier);
+    }
+
+    /**
+     * Find all active clients.
+     *
+     * @return List of active clients
+     */
+    public List<Client> findAllActive() {
+        return clientRepo.findAllActive();
+    }
+
+    /**
+     * Find all clients (regardless of status).
+     *
+     * @return List of all clients
+     */
+    public List<Client> findAll() {
+        return clientRepo.listAll();
+    }
+
+    /**
+     * Add a note to a client's audit trail.
+     *
+     * @param clientId Client ID
+     * @param category Note category (e.g., "SUPPORT", "BILLING")
+     * @param text Note text
+     * @param addedBy Who added the note
+     * @throws NotFoundException if client not found
+     */
+    @Transactional
+    public void addNote(Long clientId, String category, String text, String addedBy) {
+        Client client = clientRepo.findByIdOptional(clientId)
+            .orElseThrow(() -> new NotFoundException("Client not found"));
+
+        client.addNote(category, text, addedBy);
+    }
+}
