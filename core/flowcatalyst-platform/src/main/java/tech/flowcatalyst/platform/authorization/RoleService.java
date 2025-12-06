@@ -4,8 +4,8 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.NotFoundException;
+import tech.flowcatalyst.platform.principal.Principal;
 import tech.flowcatalyst.platform.principal.PrincipalRepository;
-import tech.flowcatalyst.platform.shared.TsidGenerator;
 
 import java.util.List;
 import java.util.Set;
@@ -13,6 +13,8 @@ import java.util.stream.Collectors;
 
 /**
  * Service for role assignment to principals.
+ *
+ * Roles are stored embedded in the Principal document (MongoDB denormalized pattern).
  *
  * Roles can come from three sources:
  * - CODE: Defined in Java @Role classes (synced to auth_roles at startup)
@@ -26,9 +28,6 @@ import java.util.stream.Collectors;
  */
 @ApplicationScoped
 public class RoleService {
-
-    @Inject
-    PrincipalRoleRepository principalRoleRepo;
 
     @Inject
     PrincipalRepository principalRepo;
@@ -49,15 +48,14 @@ public class RoleService {
      * @param principalId Principal ID
      * @param roleName Role name string (e.g., "platform:tenant-admin")
      * @param assignmentSource How the role was assigned ("MANUAL", "IDP_SYNC", etc.)
-     * @return Created principal role assignment
+     * @return Created principal role assignment (as PrincipalRole for API compatibility)
      * @throws NotFoundException if principal not found
      * @throws BadRequestException if assignment already exists or role not defined
      */
     public PrincipalRole assignRole(Long principalId, String roleName, String assignmentSource) {
-        // Validate principal exists
-        if (!principalRepo.findByIdOptional(principalId).isPresent()) {
-            throw new NotFoundException("Principal not found: " + principalId);
-        }
+        // Find principal
+        Principal principal = principalRepo.findByIdOptional(principalId)
+            .orElseThrow(() -> new NotFoundException("Principal not found: " + principalId));
 
         // Validate role exists in database or registry
         if (!isValidRole(roleName)) {
@@ -66,20 +64,25 @@ public class RoleService {
         }
 
         // Check if assignment already exists
-        long existing = principalRoleRepo.count("principalId = ?1 AND roleName = ?2", principalId, roleName);
-        if (existing > 0) {
+        if (principal.hasRole(roleName)) {
             throw new BadRequestException("Role already assigned to principal: " + roleName);
         }
 
-        // Create assignment
-        PrincipalRole principalRole = new PrincipalRole();
-        principalRole.id = TsidGenerator.generate();
-        principalRole.principalId = principalId;
-        principalRole.roleName = roleName;
-        principalRole.assignmentSource = assignmentSource != null ? assignmentSource : "MANUAL";
+        // Add role to principal's embedded list
+        Principal.RoleAssignment assignment = new Principal.RoleAssignment(
+            roleName,
+            assignmentSource != null ? assignmentSource : "MANUAL"
+        );
+        principal.roles.add(assignment);
+        principalRepo.update(principal);
 
-        principalRoleRepo.persist(principalRole);
-        return principalRole;
+        // Return as PrincipalRole for API compatibility
+        PrincipalRole result = new PrincipalRole();
+        result.principalId = principalId;
+        result.roleName = roleName;
+        result.assignmentSource = assignment.assignmentSource;
+        result.assignedAt = assignment.assignedAt;
+        return result;
     }
 
     /**
@@ -105,10 +108,15 @@ public class RoleService {
      * @throws NotFoundException if assignment not found
      */
     public void removeRole(Long principalId, String roleName) {
-        long deleted = principalRoleRepo.delete("principalId = ?1 AND roleName = ?2", principalId, roleName);
-        if (deleted == 0) {
+        Principal principal = principalRepo.findByIdOptional(principalId)
+            .orElseThrow(() -> new NotFoundException("Principal not found: " + principalId));
+
+        boolean removed = principal.roles.removeIf(r -> r.roleName.equals(roleName));
+        if (!removed) {
             throw new NotFoundException("Role assignment not found: " + roleName);
         }
+
+        principalRepo.update(principal);
     }
 
     /**
@@ -120,8 +128,20 @@ public class RoleService {
      * @return Number of roles removed
      */
     public long removeRolesBySource(Long principalId, String assignmentSource) {
-        return principalRoleRepo.delete("principalId = ?1 AND assignmentSource = ?2",
-            principalId, assignmentSource);
+        Principal principal = principalRepo.findByIdOptional(principalId).orElse(null);
+        if (principal == null) {
+            return 0;
+        }
+
+        int sizeBefore = principal.roles.size();
+        principal.roles.removeIf(r -> assignmentSource.equals(r.assignmentSource));
+        int removed = sizeBefore - principal.roles.size();
+
+        if (removed > 0) {
+            principalRepo.update(principal);
+        }
+
+        return removed;
     }
 
     /**
@@ -131,9 +151,9 @@ public class RoleService {
      * @return Set of role name strings (e.g., "platform:tenant-admin")
      */
     public Set<String> findRoleNamesByPrincipal(Long principalId) {
-        return principalRoleRepo.findByPrincipalId(principalId).stream()
-            .map(pr -> pr.roleName)
-            .collect(Collectors.toSet());
+        return principalRepo.findByIdOptional(principalId)
+            .map(Principal::getRoleNames)
+            .orElse(Set.of());
     }
 
     /**
@@ -153,12 +173,24 @@ public class RoleService {
 
     /**
      * Find all principal role assignments for a principal.
+     * Returns embedded roles converted to PrincipalRole for API compatibility.
      *
      * @param principalId Principal ID
      * @return List of principal role assignments
      */
     public List<PrincipalRole> findAssignmentsByPrincipal(Long principalId) {
-        return principalRoleRepo.findByPrincipalId(principalId);
+        return principalRepo.findByIdOptional(principalId)
+            .map(principal -> principal.roles.stream()
+                .map(r -> {
+                    PrincipalRole pr = new PrincipalRole();
+                    pr.principalId = principalId;
+                    pr.roleName = r.roleName;
+                    pr.assignmentSource = r.assignmentSource;
+                    pr.assignedAt = r.assignedAt;
+                    return pr;
+                })
+                .collect(Collectors.toList()))
+            .orElse(List.of());
     }
 
     /**
@@ -169,7 +201,9 @@ public class RoleService {
      * @return true if principal has the role
      */
     public boolean hasRole(Long principalId, String roleName) {
-        return findRoleNamesByPrincipal(principalId).contains(roleName);
+        return principalRepo.findByIdOptional(principalId)
+            .map(p -> p.hasRole(roleName))
+            .orElse(false);
     }
 
     /**

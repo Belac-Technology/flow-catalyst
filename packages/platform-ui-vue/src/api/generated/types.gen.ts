@@ -437,6 +437,7 @@ export type PrincipalDto = {
   active?: boolean;
   email?: string;
   idpType?: IdpType;
+  roles?: Array<string>;
   createdAt?: Instant;
   updatedAt?: Instant;
 };

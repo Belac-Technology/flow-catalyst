@@ -631,6 +631,7 @@ public class PrincipalAdminResource {
             principal.active,
             email,
             idpType,
+            principal.getRoleNames(),
             principal.createdAt,
             principal.updatedAt
         );
@@ -672,6 +673,7 @@ public class PrincipalAdminResource {
         boolean active,
         String email,
         IdpType idpType,
+        Set<String> roles,
         Instant createdAt,
         Instant updatedAt
     ) {}

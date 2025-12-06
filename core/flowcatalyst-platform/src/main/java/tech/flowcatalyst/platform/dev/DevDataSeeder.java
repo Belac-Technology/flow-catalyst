@@ -11,7 +11,6 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 import tech.flowcatalyst.platform.authentication.AuthProvider;
 import tech.flowcatalyst.platform.authentication.IdpType;
-import tech.flowcatalyst.platform.authorization.PrincipalRole;
 import tech.flowcatalyst.platform.principal.*;
 import tech.flowcatalyst.platform.client.*;
 import tech.flowcatalyst.platform.application.*;
@@ -73,9 +72,6 @@ public class DevDataSeeder {
 
     @Inject
     EventTypeRepository eventTypeRepo;
-
-    @Inject
-    tech.flowcatalyst.platform.authorization.PrincipalRoleRepository principalRoleRepo;
 
     // These are looked up lazily to avoid early bean resolution that can cause startup issues
     private AuditContext getAuditContext() {
@@ -280,17 +276,12 @@ public class DevDataSeeder {
         user.userIdentity.idpType = IdpType.INTERNAL;
         user.userIdentity.passwordHash = passwordHash;
 
-        principalRepo.persist(user);
-
-        // Add roles
+        // Add roles (embedded in principal)
         for (String roleName : roles) {
-            PrincipalRole role = new PrincipalRole();
-            role.id = TsidGenerator.generate();
-            role.principalId = user.id;
-            role.roleName = roleName;
-            role.assignmentSource = "DEV_SEEDER";
-            principalRoleRepo.persist(role);
+            user.roles.add(new Principal.RoleAssignment(roleName, "DEV_SEEDER"));
         }
+
+        principalRepo.persist(user);
 
         LOG.infof("Created user: %s (%s)", name, email);
         return user;
