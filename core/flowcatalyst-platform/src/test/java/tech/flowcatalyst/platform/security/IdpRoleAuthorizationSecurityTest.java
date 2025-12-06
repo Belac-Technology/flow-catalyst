@@ -396,7 +396,7 @@ class IdpRoleAuthorizationSecurityTest {
         mapping.idpRoleName = idpRoleName;
         mapping.internalRoleName = internalRoleName;
         idpRoleMappingRepo.persist(mapping);
-        idpRoleMappingRepo.flush(); // Force immediate constraint check
+        // MongoDB doesn't need flush - writes are immediate
         return mapping;
     }
 }

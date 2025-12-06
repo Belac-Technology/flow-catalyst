@@ -7,7 +7,6 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.context.control.ActivateRequestContext;
 import jakarta.enterprise.event.Observes;
 import jakarta.inject.Inject;
-import jakarta.transaction.Transactional;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 import tech.flowcatalyst.platform.authentication.AuthProvider;
@@ -20,8 +19,8 @@ import tech.flowcatalyst.platform.shared.TsidGenerator;
 import tech.flowcatalyst.platform.application.ApplicationAdminService;
 import tech.flowcatalyst.platform.application.operations.CreateApplication;
 import tech.flowcatalyst.platform.audit.AuditContext;
-import tech.flowcatalyst.platform.eventtype.*;
-import tech.flowcatalyst.platform.eventtype.operations.CreateEventType;
+import tech.flowcatalyst.eventtype.*;
+import tech.flowcatalyst.eventtype.operations.CreateEventType;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -75,6 +74,9 @@ public class DevDataSeeder {
     @Inject
     EventTypeRepository eventTypeRepo;
 
+    @Inject
+    tech.flowcatalyst.platform.authorization.PrincipalRoleRepository principalRoleRepo;
+
     // These are looked up lazily to avoid early bean resolution that can cause startup issues
     private AuditContext getAuditContext() {
         return Arc.container().instance(AuditContext.class).get();
@@ -125,7 +127,6 @@ public class DevDataSeeder {
         return true;
     }
 
-    @Transactional
     void seedData() {
         // Set up SYSTEM principal for audit context since we're outside HTTP request
         // Must be inside @Transactional because it may need to persist the SYSTEM principal
@@ -288,7 +289,7 @@ public class DevDataSeeder {
             role.principalId = user.id;
             role.roleName = roleName;
             role.assignmentSource = "DEV_SEEDER";
-            principalRepo.getEntityManager().persist(role);
+            principalRoleRepo.persist(role);
         }
 
         LOG.infof("Created user: %s (%s)", name, email);

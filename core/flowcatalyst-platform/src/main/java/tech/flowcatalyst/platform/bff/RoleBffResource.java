@@ -241,7 +241,7 @@ public class RoleBffResource {
                 role.displayName,
                 role.description,
                 role.permissions,
-                role.application != null ? role.application.code : null,
+                role.applicationCode,
                 role.source != null ? role.source.name() : null,
                 role.clientManaged,
                 role.createdAt != null ? role.createdAt.toString() : null,

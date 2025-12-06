@@ -5,14 +5,23 @@ import Column from 'primevue/column';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
 import Tag from 'primevue/tag';
+import { getApiAdminPlatformPrincipals } from '@/api/generated';
 
 const users = ref<any[]>([]);
 const loading = ref(true);
 const searchQuery = ref('');
 
 onMounted(async () => {
-  // TODO: Fetch users from API
-  loading.value = false;
+  try {
+    const response = await getApiAdminPlatformPrincipals({ query: { type: 'USER' } });
+    if (response.data?.principals) {
+      users.value = response.data.principals;
+    }
+  } catch (error) {
+    console.error('Failed to fetch users:', error);
+  } finally {
+    loading.value = false;
+  }
 });
 </script>
 

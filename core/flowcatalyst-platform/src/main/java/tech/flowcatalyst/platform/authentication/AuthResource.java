@@ -127,7 +127,7 @@ public class AuthResource {
 
         // Update last login
         principal.userIdentity.lastLoginAt = Instant.now();
-        principalRepository.persist(principal);
+        principalRepository.update(principal);
 
         // Create session cookie
         NewCookie sessionCookie = createSessionCookie(token);

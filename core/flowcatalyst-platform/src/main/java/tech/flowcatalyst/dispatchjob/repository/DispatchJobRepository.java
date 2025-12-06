@@ -1,11 +1,8 @@
 package tech.flowcatalyst.dispatchjob.repository;
 
-import io.quarkus.hibernate.orm.panache.PanacheRepositoryBase;
+import io.quarkus.mongodb.panache.PanacheMongoRepositoryBase;
 import io.quarkus.panache.common.Parameters;
 import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.persistence.EntityManager;
-import jakarta.inject.Inject;
-import jakarta.transaction.Transactional;
 import tech.flowcatalyst.dispatchjob.dto.CreateDispatchJobRequest;
 import tech.flowcatalyst.dispatchjob.dto.DispatchJobFilter;
 import tech.flowcatalyst.dispatchjob.entity.DispatchAttempt;
@@ -18,21 +15,16 @@ import java.time.Instant;
 import java.util.*;
 
 /**
- * PostgreSQL repository for DispatchJob using Hibernate ORM Panache.
+ * MongoDB repository for DispatchJob using Panache MongoDB.
  *
- * Uses JSONB columns for metadata and attempts arrays for efficient
- * storage and querying while maintaining aggregate boundaries.
+ * Uses embedded documents for metadata and attempts arrays.
  */
 @ApplicationScoped
-public class DispatchJobRepository implements PanacheRepositoryBase<DispatchJob, Long> {
-
-    @Inject
-    EntityManager em;
+public class DispatchJobRepository implements PanacheMongoRepositoryBase<DispatchJob, Long> {
 
     /**
      * Create a new dispatch job with embedded metadata
      */
-    @Transactional
     public DispatchJob create(CreateDispatchJobRequest request) {
         DispatchJob job = new DispatchJob();
         job.id = TsidGenerator.generate();
@@ -72,14 +64,13 @@ public class DispatchJobRepository implements PanacheRepositoryBase<DispatchJob,
                 .toList();
         }
 
-        persist(job);  // Panache handles POJO serialization
+        persist(job);
         return job;
     }
 
     /**
      * Add delivery attempt to job
      */
-    @Transactional
     public void addAttempt(Long jobId, DispatchAttempt attempt) {
         attempt.id = TsidGenerator.generate();
         attempt.createdAt = Instant.now();
@@ -90,14 +81,13 @@ public class DispatchJobRepository implements PanacheRepositoryBase<DispatchJob,
             job.attemptCount++;
             job.lastAttemptAt = attempt.attemptedAt;
             job.updatedAt = Instant.now();
-            persist(job);
+            update(job);
         }
     }
 
     /**
      * Update job status
      */
-    @Transactional
     public void updateStatus(Long jobId, DispatchStatus status,
                              Instant completedAt, Long durationMillis, String lastError) {
         DispatchJob job = findById(jobId);
@@ -115,41 +105,48 @@ public class DispatchJobRepository implements PanacheRepositoryBase<DispatchJob,
                 job.lastError = lastError;
             }
 
-            persist(job);
+            update(job);
         }
     }
 
     /**
-     * Find jobs matching filter criteria using Panache
+     * Find jobs matching filter criteria using Panache MongoDB
      */
     public List<DispatchJob> findWithFilter(DispatchJobFilter filter) {
-        StringBuilder query = new StringBuilder("1=1");
+        StringBuilder query = new StringBuilder();
         Map<String, Object> params = new HashMap<>();
+        List<String> conditions = new ArrayList<>();
 
         if (filter.status() != null) {
-            query.append(" AND status = :status");
+            conditions.add("status = :status");
             params.put("status", filter.status());
         }
         if (filter.source() != null) {
-            query.append(" AND source = :source");
+            conditions.add("source = :source");
             params.put("source", filter.source());
         }
         if (filter.type() != null) {
-            query.append(" AND type = :type");
+            conditions.add("type = :type");
             params.put("type", filter.type());
         }
         if (filter.groupId() != null) {
-            query.append(" AND groupId = :groupId");
+            conditions.add("groupId = :groupId");
             params.put("groupId", filter.groupId());
         }
         if (filter.createdAfter() != null) {
-            query.append(" AND createdAt >= :createdAfter");
+            conditions.add("createdAt >= :createdAfter");
             params.put("createdAfter", filter.createdAfter());
         }
         if (filter.createdBefore() != null) {
-            query.append(" AND createdAt <= :createdBefore");
+            conditions.add("createdAt <= :createdBefore");
             params.put("createdBefore", filter.createdBefore());
         }
+
+        if (conditions.isEmpty()) {
+            return findAll().page(filter.page(), filter.size()).list();
+        }
+
+        query.append(String.join(" and ", conditions));
 
         return find(query.toString(), params)
             .page(filter.page(), filter.size())
@@ -160,47 +157,51 @@ public class DispatchJobRepository implements PanacheRepositoryBase<DispatchJob,
      * Count jobs matching filter criteria
      */
     public long countWithFilter(DispatchJobFilter filter) {
-        StringBuilder query = new StringBuilder("1=1");
+        StringBuilder query = new StringBuilder();
         Map<String, Object> params = new HashMap<>();
+        List<String> conditions = new ArrayList<>();
 
         if (filter.status() != null) {
-            query.append(" AND status = :status");
+            conditions.add("status = :status");
             params.put("status", filter.status());
         }
         if (filter.source() != null) {
-            query.append(" AND source = :source");
+            conditions.add("source = :source");
             params.put("source", filter.source());
         }
         if (filter.type() != null) {
-            query.append(" AND type = :type");
+            conditions.add("type = :type");
             params.put("type", filter.type());
         }
         if (filter.groupId() != null) {
-            query.append(" AND groupId = :groupId");
+            conditions.add("groupId = :groupId");
             params.put("groupId", filter.groupId());
         }
         if (filter.createdAfter() != null) {
-            query.append(" AND createdAt >= :createdAfter");
+            conditions.add("createdAt >= :createdAfter");
             params.put("createdAfter", filter.createdAfter());
         }
         if (filter.createdBefore() != null) {
-            query.append(" AND createdAt <= :createdBefore");
+            conditions.add("createdAt <= :createdBefore");
             params.put("createdBefore", filter.createdBefore());
         }
+
+        if (conditions.isEmpty()) {
+            return count();
+        }
+
+        query.append(String.join(" and ", conditions));
 
         return count(query.toString(), params);
     }
 
     /**
-     * Find jobs by metadata key-value pair using PostgreSQL JSONB operators
+     * Find jobs by metadata key-value pair using MongoDB $elemMatch
      */
     public List<DispatchJob> findByMetadata(String key, String value) {
-        String query = "SELECT j FROM DispatchJob j, jsonb_array_elements(j.metadata) AS m " +
-                       "WHERE m->>'key' = :key AND m->>'value' = :value";
-        return em.createQuery(query, DispatchJob.class)
-            .setParameter("key", key)
-            .setParameter("value", value)
-            .getResultList();
+        // Use MongoDB $elemMatch for querying embedded array
+        return list("metadata",
+            org.bson.Document.parse("{'$elemMatch': {'key': '" + key + "', 'value': '" + value + "'}}"));
     }
 
     /**
@@ -211,21 +212,17 @@ public class DispatchJobRepository implements PanacheRepositoryBase<DispatchJob,
             return List.of();
         }
 
-        // Build native query for JSONB containment check
-        StringBuilder queryBuilder = new StringBuilder(
-            "SELECT DISTINCT j.* FROM dispatch_jobs j, jsonb_array_elements(j.metadata) AS m WHERE ");
+        // For multiple filters, all must match (AND condition)
+        // Build $and query with multiple $elemMatch conditions
+        List<org.bson.Document> conditions = new ArrayList<>();
+        for (Map.Entry<String, String> entry : metadataFilters.entrySet()) {
+            conditions.add(new org.bson.Document("metadata",
+                new org.bson.Document("$elemMatch",
+                    new org.bson.Document("key", entry.getKey())
+                        .append("value", entry.getValue()))));
+        }
 
-        List<String> conditions = new ArrayList<>();
-        metadataFilters.forEach((key, value) -> {
-            conditions.add(String.format(
-                "EXISTS (SELECT 1 FROM jsonb_array_elements(j.metadata) AS m2 " +
-                "WHERE m2->>'key' = '%s' AND m2->>'value' = '%s')",
-                key.replace("'", "''"), value.replace("'", "''")));
-        });
-
-        queryBuilder.append(String.join(" AND ", conditions));
-
-        return em.createNativeQuery(queryBuilder.toString(), DispatchJob.class)
-            .getResultList();
+        org.bson.Document query = new org.bson.Document("$and", conditions);
+        return mongoCollection().find(query).into(new ArrayList<>());
     }
 }

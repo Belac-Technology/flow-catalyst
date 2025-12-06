@@ -1139,6 +1139,7 @@ public class QueueManager implements MessageCallback {
                     String pipelineKey = sqsMessageId != null ? sqsMessageId : enrichedMessage.id();
                     inPipelineMap.put(pipelineKey, enrichedMessage);
                     inPipelineTimestamps.put(pipelineKey, System.currentTimeMillis());
+                    inPipelineQueueIds.put(pipelineKey, getQueueIdentifier(batchMsg));
                     messageCallbacks.put(pipelineKey, callback);
                     // Track app message ID -> pipeline key for requeued message detection
                     appMessageIdToPipelineKey.put(enrichedMessage.id(), pipelineKey);

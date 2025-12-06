@@ -588,8 +588,8 @@ class UserServiceTest {
         Principal user2 = createInternalUserPrincipal(2L, "jane@acme.com", 100L);
         user2.active = false; // Inactive user
 
-        io.quarkus.hibernate.orm.panache.PanacheQuery<Principal> mockQuery = mockPanacheQuery(List.of(user1, user2));
-        when(principalRepo.find("clientId = ?1 AND type = ?2", 100L, PrincipalType.USER))
+        io.quarkus.mongodb.panache.PanacheQuery<Principal> mockQuery = mockPanacheQuery(List.of(user1, user2));
+        when(principalRepo.find("clientId = ?1 and type = ?2", 100L, PrincipalType.USER))
             .thenReturn(mockQuery);
 
         // Act
@@ -604,8 +604,8 @@ class UserServiceTest {
     @DisplayName("findByClient should return empty list when client has no users")
     void findByClient_shouldReturnEmpty_whenClientHasNoUsers() {
         // Arrange
-        io.quarkus.hibernate.orm.panache.PanacheQuery<Principal> mockQuery = mockPanacheQuery(List.of());
-        when(principalRepo.find("clientId = ?1 AND type = ?2", 999L, PrincipalType.USER))
+        io.quarkus.mongodb.panache.PanacheQuery<Principal> mockQuery = mockPanacheQuery(List.of());
+        when(principalRepo.find("clientId = ?1 and type = ?2", 999L, PrincipalType.USER))
             .thenReturn(mockQuery);
 
         // Act
@@ -626,8 +626,8 @@ class UserServiceTest {
         Principal user1 = createInternalUserPrincipal(1L, "john@acme.com", 100L);
         user1.active = true;
 
-        io.quarkus.hibernate.orm.panache.PanacheQuery<Principal> mockQuery = mockPanacheQuery(List.of(user1));
-        when(principalRepo.find("clientId = ?1 AND type = ?2 AND active = true", 100L, PrincipalType.USER))
+        io.quarkus.mongodb.panache.PanacheQuery<Principal> mockQuery = mockPanacheQuery(List.of(user1));
+        when(principalRepo.find("clientId = ?1 and type = ?2 and active = true", 100L, PrincipalType.USER))
             .thenReturn(mockQuery);
 
         // Act
@@ -735,8 +735,8 @@ class UserServiceTest {
     }
 
     @SuppressWarnings("unchecked")
-    private <T> io.quarkus.hibernate.orm.panache.PanacheQuery<T> mockPanacheQuery(List<T> results) {
-        io.quarkus.hibernate.orm.panache.PanacheQuery<T> mockQuery = mock(io.quarkus.hibernate.orm.panache.PanacheQuery.class);
+    private <T> io.quarkus.mongodb.panache.PanacheQuery<T> mockPanacheQuery(List<T> results) {
+        io.quarkus.mongodb.panache.PanacheQuery<T> mockQuery = mock(io.quarkus.mongodb.panache.PanacheQuery.class);
         when(mockQuery.list()).thenReturn(results);
         return mockQuery;
     }

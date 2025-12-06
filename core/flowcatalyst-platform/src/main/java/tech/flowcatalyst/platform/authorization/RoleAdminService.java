@@ -4,7 +4,6 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import jakarta.transaction.Transactional;
 import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.NotFoundException;
 import tech.flowcatalyst.platform.application.Application;
@@ -61,7 +60,6 @@ public class RoleAdminService {
      * @return The affected AuthRole (or null for delete/sync)
      * @throws IllegalStateException if audit context is not set
      */
-    @Transactional
     public AuthRole execute(RoleOperation operation) {
         // 1. Validate principal is set - operations cannot proceed without audit context
         Long principalId = auditContext.requirePrincipalId();
@@ -106,7 +104,8 @@ public class RoleAdminService {
         // Create role
         AuthRole role = new AuthRole();
         role.id = TsidGenerator.generate();
-        role.application = app;
+        role.applicationId = app.id;
+        role.applicationCode = app.code;
         role.name = fullRoleName;
         role.displayName = op.displayName() != null ? op.displayName() : formatDisplayName(op.name());
         role.description = op.description();
@@ -150,6 +149,7 @@ public class RoleAdminService {
             }
         }
 
+        roleRepo.update(role);
         return role;
     }
 
@@ -191,6 +191,7 @@ public class RoleAdminService {
                         item.permissions() : new HashSet<>();
                     existing.clientManaged = item.clientManaged();
 
+                    roleRepo.update(existing);
                     permissionRegistry.registerRoleDynamic(fullRoleName, existing.permissions, existing.description);
                 }
                 // Don't update CODE or DATABASE roles from SDK sync
@@ -198,7 +199,8 @@ public class RoleAdminService {
                 // Create new SDK role
                 AuthRole role = new AuthRole();
                 role.id = TsidGenerator.generate();
-                role.application = app;
+                role.applicationId = app.id;
+                role.applicationCode = app.code;
                 role.name = fullRoleName;
                 role.displayName = item.displayName() != null ? item.displayName() : formatDisplayName(item.name());
                 role.description = item.description();

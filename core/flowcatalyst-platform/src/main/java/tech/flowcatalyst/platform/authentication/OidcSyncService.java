@@ -3,7 +3,6 @@ package tech.flowcatalyst.platform.authentication;
 import io.quarkus.logging.Log;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import jakarta.transaction.Transactional;
 import tech.flowcatalyst.platform.authentication.IdpRoleMapping;
 import tech.flowcatalyst.platform.authentication.IdpRoleMappingRepository;
 import tech.flowcatalyst.platform.authorization.RoleService;
@@ -51,7 +50,6 @@ public class OidcSyncService {
      * @param tenantId Home tenant ID (nullable for anchor domain users)
      * @return Synchronized principal
      */
-    @Transactional
     public Principal syncOidcUser(String email, String name, String externalIdpId, Long tenantId) {
         Principal principal = userService.createOrUpdateOidcUser(email, name, externalIdpId, tenantId);
         userService.updateLastLogin(principal.id);
@@ -83,7 +81,6 @@ public class OidcSyncService {
      * @param idpRoleNames List of role names from the OIDC token (e.g., from realm_access.roles)
      * @return Set of accepted internal role names (e.g., "platform:tenant-admin")
      */
-    @Transactional
     public Set<String> syncIdpRoles(Principal principal, List<String> idpRoleNames) {
         Set<String> authorizedRoleNames = new HashSet<>();
 
@@ -149,7 +146,6 @@ public class OidcSyncService {
      * @param idpRoleNames List of role names from OIDC token
      * @return Synchronized principal
      */
-    @Transactional
     public Principal syncOidcLogin(String email, String name, String externalIdpId,
                                    Long tenantId, List<String> idpRoleNames) {
         // Sync user information

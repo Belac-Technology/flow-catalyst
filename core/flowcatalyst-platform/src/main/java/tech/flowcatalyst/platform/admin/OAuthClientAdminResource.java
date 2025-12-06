@@ -1,7 +1,6 @@
 package tech.flowcatalyst.platform.admin;
 
 import jakarta.inject.Inject;
-import jakarta.transaction.Transactional;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -169,7 +168,6 @@ public class OAuthClientAdminResource {
      * For CONFIDENTIAL clients, a secret is generated and returned ONCE in the response.
      */
     @POST
-    @Transactional
     @Operation(summary = "Create a new OAuth client",
         description = "For confidential clients, the secret is returned once in the response and cannot be retrieved again.")
     @APIResponses({
@@ -241,7 +239,6 @@ public class OAuthClientAdminResource {
      */
     @PUT
     @Path("/{id}")
-    @Transactional
     @Operation(summary = "Update OAuth client")
     @APIResponses({
         @APIResponse(responseCode = "200", description = "Client updated"),
@@ -289,6 +286,7 @@ public class OAuthClientAdminResource {
             client.pkceRequired = request.pkceRequired();
         }
 
+        clientRepo.update(client);
         LOG.infof("OAuth client updated: %s by principal %d", client.clientId, adminPrincipalId);
 
         return Response.ok(toDto(client)).build();
@@ -301,7 +299,6 @@ public class OAuthClientAdminResource {
      */
     @POST
     @Path("/{id}/rotate-secret")
-    @Transactional
     @Operation(summary = "Rotate client secret",
         description = "Generates a new secret. The new secret is returned once and cannot be retrieved again.")
     @APIResponses({
@@ -338,6 +335,7 @@ public class OAuthClientAdminResource {
         // Generate new secret
         String newSecret = generateClientSecret();
         client.clientSecretHash = passwordService.hashPassword(newSecret);
+        clientRepo.update(client);
 
         LOG.infof("OAuth client secret rotated: %s by principal %d", client.clientId, adminPrincipalId);
 
@@ -349,7 +347,6 @@ public class OAuthClientAdminResource {
      */
     @POST
     @Path("/{id}/activate")
-    @Transactional
     @Operation(summary = "Activate OAuth client")
     @APIResponses({
         @APIResponse(responseCode = "200", description = "Client activated"),
@@ -375,6 +372,7 @@ public class OAuthClientAdminResource {
         }
 
         client.active = true;
+        clientRepo.update(client);
         LOG.infof("OAuth client activated: %s by principal %d", client.clientId, adminPrincipalId);
 
         return Response.ok(new StatusResponse("Client activated")).build();
@@ -385,7 +383,6 @@ public class OAuthClientAdminResource {
      */
     @POST
     @Path("/{id}/deactivate")
-    @Transactional
     @Operation(summary = "Deactivate OAuth client")
     @APIResponses({
         @APIResponse(responseCode = "200", description = "Client deactivated"),
@@ -411,6 +408,7 @@ public class OAuthClientAdminResource {
         }
 
         client.active = false;
+        clientRepo.update(client);
         LOG.infof("OAuth client deactivated: %s by principal %d", client.clientId, adminPrincipalId);
 
         return Response.ok(new StatusResponse("Client deactivated")).build();

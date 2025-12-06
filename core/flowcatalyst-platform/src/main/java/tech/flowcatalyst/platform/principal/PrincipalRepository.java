@@ -1,16 +1,14 @@
 package tech.flowcatalyst.platform.principal;
 
-import io.quarkus.hibernate.orm.panache.PanacheRepositoryBase;
+import io.quarkus.mongodb.panache.PanacheMongoRepositoryBase;
 import jakarta.enterprise.context.ApplicationScoped;
-import tech.flowcatalyst.platform.principal.Principal;
-
 import java.util.Optional;
 
 /**
  * Repository for Principal entities.
  */
 @ApplicationScoped
-public class PrincipalRepository implements PanacheRepositoryBase<Principal, Long> {
+public class PrincipalRepository implements PanacheMongoRepositoryBase<Principal, Long> {
 
     public Optional<Principal> findByEmail(String email) {
         return find("userIdentity.email", email).firstResultOptional();

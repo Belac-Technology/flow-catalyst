@@ -1,6 +1,6 @@
 package tech.flowcatalyst.platform.authorization;
 
-import io.quarkus.hibernate.orm.panache.PanacheRepositoryBase;
+import io.quarkus.mongodb.panache.PanacheMongoRepositoryBase;
 import jakarta.enterprise.context.ApplicationScoped;
 
 import java.util.List;
@@ -10,18 +10,18 @@ import java.util.Optional;
  * Repository for AuthRole entities.
  */
 @ApplicationScoped
-public class AuthRoleRepository implements PanacheRepositoryBase<AuthRole, Long> {
+public class AuthRoleRepository implements PanacheMongoRepositoryBase<AuthRole, Long> {
 
     public Optional<AuthRole> findByName(String name) {
         return find("name", name).firstResultOptional();
     }
 
     public List<AuthRole> findByApplicationId(Long applicationId) {
-        return find("application.id", applicationId).list();
+        return find("applicationId", applicationId).list();
     }
 
     public List<AuthRole> findByApplicationCode(String applicationCode) {
-        return find("application.code", applicationCode).list();
+        return find("applicationCode", applicationCode).list();
     }
 
     public List<AuthRole> findBySource(AuthRole.RoleSource source) {
@@ -41,6 +41,6 @@ public class AuthRoleRepository implements PanacheRepositoryBase<AuthRole, Long>
     }
 
     public long deleteByApplicationIdAndSource(Long applicationId, AuthRole.RoleSource source) {
-        return delete("application.id = ?1 and source = ?2", applicationId, source);
+        return delete("applicationId = ?1 and source = ?2", applicationId, source);
     }
 }

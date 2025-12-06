@@ -387,7 +387,7 @@ public class RoleAdminResource {
     private RoleDto toRoleDto(AuthRole role) {
         return new RoleDto(
             role.name,
-            role.application != null ? role.application.code : null,
+            role.applicationCode,
             role.displayName,
             role.getShortName(),
             role.description,

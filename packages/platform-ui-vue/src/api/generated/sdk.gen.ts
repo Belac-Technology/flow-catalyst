@@ -133,6 +133,9 @@ import type {
   PostApiEventTypesByIdSchemasData,
   PostApiEventTypesByIdSchemasByVersionDeprecateData,
   PostApiEventTypesByIdSchemasByVersionFinaliseData,
+  PostApiEventsData,
+  PostApiEventsResponse,
+  GetApiEventsByIdData,
   GetApiHealthData,
   GetApiHealthResponse,
   GetApiStatsData,
@@ -1719,6 +1722,39 @@ export const postApiEventTypesByIdSchemasByVersionFinalise = <
       ...options,
     },
   );
+};
+
+/**
+ * Create a new event
+ * Creates a new event in the event store. If a deduplicationId is provided and an event with that ID already exists, the existing event is returned (idempotent operation).
+ */
+export const postApiEvents = <ThrowOnError extends boolean = false>(
+  options: Options<PostApiEventsData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).post<
+    PostApiEventsResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/events",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options?.headers,
+    },
+  });
+};
+
+/**
+ * Get event by ID
+ */
+export const getApiEventsById = <ThrowOnError extends boolean = false>(
+  options: Options<GetApiEventsByIdData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).get<unknown, unknown, ThrowOnError>({
+    url: "/api/events/{id}",
+    ...options,
+  });
 };
 
 /**

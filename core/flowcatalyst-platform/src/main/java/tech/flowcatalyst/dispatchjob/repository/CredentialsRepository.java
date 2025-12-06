@@ -1,8 +1,7 @@
 package tech.flowcatalyst.dispatchjob.repository;
 
-import io.quarkus.hibernate.orm.panache.PanacheRepositoryBase;
+import io.quarkus.mongodb.panache.PanacheMongoRepositoryBase;
 import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.transaction.Transactional;
 import tech.flowcatalyst.dispatchjob.dto.CreateCredentialsRequest;
 import tech.flowcatalyst.dispatchjob.entity.DispatchCredentials;
 import tech.flowcatalyst.dispatchjob.model.SignatureAlgorithm;
@@ -11,16 +10,15 @@ import tech.flowcatalyst.platform.shared.TsidGenerator;
 import java.time.Instant;
 
 /**
- * PostgreSQL repository for DispatchCredentials using Hibernate ORM Panache.
- * Credentials are stored in separate table (not embedded).
+ * MongoDB repository for DispatchCredentials using Panache MongoDB.
+ * Credentials are stored in separate collection (not embedded).
  */
 @ApplicationScoped
-public class CredentialsRepository implements PanacheRepositoryBase<DispatchCredentials, Long> {
+public class CredentialsRepository implements PanacheMongoRepositoryBase<DispatchCredentials, Long> {
 
     /**
      * Create new credentials
      */
-    @Transactional
     public DispatchCredentials create(CreateCredentialsRequest request) {
         DispatchCredentials credentials = new DispatchCredentials();
         credentials.id = TsidGenerator.generate();

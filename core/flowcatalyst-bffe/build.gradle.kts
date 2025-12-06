@@ -18,7 +18,6 @@ dependencies {
     // implementation("io.quarkiverse.quinoa:quarkus-quinoa:2.6.2")
 
     // Core dependencies
-    implementation(project(":core:flowcatalyst-core"))
     implementation(project(":core:flowcatalyst-platform"))
 
     // Quarkus extensions

@@ -1,9 +1,9 @@
 package tech.flowcatalyst.platform.client;
 
-import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
-import jakarta.persistence.*;
+import io.quarkus.mongodb.panache.common.MongoEntity;
+import io.quarkus.mongodb.panache.PanacheMongoEntityBase;
+import org.bson.codecs.pojo.annotations.BsonId;
 import tech.flowcatalyst.platform.authentication.AuthProvider;
-
 import java.time.Instant;
 
 /**
@@ -15,47 +15,25 @@ import java.time.Instant;
  * - acmecorp.com -> INTERNAL (users set passwords in FlowCatalyst)
  * - bigcustomer.com -> OIDC (redirect to customer's Keycloak)
  */
-@Entity
-@Table(name = "auth_client_auth_config")
-public class ClientAuthConfig extends PanacheEntityBase {
+@MongoEntity(collection = "client_auth_config")
+public class ClientAuthConfig extends PanacheMongoEntityBase {
 
-    @Id
+    @BsonId
     public Long id; // TSID
 
-    @Column(name = "email_domain", unique = true, nullable = false, length = 255)
     public String emailDomain;
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "auth_provider", nullable = false, length = 20)
     public AuthProvider authProvider;
 
-    @Column(name = "oidc_issuer_url", length = 500)
     public String oidcIssuerUrl;
 
-    @Column(name = "oidc_client_id", length = 255)
     public String oidcClientId;
 
-    @Column(name = "oidc_client_secret_encrypted", length = 1000)
     public String oidcClientSecretEncrypted;
 
-    @Column(name = "created_at", nullable = false, updatable = false)
-    public Instant createdAt;
+    public Instant createdAt = Instant.now();
 
-    @Column(name = "updated_at", nullable = false)
-    public Instant updatedAt;
-
-    @PrePersist
-    public void prePersist() {
-        if (createdAt == null) {
-            createdAt = Instant.now();
-        }
-        updatedAt = Instant.now();
-    }
-
-    @PreUpdate
-    public void preUpdate() {
-        updatedAt = Instant.now();
-    }
+    public Instant updatedAt = Instant.now();
 
     /**
      * Validate OIDC configuration if provider is OIDC.

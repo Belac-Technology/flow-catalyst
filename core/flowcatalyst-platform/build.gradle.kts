@@ -24,8 +24,7 @@ dependencies {
     // Core Quarkus
     // ==========================================================================
     implementation("io.quarkus:quarkus-arc")
-    implementation("io.quarkus:quarkus-hibernate-orm-panache")
-    implementation("io.quarkus:quarkus-jdbc-postgresql")
+    implementation("io.quarkus:quarkus-mongodb-panache")
     implementation("io.quarkus:quarkus-rest")
     implementation("io.quarkus:quarkus-rest-jackson")
 
@@ -54,10 +53,6 @@ dependencies {
     // ==========================================================================
     implementation("io.quarkus:quarkus-cache")
 
-    // ==========================================================================
-    // Database Migrations
-    // ==========================================================================
-    implementation("io.quarkus:quarkus-flyway")
 
     // ==========================================================================
     // Messaging (SQS for dispatch jobs)
@@ -94,6 +89,7 @@ dependencies {
     // ==========================================================================
     implementation("com.github.f4b6a3:tsid-creator:5.2.6")
 
+
     // ==========================================================================
     // Testing
     // ==========================================================================
@@ -102,7 +98,7 @@ dependencies {
     testImplementation("io.rest-assured:rest-assured")
     testImplementation("org.awaitility:awaitility:4.2.0")
     testImplementation("org.testcontainers:testcontainers:1.19.7")
-    testImplementation("org.testcontainers:postgresql:1.19.7")
+    testImplementation("org.testcontainers:mongodb:1.19.7")
     testImplementation("io.quarkus:quarkus-test-common")
     testImplementation("org.assertj:assertj-core:3.24.2")
 }

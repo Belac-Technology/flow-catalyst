@@ -1,6 +1,6 @@
 package tech.flowcatalyst.platform.authorization;
 
-import io.quarkus.hibernate.orm.panache.PanacheRepositoryBase;
+import io.quarkus.mongodb.panache.PanacheMongoRepositoryBase;
 import jakarta.enterprise.context.ApplicationScoped;
 
 import java.util.List;
@@ -10,18 +10,18 @@ import java.util.Optional;
  * Repository for AuthPermission entities.
  */
 @ApplicationScoped
-public class AuthPermissionRepository implements PanacheRepositoryBase<AuthPermission, Long> {
+public class AuthPermissionRepository implements PanacheMongoRepositoryBase<AuthPermission, Long> {
 
     public Optional<AuthPermission> findByName(String name) {
         return find("name", name).firstResultOptional();
     }
 
     public List<AuthPermission> findByApplicationId(Long applicationId) {
-        return find("application.id", applicationId).list();
+        return find("applicationId", applicationId).list();
     }
 
     public List<AuthPermission> findByApplicationCode(String applicationCode) {
-        return find("application.code", applicationCode).list();
+        return find("applicationCode", applicationCode).list();
     }
 
     public boolean existsByName(String name) {
@@ -33,6 +33,6 @@ public class AuthPermissionRepository implements PanacheRepositoryBase<AuthPermi
     }
 
     public long deleteByApplicationId(Long applicationId) {
-        return delete("application.id", applicationId);
+        return delete("applicationId", applicationId);
     }
 }

@@ -16,7 +16,7 @@ dependencies {
     implementation(enforcedPlatform("${quarkusPlatformGroupId}:${quarkusPlatformArtifactId}:${quarkusPlatformVersion}"))
 
     // Include both modules for full-stack deployment
-    implementation(project(":core:flowcatalyst-core"))
+    implementation(project(":core:flowcatalyst-platform"))
     implementation(project(":core:flowcatalyst-message-router"))
 }
 

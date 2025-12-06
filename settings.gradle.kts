@@ -32,7 +32,6 @@ include("core:flowcatalyst-benchmark")
 // Legacy Modules (TO BE REMOVED after migration verified)
 // =============================================================================
 include("core:flowcatalyst-postbox")
-include("core:flowcatalyst-core")
 include("core:flowcatalyst-router-app")
 include("core:flowcatalyst-app")
 include("core:flowcatalyst-bffe")

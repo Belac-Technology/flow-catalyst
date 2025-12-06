@@ -1,7 +1,6 @@
 package tech.flowcatalyst.platform.authentication.oauth;
 
 import jakarta.inject.Inject;
-import jakarta.transaction.Transactional;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.*;
 import org.eclipse.microprofile.openapi.annotations.Operation;
@@ -94,7 +93,6 @@ public class AuthorizationResource {
     @Path("/authorize")
     @Produces(MediaType.TEXT_HTML)
     @Operation(summary = "Start authorization code flow")
-    @Transactional
     public Response authorize(
             @Parameter(description = "Must be 'code'")
             @QueryParam("response_type") String responseType,
@@ -241,7 +239,6 @@ public class AuthorizationResource {
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Produces(MediaType.APPLICATION_JSON)
     @Operation(summary = "Exchange code for tokens or refresh tokens")
-    @Transactional
     public Response token(
             @HeaderParam("Authorization") String authHeader,
 
@@ -517,7 +514,7 @@ public class AuthorizationResource {
 
         // Update last used
         principal.serviceAccount.lastUsedAt = Instant.now();
-        principalRepo.persist(principal);
+        principalRepo.update(principal);
 
         LOG.infof("Access token issued for service account: %s", clientId);
 
@@ -575,7 +572,7 @@ public class AuthorizationResource {
 
         // Update last login
         principal.userIdentity.lastLoginAt = Instant.now();
-        principalRepo.persist(principal);
+        principalRepo.update(principal);
 
         LOG.infof("Access token issued via password grant for: %s", username);
 

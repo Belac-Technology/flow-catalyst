@@ -1,16 +1,14 @@
 package tech.flowcatalyst.platform.principal;
 
-import io.quarkus.hibernate.orm.panache.PanacheRepositoryBase;
+import io.quarkus.mongodb.panache.PanacheMongoRepositoryBase;
 import jakarta.enterprise.context.ApplicationScoped;
-import tech.flowcatalyst.platform.principal.AnchorDomain;
-
 import java.util.Optional;
 
 /**
  * Repository for AnchorDomain entities.
  */
 @ApplicationScoped
-public class AnchorDomainRepository implements PanacheRepositoryBase<AnchorDomain, Long> {
+public class AnchorDomainRepository implements PanacheMongoRepositoryBase<AnchorDomain, Long> {
 
     public Optional<AnchorDomain> findByDomain(String domain) {
         return find("domain", domain).firstResultOptional();

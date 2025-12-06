@@ -1,17 +1,19 @@
 package tech.flowcatalyst.platform.admin;
 
 import jakarta.inject.Inject;
-import jakarta.transaction.Transactional;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.*;
 import org.eclipse.microprofile.openapi.annotations.Operation;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 import tech.flowcatalyst.platform.application.Application;
+import tech.flowcatalyst.platform.application.ApplicationRepository;
 import tech.flowcatalyst.platform.application.ApplicationService;
 import tech.flowcatalyst.platform.application.ApplicationClientConfig;
 import tech.flowcatalyst.platform.authentication.EmbeddedModeOnly;
 import tech.flowcatalyst.platform.authentication.JwtKeyService;
 import tech.flowcatalyst.platform.authorization.PermissionRegistry;
+import tech.flowcatalyst.platform.client.Client;
+import tech.flowcatalyst.platform.client.ClientRepository;
 
 import java.util.List;
 import java.util.Map;
@@ -31,6 +33,12 @@ public class ApplicationAdminResource {
 
     @Inject
     ApplicationService applicationService;
+
+    @Inject
+    ApplicationRepository applicationRepo;
+
+    @Inject
+    ClientRepository clientRepo;
 
     @Inject
     JwtKeyService jwtKeyService;
@@ -88,7 +96,6 @@ public class ApplicationAdminResource {
 
     @POST
     @Operation(summary = "Create a new application")
-    @Transactional
     public Response createApplication(CreateApplicationRequest request) {
         if (request.code == null || request.code.isBlank()) {
             return Response.status(Response.Status.BAD_REQUEST)
@@ -126,7 +133,6 @@ public class ApplicationAdminResource {
     @PUT
     @Path("/{id}")
     @Operation(summary = "Update an application")
-    @Transactional
     public Response updateApplication(@PathParam("id") Long id, UpdateApplicationRequest request) {
         try {
             Application app = applicationService.updateApplication(
@@ -147,7 +153,6 @@ public class ApplicationAdminResource {
     @POST
     @Path("/{id}/activate")
     @Operation(summary = "Activate an application")
-    @Transactional
     public Response activateApplication(@PathParam("id") Long id) {
         try {
             applicationService.activateApplication(id);
@@ -162,7 +167,6 @@ public class ApplicationAdminResource {
     @POST
     @Path("/{id}/deactivate")
     @Operation(summary = "Deactivate an application")
-    @Transactional
     public Response deactivateApplication(@PathParam("id") Long id) {
         try {
             applicationService.deactivateApplication(id);
@@ -200,7 +204,6 @@ public class ApplicationAdminResource {
     @PUT
     @Path("/{id}/clients/{clientId}")
     @Operation(summary = "Configure application for a specific client")
-    @Transactional
     public Response configureClient(
             @PathParam("id") Long applicationId,
             @PathParam("clientId") Long clientId,
@@ -225,7 +228,6 @@ public class ApplicationAdminResource {
     @POST
     @Path("/{id}/clients/{clientId}/enable")
     @Operation(summary = "Enable application for a client")
-    @Transactional
     public Response enableForClient(
             @PathParam("id") Long applicationId,
             @PathParam("clientId") Long clientId) {
@@ -243,7 +245,6 @@ public class ApplicationAdminResource {
     @POST
     @Path("/{id}/clients/{clientId}/disable")
     @Operation(summary = "Disable application for a client")
-    @Transactional
     public Response disableForClient(
             @PathParam("id") Long applicationId,
             @PathParam("clientId") Long clientId) {
@@ -332,13 +333,28 @@ public class ApplicationAdminResource {
     private Map<String, Object> toClientConfigResponse(ApplicationClientConfig config) {
         var result = new java.util.HashMap<String, Object>();
         result.put("id", config.id);
-        result.put("applicationId", config.application.id);
-        result.put("clientId", config.client.id);
-        result.put("clientName", config.client.name);
-        result.put("clientIdentifier", config.client.identifier);
+        result.put("applicationId", config.applicationId);
+        result.put("clientId", config.clientId);
+
+        // Look up client details
+        Client client = clientRepo.findByIdOptional(config.clientId).orElse(null);
+        if (client != null) {
+            result.put("clientName", client.name);
+            result.put("clientIdentifier", client.identifier);
+        } else {
+            result.put("clientName", null);
+            result.put("clientIdentifier", null);
+        }
+
         result.put("enabled", config.enabled);
         result.put("baseUrlOverride", config.baseUrlOverride);
-        result.put("effectiveBaseUrl", config.getEffectiveBaseUrl());
+
+        // Compute effective base URL
+        Application app = applicationRepo.findByIdOptional(config.applicationId).orElse(null);
+        String effectiveBaseUrl = (config.baseUrlOverride != null && !config.baseUrlOverride.isBlank())
+            ? config.baseUrlOverride
+            : (app != null ? app.defaultBaseUrl : null);
+        result.put("effectiveBaseUrl", effectiveBaseUrl);
         result.put("config", config.configJson);
         return result;
     }

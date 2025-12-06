@@ -4,7 +4,6 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import jakarta.transaction.Transactional;
 import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.NotFoundException;
 import tech.flowcatalyst.platform.application.operations.*;
@@ -64,7 +63,6 @@ public class ApplicationAdminService {
      * @return The affected Application (or null for delete)
      * @throws IllegalStateException if audit context is not set
      */
-    @Transactional
     public Application execute(ApplicationOperation operation) {
         // 1. Validate principal is set - operations cannot proceed without audit context
         Long principalId = auditContext.requirePrincipalId();
@@ -156,6 +154,7 @@ public class ApplicationAdminService {
             app.iconUrl = op.iconUrl();
         }
 
+        repo.update(app);
         return app;
     }
 
@@ -167,6 +166,7 @@ public class ApplicationAdminService {
         }
 
         app.active = true;
+        repo.update(app);
         return app;
     }
 
@@ -178,6 +178,7 @@ public class ApplicationAdminService {
         }
 
         app.active = false;
+        repo.update(app);
         return app;
     }
 

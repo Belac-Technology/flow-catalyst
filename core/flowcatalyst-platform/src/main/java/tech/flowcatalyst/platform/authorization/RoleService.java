@@ -2,7 +2,6 @@ package tech.flowcatalyst.platform.authorization;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import jakarta.transaction.Transactional;
 import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.NotFoundException;
 import tech.flowcatalyst.platform.principal.PrincipalRepository;
@@ -54,7 +53,6 @@ public class RoleService {
      * @throws NotFoundException if principal not found
      * @throws BadRequestException if assignment already exists or role not defined
      */
-    @Transactional
     public PrincipalRole assignRole(Long principalId, String roleName, String assignmentSource) {
         // Validate principal exists
         if (!principalRepo.findByIdOptional(principalId).isPresent()) {
@@ -106,7 +104,6 @@ public class RoleService {
      * @param roleName Role name string (e.g., "platform:tenant-admin")
      * @throws NotFoundException if assignment not found
      */
-    @Transactional
     public void removeRole(Long principalId, String roleName) {
         long deleted = principalRoleRepo.delete("principalId = ?1 AND roleName = ?2", principalId, roleName);
         if (deleted == 0) {
@@ -122,7 +119,6 @@ public class RoleService {
      * @param assignmentSource Assignment source to remove (e.g., "IDP_SYNC")
      * @return Number of roles removed
      */
-    @Transactional
     public long removeRolesBySource(Long principalId, String assignmentSource) {
         return principalRoleRepo.delete("principalId = ?1 AND assignmentSource = ?2",
             principalId, assignmentSource);

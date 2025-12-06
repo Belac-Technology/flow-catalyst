@@ -1,12 +1,8 @@
 package tech.flowcatalyst.platform.authorization;
 
-import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
-import jakarta.persistence.*;
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.type.SqlTypes;
-import tech.flowcatalyst.platform.application.Application;
-import tech.flowcatalyst.platform.shared.TsidGenerator;
-
+import io.quarkus.mongodb.panache.common.MongoEntity;
+import io.quarkus.mongodb.panache.PanacheMongoEntityBase;
+import org.bson.codecs.pojo.annotations.BsonId;
 import java.time.Instant;
 import java.util.HashSet;
 import java.util.Set;
@@ -22,50 +18,40 @@ import java.util.Set;
  * The role name is prefixed with the application code (e.g., "platform:tenant-admin").
  * SDK roles are auto-prefixed when registered.
  */
-@Entity
-@Table(name = "auth_roles",
-    indexes = {
-        @Index(name = "idx_auth_roles_application", columnList = "application_id"),
-        @Index(name = "idx_auth_roles_name", columnList = "name", unique = true),
-        @Index(name = "idx_auth_roles_source", columnList = "source")
-    }
-)
-public class AuthRole extends PanacheEntityBase {
+@MongoEntity(collection = "auth_roles")
+public class AuthRole extends PanacheMongoEntityBase {
 
-    @Id
+    @BsonId
     public Long id;
 
     /**
-     * The application this role belongs to.
+     * The application this role belongs to (stored as ID reference).
      */
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "application_id", nullable = false)
-    public Application application;
+    public Long applicationId;
+
+    /**
+     * The application code (denormalized for queries).
+     */
+    public String applicationCode;
 
     /**
      * Full role name with application prefix (e.g., "platform:tenant-admin").
      */
-    @Column(name = "name", unique = true, nullable = false, length = 100)
     public String name;
 
     /**
      * Human-readable display name (e.g., "Tenant Administrator").
      */
-    @Column(name = "display_name", length = 100)
     public String displayName;
 
     /**
      * Description of what this role grants access to.
      */
-    @Column(name = "description", length = 500)
     public String description;
 
     /**
      * Set of permission strings granted by this role.
-     * Stored as JSON array.
      */
-    @JdbcTypeCode(SqlTypes.JSON)
-    @Column(name = "permissions", nullable = false, columnDefinition = "jsonb")
     public Set<String> permissions = new HashSet<>();
 
     /**
@@ -74,38 +60,17 @@ public class AuthRole extends PanacheEntityBase {
      * DATABASE = created by admin through UI
      * SDK = registered by external application
      */
-    @Column(name = "source", nullable = false, length = 20)
-    @Enumerated(EnumType.STRING)
     public RoleSource source = RoleSource.DATABASE;
 
     /**
      * If true, this role syncs to IDPs configured for client-managed roles.
      * Used for selective IDP synchronization.
      */
-    @Column(name = "client_managed", nullable = false)
     public boolean clientManaged = false;
 
-    @Column(name = "created_at", nullable = false)
     public Instant createdAt = Instant.now();
 
-    @Column(name = "updated_at", nullable = false)
     public Instant updatedAt = Instant.now();
-
-    @PrePersist
-    public void prePersist() {
-        if (id == null) {
-            id = TsidGenerator.generate();
-        }
-        if (createdAt == null) {
-            createdAt = Instant.now();
-        }
-        updatedAt = Instant.now();
-    }
-
-    @PreUpdate
-    public void preUpdate() {
-        updatedAt = Instant.now();
-    }
 
     public AuthRole() {
     }
@@ -114,8 +79,9 @@ public class AuthRole extends PanacheEntityBase {
      * Create a role for an application.
      * The name should already include the application prefix.
      */
-    public AuthRole(Application application, String name, String description, Set<String> permissions, RoleSource source) {
-        this.application = application;
+    public AuthRole(Long applicationId, String applicationCode, String name, String description, Set<String> permissions, RoleSource source) {
+        this.applicationId = applicationId;
+        this.applicationCode = applicationCode;
         this.name = name;
         this.description = description;
         this.permissions = permissions != null ? permissions : new HashSet<>();

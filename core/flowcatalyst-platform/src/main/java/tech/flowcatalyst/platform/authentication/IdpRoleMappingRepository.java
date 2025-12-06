@@ -1,9 +1,7 @@
 package tech.flowcatalyst.platform.authentication;
 
-import io.quarkus.hibernate.orm.panache.PanacheRepositoryBase;
+import io.quarkus.mongodb.panache.PanacheMongoRepositoryBase;
 import jakarta.enterprise.context.ApplicationScoped;
-import tech.flowcatalyst.platform.authentication.IdpRoleMapping;
-
 import java.util.Optional;
 
 /**
@@ -11,7 +9,7 @@ import java.util.Optional;
  * SECURITY: Only explicitly authorized IDP roles should exist in this table.
  */
 @ApplicationScoped
-public class IdpRoleMappingRepository implements PanacheRepositoryBase<IdpRoleMapping, Long> {
+public class IdpRoleMappingRepository implements PanacheMongoRepositoryBase<IdpRoleMapping, Long> {
 
     public Optional<IdpRoleMapping> findByIdpRoleName(String idpRoleName) {
         return find("idpRoleName", idpRoleName).firstResultOptional();

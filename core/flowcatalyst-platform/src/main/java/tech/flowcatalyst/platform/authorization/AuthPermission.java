@@ -1,10 +1,8 @@
 package tech.flowcatalyst.platform.authorization;
 
-import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
-import jakarta.persistence.*;
-import tech.flowcatalyst.platform.application.Application;
-import tech.flowcatalyst.platform.shared.TsidGenerator;
-
+import io.quarkus.mongodb.panache.common.MongoEntity;
+import io.quarkus.mongodb.panache.PanacheMongoEntityBase;
+import org.bson.codecs.pojo.annotations.BsonId;
 import java.time.Instant;
 
 /**
@@ -17,41 +15,30 @@ import java.time.Instant;
  * Permission format: {app}:{context}:{aggregate}:{action}
  * Example: "myapp:orders:order:create"
  */
-@Entity
-@Table(name = "auth_permissions",
-    indexes = {
-        @Index(name = "idx_auth_permissions_application", columnList = "application_id"),
-        @Index(name = "idx_auth_permissions_name", columnList = "name", unique = true)
-    }
-)
-public class AuthPermission extends PanacheEntityBase {
+@MongoEntity(collection = "auth_permissions")
+public class AuthPermission extends PanacheMongoEntityBase {
 
-    @Id
+    @BsonId
     public Long id;
 
     /**
-     * The application this permission belongs to.
+     * The application this permission belongs to (stored as ID reference).
      */
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "application_id", nullable = false)
-    public Application application;
+    public Long applicationId;
 
     /**
      * Full permission name (e.g., "myapp:orders:order:create").
      */
-    @Column(name = "name", unique = true, nullable = false, length = 150)
     public String name;
 
     /**
      * Human-readable display name.
      */
-    @Column(name = "display_name", length = 100)
     public String displayName;
 
     /**
      * Description of what this permission grants.
      */
-    @Column(name = "description", length = 500)
     public String description;
 
     /**
@@ -59,28 +46,15 @@ public class AuthPermission extends PanacheEntityBase {
      * SDK = registered by external application
      * DATABASE = created by admin
      */
-    @Column(name = "source", nullable = false, length = 20)
-    @Enumerated(EnumType.STRING)
     public PermissionSource source = PermissionSource.SDK;
 
-    @Column(name = "created_at", nullable = false)
     public Instant createdAt = Instant.now();
-
-    @PrePersist
-    public void prePersist() {
-        if (id == null) {
-            id = TsidGenerator.generate();
-        }
-        if (createdAt == null) {
-            createdAt = Instant.now();
-        }
-    }
 
     public AuthPermission() {
     }
 
-    public AuthPermission(Application application, String name, String description, PermissionSource source) {
-        this.application = application;
+    public AuthPermission(Long applicationId, String name, String description, PermissionSource source) {
+        this.applicationId = applicationId;
         this.name = name;
         this.description = description;
         this.source = source;

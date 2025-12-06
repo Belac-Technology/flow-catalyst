@@ -1,16 +1,14 @@
 package tech.flowcatalyst.platform.authorization;
 
-import io.quarkus.hibernate.orm.panache.PanacheRepositoryBase;
+import io.quarkus.mongodb.panache.PanacheMongoRepositoryBase;
 import jakarta.enterprise.context.ApplicationScoped;
-import tech.flowcatalyst.platform.authorization.PrincipalRole;
-
 import java.util.List;
 
 /**
  * Repository for PrincipalRole junction entities.
  */
 @ApplicationScoped
-public class PrincipalRoleRepository implements PanacheRepositoryBase<PrincipalRole, Long> {
+public class PrincipalRoleRepository implements PanacheMongoRepositoryBase<PrincipalRole, Long> {
 
     public List<PrincipalRole> findByPrincipalId(Long principalId) {
         return find("principalId", principalId).list();

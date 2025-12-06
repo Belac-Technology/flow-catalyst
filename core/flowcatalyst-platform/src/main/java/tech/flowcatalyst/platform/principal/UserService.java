@@ -2,7 +2,6 @@ package tech.flowcatalyst.platform.principal;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import jakarta.transaction.Transactional;
 import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.NotFoundException;
 import tech.flowcatalyst.platform.authentication.IdpType;
@@ -37,7 +36,6 @@ public class UserService {
      * @throws IllegalArgumentException if password doesn't meet complexity requirements
      * @throws BadRequestException if email already exists
      */
-    @Transactional
     public Principal createInternalUser(String email, String password, String name, Long clientId) {
         // Validate email
         if (email == null || email.isBlank()) {
@@ -86,7 +84,6 @@ public class UserService {
      * @param clientId Home client ID (nullable for anchor domain users)
      * @return Created or updated principal
      */
-    @Transactional
     public Principal createOrUpdateOidcUser(String email, String name, String externalIdpId, Long clientId) {
         String emailDomain = extractDomain(email);
 
@@ -98,6 +95,7 @@ public class UserService {
             principal.name = name;
             principal.userIdentity.externalIdpId = externalIdpId;
             principal.userIdentity.lastLoginAt = Instant.now();
+            principalRepo.update(principal);
             return principal;
         }
 
@@ -130,7 +128,6 @@ public class UserService {
      * @return Updated principal
      * @throws NotFoundException if user not found
      */
-    @Transactional
     public Principal updateUser(Long principalId, String name) {
         Principal principal = principalRepo.findByIdOptional(principalId)
             .orElseThrow(() -> new NotFoundException("User not found"));
@@ -140,6 +137,7 @@ public class UserService {
         }
 
         principal.name = name;
+        principalRepo.update(principal);
         return principal;
     }
 
@@ -150,7 +148,6 @@ public class UserService {
      * @param principalId Principal ID
      * @throws NotFoundException if user not found
      */
-    @Transactional
     public void deactivateUser(Long principalId) {
         Principal principal = principalRepo.findByIdOptional(principalId)
             .orElseThrow(() -> new NotFoundException("User not found"));
@@ -160,6 +157,7 @@ public class UserService {
         }
 
         principal.active = false;
+        principalRepo.update(principal);
     }
 
     /**
@@ -168,7 +166,6 @@ public class UserService {
      * @param principalId Principal ID
      * @throws NotFoundException if user not found
      */
-    @Transactional
     public void activateUser(Long principalId) {
         Principal principal = principalRepo.findByIdOptional(principalId)
             .orElseThrow(() -> new NotFoundException("User not found"));
@@ -178,6 +175,7 @@ public class UserService {
         }
 
         principal.active = true;
+        principalRepo.update(principal);
     }
 
     /**
@@ -189,7 +187,6 @@ public class UserService {
      * @throws NotFoundException if user not found
      * @throws IllegalArgumentException if user is not INTERNAL auth
      */
-    @Transactional
     public void resetPassword(Long principalId, String newPassword) {
         Principal principal = principalRepo.findByIdOptional(principalId)
             .orElseThrow(() -> new NotFoundException("User not found"));
@@ -205,6 +202,7 @@ public class UserService {
         // Validate and hash new password
         String passwordHash = passwordService.validateAndHashPassword(newPassword);
         principal.userIdentity.passwordHash = passwordHash;
+        principalRepo.update(principal);
     }
 
     /**
@@ -217,7 +215,6 @@ public class UserService {
      * @throws NotFoundException if user not found
      * @throws BadRequestException if old password is incorrect
      */
-    @Transactional
     public void changePassword(Long principalId, String oldPassword, String newPassword) {
         Principal principal = principalRepo.findByIdOptional(principalId)
             .orElseThrow(() -> new NotFoundException("User not found"));
@@ -238,6 +235,7 @@ public class UserService {
         // Validate and hash new password
         String passwordHash = passwordService.validateAndHashPassword(newPassword);
         principal.userIdentity.passwordHash = passwordHash;
+        principalRepo.update(principal);
     }
 
     /**
@@ -287,11 +285,11 @@ public class UserService {
      *
      * @param principalId Principal ID
      */
-    @Transactional
     public void updateLastLogin(Long principalId) {
         Principal principal = principalRepo.findByIdOptional(principalId).orElse(null);
         if (principal != null && principal.userIdentity != null) {
             principal.userIdentity.lastLoginAt = Instant.now();
+            principalRepo.update(principal);
         }
     }
 

@@ -2,7 +2,6 @@ package tech.flowcatalyst.platform.client;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import jakarta.transaction.Transactional;
 import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.NotFoundException;
 import tech.flowcatalyst.platform.principal.Principal;
@@ -39,7 +38,6 @@ public class ClientService {
      * @return Created client
      * @throws BadRequestException if identifier already exists
      */
-    @Transactional
     public Client createClient(String name, String identifier) {
         // Validate identifier uniqueness
         if (clientRepo.findByIdentifier(identifier).isPresent()) {
@@ -65,12 +63,12 @@ public class ClientService {
      * @return Updated client
      * @throws NotFoundException if client not found
      */
-    @Transactional
     public Client updateClient(Long clientId, String name) {
         Client client = clientRepo.findByIdOptional(clientId)
             .orElseThrow(() -> new NotFoundException("Client not found"));
 
         client.name = name;
+        clientRepo.update(client);
         return client;
     }
 
@@ -84,12 +82,12 @@ public class ClientService {
      * @param changedBy Principal ID of who made the change
      * @throws NotFoundException if client not found
      */
-    @Transactional
     public void changeClientStatus(Long clientId, ClientStatus status, String reason, String note, String changedBy) {
         Client client = clientRepo.findByIdOptional(clientId)
             .orElseThrow(() -> new NotFoundException("Client not found"));
 
         client.changeStatus(status, reason, note, changedBy);
+        clientRepo.update(client);
     }
 
     /**
@@ -101,7 +99,6 @@ public class ClientService {
      * @param changedBy Who deactivated the client
      * @throws NotFoundException if client not found
      */
-    @Transactional
     public void deactivateClient(Long clientId, String reason, String changedBy) {
         changeClientStatus(clientId, ClientStatus.INACTIVE, reason,
             "Client deactivated: " + reason, changedBy);
@@ -115,7 +112,6 @@ public class ClientService {
      * @param changedBy Who suspended the client
      * @throws NotFoundException if client not found
      */
-    @Transactional
     public void suspendClient(Long clientId, String reason, String changedBy) {
         changeClientStatus(clientId, ClientStatus.SUSPENDED, reason,
             "Client suspended: " + reason, changedBy);
@@ -128,7 +124,6 @@ public class ClientService {
      * @param changedBy Who activated the client
      * @throws NotFoundException if client not found
      */
-    @Transactional
     public void activateClient(Long clientId, String changedBy) {
         changeClientStatus(clientId, ClientStatus.ACTIVE, null,
             "Client activated", changedBy);
@@ -144,7 +139,6 @@ public class ClientService {
      * @throws NotFoundException if principal or client not found
      * @throws BadRequestException if grant already exists or if principal already belongs to client
      */
-    @Transactional
     public ClientAccessGrant grantClientAccess(Long principalId, Long clientId) {
         // Validate principal exists
         Principal principal = principalRepo.findByIdOptional(principalId)
@@ -182,7 +176,6 @@ public class ClientService {
      * @param clientId Client ID
      * @throws NotFoundException if grant not found
      */
-    @Transactional
     public void revokeClientAccess(Long principalId, Long clientId) {
         long deleted = grantRepo.delete("principalId = ?1 AND clientId = ?2", principalId, clientId);
         if (deleted == 0) {
@@ -279,11 +272,11 @@ public class ClientService {
      * @param addedBy Who added the note
      * @throws NotFoundException if client not found
      */
-    @Transactional
     public void addNote(Long clientId, String category, String text, String addedBy) {
         Client client = clientRepo.findByIdOptional(clientId)
             .orElseThrow(() -> new NotFoundException("Client not found"));
 
         client.addNote(category, text, addedBy);
+        clientRepo.update(client);
     }
 }

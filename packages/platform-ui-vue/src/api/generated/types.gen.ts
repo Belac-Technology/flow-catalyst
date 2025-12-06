@@ -99,6 +99,16 @@ export type ClientStatus = "ACTIVE" | "INACTIVE" | "SUSPENDED";
 
 export type ClientType = "PUBLIC" | "CONFIDENTIAL";
 
+export type ContextData = {
+  key?: string;
+  value?: string;
+};
+
+export type ContextDataResponse = {
+  key?: string;
+  value?: string;
+};
+
 export type CreateApplicationRequest = {
   code?: string;
   name?: string;
@@ -163,6 +173,20 @@ export type CreateDispatchJobRequest = {
   idempotencyKey?: string;
   externalId?: string;
   queueUrl: string;
+};
+
+export type CreateEventRequest = {
+  specVersion?: string;
+  type?: string;
+  source?: string;
+  subject?: string;
+  time?: Instant;
+  data?: string;
+  correlationId?: string;
+  causationId?: string;
+  deduplicationId?: string;
+  messageGroup?: string;
+  contextData?: Array<ContextData>;
 };
 
 export type CreateEventTypeRequest = {
@@ -294,6 +318,21 @@ export type DomainCheckResponse = {
 
 export type ErrorResponse = {
   error?: string;
+};
+
+export type EventResponse = {
+  id?: number;
+  specVersion?: string;
+  type?: string;
+  source?: string;
+  subject?: string;
+  time?: string;
+  data?: string;
+  correlationId?: string;
+  causationId?: string;
+  deduplicationId?: string;
+  messageGroup?: string;
+  contextData?: Array<ContextDataResponse>;
 };
 
 export type EventTypeListResponse = {
@@ -2388,7 +2427,7 @@ export type GetApiEventTypesResponse =
   GetApiEventTypesResponses[keyof GetApiEventTypesResponses];
 
 export type PostApiEventTypesData = {
-  body: CreateEventTypeRequest1;
+  body: CreateEventTypeRequest;
   path?: never;
   query?: never;
   url: "/api/event-types";
@@ -2509,7 +2548,7 @@ export type GetApiEventTypesByIdResponses = {
 };
 
 export type PatchApiEventTypesByIdData = {
-  body: UpdateEventTypeRequest1;
+  body: UpdateEventTypeRequest;
   path: {
     id: number;
   };
@@ -2563,7 +2602,7 @@ export type PostApiEventTypesByIdArchiveResponses = {
 };
 
 export type PostApiEventTypesByIdSchemasData = {
-  body: AddSchemaRequest1;
+  body: AddSchemaRequest;
   path: {
     id: number;
   };
@@ -2641,6 +2680,57 @@ export type PostApiEventTypesByIdSchemasByVersionFinaliseErrors = {
 export type PostApiEventTypesByIdSchemasByVersionFinaliseResponses = {
   /**
    * Schema finalised
+   */
+  200: unknown;
+};
+
+export type PostApiEventsData = {
+  body: CreateEventRequest;
+  path?: never;
+  query?: never;
+  url: "/api/events";
+};
+
+export type PostApiEventsErrors = {
+  /**
+   * Invalid request
+   */
+  400: unknown;
+};
+
+export type PostApiEventsResponses = {
+  /**
+   * Event already exists (idempotent response)
+   */
+  200: EventResponse;
+  /**
+   * Event created successfully
+   */
+  201: EventResponse;
+};
+
+export type PostApiEventsResponse =
+  PostApiEventsResponses[keyof PostApiEventsResponses];
+
+export type GetApiEventsByIdData = {
+  body?: never;
+  path: {
+    id: number;
+  };
+  query?: never;
+  url: "/api/events/{id}";
+};
+
+export type GetApiEventsByIdErrors = {
+  /**
+   * Event not found
+   */
+  404: unknown;
+};
+
+export type GetApiEventsByIdResponses = {
+  /**
+   * Event found
    */
   200: unknown;
 };
@@ -2865,7 +2955,7 @@ export type GetBffEventTypesResponses = {
 };
 
 export type PostBffEventTypesData = {
-  body: CreateEventTypeRequest;
+  body: CreateEventTypeRequest1;
   path?: never;
   query?: never;
   url: "/bff/event-types";
@@ -2965,7 +3055,7 @@ export type GetBffEventTypesByIdResponses = {
 };
 
 export type PatchBffEventTypesByIdData = {
-  body: UpdateEventTypeRequest;
+  body: UpdateEventTypeRequest1;
   path: {
     id: number;
   };
@@ -2997,7 +3087,7 @@ export type PostBffEventTypesByIdArchiveResponses = {
 };
 
 export type PostBffEventTypesByIdSchemasData = {
-  body: AddSchemaRequest;
+  body: AddSchemaRequest1;
   path: {
     id: number;
   };

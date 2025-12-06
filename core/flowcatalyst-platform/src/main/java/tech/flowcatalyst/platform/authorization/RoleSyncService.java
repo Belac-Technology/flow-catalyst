@@ -5,7 +5,6 @@ import io.quarkus.runtime.StartupEvent;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
 import jakarta.inject.Inject;
-import jakarta.transaction.Transactional;
 import tech.flowcatalyst.platform.application.Application;
 import tech.flowcatalyst.platform.application.ApplicationRepository;
 
@@ -60,7 +59,6 @@ public class RoleSyncService {
      * This is a system operation that happens at startup and does not
      * require audit logging (no user action involved).
      */
-    @Transactional
     public void syncCodeDefinedRolesToDatabase() {
         Log.info("Syncing code-defined roles to database...");
 
@@ -96,6 +94,7 @@ public class RoleSyncService {
                     existing.description = roleDef.description();
                     existing.permissions = roleDef.permissionStrings();
                     existing.displayName = formatDisplayName(roleDef.roleName());
+                    authRoleRepository.update(existing);
                     updated++;
                 } else {
                     Log.warn("Role " + roleName + " exists with source " + existing.source +
@@ -104,12 +103,14 @@ public class RoleSyncService {
             } else {
                 // Create new role
                 AuthRole authRole = new AuthRole(
-                    app,
+                    app.id,
+                    app.code,
                     roleName,
                     roleDef.description(),
                     roleDef.permissionStrings(),
                     AuthRole.RoleSource.CODE
                 );
+                authRole.id = tech.flowcatalyst.platform.shared.TsidGenerator.generate();
                 authRole.displayName = formatDisplayName(roleDef.roleName());
                 authRoleRepository.persist(authRole);
                 created++;
@@ -128,7 +129,6 @@ public class RoleSyncService {
      *
      * @return number of roles removed
      */
-    @Transactional
     int removeStaleCodeRoles() {
         // Collect all current code-defined role names
         Set<String> codeRoleNames = new HashSet<>();

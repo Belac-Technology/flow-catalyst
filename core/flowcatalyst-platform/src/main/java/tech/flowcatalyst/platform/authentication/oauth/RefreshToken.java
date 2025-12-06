@@ -1,8 +1,8 @@
 package tech.flowcatalyst.platform.authentication.oauth;
 
-import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
-import jakarta.persistence.*;
-
+import io.quarkus.mongodb.panache.common.MongoEntity;
+import io.quarkus.mongodb.panache.PanacheMongoEntityBase;
+import org.bson.codecs.pojo.annotations.BsonId;
 import java.time.Instant;
 
 /**
@@ -15,46 +15,34 @@ import java.time.Instant;
  *
  * Security: Only the token hash is stored, not the actual token.
  */
-@Entity
-@Table(name = "auth_refresh_tokens",
-    indexes = {
-        @Index(name = "idx_refresh_token_principal", columnList = "principal_id"),
-        @Index(name = "idx_refresh_token_family", columnList = "token_family"),
-        @Index(name = "idx_refresh_token_expires", columnList = "expires_at")
-    }
-)
-public class RefreshToken extends PanacheEntityBase {
+@MongoEntity(collection = "refresh_tokens")
+public class RefreshToken extends PanacheMongoEntityBase {
 
     /**
      * SHA-256 hash of the refresh token.
      * We store the hash, not the plain token, for security.
      */
-    @Id
-    @Column(name = "token_hash", length = 64)
+    @BsonId
     public String tokenHash;
 
     /**
      * The principal this token was issued for.
      */
-    @Column(name = "principal_id", nullable = false)
     public Long principalId;
 
     /**
      * OAuth client that requested this token.
      */
-    @Column(name = "client_id", length = 100)
     public String clientId;
 
     /**
      * Client context for this token.
      */
-    @Column(name = "context_client_id")
     public Long contextClientId;
 
     /**
      * Scopes granted with this token.
      */
-    @Column(name = "scope", length = 500)
     public String scope;
 
     /**
@@ -64,31 +52,25 @@ public class RefreshToken extends PanacheEntityBase {
      * (i.e., an old token is used after a newer one was issued).
      * This protects against token theft.
      */
-    @Column(name = "token_family", nullable = false, length = 64)
     public String tokenFamily;
 
-    @Column(name = "created_at", nullable = false)
     public Instant createdAt = Instant.now();
 
-    @Column(name = "expires_at", nullable = false)
     public Instant expiresAt;
 
     /**
      * Whether this token has been revoked.
      */
-    @Column(name = "revoked", nullable = false)
     public boolean revoked = false;
 
     /**
      * When this token was revoked (null if not revoked).
      */
-    @Column(name = "revoked_at")
     public Instant revokedAt;
 
     /**
      * Hash of the token that replaced this one (for rotation tracking).
      */
-    @Column(name = "replaced_by", length = 64)
     public String replacedBy;
 
     public boolean isExpired() {

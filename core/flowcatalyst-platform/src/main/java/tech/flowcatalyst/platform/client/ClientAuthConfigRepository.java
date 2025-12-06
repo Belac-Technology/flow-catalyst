@@ -1,9 +1,8 @@
 package tech.flowcatalyst.platform.client;
 
-import io.quarkus.hibernate.orm.panache.PanacheRepositoryBase;
+import io.quarkus.mongodb.panache.PanacheMongoRepositoryBase;
 import jakarta.enterprise.context.ApplicationScoped;
 import tech.flowcatalyst.platform.authentication.AuthProvider;
-
 import java.util.List;
 import java.util.Optional;
 
@@ -12,7 +11,7 @@ import java.util.Optional;
  * Used to look up authentication configuration by email domain.
  */
 @ApplicationScoped
-public class ClientAuthConfigRepository implements PanacheRepositoryBase<ClientAuthConfig, Long> {
+public class ClientAuthConfigRepository implements PanacheMongoRepositoryBase<ClientAuthConfig, Long> {
 
     /**
      * Find authentication configuration by email domain.

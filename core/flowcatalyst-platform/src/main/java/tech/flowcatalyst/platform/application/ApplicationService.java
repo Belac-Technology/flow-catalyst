@@ -2,7 +2,6 @@ package tech.flowcatalyst.platform.application;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import jakarta.transaction.Transactional;
 import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.NotFoundException;
 import tech.flowcatalyst.platform.authorization.PermissionRegistry;
@@ -59,7 +58,6 @@ public class ApplicationService {
      * @return Created application
      * @throws BadRequestException if code already exists
      */
-    @Transactional
     public Application createApplication(String code, String name, String description, String defaultBaseUrl) {
         // Validate code format (lowercase alphanumeric with hyphens)
         if (!isValidCode(code)) {
@@ -94,7 +92,6 @@ public class ApplicationService {
      * @return Updated application
      * @throws NotFoundException if application not found
      */
-    @Transactional
     public Application updateApplication(Long applicationId, String name, String description,
                                          String defaultBaseUrl, String iconUrl) {
         Application app = applicationRepo.findByIdOptional(applicationId)
@@ -105,27 +102,28 @@ public class ApplicationService {
         if (defaultBaseUrl != null) app.defaultBaseUrl = defaultBaseUrl;
         if (iconUrl != null) app.iconUrl = iconUrl;
 
+        applicationRepo.update(app);
         return app;
     }
 
     /**
      * Activate an application.
      */
-    @Transactional
     public void activateApplication(Long applicationId) {
         Application app = applicationRepo.findByIdOptional(applicationId)
             .orElseThrow(() -> new NotFoundException("Application not found"));
         app.active = true;
+        applicationRepo.update(app);
     }
 
     /**
      * Deactivate an application.
      */
-    @Transactional
     public void deactivateApplication(Long applicationId) {
         Application app = applicationRepo.findByIdOptional(applicationId)
             .orElseThrow(() -> new NotFoundException("Application not found"));
         app.active = false;
+        applicationRepo.update(app);
     }
 
     // ========================================================================
@@ -142,7 +140,6 @@ public class ApplicationService {
      * @param config Optional additional configuration
      * @return Created or updated config
      */
-    @Transactional
     public ApplicationClientConfig configureForClient(Long applicationId, Long clientId,
                                                        boolean enabled, String baseUrlOverride,
                                                        Map<String, Object> config) {
@@ -157,8 +154,8 @@ public class ApplicationService {
             .orElseGet(() -> {
                 ApplicationClientConfig newConfig = new ApplicationClientConfig();
                 newConfig.id = TsidGenerator.generate();
-                newConfig.application = app;
-                newConfig.client = client;
+                newConfig.applicationId = app.id;
+                newConfig.clientId = client.id;
                 return newConfig;
             });
 
@@ -166,7 +163,9 @@ public class ApplicationService {
         clientConfig.baseUrlOverride = baseUrlOverride;
         clientConfig.configJson = config;
 
-        if (!configRepo.isPersistent(clientConfig)) {
+        if (configRepo.findByIdOptional(clientConfig.id).isPresent()) {
+            configRepo.update(clientConfig);
+        } else {
             configRepo.persist(clientConfig);
         }
 
@@ -176,7 +175,6 @@ public class ApplicationService {
     /**
      * Enable an application for a client.
      */
-    @Transactional
     public void enableForClient(Long applicationId, Long clientId) {
         configureForClient(applicationId, clientId, true, null, null);
     }
@@ -184,11 +182,11 @@ public class ApplicationService {
     /**
      * Disable an application for a client.
      */
-    @Transactional
     public void disableForClient(Long applicationId, Long clientId) {
         Optional<ApplicationClientConfig> config = configRepo.findByApplicationAndClient(applicationId, clientId);
         if (config.isPresent()) {
             config.get().enabled = false;
+            configRepo.update(config.get());
         }
         // If no config exists, the app is not enabled anyway
     }
