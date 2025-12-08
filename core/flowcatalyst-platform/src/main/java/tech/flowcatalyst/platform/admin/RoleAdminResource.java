@@ -15,12 +15,20 @@ import tech.flowcatalyst.platform.audit.AuditContext;
 import tech.flowcatalyst.platform.authentication.EmbeddedModeOnly;
 import tech.flowcatalyst.platform.authentication.JwtKeyService;
 import tech.flowcatalyst.platform.authorization.*;
-import tech.flowcatalyst.platform.authorization.operations.CreateRole;
-import tech.flowcatalyst.platform.authorization.operations.DeleteRole;
-import tech.flowcatalyst.platform.authorization.operations.UpdateRole;
+import tech.flowcatalyst.platform.authorization.events.RoleCreated;
+import tech.flowcatalyst.platform.authorization.events.RoleDeleted;
+import tech.flowcatalyst.platform.authorization.events.RoleUpdated;
+import tech.flowcatalyst.platform.authorization.operations.createrole.CreateRoleCommand;
+import tech.flowcatalyst.platform.authorization.operations.deleterole.DeleteRoleCommand;
+import tech.flowcatalyst.platform.authorization.operations.updaterole.UpdateRoleCommand;
+import tech.flowcatalyst.platform.common.ExecutionContext;
+import tech.flowcatalyst.platform.common.Result;
+import tech.flowcatalyst.platform.common.TracingContext;
+import tech.flowcatalyst.platform.common.errors.UseCaseError;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -48,7 +56,7 @@ public class RoleAdminResource {
     RoleService roleService;
 
     @Inject
-    RoleAdminService roleAdminService;
+    RoleOperations roleOperations;
 
     @Inject
     ApplicationRepository applicationRepository;
@@ -58,6 +66,9 @@ public class RoleAdminResource {
 
     @Inject
     AuditContext auditContext;
+
+    @Inject
+    TracingContext tracingContext;
 
     // ==================== Roles ====================
 
@@ -81,7 +92,7 @@ public class RoleAdminResource {
         Long principalId = extractPrincipalId(sessionToken, authHeader);
         if (principalId == null) {
             return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
+                .entity(new ErrorResponse("UNAUTHORIZED", "Not authenticated"))
                 .build();
         }
 
@@ -101,7 +112,7 @@ public class RoleAdminResource {
                     .toList();
             } catch (IllegalArgumentException e) {
                 return Response.status(Response.Status.BAD_REQUEST)
-                    .entity(new ErrorResponse("Invalid source. Must be CODE, DATABASE, or SDK"))
+                    .entity(new ErrorResponse("INVALID_SOURCE", "Invalid source. Must be CODE, DATABASE, or SDK"))
                     .build();
             }
         }
@@ -133,14 +144,14 @@ public class RoleAdminResource {
         Long principalId = extractPrincipalId(sessionToken, authHeader);
         if (principalId == null) {
             return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
+                .entity(new ErrorResponse("UNAUTHORIZED", "Not authenticated"))
                 .build();
         }
 
         return roleService.getRoleByName(roleName)
             .map(role -> Response.ok(toRoleDto(role)).build())
             .orElse(Response.status(Response.Status.NOT_FOUND)
-                .entity(new ErrorResponse("Role not found: " + roleName))
+                .entity(new ErrorResponse("ROLE_NOT_FOUND", "Role not found: " + roleName))
                 .build());
     }
 
@@ -166,19 +177,19 @@ public class RoleAdminResource {
         Long principalId = extractPrincipalId(sessionToken, authHeader);
         if (principalId == null) {
             return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
+                .entity(new ErrorResponse("UNAUTHORIZED", "Not authenticated"))
                 .build();
         }
 
         // Validate request
         if (request.applicationCode() == null || request.applicationCode().isBlank()) {
             return Response.status(Response.Status.BAD_REQUEST)
-                .entity(new ErrorResponse("applicationCode is required"))
+                .entity(new ErrorResponse("APPLICATION_CODE_REQUIRED", "applicationCode is required"))
                 .build();
         }
         if (request.name() == null || request.name().isBlank()) {
             return Response.status(Response.Status.BAD_REQUEST)
-                .entity(new ErrorResponse("name is required"))
+                .entity(new ErrorResponse("NAME_REQUIRED", "name is required"))
                 .build();
         }
 
@@ -187,36 +198,33 @@ public class RoleAdminResource {
             .orElse(null);
         if (app == null) {
             return Response.status(Response.Status.NOT_FOUND)
-                .entity(new ErrorResponse("Application not found: " + request.applicationCode()))
+                .entity(new ErrorResponse("APPLICATION_NOT_FOUND", "Application not found: " + request.applicationCode()))
                 .build();
         }
 
-        try {
-            // Set audit context before executing operation
-            auditContext.setPrincipalId(principalId);
+        // Set audit context and create execution context
+        auditContext.setPrincipalId(principalId);
+        ExecutionContext context = ExecutionContext.from(tracingContext, principalId);
 
-            AuthRole role = roleAdminService.execute(new CreateRole(
-                app.id,
-                request.name(),
-                request.displayName(),
-                request.description(),
-                request.permissions(),
-                AuthRole.RoleSource.DATABASE,
-                request.clientManaged() != null ? request.clientManaged() : false
-            ));
+        CreateRoleCommand command = new CreateRoleCommand(
+            app.id,
+            request.name(),
+            request.displayName(),
+            request.description(),
+            request.permissions(),
+            AuthRole.RoleSource.DATABASE,
+            request.clientManaged() != null ? request.clientManaged() : false
+        );
 
-            return Response.status(Response.Status.CREATED)
-                .entity(toRoleDto(role))
-                .build();
-        } catch (BadRequestException e) {
-            return Response.status(Response.Status.CONFLICT)
-                .entity(new ErrorResponse(e.getMessage()))
-                .build();
-        } catch (NotFoundException e) {
-            return Response.status(Response.Status.NOT_FOUND)
-                .entity(new ErrorResponse(e.getMessage()))
-                .build();
-        }
+        Result<RoleCreated> result = roleOperations.createRole(command, context);
+
+        return switch (result) {
+            case Result.Success<RoleCreated> s -> {
+                AuthRole role = roleOperations.findByName(s.value().roleName()).orElseThrow();
+                yield Response.status(Response.Status.CREATED).entity(toRoleDto(role)).build();
+            }
+            case Result.Failure<RoleCreated> f -> mapErrorToResponse(f.error());
+        };
     }
 
     /**
@@ -241,28 +249,31 @@ public class RoleAdminResource {
         Long principalId = extractPrincipalId(sessionToken, authHeader);
         if (principalId == null) {
             return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
+                .entity(new ErrorResponse("UNAUTHORIZED", "Not authenticated"))
                 .build();
         }
 
-        try {
-            // Set audit context before executing operation
-            auditContext.setPrincipalId(principalId);
+        // Set audit context and create execution context
+        auditContext.setPrincipalId(principalId);
+        ExecutionContext context = ExecutionContext.from(tracingContext, principalId);
 
-            AuthRole role = roleAdminService.execute(new UpdateRole(
-                roleName,
-                request.displayName(),
-                request.description(),
-                request.permissions(),
-                request.clientManaged()
-            ));
+        UpdateRoleCommand command = new UpdateRoleCommand(
+            roleName,
+            request.displayName(),
+            request.description(),
+            request.permissions(),
+            request.clientManaged()
+        );
 
-            return Response.ok(toRoleDto(role)).build();
-        } catch (NotFoundException e) {
-            return Response.status(Response.Status.NOT_FOUND)
-                .entity(new ErrorResponse(e.getMessage()))
-                .build();
-        }
+        Result<RoleUpdated> result = roleOperations.updateRole(command, context);
+
+        return switch (result) {
+            case Result.Success<RoleUpdated> s -> {
+                AuthRole role = roleOperations.findByName(s.value().roleName()).orElseThrow();
+                yield Response.ok(toRoleDto(role)).build();
+            }
+            case Result.Failure<RoleUpdated> f -> mapErrorToResponse(f.error());
+        };
     }
 
     /**
@@ -285,25 +296,22 @@ public class RoleAdminResource {
         Long principalId = extractPrincipalId(sessionToken, authHeader);
         if (principalId == null) {
             return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
+                .entity(new ErrorResponse("UNAUTHORIZED", "Not authenticated"))
                 .build();
         }
 
-        try {
-            // Set audit context before executing operation
-            auditContext.setPrincipalId(principalId);
+        // Set audit context and create execution context
+        auditContext.setPrincipalId(principalId);
+        ExecutionContext context = ExecutionContext.from(tracingContext, principalId);
 
-            roleAdminService.execute(new DeleteRole(roleName));
-            return Response.noContent().build();
-        } catch (NotFoundException e) {
-            return Response.status(Response.Status.NOT_FOUND)
-                .entity(new ErrorResponse(e.getMessage()))
-                .build();
-        } catch (BadRequestException e) {
-            return Response.status(Response.Status.BAD_REQUEST)
-                .entity(new ErrorResponse(e.getMessage()))
-                .build();
-        }
+        DeleteRoleCommand command = new DeleteRoleCommand(roleName);
+
+        Result<RoleDeleted> result = roleOperations.deleteRole(command, context);
+
+        return switch (result) {
+            case Result.Success<RoleDeleted> s -> Response.noContent().build();
+            case Result.Failure<RoleDeleted> f -> mapErrorToResponse(f.error());
+        };
     }
 
     // ==================== Permissions ====================
@@ -328,7 +336,7 @@ public class RoleAdminResource {
         Long principalId = extractPrincipalId(sessionToken, authHeader);
         if (principalId == null) {
             return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
+                .entity(new ErrorResponse("UNAUTHORIZED", "Not authenticated"))
                 .build();
         }
 
@@ -360,14 +368,14 @@ public class RoleAdminResource {
         Long principalId = extractPrincipalId(sessionToken, authHeader);
         if (principalId == null) {
             return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
+                .entity(new ErrorResponse("UNAUTHORIZED", "Not authenticated"))
                 .build();
         }
 
         return permissionRegistry.getPermission(permission)
             .map(perm -> Response.ok(toPermissionDto(perm)).build())
             .orElse(Response.status(Response.Status.NOT_FOUND)
-                .entity(new ErrorResponse("Permission not found: " + permission))
+                .entity(new ErrorResponse("PERMISSION_NOT_FOUND", "Permission not found: " + permission))
                 .build());
     }
 
@@ -382,6 +390,19 @@ public class RoleAdminResource {
             return null;
         }
         return jwtKeyService.validateAndGetPrincipalId(token);
+    }
+
+    private Response mapErrorToResponse(UseCaseError error) {
+        Response.Status status = switch (error) {
+            case UseCaseError.ValidationError v -> Response.Status.BAD_REQUEST;
+            case UseCaseError.NotFoundError n -> Response.Status.NOT_FOUND;
+            case UseCaseError.BusinessRuleViolation b -> Response.Status.CONFLICT;
+            case UseCaseError.ConcurrencyError c -> Response.Status.CONFLICT;
+        };
+
+        return Response.status(status)
+            .entity(new ErrorResponse(error.code(), error.message(), error.details()))
+            .build();
     }
 
     private RoleDto toRoleDto(AuthRole role) {
@@ -460,7 +481,9 @@ public class RoleAdminResource {
         int total
     ) {}
 
-    public record ErrorResponse(
-        String error
-    ) {}
+    public record ErrorResponse(String code, String message, Map<String, Object> details) {
+        public ErrorResponse(String code, String message) {
+            this(code, message, Map.of());
+        }
+    }
 }

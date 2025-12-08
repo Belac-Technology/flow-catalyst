@@ -100,7 +100,7 @@ public class ClientSelectionResource {
         // Load client details
         List<ClientInfo> clients = clientRepo.findByIds(clientIds).stream()
             .map(c -> new ClientInfo(c.id, c.name, c.identifier))
-            .collect(Collectors.toList());
+            .toList();
 
         // Determine if user has global access
         boolean globalAccess = clientAccessService.isAnchorDomainUser(principal);

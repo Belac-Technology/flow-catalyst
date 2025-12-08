@@ -9,50 +9,32 @@ package tech.flowcatalyst.eventtype;
  * - Minor versions (1.0 → 1.1) are backwards compatible
  * - Major versions (1.x → 2.0) are breaking changes
  */
-public class SpecVersion {
-
+public record SpecVersion(
     /**
      * Version string in format "MAJOR.MINOR" (e.g., "1.0", "1.1", "2.0")
      */
-    public String version;
+    String version,
 
     /**
      * MIME type for the event payload (e.g., "application/json", "application/protobuf")
      */
-    public String mimeType;
+    String mimeType,
 
     /**
      * The schema definition content (JSON Schema, Proto, or XSD)
      */
-    public String schema;
+    String schema,
 
     /**
      * The type of schema (JSON_SCHEMA, PROTO, XSD)
      */
-    public SchemaType schemaType;
+    SchemaType schemaType,
 
     /**
      * Current status of this spec version (FINALISING, CURRENT, DEPRECATED)
      */
-    public SpecVersionStatus status;
-
-    public SpecVersion() {
-    }
-
-    public SpecVersion(String version, String mimeType, String schema, SchemaType schemaType, SpecVersionStatus status) {
-        this.version = version;
-        this.mimeType = mimeType;
-        this.schema = schema;
-        this.schemaType = schemaType;
-        this.status = status;
-    }
-
-    // Accessor methods for compatibility
-    public String version() { return version; }
-    public String mimeType() { return mimeType; }
-    public String schema() { return schema; }
-    public SchemaType schemaType() { return schemaType; }
-    public SpecVersionStatus status() { return status; }
+    SpecVersionStatus status
+) {
 
     /**
      * Extract the major version number from the version string.

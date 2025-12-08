@@ -11,12 +11,22 @@ import tech.flowcatalyst.platform.application.ApplicationRepository;
 import tech.flowcatalyst.platform.audit.AuditContext;
 import tech.flowcatalyst.platform.authentication.JwtKeyService;
 import tech.flowcatalyst.platform.authorization.AuthRole;
-import tech.flowcatalyst.platform.authorization.RoleAdminService;
-import tech.flowcatalyst.platform.authorization.operations.CreateRole;
-import tech.flowcatalyst.platform.authorization.operations.DeleteRole;
-import tech.flowcatalyst.platform.authorization.operations.UpdateRole;
+import tech.flowcatalyst.platform.authorization.PermissionDefinition;
+import tech.flowcatalyst.platform.authorization.PermissionRegistry;
+import tech.flowcatalyst.platform.authorization.RoleOperations;
+import tech.flowcatalyst.platform.authorization.events.RoleCreated;
+import tech.flowcatalyst.platform.authorization.events.RoleDeleted;
+import tech.flowcatalyst.platform.authorization.events.RoleUpdated;
+import tech.flowcatalyst.platform.authorization.operations.createrole.CreateRoleCommand;
+import tech.flowcatalyst.platform.authorization.operations.deleterole.DeleteRoleCommand;
+import tech.flowcatalyst.platform.authorization.operations.updaterole.UpdateRoleCommand;
+import tech.flowcatalyst.platform.common.ExecutionContext;
+import tech.flowcatalyst.platform.common.Result;
+import tech.flowcatalyst.platform.common.TracingContext;
+import tech.flowcatalyst.platform.common.errors.UseCaseError;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -30,7 +40,10 @@ import java.util.Set;
 public class RoleBffResource {
 
     @Inject
-    RoleAdminService roleAdminService;
+    RoleOperations roleOperations;
+
+    @Inject
+    PermissionRegistry permissionRegistry;
 
     @Inject
     ApplicationRepository applicationRepository;
@@ -40,6 +53,9 @@ public class RoleBffResource {
 
     @Inject
     AuditContext auditContext;
+
+    @Inject
+    TracingContext tracingContext;
 
     @GET
     @Operation(summary = "List all roles (BFF)")
@@ -52,9 +68,9 @@ public class RoleBffResource {
         List<AuthRole> roles;
 
         if (applicationCode != null && !applicationCode.isBlank()) {
-            roles = roleAdminService.findByApplicationCode(applicationCode);
+            roles = roleOperations.findByApplicationCode(applicationCode);
         } else {
-            roles = roleAdminService.findAll();
+            roles = roleOperations.findAll();
         }
 
         // Filter by source if provided
@@ -66,7 +82,7 @@ public class RoleBffResource {
                     .toList();
             } catch (IllegalArgumentException e) {
                 return Response.status(400)
-                    .entity(new ErrorResponse("Invalid source. Must be CODE, DATABASE, or SDK"))
+                    .entity(new ErrorResponse("INVALID_SOURCE", "Invalid source. Must be CODE, DATABASE, or SDK"))
                     .build();
             }
         }
@@ -82,10 +98,10 @@ public class RoleBffResource {
     @Path("/{roleName}")
     @Operation(summary = "Get role by name (BFF)")
     public Response getRole(@PathParam("roleName") String roleName) {
-        return roleAdminService.findByName(roleName)
+        return roleOperations.findByName(roleName)
             .map(role -> Response.ok(BffRoleResponse.from(role)).build())
             .orElse(Response.status(404)
-                .entity(new ErrorResponse("Role not found: " + roleName))
+                .entity(new ErrorResponse("ROLE_NOT_FOUND", "Role not found: " + roleName))
                 .build());
     }
 
@@ -110,42 +126,45 @@ public class RoleBffResource {
     ) {
         Long principalId = extractPrincipalId(sessionToken, authHeader);
         if (principalId == null) {
-            return Response.status(401).entity(new ErrorResponse("Not authenticated")).build();
+            return Response.status(401).entity(new ErrorResponse("UNAUTHORIZED", "Not authenticated")).build();
         }
 
         if (request.applicationCode() == null || request.applicationCode().isBlank()) {
-            return Response.status(400).entity(new ErrorResponse("applicationCode is required")).build();
+            return Response.status(400).entity(new ErrorResponse("APPLICATION_CODE_REQUIRED", "applicationCode is required")).build();
         }
         if (request.name() == null || request.name().isBlank()) {
-            return Response.status(400).entity(new ErrorResponse("name is required")).build();
+            return Response.status(400).entity(new ErrorResponse("NAME_REQUIRED", "name is required")).build();
         }
 
         Application app = applicationRepository.findByCode(request.applicationCode()).orElse(null);
         if (app == null) {
             return Response.status(404)
-                .entity(new ErrorResponse("Application not found: " + request.applicationCode()))
+                .entity(new ErrorResponse("APPLICATION_NOT_FOUND", "Application not found: " + request.applicationCode()))
                 .build();
         }
 
-        try {
-            auditContext.setPrincipalId(principalId);
+        auditContext.setPrincipalId(principalId);
+        ExecutionContext context = ExecutionContext.from(tracingContext, principalId);
 
-            AuthRole role = roleAdminService.execute(new CreateRole(
-                app.id,
-                request.name(),
-                request.displayName(),
-                request.description(),
-                request.permissions(),
-                AuthRole.RoleSource.DATABASE,
-                request.clientManaged() != null ? request.clientManaged() : false
-            ));
+        CreateRoleCommand command = new CreateRoleCommand(
+            app.id,
+            request.name(),
+            request.displayName(),
+            request.description(),
+            request.permissions(),
+            AuthRole.RoleSource.DATABASE,
+            request.clientManaged() != null ? request.clientManaged() : false
+        );
 
-            return Response.status(201).entity(BffRoleResponse.from(role)).build();
-        } catch (BadRequestException e) {
-            return Response.status(409).entity(new ErrorResponse(e.getMessage())).build();
-        } catch (NotFoundException e) {
-            return Response.status(404).entity(new ErrorResponse(e.getMessage())).build();
-        }
+        Result<RoleCreated> result = roleOperations.createRole(command, context);
+
+        return switch (result) {
+            case Result.Success<RoleCreated> s -> {
+                AuthRole role = roleOperations.findByName(s.value().roleName()).orElseThrow();
+                yield Response.status(201).entity(BffRoleResponse.from(role)).build();
+            }
+            case Result.Failure<RoleCreated> f -> mapErrorToResponse(f.error());
+        };
     }
 
     @PUT
@@ -159,24 +178,29 @@ public class RoleBffResource {
     ) {
         Long principalId = extractPrincipalId(sessionToken, authHeader);
         if (principalId == null) {
-            return Response.status(401).entity(new ErrorResponse("Not authenticated")).build();
+            return Response.status(401).entity(new ErrorResponse("UNAUTHORIZED", "Not authenticated")).build();
         }
 
-        try {
-            auditContext.setPrincipalId(principalId);
+        auditContext.setPrincipalId(principalId);
+        ExecutionContext context = ExecutionContext.from(tracingContext, principalId);
 
-            AuthRole role = roleAdminService.execute(new UpdateRole(
-                roleName,
-                request.displayName(),
-                request.description(),
-                request.permissions(),
-                request.clientManaged()
-            ));
+        UpdateRoleCommand command = new UpdateRoleCommand(
+            roleName,
+            request.displayName(),
+            request.description(),
+            request.permissions(),
+            request.clientManaged()
+        );
 
-            return Response.ok(BffRoleResponse.from(role)).build();
-        } catch (NotFoundException e) {
-            return Response.status(404).entity(new ErrorResponse(e.getMessage())).build();
-        }
+        Result<RoleUpdated> result = roleOperations.updateRole(command, context);
+
+        return switch (result) {
+            case Result.Success<RoleUpdated> s -> {
+                AuthRole role = roleOperations.findByName(s.value().roleName()).orElseThrow();
+                yield Response.ok(BffRoleResponse.from(role)).build();
+            }
+            case Result.Failure<RoleUpdated> f -> mapErrorToResponse(f.error());
+        };
     }
 
     @DELETE
@@ -189,18 +213,47 @@ public class RoleBffResource {
     ) {
         Long principalId = extractPrincipalId(sessionToken, authHeader);
         if (principalId == null) {
-            return Response.status(401).entity(new ErrorResponse("Not authenticated")).build();
+            return Response.status(401).entity(new ErrorResponse("UNAUTHORIZED", "Not authenticated")).build();
         }
 
-        try {
-            auditContext.setPrincipalId(principalId);
-            roleAdminService.execute(new DeleteRole(roleName));
-            return Response.noContent().build();
-        } catch (NotFoundException e) {
-            return Response.status(404).entity(new ErrorResponse(e.getMessage())).build();
-        } catch (BadRequestException e) {
-            return Response.status(400).entity(new ErrorResponse(e.getMessage())).build();
-        }
+        auditContext.setPrincipalId(principalId);
+        ExecutionContext context = ExecutionContext.from(tracingContext, principalId);
+
+        DeleteRoleCommand command = new DeleteRoleCommand(roleName);
+
+        Result<RoleDeleted> result = roleOperations.deleteRole(command, context);
+
+        return switch (result) {
+            case Result.Success<RoleDeleted> s -> Response.noContent().build();
+            case Result.Failure<RoleDeleted> f -> mapErrorToResponse(f.error());
+        };
+    }
+
+    // ========================================================================
+    // Permissions Endpoints
+    // ========================================================================
+
+    @GET
+    @Path("/permissions")
+    @Operation(summary = "List all permissions (BFF)")
+    public Response listPermissions() {
+        List<BffPermissionResponse> responses = permissionRegistry.getAllPermissions().stream()
+            .map(BffPermissionResponse::from)
+            .sorted((a, b) -> a.permission().compareTo(b.permission()))
+            .toList();
+
+        return Response.ok(new BffPermissionListResponse(responses, responses.size())).build();
+    }
+
+    @GET
+    @Path("/permissions/{permission}")
+    @Operation(summary = "Get permission by string (BFF)")
+    public Response getPermission(@PathParam("permission") String permission) {
+        return permissionRegistry.getPermission(permission)
+            .map(perm -> Response.ok(BffPermissionResponse.from(perm)).build())
+            .orElse(Response.status(404)
+                .entity(new ErrorResponse("PERMISSION_NOT_FOUND", "Permission not found: " + permission))
+                .build());
     }
 
     private Long extractPrincipalId(String sessionToken, String authHeader) {
@@ -212,6 +265,19 @@ public class RoleBffResource {
             return null;
         }
         return jwtKeyService.validateAndGetPrincipalId(token);
+    }
+
+    private Response mapErrorToResponse(UseCaseError error) {
+        Response.Status status = switch (error) {
+            case UseCaseError.ValidationError v -> Response.Status.BAD_REQUEST;
+            case UseCaseError.NotFoundError n -> Response.Status.NOT_FOUND;
+            case UseCaseError.BusinessRuleViolation b -> Response.Status.CONFLICT;
+            case UseCaseError.ConcurrencyError c -> Response.Status.CONFLICT;
+        };
+
+        return Response.status(status)
+            .entity(new ErrorResponse(error.code(), error.message(), error.details()))
+            .build();
     }
 
     // ========================================================================
@@ -269,5 +335,31 @@ public class RoleBffResource {
         Boolean clientManaged
     ) {}
 
-    public record ErrorResponse(String error) {}
+    public record ErrorResponse(String code, String message, Map<String, Object> details) {
+        public ErrorResponse(String code, String message) {
+            this(code, message, Map.of());
+        }
+    }
+
+    public record BffPermissionListResponse(List<BffPermissionResponse> items, int total) {}
+
+    public record BffPermissionResponse(
+        String permission,
+        String subdomain,
+        String context,
+        String aggregate,
+        String action,
+        String description
+    ) {
+        public static BffPermissionResponse from(PermissionDefinition perm) {
+            return new BffPermissionResponse(
+                perm.toPermissionString(),
+                perm.subdomain(),
+                perm.context(),
+                perm.aggregate(),
+                perm.action(),
+                perm.description()
+            );
+        }
+    }
 }

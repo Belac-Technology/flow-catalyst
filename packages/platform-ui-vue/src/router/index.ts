@@ -73,11 +73,27 @@ const router = createRouter({
           name: 'users',
           component: () => import('@/pages/users/UserListPage.vue'),
         },
-        // Roles
+        // Authorization - Roles
+        {
+          path: 'authorization/roles',
+          name: 'roles',
+          component: () => import('@/pages/authorization/RoleListPage.vue'),
+        },
+        {
+          path: 'authorization/roles/:roleName',
+          name: 'role-detail',
+          component: () => import('@/pages/authorization/RoleDetailPage.vue'),
+        },
+        // Authorization - Permissions
+        {
+          path: 'authorization/permissions',
+          name: 'permissions',
+          component: () => import('@/pages/authorization/PermissionListPage.vue'),
+        },
+        // Legacy redirect
         {
           path: 'roles',
-          name: 'roles',
-          component: () => import('@/pages/roles/RoleListPage.vue'),
+          redirect: '/authorization/roles',
         },
         // Event Types
         {

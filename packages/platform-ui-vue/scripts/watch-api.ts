@@ -25,7 +25,6 @@ async function generateTypes(): Promise<void> {
 
     const proc = spawn("npm", ["run", "api:generate"], {
       stdio: "inherit",
-      shell: true,
     });
 
     const exitCode = await new Promise<number>((resolve) => {

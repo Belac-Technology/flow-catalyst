@@ -167,6 +167,8 @@ import type {
   GetBffRolesData,
   PostBffRolesData,
   GetBffRolesFiltersApplicationsData,
+  GetBffRolesPermissionsData,
+  GetBffRolesPermissionsByPermissionData,
   DeleteBffRolesByRoleNameData,
   GetBffRolesByRoleNameData,
   PutBffRolesByRoleNameData,
@@ -2160,6 +2162,34 @@ export const getBffRolesFiltersApplications = <
       ...options,
     },
   );
+};
+
+/**
+ * List all permissions (BFF)
+ */
+export const getBffRolesPermissions = <ThrowOnError extends boolean = false>(
+  options?: Options<GetBffRolesPermissionsData, ThrowOnError>,
+) => {
+  return (options?.client ?? _heyApiClient).get<unknown, unknown, ThrowOnError>(
+    {
+      url: "/bff/roles/permissions",
+      ...options,
+    },
+  );
+};
+
+/**
+ * Get permission by string (BFF)
+ */
+export const getBffRolesPermissionsByPermission = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<GetBffRolesPermissionsByPermissionData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).get<unknown, unknown, ThrowOnError>({
+    url: "/bff/roles/permissions/{permission}",
+    ...options,
+  });
 };
 
 /**

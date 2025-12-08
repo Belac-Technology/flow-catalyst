@@ -1968,6 +1968,10 @@ export type PostApiApplicationsErrors = {
    * Invalid request
    */
   400: unknown;
+  /**
+   * Business rule violation
+   */
+  409: unknown;
 };
 
 export type PostApiApplicationsResponses = {
@@ -2439,6 +2443,10 @@ export type PostApiEventTypesErrors = {
    * Invalid request
    */
   400: unknown;
+  /**
+   * Business rule violation
+   */
+  409: unknown;
 };
 
 export type PostApiEventTypesResponses = {
@@ -2620,6 +2628,10 @@ export type PostApiEventTypesByIdSchemasErrors = {
    * Event type not found
    */
   404: unknown;
+  /**
+   * Version already exists
+   */
+  409: unknown;
 };
 
 export type PostApiEventTypesByIdSchemasResponses = {
@@ -3190,6 +3202,36 @@ export type GetBffRolesFiltersApplicationsData = {
 };
 
 export type GetBffRolesFiltersApplicationsResponses = {
+  /**
+   * OK
+   */
+  200: unknown;
+};
+
+export type GetBffRolesPermissionsData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/bff/roles/permissions";
+};
+
+export type GetBffRolesPermissionsResponses = {
+  /**
+   * OK
+   */
+  200: unknown;
+};
+
+export type GetBffRolesPermissionsByPermissionData = {
+  body?: never;
+  path: {
+    permission: string;
+  };
+  query?: never;
+  url: "/bff/roles/permissions/{permission}";
+};
+
+export type GetBffRolesPermissionsByPermissionResponses = {
   /**
    * OK
    */

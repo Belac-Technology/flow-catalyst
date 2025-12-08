@@ -26,13 +26,10 @@ public record RoleRecord(
             throw new IllegalArgumentException("Description cannot be null or empty");
         }
 
-        // Validate permissions
-        if (permissions == null || permissions.isEmpty()) {
-            throw new IllegalArgumentException("Role must have at least one permission");
-        }
-
-        // Make permissions immutable
-        permissions = Collections.unmodifiableSet(new HashSet<>(permissions));
+        // Make permissions immutable (empty set is valid - role can exist without permissions)
+        permissions = permissions == null
+            ? Collections.emptySet()
+            : Collections.unmodifiableSet(new HashSet<>(permissions));
 
         // Validate that all permissions are valid (they validate themselves in their constructors)
         for (PermissionRecord permission : permissions) {

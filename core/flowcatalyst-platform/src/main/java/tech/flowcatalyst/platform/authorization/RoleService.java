@@ -189,7 +189,7 @@ public class RoleService {
                     pr.assignedAt = r.assignedAt;
                     return pr;
                 })
-                .collect(Collectors.toList()))
+                .toList())
             .orElse(List.of());
     }
 

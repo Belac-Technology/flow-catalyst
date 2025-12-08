@@ -1,10 +1,8 @@
 package tech.flowcatalyst.eventtype;
 
 import io.quarkus.mongodb.panache.common.MongoEntity;
-import io.quarkus.mongodb.panache.PanacheMongoEntityBase;
 import org.bson.codecs.pojo.annotations.BsonId;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -18,43 +16,40 @@ import java.util.List;
  * Example: inmotion:execution:trip:started
  */
 @MongoEntity(collection = "event_types")
-public class EventType extends PanacheMongoEntityBase {
-
+public record EventType(
     @BsonId
-    public Long id;
+    Long id,
 
     /**
      * Unique event type code (globally unique, not tenant-scoped).
      * Format: {app}:{subdomain}:{aggregate}:{event}
      */
-    public String code;
+    String code,
 
     /**
      * Human-friendly name for the event type.
      */
-    public String name;
+    String name,
 
     /**
      * Description of the event type.
      */
-    public String description;
+    String description,
 
     /**
      * Schema versions for this event type.
      */
-    public List<SpecVersion> specVersions = new ArrayList<>();
+    List<SpecVersion> specVersions,
 
     /**
      * Current status of the event type.
      */
-    public EventTypeStatus status = EventTypeStatus.CURRENT;
+    EventTypeStatus status,
 
-    public Instant createdAt = Instant.now();
+    Instant createdAt,
 
-    public Instant updatedAt = Instant.now();
-
-    public EventType() {
-    }
+    Instant updatedAt
+) {
 
     /**
      * Find a spec version by version string.
@@ -94,5 +89,35 @@ public class EventType extends PanacheMongoEntityBase {
      */
     public boolean hasVersion(String version) {
         return findSpecVersion(version) != null;
+    }
+
+    // ========================================================================
+    // Wither methods for immutable updates
+    // ========================================================================
+
+    public EventType withName(String name) {
+        return new EventType(id, code, name, description, specVersions, status, createdAt, Instant.now());
+    }
+
+    public EventType withDescription(String description) {
+        return new EventType(id, code, name, description, specVersions, status, createdAt, Instant.now());
+    }
+
+    public EventType withNameAndDescription(String name, String description) {
+        return new EventType(id, code, name, description, specVersions, status, createdAt, Instant.now());
+    }
+
+    public EventType withSpecVersions(List<SpecVersion> specVersions) {
+        return new EventType(id, code, name, description, specVersions, status, createdAt, Instant.now());
+    }
+
+    public EventType withStatus(EventTypeStatus status) {
+        return new EventType(id, code, name, description, specVersions, status, createdAt, Instant.now());
+    }
+
+    public EventType addSpecVersion(SpecVersion specVersion) {
+        var newVersions = new java.util.ArrayList<>(specVersions != null ? specVersions : List.of());
+        newVersions.add(specVersion);
+        return new EventType(id, code, name, description, newVersions, status, createdAt, Instant.now());
     }
 }

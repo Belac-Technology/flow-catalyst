@@ -10,10 +10,34 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponses;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
-import tech.flowcatalyst.eventtype.operations.*;
+import tech.flowcatalyst.eventtype.events.*;
+import tech.flowcatalyst.eventtype.operations.addschema.AddSchemaCommand;
+import tech.flowcatalyst.eventtype.operations.archiveeventtype.ArchiveEventTypeCommand;
+import tech.flowcatalyst.eventtype.operations.createeventtype.CreateEventTypeCommand;
+import tech.flowcatalyst.eventtype.operations.deleteeventtype.DeleteEventTypeCommand;
+import tech.flowcatalyst.eventtype.operations.deprecateschema.DeprecateSchemaCommand;
+import tech.flowcatalyst.eventtype.operations.finaliseschema.FinaliseSchemaCommand;
+import tech.flowcatalyst.eventtype.operations.updateeventtype.UpdateEventTypeCommand;
+import tech.flowcatalyst.platform.audit.AuditContext;
+import tech.flowcatalyst.platform.common.ExecutionContext;
+import tech.flowcatalyst.platform.common.Result;
+import tech.flowcatalyst.platform.common.TracingContext;
+import tech.flowcatalyst.platform.common.errors.UseCaseError;
 
 import java.util.List;
+import java.util.Map;
 
+/**
+ * REST resource for EventType operations.
+ *
+ * <p>This resource uses the domain-driven pattern with:
+ * <ul>
+ *   <li>Commands for write operations</li>
+ *   <li>ExecutionContext for tracing and principal info</li>
+ *   <li>Result type for success/failure handling</li>
+ *   <li>Atomic commits via UnitOfWork</li>
+ * </ul>
+ */
 @Path("/api/event-types")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
@@ -21,7 +45,17 @@ import java.util.List;
 public class EventTypeResource {
 
     @Inject
-    EventTypeService eventTypeService;
+    EventTypeOperations eventTypeOperations;
+
+    @Inject
+    AuditContext auditContext;
+
+    @Inject
+    TracingContext tracingContext;
+
+    // ========================================================================
+    // Read Operations
+    // ========================================================================
 
     @GET
     @Operation(summary = "List all event types", description = "Returns all event types with optional filtering. Supports multi-value filtering with comma-separated values.")
@@ -39,12 +73,11 @@ public class EventTypeResource {
         @QueryParam("subdomain") List<String> subdomains,
         @QueryParam("aggregate") List<String> aggregates
     ) {
-        // Filter empty strings from the lists
         List<String> filteredApps = filterEmpty(applications);
         List<String> filteredSubs = filterEmpty(subdomains);
         List<String> filteredAggs = filterEmpty(aggregates);
 
-        List<EventType> eventTypes = eventTypeService.findWithFilters(
+        List<EventType> eventTypes = eventTypeOperations.findWithFilters(
             filteredApps.isEmpty() ? null : filteredApps,
             filteredSubs.isEmpty() ? null : filteredSubs,
             filteredAggs.isEmpty() ? null : filteredAggs,
@@ -58,13 +91,6 @@ public class EventTypeResource {
         return Response.ok(new EventTypeListResponse(responses)).build();
     }
 
-    private List<String> filterEmpty(List<String> list) {
-        if (list == null) return List.of();
-        return list.stream()
-            .filter(s -> s != null && !s.isBlank())
-            .toList();
-    }
-
     @GET
     @Path("/{id}")
     @Operation(summary = "Get event type by ID")
@@ -73,10 +99,10 @@ public class EventTypeResource {
         @APIResponse(responseCode = "404", description = "Event type not found")
     })
     public Response getEventType(@PathParam("id") Long id) {
-        return eventTypeService.findById(id)
+        return eventTypeOperations.findById(id)
             .map(et -> Response.ok(EventTypeResponse.from(et)).build())
             .orElse(Response.status(404)
-                .entity(new ErrorResponse("Event type not found: " + id))
+                .entity(new ErrorResponse("EVENT_TYPE_NOT_FOUND", "Event type not found: " + id))
                 .build());
     }
 
@@ -84,7 +110,7 @@ public class EventTypeResource {
     @Path("/filters/applications")
     @Operation(summary = "Get distinct application names for filtering")
     public Response getApplications() {
-        List<String> applications = eventTypeService.getDistinctApplications();
+        List<String> applications = eventTypeOperations.getDistinctApplications();
         return Response.ok(new FilterOptionsResponse(applications)).build();
     }
 
@@ -93,7 +119,7 @@ public class EventTypeResource {
     @Operation(summary = "Get distinct subdomains, optionally filtered by applications")
     public Response getSubdomains(@QueryParam("application") List<String> applications) {
         List<String> filteredApps = filterEmpty(applications);
-        List<String> subdomains = eventTypeService.getDistinctSubdomains(filteredApps);
+        List<String> subdomains = eventTypeOperations.getDistinctSubdomains(filteredApps);
         return Response.ok(new FilterOptionsResponse(subdomains)).build();
     }
 
@@ -106,26 +132,46 @@ public class EventTypeResource {
     ) {
         List<String> filteredApps = filterEmpty(applications);
         List<String> filteredSubs = filterEmpty(subdomains);
-        List<String> aggregates = eventTypeService.getDistinctAggregates(
+        List<String> aggregates = eventTypeOperations.getDistinctAggregates(
             filteredApps.isEmpty() ? null : filteredApps,
             filteredSubs.isEmpty() ? null : filteredSubs
         );
         return Response.ok(new FilterOptionsResponse(aggregates)).build();
     }
 
+    // ========================================================================
+    // Write Operations
+    // ========================================================================
+
     @POST
     @Operation(summary = "Create a new event type")
     @APIResponses({
         @APIResponse(responseCode = "201", description = "Event type created"),
-        @APIResponse(responseCode = "400", description = "Invalid request")
+        @APIResponse(responseCode = "400", description = "Invalid request"),
+        @APIResponse(responseCode = "409", description = "Business rule violation")
     })
     public Response createEventType(CreateEventTypeRequest request) {
-        EventType eventType = eventTypeService.execute(new CreateEventType(
+        ExecutionContext context = createExecutionContext();
+
+        CreateEventTypeCommand command = new CreateEventTypeCommand(
             request.code(),
             request.name(),
             request.description()
-        ));
-        return Response.status(201).entity(EventTypeResponse.from(eventType)).build();
+        );
+
+        Result<EventTypeCreated> result = eventTypeOperations.createEventType(command, context);
+
+        return switch (result) {
+            case Result.Success<EventTypeCreated> s -> {
+                // Fetch the created entity to return full response
+                EventType eventType = eventTypeOperations.findById(s.value().eventTypeId())
+                    .orElseThrow();
+                yield Response.status(201)
+                    .entity(EventTypeResponse.from(eventType))
+                    .build();
+            }
+            case Result.Failure<EventTypeCreated> f -> mapErrorToResponse(f.error());
+        };
     }
 
     @PATCH
@@ -137,12 +183,24 @@ public class EventTypeResource {
         @APIResponse(responseCode = "404", description = "Event type not found")
     })
     public Response updateEventType(@PathParam("id") Long id, UpdateEventTypeRequest request) {
-        EventType eventType = eventTypeService.execute(new UpdateEventType(
+        ExecutionContext context = createExecutionContext();
+
+        UpdateEventTypeCommand command = new UpdateEventTypeCommand(
             id,
             request.name(),
             request.description()
-        ));
-        return Response.ok(EventTypeResponse.from(eventType)).build();
+        );
+
+        Result<EventTypeUpdated> result = eventTypeOperations.updateEventType(command, context);
+
+        return switch (result) {
+            case Result.Success<EventTypeUpdated> s -> {
+                EventType eventType = eventTypeOperations.findById(s.value().eventTypeId())
+                    .orElseThrow();
+                yield Response.ok(EventTypeResponse.from(eventType)).build();
+            }
+            case Result.Failure<EventTypeUpdated> f -> mapErrorToResponse(f.error());
+        };
     }
 
     @POST
@@ -151,17 +209,30 @@ public class EventTypeResource {
     @APIResponses({
         @APIResponse(responseCode = "201", description = "Schema added"),
         @APIResponse(responseCode = "400", description = "Invalid request"),
-        @APIResponse(responseCode = "404", description = "Event type not found")
+        @APIResponse(responseCode = "404", description = "Event type not found"),
+        @APIResponse(responseCode = "409", description = "Version already exists")
     })
     public Response addSchema(@PathParam("id") Long id, AddSchemaRequest request) {
-        EventType eventType = eventTypeService.execute(new AddSchema(
+        ExecutionContext context = createExecutionContext();
+
+        AddSchemaCommand command = new AddSchemaCommand(
             id,
             request.version(),
             request.mimeType(),
             request.schema(),
             request.schemaType()
-        ));
-        return Response.status(201).entity(EventTypeResponse.from(eventType)).build();
+        );
+
+        Result<SchemaAdded> result = eventTypeOperations.addSchema(command, context);
+
+        return switch (result) {
+            case Result.Success<SchemaAdded> s -> {
+                EventType eventType = eventTypeOperations.findById(s.value().eventTypeId())
+                    .orElseThrow();
+                yield Response.status(201).entity(EventTypeResponse.from(eventType)).build();
+            }
+            case Result.Failure<SchemaAdded> f -> mapErrorToResponse(f.error());
+        };
     }
 
     @POST
@@ -173,8 +244,20 @@ public class EventTypeResource {
         @APIResponse(responseCode = "404", description = "Event type or version not found")
     })
     public Response finaliseSchema(@PathParam("id") Long id, @PathParam("version") String version) {
-        EventType eventType = eventTypeService.execute(new FinaliseSchema(id, version));
-        return Response.ok(EventTypeResponse.from(eventType)).build();
+        ExecutionContext context = createExecutionContext();
+
+        FinaliseSchemaCommand command = new FinaliseSchemaCommand(id, version);
+
+        Result<SchemaFinalised> result = eventTypeOperations.finaliseSchema(command, context);
+
+        return switch (result) {
+            case Result.Success<SchemaFinalised> s -> {
+                EventType eventType = eventTypeOperations.findById(s.value().eventTypeId())
+                    .orElseThrow();
+                yield Response.ok(EventTypeResponse.from(eventType)).build();
+            }
+            case Result.Failure<SchemaFinalised> f -> mapErrorToResponse(f.error());
+        };
     }
 
     @POST
@@ -186,8 +269,20 @@ public class EventTypeResource {
         @APIResponse(responseCode = "404", description = "Event type or version not found")
     })
     public Response deprecateSchema(@PathParam("id") Long id, @PathParam("version") String version) {
-        EventType eventType = eventTypeService.execute(new DeprecateSchema(id, version));
-        return Response.ok(EventTypeResponse.from(eventType)).build();
+        ExecutionContext context = createExecutionContext();
+
+        DeprecateSchemaCommand command = new DeprecateSchemaCommand(id, version);
+
+        Result<SchemaDeprecated> result = eventTypeOperations.deprecateSchema(command, context);
+
+        return switch (result) {
+            case Result.Success<SchemaDeprecated> s -> {
+                EventType eventType = eventTypeOperations.findById(s.value().eventTypeId())
+                    .orElseThrow();
+                yield Response.ok(EventTypeResponse.from(eventType)).build();
+            }
+            case Result.Failure<SchemaDeprecated> f -> mapErrorToResponse(f.error());
+        };
     }
 
     @POST
@@ -199,8 +294,20 @@ public class EventTypeResource {
         @APIResponse(responseCode = "404", description = "Event type not found")
     })
     public Response archiveEventType(@PathParam("id") Long id) {
-        EventType eventType = eventTypeService.execute(new ArchiveEventType(id));
-        return Response.ok(EventTypeResponse.from(eventType)).build();
+        ExecutionContext context = createExecutionContext();
+
+        ArchiveEventTypeCommand command = new ArchiveEventTypeCommand(id);
+
+        Result<EventTypeArchived> result = eventTypeOperations.archiveEventType(command, context);
+
+        return switch (result) {
+            case Result.Success<EventTypeArchived> s -> {
+                EventType eventType = eventTypeOperations.findById(s.value().eventTypeId())
+                    .orElseThrow();
+                yield Response.ok(EventTypeResponse.from(eventType)).build();
+            }
+            case Result.Failure<EventTypeArchived> f -> mapErrorToResponse(f.error());
+        };
     }
 
     @DELETE
@@ -212,8 +319,44 @@ public class EventTypeResource {
         @APIResponse(responseCode = "404", description = "Event type not found")
     })
     public Response deleteEventType(@PathParam("id") Long id) {
-        eventTypeService.execute(new DeleteEventType(id));
-        return Response.noContent().build();
+        ExecutionContext context = createExecutionContext();
+
+        DeleteEventTypeCommand command = new DeleteEventTypeCommand(id);
+
+        Result<EventTypeDeleted> result = eventTypeOperations.deleteEventType(command, context);
+
+        return switch (result) {
+            case Result.Success<EventTypeDeleted> s -> Response.noContent().build();
+            case Result.Failure<EventTypeDeleted> f -> mapErrorToResponse(f.error());
+        };
+    }
+
+    // ========================================================================
+    // Helper Methods
+    // ========================================================================
+
+    private ExecutionContext createExecutionContext() {
+        return ExecutionContext.from(tracingContext, auditContext.requirePrincipalId());
+    }
+
+    private List<String> filterEmpty(List<String> list) {
+        if (list == null) return List.of();
+        return list.stream()
+            .filter(s -> s != null && !s.isBlank())
+            .toList();
+    }
+
+    private Response mapErrorToResponse(UseCaseError error) {
+        Response.Status status = switch (error) {
+            case UseCaseError.ValidationError v -> Response.Status.BAD_REQUEST;
+            case UseCaseError.NotFoundError n -> Response.Status.NOT_FOUND;
+            case UseCaseError.BusinessRuleViolation b -> Response.Status.CONFLICT;
+            case UseCaseError.ConcurrencyError c -> Response.Status.CONFLICT;
+        };
+
+        return Response.status(status)
+            .entity(new ErrorResponse(error.code(), error.message(), error.details()))
+            .build();
     }
 
     // ========================================================================
@@ -237,22 +380,22 @@ public class EventTypeResource {
         String updatedAt
     ) {
         public static EventTypeResponse from(EventType et) {
-            String[] parts = et.code.split(":");
+            String[] parts = et.code().split(":");
             return new EventTypeResponse(
-                et.id,
-                et.code,
-                et.name,
-                et.description,
-                et.status,
+                et.id(),
+                et.code(),
+                et.name(),
+                et.description(),
+                et.status(),
                 parts.length > 0 ? parts[0] : null,
                 parts.length > 1 ? parts[1] : null,
                 parts.length > 2 ? parts[2] : null,
                 parts.length > 3 ? parts[3] : null,
-                et.specVersions != null
-                    ? et.specVersions.stream().map(SpecVersionResponse::from).toList()
+                et.specVersions() != null
+                    ? et.specVersions().stream().map(SpecVersionResponse::from).toList()
                     : List.of(),
-                et.createdAt != null ? et.createdAt.toString() : null,
-                et.updatedAt != null ? et.updatedAt.toString() : null
+                et.createdAt() != null ? et.createdAt().toString() : null,
+                et.updatedAt() != null ? et.updatedAt().toString() : null
             );
         }
     }
@@ -293,5 +436,9 @@ public class EventTypeResource {
 
     public record FilterOptionsResponse(List<String> options) {}
 
-    public record ErrorResponse(String error) {}
+    public record ErrorResponse(String code, String message, Map<String, Object> details) {
+        public ErrorResponse(String code, String message) {
+            this(code, message, Map.of());
+        }
+    }
 }

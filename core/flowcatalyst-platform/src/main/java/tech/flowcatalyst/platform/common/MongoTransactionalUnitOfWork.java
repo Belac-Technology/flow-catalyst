@@ -1,0 +1,330 @@
+package tech.flowcatalyst.platform.common;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mongodb.client.ClientSession;
+import com.mongodb.client.MongoClient;
+import com.mongodb.client.MongoCollection;
+import com.mongodb.client.MongoDatabase;
+import com.mongodb.client.model.ReplaceOptions;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+import org.bson.Document;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
+import tech.flowcatalyst.event.ContextData;
+import tech.flowcatalyst.event.Event;
+import tech.flowcatalyst.platform.audit.AuditLog;
+import tech.flowcatalyst.platform.common.errors.UseCaseError;
+import tech.flowcatalyst.platform.shared.TsidGenerator;
+
+import java.lang.reflect.Field;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * MongoDB implementation of {@link UnitOfWork} using multi-document transactions.
+ *
+ * <p>This implementation ensures atomic commits of:
+ * <ul>
+ *   <li>Aggregate entity (create/update/delete)</li>
+ *   <li>Domain event (in the events collection)</li>
+ *   <li>Audit log entry</li>
+ * </ul>
+ *
+ * <p>All three operations occur within a single MongoDB transaction, ensuring
+ * consistency. If any operation fails, the entire transaction is rolled back.
+ *
+ * <p><strong>Requirements:</strong>
+ * <ul>
+ *   <li>MongoDB 4.0+ (for multi-document transactions)</li>
+ *   <li>Replica set deployment (transactions require replica set)</li>
+ *   <li>Aggregates must have a public {@code Long id} field</li>
+ *   <li>Aggregates must have a {@code @MongoEntity} annotation or follow naming convention</li>
+ * </ul>
+ */
+@ApplicationScoped
+public class MongoTransactionalUnitOfWork implements UnitOfWork {
+
+    @Inject
+    MongoClient mongoClient;
+
+    @Inject
+    ObjectMapper objectMapper;
+
+    @ConfigProperty(name = "quarkus.mongodb.database")
+    String databaseName;
+
+    @Override
+    public <T extends DomainEvent> Result<T> commit(
+            Object aggregate,
+            T event,
+            Object command
+    ) {
+        try (ClientSession session = mongoClient.startSession()) {
+            session.startTransaction();
+
+            try {
+                MongoDatabase db = mongoClient.getDatabase(databaseName);
+
+                // 1. Persist/update aggregate
+                persistAggregate(session, db, aggregate);
+
+                // 2. Create domain event
+                createEvent(session, db, event);
+
+                // 3. Create audit log
+                createAuditLog(session, db, event, command);
+
+                session.commitTransaction();
+                return Result.success(event);
+
+            } catch (Exception e) {
+                session.abortTransaction();
+                return Result.failure(new UseCaseError.BusinessRuleViolation(
+                    "COMMIT_FAILED",
+                    "Failed to commit transaction: " + e.getMessage(),
+                    Map.of("exception", e.getClass().getSimpleName())
+                ));
+            }
+        }
+    }
+
+    @Override
+    public <T extends DomainEvent> Result<T> commitDelete(
+            Object aggregate,
+            T event,
+            Object command
+    ) {
+        try (ClientSession session = mongoClient.startSession()) {
+            session.startTransaction();
+
+            try {
+                MongoDatabase db = mongoClient.getDatabase(databaseName);
+
+                // 1. Delete aggregate
+                deleteAggregate(session, db, aggregate);
+
+                // 2. Create domain event
+                createEvent(session, db, event);
+
+                // 3. Create audit log
+                createAuditLog(session, db, event, command);
+
+                session.commitTransaction();
+                return Result.success(event);
+
+            } catch (Exception e) {
+                session.abortTransaction();
+                return Result.failure(new UseCaseError.BusinessRuleViolation(
+                    "COMMIT_FAILED",
+                    "Failed to commit transaction: " + e.getMessage(),
+                    Map.of("exception", e.getClass().getSimpleName())
+                ));
+            }
+        }
+    }
+
+    // ========================================================================
+    // Aggregate Operations
+    // ========================================================================
+
+    private void persistAggregate(ClientSession session, MongoDatabase db, Object aggregate)
+            throws JsonProcessingException {
+        String collectionName = getCollectionName(aggregate.getClass());
+        MongoCollection<Document> collection = db.getCollection(collectionName);
+
+        Long id = extractId(aggregate);
+        Document doc = documentFromObject(aggregate);
+        doc.put("_id", id);
+
+        // Upsert the document
+        collection.replaceOne(
+            session,
+            new Document("_id", id),
+            doc,
+            new ReplaceOptions().upsert(true)
+        );
+    }
+
+    private void deleteAggregate(ClientSession session, MongoDatabase db, Object aggregate) {
+        String collectionName = getCollectionName(aggregate.getClass());
+        MongoCollection<Document> collection = db.getCollection(collectionName);
+
+        Long id = extractId(aggregate);
+        collection.deleteOne(session, new Document("_id", id));
+    }
+
+    // ========================================================================
+    // Event Operations
+    // ========================================================================
+
+    private void createEvent(ClientSession session, MongoDatabase db, DomainEvent event)
+            throws JsonProcessingException {
+        MongoCollection<Document> collection = db.getCollection("events");
+
+        // Build context data for searchability
+        List<ContextData> contextData = new ArrayList<>();
+        contextData.add(new ContextData("principalId", String.valueOf(event.principalId())));
+        contextData.add(new ContextData("aggregateType", extractAggregateType(event.subject())));
+
+        Event mongoEvent = new Event(
+            event.eventId(),
+            event.specVersion(),
+            event.eventType(),
+            event.source(),
+            event.subject(),
+            event.time(),
+            event.toDataJson(),
+            event.correlationId(),
+            event.causationId(),
+            event.eventType() + "-" + event.eventId(),  // deduplicationId
+            event.messageGroup(),
+            contextData
+        );
+
+        Document doc = documentFromObject(mongoEvent);
+        doc.put("_id", mongoEvent.id);
+        collection.insertOne(session, doc);
+    }
+
+    // ========================================================================
+    // Audit Log Operations
+    // ========================================================================
+
+    private void createAuditLog(ClientSession session, MongoDatabase db, DomainEvent event, Object command)
+            throws JsonProcessingException {
+        MongoCollection<Document> collection = db.getCollection("audit_logs");
+
+        AuditLog log = new AuditLog();
+        log.id = TsidGenerator.generate();
+        log.entityType = extractAggregateType(event.subject());
+        log.entityId = extractEntityIdFromSubject(event.subject());
+        log.operation = command.getClass().getSimpleName();
+        log.operationJson = objectMapper.writeValueAsString(command);
+        log.principalId = event.principalId();
+        log.performedAt = event.time();
+
+        Document doc = documentFromObject(log);
+        doc.put("_id", log.id);
+        collection.insertOne(session, doc);
+    }
+
+    // ========================================================================
+    // Helper Methods
+    // ========================================================================
+
+    private Document documentFromObject(Object obj) throws JsonProcessingException {
+        String json = objectMapper.writeValueAsString(obj);
+        return Document.parse(json);
+    }
+
+    /**
+     * Get the MongoDB collection name for an aggregate class.
+     *
+     * <p>Follows Quarkus Panache convention: looks for @MongoEntity annotation,
+     * falls back to snake_case plural of class name.
+     */
+    private String getCollectionName(Class<?> aggregateClass) {
+        // Check for @MongoEntity annotation
+        var mongoEntity = aggregateClass.getAnnotation(
+            io.quarkus.mongodb.panache.common.MongoEntity.class
+        );
+        if (mongoEntity != null && !mongoEntity.collection().isEmpty()) {
+            return mongoEntity.collection();
+        }
+
+        // Fall back to convention: EventType -> event_types
+        String name = aggregateClass.getSimpleName();
+        return toSnakeCase(name) + "s";
+    }
+
+    private String toSnakeCase(String camelCase) {
+        return camelCase
+            .replaceAll("([a-z])([A-Z])", "$1_$2")
+            .toLowerCase();
+    }
+
+    /**
+     * Extract the ID from an aggregate using reflection.
+     *
+     * <p>Supports both:
+     * <ul>
+     *   <li>Classes with a public {@code Long id} field</li>
+     *   <li>Records with an {@code id()} accessor method</li>
+     * </ul>
+     */
+    private Long extractId(Object aggregate) {
+        Class<?> clazz = aggregate.getClass();
+
+        // First try: record accessor method id()
+        if (clazz.isRecord()) {
+            try {
+                var method = clazz.getMethod("id");
+                return (Long) method.invoke(aggregate);
+            } catch (Exception e) {
+                throw new IllegalArgumentException(
+                    "Record must have an id() accessor returning Long: " + clazz.getName(),
+                    e
+                );
+            }
+        }
+
+        // Second try: public field for traditional classes
+        try {
+            Field field = clazz.getField("id");
+            return (Long) field.get(aggregate);
+        } catch (NoSuchFieldException | IllegalAccessException e) {
+            throw new IllegalArgumentException(
+                "Aggregate must have a public Long id field: " + clazz.getName(),
+                e
+            );
+        }
+    }
+
+    /**
+     * Extract the aggregate type from a subject string.
+     *
+     * <p>Subject format: "platform.eventtype.123456789"
+     * <p>Returns: "EventType" (capitalized)
+     */
+    private String extractAggregateType(String subject) {
+        if (subject == null) {
+            return "Unknown";
+        }
+        String[] parts = subject.split("\\.");
+        if (parts.length >= 2) {
+            return capitalize(parts[1]);
+        }
+        return "Unknown";
+    }
+
+    /**
+     * Extract the entity ID from a subject string.
+     *
+     * <p>Subject format: "platform.eventtype.123456789"
+     * <p>Returns: 123456789
+     */
+    private Long extractEntityIdFromSubject(String subject) {
+        if (subject == null) {
+            return null;
+        }
+        String[] parts = subject.split("\\.");
+        if (parts.length >= 3) {
+            try {
+                return Long.parseLong(parts[2]);
+            } catch (NumberFormatException e) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    private String capitalize(String s) {
+        if (s == null || s.isEmpty()) {
+            return s;
+        }
+        return s.substring(0, 1).toUpperCase() + s.substring(1);
+    }
+}

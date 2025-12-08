@@ -10,10 +10,20 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponses;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
-import tech.flowcatalyst.platform.application.operations.*;
-import tech.flowcatalyst.platform.application.Application;
+import tech.flowcatalyst.platform.application.events.*;
+import tech.flowcatalyst.platform.application.operations.activateapplication.ActivateApplicationCommand;
+import tech.flowcatalyst.platform.application.operations.createapplication.CreateApplicationCommand;
+import tech.flowcatalyst.platform.application.operations.deactivateapplication.DeactivateApplicationCommand;
+import tech.flowcatalyst.platform.application.operations.deleteapplication.DeleteApplicationCommand;
+import tech.flowcatalyst.platform.application.operations.updateapplication.UpdateApplicationCommand;
+import tech.flowcatalyst.platform.audit.AuditContext;
+import tech.flowcatalyst.platform.common.ExecutionContext;
+import tech.flowcatalyst.platform.common.Result;
+import tech.flowcatalyst.platform.common.TracingContext;
+import tech.flowcatalyst.platform.common.errors.UseCaseError;
 
 import java.util.List;
+import java.util.Map;
 
 @Path("/api/applications")
 @Produces(MediaType.APPLICATION_JSON)
@@ -22,7 +32,13 @@ import java.util.List;
 public class ApplicationResource {
 
     @Inject
-    ApplicationAdminService applicationService;
+    ApplicationOperations applicationOperations;
+
+    @Inject
+    AuditContext auditContext;
+
+    @Inject
+    TracingContext tracingContext;
 
     @GET
     @Operation(summary = "List all applications", description = "Returns all applications")
@@ -36,8 +52,8 @@ public class ApplicationResource {
     })
     public Response listApplications(@QueryParam("activeOnly") @DefaultValue("false") boolean activeOnly) {
         List<Application> applications = activeOnly
-            ? applicationService.findAllActive()
-            : applicationService.findAll();
+            ? applicationOperations.findAllActive()
+            : applicationOperations.findAll();
 
         List<ApplicationResponse> responses = applications.stream()
             .map(ApplicationResponse::from)
@@ -54,10 +70,10 @@ public class ApplicationResource {
         @APIResponse(responseCode = "404", description = "Application not found")
     })
     public Response getApplication(@PathParam("id") Long id) {
-        return applicationService.findById(id)
+        return applicationOperations.findById(id)
             .map(app -> Response.ok(ApplicationResponse.from(app)).build())
             .orElse(Response.status(404)
-                .entity(new ErrorResponse("Application not found: " + id))
+                .entity(new ErrorResponse("APPLICATION_NOT_FOUND", "Application not found: " + id))
                 .build());
     }
 
@@ -69,10 +85,10 @@ public class ApplicationResource {
         @APIResponse(responseCode = "404", description = "Application not found")
     })
     public Response getApplicationByCode(@PathParam("code") String code) {
-        return applicationService.findByCode(code)
+        return applicationOperations.findByCode(code)
             .map(app -> Response.ok(ApplicationResponse.from(app)).build())
             .orElse(Response.status(404)
-                .entity(new ErrorResponse("Application not found: " + code))
+                .entity(new ErrorResponse("APPLICATION_NOT_FOUND", "Application not found: " + code))
                 .build());
     }
 
@@ -80,17 +96,30 @@ public class ApplicationResource {
     @Operation(summary = "Create a new application")
     @APIResponses({
         @APIResponse(responseCode = "201", description = "Application created"),
-        @APIResponse(responseCode = "400", description = "Invalid request")
+        @APIResponse(responseCode = "400", description = "Invalid request"),
+        @APIResponse(responseCode = "409", description = "Business rule violation")
     })
     public Response createApplication(CreateApplicationRequest request) {
-        Application app = applicationService.execute(new CreateApplication(
+        ExecutionContext context = createExecutionContext();
+
+        CreateApplicationCommand command = new CreateApplicationCommand(
             request.code(),
             request.name(),
             request.description(),
             request.defaultBaseUrl(),
             request.iconUrl()
-        ));
-        return Response.status(201).entity(ApplicationResponse.from(app)).build();
+        );
+
+        Result<ApplicationCreated> result = applicationOperations.createApplication(command, context);
+
+        return switch (result) {
+            case Result.Success<ApplicationCreated> s -> {
+                Application app = applicationOperations.findById(s.value().applicationId())
+                    .orElseThrow();
+                yield Response.status(201).entity(ApplicationResponse.from(app)).build();
+            }
+            case Result.Failure<ApplicationCreated> f -> mapErrorToResponse(f.error());
+        };
     }
 
     @PUT
@@ -102,14 +131,26 @@ public class ApplicationResource {
         @APIResponse(responseCode = "404", description = "Application not found")
     })
     public Response updateApplication(@PathParam("id") Long id, UpdateApplicationRequest request) {
-        Application app = applicationService.execute(new UpdateApplication(
+        ExecutionContext context = createExecutionContext();
+
+        UpdateApplicationCommand command = new UpdateApplicationCommand(
             id,
             request.name(),
             request.description(),
             request.defaultBaseUrl(),
             request.iconUrl()
-        ));
-        return Response.ok(ApplicationResponse.from(app)).build();
+        );
+
+        Result<ApplicationUpdated> result = applicationOperations.updateApplication(command, context);
+
+        return switch (result) {
+            case Result.Success<ApplicationUpdated> s -> {
+                Application app = applicationOperations.findById(s.value().applicationId())
+                    .orElseThrow();
+                yield Response.ok(ApplicationResponse.from(app)).build();
+            }
+            case Result.Failure<ApplicationUpdated> f -> mapErrorToResponse(f.error());
+        };
     }
 
     @POST
@@ -121,8 +162,20 @@ public class ApplicationResource {
         @APIResponse(responseCode = "404", description = "Application not found")
     })
     public Response activateApplication(@PathParam("id") Long id) {
-        Application app = applicationService.execute(new ActivateApplication(id));
-        return Response.ok(ApplicationResponse.from(app)).build();
+        ExecutionContext context = createExecutionContext();
+
+        ActivateApplicationCommand command = new ActivateApplicationCommand(id);
+
+        Result<ApplicationActivated> result = applicationOperations.activateApplication(command, context);
+
+        return switch (result) {
+            case Result.Success<ApplicationActivated> s -> {
+                Application app = applicationOperations.findById(s.value().applicationId())
+                    .orElseThrow();
+                yield Response.ok(ApplicationResponse.from(app)).build();
+            }
+            case Result.Failure<ApplicationActivated> f -> mapErrorToResponse(f.error());
+        };
     }
 
     @POST
@@ -134,8 +187,20 @@ public class ApplicationResource {
         @APIResponse(responseCode = "404", description = "Application not found")
     })
     public Response deactivateApplication(@PathParam("id") Long id) {
-        Application app = applicationService.execute(new DeactivateApplication(id));
-        return Response.ok(ApplicationResponse.from(app)).build();
+        ExecutionContext context = createExecutionContext();
+
+        DeactivateApplicationCommand command = new DeactivateApplicationCommand(id);
+
+        Result<ApplicationDeactivated> result = applicationOperations.deactivateApplication(command, context);
+
+        return switch (result) {
+            case Result.Success<ApplicationDeactivated> s -> {
+                Application app = applicationOperations.findById(s.value().applicationId())
+                    .orElseThrow();
+                yield Response.ok(ApplicationResponse.from(app)).build();
+            }
+            case Result.Failure<ApplicationDeactivated> f -> mapErrorToResponse(f.error());
+        };
     }
 
     @DELETE
@@ -147,8 +212,37 @@ public class ApplicationResource {
         @APIResponse(responseCode = "404", description = "Application not found")
     })
     public Response deleteApplication(@PathParam("id") Long id) {
-        applicationService.execute(new DeleteApplication(id));
-        return Response.noContent().build();
+        ExecutionContext context = createExecutionContext();
+
+        DeleteApplicationCommand command = new DeleteApplicationCommand(id);
+
+        Result<ApplicationDeleted> result = applicationOperations.deleteApplication(command, context);
+
+        return switch (result) {
+            case Result.Success<ApplicationDeleted> s -> Response.noContent().build();
+            case Result.Failure<ApplicationDeleted> f -> mapErrorToResponse(f.error());
+        };
+    }
+
+    // ========================================================================
+    // Helper Methods
+    // ========================================================================
+
+    private ExecutionContext createExecutionContext() {
+        return ExecutionContext.from(tracingContext, auditContext.requirePrincipalId());
+    }
+
+    private Response mapErrorToResponse(UseCaseError error) {
+        Response.Status status = switch (error) {
+            case UseCaseError.ValidationError v -> Response.Status.BAD_REQUEST;
+            case UseCaseError.NotFoundError n -> Response.Status.NOT_FOUND;
+            case UseCaseError.BusinessRuleViolation b -> Response.Status.CONFLICT;
+            case UseCaseError.ConcurrencyError c -> Response.Status.CONFLICT;
+        };
+
+        return Response.status(status)
+            .entity(new ErrorResponse(error.code(), error.message(), error.details()))
+            .build();
     }
 
     // ========================================================================
@@ -198,5 +292,9 @@ public class ApplicationResource {
         String iconUrl
     ) {}
 
-    public record ErrorResponse(String error) {}
+    public record ErrorResponse(String code, String message, Map<String, Object> details) {
+        public ErrorResponse(String code, String message) {
+            this(code, message, Map.of());
+        }
+    }
 }

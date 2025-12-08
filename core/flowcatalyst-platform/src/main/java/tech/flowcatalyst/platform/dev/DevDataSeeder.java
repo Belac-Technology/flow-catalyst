@@ -13,15 +13,17 @@ import tech.flowcatalyst.platform.authentication.AuthProvider;
 import tech.flowcatalyst.platform.authentication.IdpType;
 import tech.flowcatalyst.platform.principal.*;
 import tech.flowcatalyst.platform.client.*;
-import tech.flowcatalyst.platform.application.*;
+import tech.flowcatalyst.platform.application.Application;
+import tech.flowcatalyst.platform.application.ApplicationOperations;
+import tech.flowcatalyst.platform.application.ApplicationRepository;
+import tech.flowcatalyst.platform.application.operations.createapplication.CreateApplicationCommand;
 import tech.flowcatalyst.platform.shared.TsidGenerator;
-import tech.flowcatalyst.platform.application.ApplicationAdminService;
-import tech.flowcatalyst.platform.application.operations.CreateApplication;
 import tech.flowcatalyst.platform.audit.AuditContext;
-import tech.flowcatalyst.eventtype.*;
-import tech.flowcatalyst.eventtype.operations.CreateEventType;
+import tech.flowcatalyst.eventtype.EventTypeOperations;
+import tech.flowcatalyst.eventtype.EventTypeRepository;
+import tech.flowcatalyst.eventtype.operations.createeventtype.CreateEventTypeCommand;
+import tech.flowcatalyst.platform.common.ExecutionContext;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -78,12 +80,12 @@ public class DevDataSeeder {
         return Arc.container().instance(AuditContext.class).get();
     }
 
-    private ApplicationAdminService getApplicationAdminService() {
-        return Arc.container().instance(ApplicationAdminService.class).get();
+    private ApplicationOperations getApplicationOperations() {
+        return Arc.container().instance(ApplicationOperations.class).get();
     }
 
-    private EventTypeService getEventTypeService() {
-        return Arc.container().instance(EventTypeService.class).get();
+    private EventTypeOperations getEventTypeOperations() {
+        return Arc.container().instance(EventTypeOperations.class).get();
     }
 
     @ActivateRequestContext
@@ -324,13 +326,9 @@ public class DevDataSeeder {
             return;
         }
 
-        getApplicationAdminService().execute(new CreateApplication(
-            code,
-            name,
-            description,
-            null,  // defaultBaseUrl
-            null   // iconUrl
-        ));
+        ExecutionContext context = ExecutionContext.create(getAuditContext().requirePrincipalId());
+        CreateApplicationCommand command = new CreateApplicationCommand(code, name, description, null, null);
+        getApplicationOperations().createApplication(command, context);
         LOG.infof("Created application: %s (%s)", name, code);
     }
 
@@ -481,6 +479,45 @@ public class DevDataSeeder {
         createEventTypeIfNotExists("platform:audit:permission:changed", "Permission Changed",
             "User permissions have been modified");
 
+        // Platform - Control Plane Events (Dog-fooding)
+        // EventType aggregate
+        createEventTypeIfNotExists("platform:control-plane:event-type:created", "Event Type Created",
+            "A new event type has been registered in the platform");
+        createEventTypeIfNotExists("platform:control-plane:event-type:updated", "Event Type Updated",
+            "Event type metadata has been updated");
+        createEventTypeIfNotExists("platform:control-plane:event-type:archived", "Event Type Archived",
+            "Event type has been archived");
+        createEventTypeIfNotExists("platform:control-plane:event-type:deleted", "Event Type Deleted",
+            "Event type has been deleted from the platform");
+        createEventTypeIfNotExists("platform:control-plane:event-type:schema-added", "Event Type Schema Added",
+            "A new schema version has been added to an event type");
+        createEventTypeIfNotExists("platform:control-plane:event-type:schema-deprecated", "Event Type Schema Deprecated",
+            "A schema version has been marked as deprecated");
+        createEventTypeIfNotExists("platform:control-plane:event-type:schema-activated", "Event Type Schema Activated",
+            "A schema version has been activated as current");
+
+        // Application aggregate
+        createEventTypeIfNotExists("platform:control-plane:application:created", "Application Created",
+            "A new application has been registered in the platform");
+        createEventTypeIfNotExists("platform:control-plane:application:updated", "Application Updated",
+            "Application details have been updated");
+        createEventTypeIfNotExists("platform:control-plane:application:activated", "Application Activated",
+            "Application has been activated");
+        createEventTypeIfNotExists("platform:control-plane:application:deactivated", "Application Deactivated",
+            "Application has been deactivated");
+        createEventTypeIfNotExists("platform:control-plane:application:deleted", "Application Deleted",
+            "Application has been deleted from the platform");
+
+        // Role aggregate
+        createEventTypeIfNotExists("platform:control-plane:role:created", "Role Created",
+            "A new role has been created");
+        createEventTypeIfNotExists("platform:control-plane:role:updated", "Role Updated",
+            "Role details or permissions have been updated");
+        createEventTypeIfNotExists("platform:control-plane:role:deleted", "Role Deleted",
+            "Role has been deleted");
+        createEventTypeIfNotExists("platform:control-plane:role:synced", "Roles Synced",
+            "Roles have been bulk synced from an external application");
+
         LOG.info("Event types seeded successfully");
     }
 
@@ -489,10 +526,8 @@ public class DevDataSeeder {
             return;
         }
 
-        getEventTypeService().execute(new CreateEventType(
-            code,
-            name,
-            description
-        ));
+        ExecutionContext context = ExecutionContext.create(getAuditContext().requirePrincipalId());
+        CreateEventTypeCommand command = new CreateEventTypeCommand(code, name, description);
+        getEventTypeOperations().createEventType(command, context);
     }
 }

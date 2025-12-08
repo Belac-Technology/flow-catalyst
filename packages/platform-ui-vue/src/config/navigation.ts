@@ -35,10 +35,20 @@ export const NAVIGATION_CONFIG: NavGroup[] = [
           { label: 'Client Assignments', icon: 'pi pi-building', route: '/users/clients' },
         ],
       },
+    ],
+  },
+  {
+    label: 'Authorization',
+    items: [
       {
         label: 'Roles',
         icon: 'pi pi-shield',
-        route: '/roles',
+        route: '/authorization/roles',
+      },
+      {
+        label: 'Permissions',
+        icon: 'pi pi-lock',
+        route: '/authorization/permissions',
       },
     ],
   },
