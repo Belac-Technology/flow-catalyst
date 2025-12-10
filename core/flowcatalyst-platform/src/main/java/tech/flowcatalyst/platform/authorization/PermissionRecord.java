@@ -4,9 +4,11 @@ import java.util.regex.Pattern;
 
 /**
  * Concrete permission record implementation.
+ *
+ * Format: {application}:{context}:{aggregate}:{action}
  */
 public record PermissionRecord(
-    String subdomain,
+    String application,
     String context,
     String aggregate,
     String action,
@@ -17,7 +19,7 @@ public record PermissionRecord(
 
     public PermissionRecord {
         // Validate all parts
-        validatePart(subdomain, "subdomain");
+        validatePart(application, "application");
         validatePart(context, "context");
         validatePart(aggregate, "aggregate");
         validatePart(action, "action");

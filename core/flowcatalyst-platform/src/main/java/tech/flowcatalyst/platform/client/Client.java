@@ -15,7 +15,7 @@ import java.util.List;
 public class Client extends PanacheMongoEntityBase {
 
     @BsonId
-    public Long id;
+    public String id;
 
     public String name;
 

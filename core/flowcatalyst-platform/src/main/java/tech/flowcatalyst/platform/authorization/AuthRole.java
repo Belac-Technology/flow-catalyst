@@ -22,12 +22,12 @@ import java.util.Set;
 public class AuthRole extends PanacheMongoEntityBase {
 
     @BsonId
-    public Long id;
+    public String id;
 
     /**
      * The application this role belongs to (stored as ID reference).
      */
-    public Long applicationId;
+    public String applicationId;
 
     /**
      * The application code (denormalized for queries).
@@ -79,7 +79,7 @@ public class AuthRole extends PanacheMongoEntityBase {
      * Create a role for an application.
      * The name should already include the application prefix.
      */
-    public AuthRole(Long applicationId, String applicationCode, String name, String description, Set<String> permissions, RoleSource source) {
+    public AuthRole(String applicationId, String applicationCode, String name, String description, Set<String> permissions, RoleSource source) {
         this.applicationId = applicationId;
         this.applicationCode = applicationCode;
         this.name = name;

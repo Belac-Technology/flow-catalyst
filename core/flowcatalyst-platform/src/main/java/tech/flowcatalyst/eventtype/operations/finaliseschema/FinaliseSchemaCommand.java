@@ -11,6 +11,6 @@ package tech.flowcatalyst.eventtype.operations.finaliseschema;
  * @param version     The version to finalise
  */
 public record FinaliseSchemaCommand(
-    Long eventTypeId,
+    String eventTypeId,
     String version
 ) {}

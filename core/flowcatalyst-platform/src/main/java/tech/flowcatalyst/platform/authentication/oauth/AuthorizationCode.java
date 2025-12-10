@@ -30,7 +30,7 @@ public class AuthorizationCode extends PanacheMongoEntityBase {
     /**
      * The authenticated principal.
      */
-    public Long principalId;
+    public String principalId;
 
     /**
      * Redirect URI used in the authorization request.
@@ -66,7 +66,7 @@ public class AuthorizationCode extends PanacheMongoEntityBase {
     /**
      * Client context for the authorization.
      */
-    public Long contextClientId;
+    public String contextClientId;
 
     public Instant createdAt = Instant.now();
 

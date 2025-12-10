@@ -1,7 +1,8 @@
 import { useAuthStore, type User } from '@/stores/auth';
 import router from '@/router';
 
-const API_URL = '/api';
+// Auth endpoints are at /auth/* (not /api/auth/*)
+const AUTH_URL = '/auth';
 
 interface LoginCredentials {
   email: string;
@@ -18,7 +19,8 @@ interface LoginResponse {
 
 export interface DomainCheckResponse {
   authMethod: 'internal' | 'external';
-  idpUrl?: string;
+  loginUrl?: string;
+  idpIssuer?: string;
 }
 
 function mapLoginResponseToUser(response: LoginResponse): User {
@@ -33,7 +35,7 @@ function mapLoginResponseToUser(response: LoginResponse): User {
 }
 
 export async function checkEmailDomain(email: string): Promise<DomainCheckResponse> {
-  const response = await fetch(`${API_URL}/auth/check-domain`, {
+  const response = await fetch(`${AUTH_URL}/check-domain`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email }),
@@ -52,7 +54,7 @@ export async function checkSession(): Promise<boolean> {
   authStore.setLoading(true);
 
   try {
-    const response = await fetch(`${API_URL}/auth/me`, {
+    const response = await fetch(`${AUTH_URL}/me`, {
       credentials: 'include',
     });
 
@@ -76,7 +78,7 @@ export async function login(credentials: LoginCredentials): Promise<void> {
   authStore.setError(null);
 
   try {
-    const response = await fetch(`${API_URL}/auth/login`, {
+    const response = await fetch(`${AUTH_URL}/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(credentials),
@@ -103,7 +105,7 @@ export async function logout(): Promise<void> {
   const authStore = useAuthStore();
 
   try {
-    await fetch(`${API_URL}/auth/logout`, {
+    await fetch(`${AUTH_URL}/logout`, {
       method: 'POST',
       credentials: 'include',
     });
@@ -120,7 +122,7 @@ export async function switchTenant(tenantId: string): Promise<void> {
   const authStore = useAuthStore();
 
   try {
-    const response = await fetch(`${API_URL}/auth/tenant/${tenantId}`, {
+    const response = await fetch(`${AUTH_URL}/tenant/${tenantId}`, {
       method: 'POST',
       credentials: 'include',
     });

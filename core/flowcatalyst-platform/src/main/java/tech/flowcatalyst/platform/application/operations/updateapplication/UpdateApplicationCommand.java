@@ -10,7 +10,7 @@ package tech.flowcatalyst.platform.application.operations.updateapplication;
  * @param iconUrl        New icon URL (null to keep existing)
  */
 public record UpdateApplicationCommand(
-    Long applicationId,
+    String applicationId,
     String name,
     String description,
     String defaultBaseUrl,

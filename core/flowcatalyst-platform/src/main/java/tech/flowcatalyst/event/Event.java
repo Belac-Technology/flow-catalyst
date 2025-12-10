@@ -24,10 +24,10 @@ public class Event extends PanacheMongoEntityBase {
     public static final String CLOUDEVENTS_SPEC_VERSION = "1.0";
 
     /**
-     * TSID - unique identifier for the event
+     * TSID - unique identifier for the event (Crockford Base32 string)
      */
     @BsonId
-    public Long id;
+    public String id;
 
     /**
      * The version that corresponds to the event type spec version
@@ -87,7 +87,7 @@ public class Event extends PanacheMongoEntityBase {
     public Event() {
     }
 
-    public Event(Long id, String specVersion, String type, String source, String subject,
+    public Event(String id, String specVersion, String type, String source, String subject,
                  Instant time, String data, String correlationId, String causationId,
                  String deduplicationId, String messageGroup, List<ContextData> contextData) {
         this.id = id;
@@ -105,7 +105,7 @@ public class Event extends PanacheMongoEntityBase {
     }
 
     // Accessor methods for compatibility with record-style usage
-    public Long id() { return id; }
+    public String id() { return id; }
     public String specVersion() { return specVersion; }
     public String type() { return type; }
     public String source() { return source; }

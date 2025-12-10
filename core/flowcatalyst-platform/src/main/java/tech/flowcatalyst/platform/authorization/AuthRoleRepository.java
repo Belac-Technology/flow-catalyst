@@ -10,13 +10,13 @@ import java.util.Optional;
  * Repository for AuthRole entities.
  */
 @ApplicationScoped
-public class AuthRoleRepository implements PanacheMongoRepositoryBase<AuthRole, Long> {
+public class AuthRoleRepository implements PanacheMongoRepositoryBase<AuthRole, String> {
 
     public Optional<AuthRole> findByName(String name) {
         return find("name", name).firstResultOptional();
     }
 
-    public List<AuthRole> findByApplicationId(Long applicationId) {
+    public List<AuthRole> findByApplicationId(String applicationId) {
         return find("applicationId", applicationId).list();
     }
 
@@ -40,7 +40,7 @@ public class AuthRoleRepository implements PanacheMongoRepositoryBase<AuthRole, 
         return delete("name", name);
     }
 
-    public long deleteByApplicationIdAndSource(Long applicationId, AuthRole.RoleSource source) {
+    public long deleteByApplicationIdAndSource(String applicationId, AuthRole.RoleSource source) {
         return delete("applicationId = ?1 and source = ?2", applicationId, source);
     }
 }

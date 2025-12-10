@@ -22,15 +22,15 @@ import java.time.Instant;
  */
 public record SchemaAdded(
     // Event metadata
-    Long eventId,
+    String eventId,
     Instant time,
     String executionId,
     String correlationId,
     String causationId,
-    Long principalId,
+    String principalId,
 
     // Event-specific payload
-    Long eventTypeId,
+    String eventTypeId,
     String version,
     String mimeType,
     String schema,
@@ -87,7 +87,7 @@ public record SchemaAdded(
     }
 
     public record Data(
-        Long eventTypeId,
+        String eventTypeId,
         String version,
         String mimeType,
         String schema,
@@ -99,13 +99,13 @@ public record SchemaAdded(
     }
 
     public static class Builder {
-        private Long eventId;
+        private String eventId;
         private Instant time;
         private String executionId;
         private String correlationId;
         private String causationId;
-        private Long principalId;
-        private Long eventTypeId;
+        private String principalId;
+        private String eventTypeId;
         private String version;
         private String mimeType;
         private String schema;
@@ -121,7 +121,7 @@ public record SchemaAdded(
             return this;
         }
 
-        public Builder eventTypeId(Long eventTypeId) {
+        public Builder eventTypeId(String eventTypeId) {
             this.eventTypeId = eventTypeId;
             return this;
         }

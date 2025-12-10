@@ -61,7 +61,7 @@ class MultiClientAccessIntegrationTest {
         );
 
         // Act: Get accessible clients
-        Set<Long> accessible = clientService.getAccessibleClients(admin.id);
+        Set<String> accessible = clientService.getAccessibleClients(admin.id);
 
         // Assert: Can access all active clients
         assertThat(accessible).containsExactlyInAnyOrder(

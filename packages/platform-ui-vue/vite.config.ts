@@ -4,6 +4,7 @@ import { fileURLToPath, URL } from 'node:url';
 
 export default defineConfig({
   plugins: [vue()],
+  appType: 'spa',
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
@@ -12,20 +13,37 @@ export default defineConfig({
   server: {
     port: 4200,
     proxy: {
-      '/api/auth': {
+      // API calls - forward to backend as-is (backend paths include /api)
+      '/api': {
         target: 'http://localhost:8080',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api\/auth/, '/auth'),
       },
       '/bff': {
         target: 'http://localhost:8080',
         changeOrigin: true,
       },
-      '/api': {
+      // Direct auth endpoints (for redirects from OIDC callback etc.)
+      '/auth/login': {
         target: 'http://localhost:8080',
         changeOrigin: true,
       },
-      '/auth': {
+      '/auth/logout': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+      },
+      '/auth/me': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+      },
+      '/auth/check-domain': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+      },
+      '/auth/oidc': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+      },
+      '/auth/tenant': {
         target: 'http://localhost:8080',
         changeOrigin: true,
       },

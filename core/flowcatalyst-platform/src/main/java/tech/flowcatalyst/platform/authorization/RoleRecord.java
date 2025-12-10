@@ -7,9 +7,11 @@ import java.util.regex.Pattern;
 
 /**
  * Concrete role record implementation.
+ *
+ * Format: {application}:{role-name}
  */
 public record RoleRecord(
-    String subdomain,
+    String application,
     String roleName,
     Set<PermissionRecord> permissions,
     String description
@@ -19,7 +21,7 @@ public record RoleRecord(
 
     public RoleRecord {
         // Validate parts
-        validatePart(subdomain, "subdomain");
+        validatePart(application, "application");
         validatePart(roleName, "roleName");
 
         if (description == null || description.isBlank()) {

@@ -82,7 +82,7 @@ public class ApplicationRoleResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        Long principalId = extractPrincipalId(sessionToken, authHeader);
+        String principalId = extractPrincipalId(sessionToken, authHeader);
         if (principalId == null) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("UNAUTHORIZED", "Not authenticated"))
@@ -144,7 +144,7 @@ public class ApplicationRoleResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        Long principalId = extractPrincipalId(sessionToken, authHeader);
+        String principalId = extractPrincipalId(sessionToken, authHeader);
         if (principalId == null) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("UNAUTHORIZED", "Not authenticated"))
@@ -214,7 +214,7 @@ public class ApplicationRoleResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        Long principalId = extractPrincipalId(sessionToken, authHeader);
+        String principalId = extractPrincipalId(sessionToken, authHeader);
         if (principalId == null) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("UNAUTHORIZED", "Not authenticated"))
@@ -278,7 +278,7 @@ public class ApplicationRoleResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        Long principalId = extractPrincipalId(sessionToken, authHeader);
+        String principalId = extractPrincipalId(sessionToken, authHeader);
         if (principalId == null) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("UNAUTHORIZED", "Not authenticated"))
@@ -318,7 +318,7 @@ public class ApplicationRoleResource {
 
     // ==================== Helper Methods ====================
 
-    private Long extractPrincipalId(String sessionToken, String authHeader) {
+    private String extractPrincipalId(String sessionToken, String authHeader) {
         String token = sessionToken;
         if (token == null && authHeader != null && authHeader.startsWith("Bearer ")) {
             token = authHeader.substring("Bearer ".length());

@@ -42,7 +42,7 @@ public record CreateDispatchJobRequest(
 
     @JsonProperty("credentialsId")
     @NotNull(message = "credentialsId is required")
-    Long credentialsId,
+    String credentialsId,
 
     @JsonProperty("maxRetries")
     Integer maxRetries,

@@ -77,7 +77,7 @@ public class OAuthClientAdminResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        Long principalId = extractPrincipalId(sessionToken, authHeader);
+        String principalId = extractPrincipalId(sessionToken, authHeader);
         if (principalId == null) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
@@ -114,11 +114,11 @@ public class OAuthClientAdminResource {
         @APIResponse(responseCode = "404", description = "Client not found")
     })
     public Response getClient(
-            @PathParam("id") Long id,
+            @PathParam("id") String id,
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        Long principalId = extractPrincipalId(sessionToken, authHeader);
+        String principalId = extractPrincipalId(sessionToken, authHeader);
         if (principalId == null) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
@@ -147,7 +147,7 @@ public class OAuthClientAdminResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        Long principalId = extractPrincipalId(sessionToken, authHeader);
+        String principalId = extractPrincipalId(sessionToken, authHeader);
         if (principalId == null) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
@@ -181,7 +181,7 @@ public class OAuthClientAdminResource {
             @HeaderParam("Authorization") String authHeader,
             @Context UriInfo uriInfo) {
 
-        Long adminPrincipalId = extractPrincipalId(sessionToken, authHeader);
+        String adminPrincipalId = extractPrincipalId(sessionToken, authHeader);
         if (adminPrincipalId == null) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
@@ -245,16 +245,16 @@ public class OAuthClientAdminResource {
         @APIResponse(responseCode = "404", description = "Client not found")
     })
     public Response updateClient(
-            @PathParam("id") Long id,
+            @PathParam("id") String id,
             @Valid UpdateClientRequest request,
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        Long adminPrincipalId = extractPrincipalId(sessionToken, authHeader);
+        String adminPrincipalId = extractPrincipalId(sessionToken, authHeader);
         if (adminPrincipalId == null) {
             return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
+                    .entity(new ErrorResponse("Not authenticated"))
+                    .build();
         }
 
         OAuthClient client = clientRepo.findByIdOptional(id).orElse(null);
@@ -308,15 +308,15 @@ public class OAuthClientAdminResource {
         @APIResponse(responseCode = "404", description = "Client not found")
     })
     public Response rotateSecret(
-            @PathParam("id") Long id,
+            @PathParam("id") String id,
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        Long adminPrincipalId = extractPrincipalId(sessionToken, authHeader);
+        String adminPrincipalId = extractPrincipalId(sessionToken, authHeader);
         if (adminPrincipalId == null) {
             return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
+                    .entity(new ErrorResponse("Not authenticated"))
+                    .build();
         }
 
         OAuthClient client = clientRepo.findByIdOptional(id).orElse(null);
@@ -353,15 +353,15 @@ public class OAuthClientAdminResource {
         @APIResponse(responseCode = "404", description = "Client not found")
     })
     public Response activateClient(
-            @PathParam("id") Long id,
+            @PathParam("id") String id,
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        Long adminPrincipalId = extractPrincipalId(sessionToken, authHeader);
+        String adminPrincipalId = extractPrincipalId(sessionToken, authHeader);
         if (adminPrincipalId == null) {
             return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
+                    .entity(new ErrorResponse("Not authenticated"))
+                    .build();
         }
 
         OAuthClient client = clientRepo.findByIdOptional(id).orElse(null);
@@ -389,11 +389,11 @@ public class OAuthClientAdminResource {
         @APIResponse(responseCode = "404", description = "Client not found")
     })
     public Response deactivateClient(
-            @PathParam("id") Long id,
+            @PathParam("id") String id,
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        Long adminPrincipalId = extractPrincipalId(sessionToken, authHeader);
+        String adminPrincipalId = extractPrincipalId(sessionToken, authHeader);
         if (adminPrincipalId == null) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
@@ -416,7 +416,7 @@ public class OAuthClientAdminResource {
 
     // ==================== Helper Methods ====================
 
-    private Long extractPrincipalId(String sessionToken, String authHeader) {
+    private String extractPrincipalId(String sessionToken, String authHeader) {
         String token = sessionToken;
         if (token == null && authHeader != null && authHeader.startsWith("Bearer ")) {
             token = authHeader.substring("Bearer ".length());
@@ -429,7 +429,7 @@ public class OAuthClientAdminResource {
 
     private String generateClientId() {
         // Format: fc_{tsid} for easy identification
-        return "fc_" + Long.toString(TsidGenerator.generate(), 36);
+        return "fc_" + TsidGenerator.generate();
     }
 
     private String generateClientSecret() {
@@ -469,7 +469,7 @@ public class OAuthClientAdminResource {
     // ==================== DTOs ====================
 
     public record ClientDto(
-        Long id,
+        String id,
         String clientId,
         String clientName,
         ClientType clientType,
@@ -477,7 +477,7 @@ public class OAuthClientAdminResource {
         Set<String> grantTypes,
         Set<String> defaultScopes,
         boolean pkceRequired,
-        Long ownerClientId,
+        String ownerClientId,
         boolean active,
         Instant createdAt,
         Instant updatedAt
@@ -508,7 +508,7 @@ public class OAuthClientAdminResource {
 
         boolean pkceRequired,
 
-        Long ownerClientId
+        String ownerClientId
     ) {}
 
     public record UpdateClientRequest(

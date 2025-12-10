@@ -32,11 +32,12 @@ public class UserService {
      * @param password Plain text password (will be hashed)
      * @param name Display name
      * @param clientId Home client ID (nullable for anchor domain users)
+     * @param scope User scope (ANCHOR, PARTNER, or CLIENT)
      * @return Created principal
      * @throws IllegalArgumentException if password doesn't meet complexity requirements
      * @throws BadRequestException if email already exists
      */
-    public Principal createInternalUser(String email, String password, String name, Long clientId) {
+    public Principal createInternalUser(String email, String password, String name, String clientId, UserScope scope) {
         // Validate email
         if (email == null || email.isBlank()) {
             throw new IllegalArgumentException("Email cannot be null or empty");
@@ -53,10 +54,14 @@ public class UserService {
         // Extract domain from email
         String emailDomain = extractDomain(email);
 
+        // Determine scope if not provided
+        UserScope effectiveScope = scope != null ? scope : deriveScope(clientId);
+
         // Create principal
         Principal principal = new Principal();
         principal.id = TsidGenerator.generate();
         principal.type = PrincipalType.USER;
+        principal.scope = effectiveScope;
         principal.clientId = clientId;
         principal.name = name;
         principal.active = true;
@@ -75,6 +80,17 @@ public class UserService {
     }
 
     /**
+     * Create a new user with INTERNAL authentication (password-based).
+     * Derives scope from clientId (ANCHOR if null, CLIENT if set).
+     *
+     * @deprecated Use {@link #createInternalUser(String, String, String, Long, UserScope)} instead
+     */
+    @Deprecated
+    public Principal createInternalUser(String email, String password, String name, String clientId) {
+        return createInternalUser(email, password, name, clientId, null);
+    }
+
+    /**
      * Create or update OIDC user (during OIDC login flow).
      * This is called by OidcSyncService during OIDC authentication.
      *
@@ -82,9 +98,10 @@ public class UserService {
      * @param name Display name from OIDC token
      * @param externalIdpId Subject from OIDC token (IDP's user ID)
      * @param clientId Home client ID (nullable for anchor domain users)
+     * @param scope User scope (ANCHOR, PARTNER, or CLIENT)
      * @return Created or updated principal
      */
-    public Principal createOrUpdateOidcUser(String email, String name, String externalIdpId, Long clientId) {
+    public Principal createOrUpdateOidcUser(String email, String name, String externalIdpId, String clientId, UserScope scope) {
         String emailDomain = extractDomain(email);
 
         // Check if user already exists
@@ -95,14 +112,22 @@ public class UserService {
             principal.name = name;
             principal.userIdentity.externalIdpId = externalIdpId;
             principal.userIdentity.lastLoginAt = Instant.now();
+            // Update scope if it was previously unset
+            if (principal.scope == null && scope != null) {
+                principal.scope = scope;
+            }
             principalRepo.update(principal);
             return principal;
         }
+
+        // Determine scope if not provided
+        UserScope effectiveScope = scope != null ? scope : deriveScope(clientId);
 
         // Create new OIDC user
         Principal principal = new Principal();
         principal.id = TsidGenerator.generate();
         principal.type = PrincipalType.USER;
+        principal.scope = effectiveScope;
         principal.clientId = clientId;
         principal.name = name;
         principal.active = true;
@@ -128,7 +153,7 @@ public class UserService {
      * @return Updated principal
      * @throws NotFoundException if user not found
      */
-    public Principal updateUser(Long principalId, String name) {
+    public Principal updateUser(String principalId, String name) {
         Principal principal = principalRepo.findByIdOptional(principalId)
             .orElseThrow(() -> new NotFoundException("User not found"));
 
@@ -148,7 +173,7 @@ public class UserService {
      * @param principalId Principal ID
      * @throws NotFoundException if user not found
      */
-    public void deactivateUser(Long principalId) {
+    public void deactivateUser(String principalId) {
         Principal principal = principalRepo.findByIdOptional(principalId)
             .orElseThrow(() -> new NotFoundException("User not found"));
 
@@ -166,7 +191,7 @@ public class UserService {
      * @param principalId Principal ID
      * @throws NotFoundException if user not found
      */
-    public void activateUser(Long principalId) {
+    public void activateUser(String principalId) {
         Principal principal = principalRepo.findByIdOptional(principalId)
             .orElseThrow(() -> new NotFoundException("User not found"));
 
@@ -187,7 +212,7 @@ public class UserService {
      * @throws NotFoundException if user not found
      * @throws IllegalArgumentException if user is not INTERNAL auth
      */
-    public void resetPassword(Long principalId, String newPassword) {
+    public void resetPassword(String principalId, String newPassword) {
         Principal principal = principalRepo.findByIdOptional(principalId)
             .orElseThrow(() -> new NotFoundException("User not found"));
 
@@ -215,7 +240,7 @@ public class UserService {
      * @throws NotFoundException if user not found
      * @throws BadRequestException if old password is incorrect
      */
-    public void changePassword(Long principalId, String oldPassword, String newPassword) {
+    public void changePassword(String principalId, String oldPassword, String newPassword) {
         Principal principal = principalRepo.findByIdOptional(principalId)
             .orElseThrow(() -> new NotFoundException("User not found"));
 
@@ -254,7 +279,7 @@ public class UserService {
      * @param principalId Principal ID
      * @return Optional containing the principal if found
      */
-    public Optional<Principal> findById(Long principalId) {
+    public Optional<Principal> findById(String principalId) {
         return principalRepo.findByIdOptional(principalId);
     }
 
@@ -264,7 +289,7 @@ public class UserService {
      * @param clientId Client ID
      * @return List of principals
      */
-    public List<Principal> findByClient(Long clientId) {
+    public List<Principal> findByClient(String clientId) {
         return principalRepo.find("clientId = ?1 AND type = ?2", clientId, PrincipalType.USER).list();
     }
 
@@ -274,7 +299,7 @@ public class UserService {
      * @param clientId Client ID
      * @return List of active principals
      */
-    public List<Principal> findActiveByClient(Long clientId) {
+    public List<Principal> findActiveByClient(String clientId) {
         return principalRepo.find("clientId = ?1 AND type = ?2 AND active = true",
             clientId, PrincipalType.USER).list();
     }
@@ -285,7 +310,7 @@ public class UserService {
      *
      * @param principalId Principal ID
      */
-    public void updateLastLogin(Long principalId) {
+    public void updateLastLogin(String principalId) {
         Principal principal = principalRepo.findByIdOptional(principalId).orElse(null);
         if (principal != null && principal.userIdentity != null) {
             principal.userIdentity.lastLoginAt = Instant.now();
@@ -305,5 +330,20 @@ public class UserService {
             throw new IllegalArgumentException("Invalid email format");
         }
         return email.substring(atIndex + 1).toLowerCase();
+    }
+
+    /**
+     * Derive user scope from clientId.
+     * - If clientId is null, assume ANCHOR (platform user)
+     * - If clientId is set, assume CLIENT (bound to specific client)
+     *
+     * Note: PARTNER scope must be explicitly set as it requires
+     * explicit client access grants.
+     *
+     * @param clientId The client ID
+     * @return Derived user scope
+     */
+    private UserScope deriveScope(String clientId) {
+        return clientId == null ? UserScope.ANCHOR : UserScope.CLIENT;
     }
 }

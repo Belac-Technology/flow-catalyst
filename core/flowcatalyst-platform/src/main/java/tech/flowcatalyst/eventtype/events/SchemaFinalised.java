@@ -22,15 +22,15 @@ import java.time.Instant;
  */
 public record SchemaFinalised(
     // Event metadata
-    Long eventId,
+    String eventId,
     Instant time,
     String executionId,
     String correlationId,
     String causationId,
-    Long principalId,
+    String principalId,
 
     // Event-specific payload
-    Long eventTypeId,
+    String eventTypeId,
     String version,
     String deprecatedVersion  // The version that was deprecated (if any)
 ) implements DomainEvent {
@@ -85,7 +85,7 @@ public record SchemaFinalised(
     }
 
     public record Data(
-        Long eventTypeId,
+        String eventTypeId,
         String version,
         String deprecatedVersion
     ) {}
@@ -95,13 +95,13 @@ public record SchemaFinalised(
     }
 
     public static class Builder {
-        private Long eventId;
+        private String eventId;
         private Instant time;
         private String executionId;
         private String correlationId;
         private String causationId;
-        private Long principalId;
-        private Long eventTypeId;
+        private String principalId;
+        private String eventTypeId;
         private String version;
         private String deprecatedVersion;
 
@@ -115,7 +115,7 @@ public record SchemaFinalised(
             return this;
         }
 
-        public Builder eventTypeId(Long eventTypeId) {
+        public Builder eventTypeId(String eventTypeId) {
             this.eventTypeId = eventTypeId;
             return this;
         }

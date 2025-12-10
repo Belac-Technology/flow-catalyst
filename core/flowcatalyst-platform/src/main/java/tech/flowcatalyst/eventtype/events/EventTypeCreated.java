@@ -21,15 +21,15 @@ import java.time.Instant;
  */
 public record EventTypeCreated(
     // Event metadata
-    Long eventId,
+    String eventId,
     Instant time,
     String executionId,
     String correlationId,
     String causationId,
-    Long principalId,
+    String principalId,
 
     // Event-specific payload (what happened)
-    Long eventTypeId,
+    String eventTypeId,
     String code,
     String name,
     String description
@@ -91,7 +91,7 @@ public record EventTypeCreated(
      * It represents what happened: an EventType was created with these attributes.
      */
     public record Data(
-        Long eventTypeId,
+        String eventTypeId,
         String code,
         String name,
         String description
@@ -108,13 +108,13 @@ public record EventTypeCreated(
      * Builder for {@link EventTypeCreated}.
      */
     public static class Builder {
-        private Long eventId;
+        private String eventId;
         private Instant time;
         private String executionId;
         private String correlationId;
         private String causationId;
-        private Long principalId;
-        private Long eventTypeId;
+        private String principalId;
+        private String eventTypeId;
         private String code;
         private String name;
         private String description;
@@ -132,7 +132,7 @@ public record EventTypeCreated(
             return this;
         }
 
-        public Builder eventTypeId(Long eventTypeId) {
+        public Builder eventTypeId(String eventTypeId) {
             this.eventTypeId = eventTypeId;
             return this;
         }

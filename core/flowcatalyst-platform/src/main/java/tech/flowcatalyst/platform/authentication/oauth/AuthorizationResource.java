@@ -175,7 +175,7 @@ public class AuthorizationResource {
         }
 
         // Validate session and get principal
-        Long principalId = jwtKeyService.validateAndGetPrincipalId(sessionToken);
+        String principalId = jwtKeyService.validateAndGetPrincipalId(sessionToken);
         if (principalId == null) {
             return redirectToLogin(responseType, clientId, redirectUri, scope, state,
                 codeChallenge, codeChallengeMethod, nonce);
@@ -366,13 +366,31 @@ public class AuthorizationResource {
 
         Principal principal = principalOpt.get();
         Set<String> roles = loadRoles(principal.id);
+        List<String> clients = determineAccessibleClients(principal, roles);
+
+        String email = principal.userIdentity != null ? principal.userIdentity.email : null;
+        String name = principal.name;
 
         // Issue access token
         String accessToken = jwtKeyService.issueSessionToken(
             principal.id,
-            principal.userIdentity != null ? principal.userIdentity.email : null,
-            roles
+            email,
+            roles,
+            clients
         );
+
+        // Issue ID token if openid scope was requested
+        String idToken = null;
+        if (authCode.scope != null && authCode.scope.contains("openid")) {
+            idToken = jwtKeyService.issueIdToken(
+                principal.id,
+                email,
+                name,
+                clientId,
+                authCode.nonce,
+                clients
+            );
+        }
 
         // Generate and store refresh token
         String refreshTokenValue = generateRefreshToken();
@@ -387,7 +405,8 @@ public class AuthorizationResource {
             "Bearer",
             authConfig.jwt().sessionTokenExpiry().toSeconds(),
             refreshTokenValue,
-            authCode.scope
+            authCode.scope,
+            idToken
         )).build();
     }
 
@@ -424,13 +443,31 @@ public class AuthorizationResource {
 
         Principal principal = principalOpt.get();
         Set<String> roles = loadRoles(principal.id);
+        List<String> clients = determineAccessibleClients(principal, roles);
+
+        String email = principal.userIdentity != null ? principal.userIdentity.email : null;
+        String name = principal.name;
 
         // Issue new access token
         String accessToken = jwtKeyService.issueSessionToken(
             principal.id,
-            principal.userIdentity != null ? principal.userIdentity.email : null,
-            roles
+            email,
+            roles,
+            clients
         );
+
+        // Issue ID token if openid scope was in original request
+        String idToken = null;
+        if (token.scope != null && token.scope.contains("openid")) {
+            idToken = jwtKeyService.issueIdToken(
+                principal.id,
+                email,
+                name,
+                token.clientId,
+                null,  // No nonce on refresh
+                clients
+            );
+        }
 
         // Rotate refresh token (issue new one, revoke old one)
         String newRefreshToken = generateRefreshToken();
@@ -450,7 +487,8 @@ public class AuthorizationResource {
             "Bearer",
             authConfig.jwt().sessionTokenExpiry().toSeconds(),
             newRefreshToken,
-            token.scope
+            token.scope,
+            idToken
         )).build();
     }
 
@@ -523,7 +561,8 @@ public class AuthorizationResource {
             "Bearer",
             jwtKeyService.getAccessTokenExpiry().toSeconds(),
             null, // No refresh token for client_credentials
-            null
+            null,
+            null  // No ID token for client_credentials
         )).build();
     }
 
@@ -566,9 +605,10 @@ public class AuthorizationResource {
 
         // Load roles
         Set<String> roles = loadRoles(principal.id);
+        List<String> clients = determineAccessibleClients(principal, roles);
 
         // Issue session token
-        String token = jwtKeyService.issueSessionToken(principal.id, username, roles);
+        String token = jwtKeyService.issueSessionToken(principal.id, username, roles, clients);
 
         // Update last login
         principal.userIdentity.lastLoginAt = Instant.now();
@@ -581,7 +621,8 @@ public class AuthorizationResource {
             "Bearer",
             jwtKeyService.getSessionTokenExpiry().toSeconds(),
             null,
-            null
+            null,
+            null  // No ID token for password grant
         )).build();
     }
 
@@ -615,8 +656,8 @@ public class AuthorizationResource {
         }
     }
 
-    private void storeRefreshToken(String token, Long principalId, String clientId,
-            Long contextClientId, String scope, String tokenFamily) {
+    private void storeRefreshToken(String token, String principalId, String clientId,
+            String contextClientId, String scope, String tokenFamily) {
         RefreshToken rt = new RefreshToken();
         rt.tokenHash = hashToken(token);
         rt.principalId = principalId;
@@ -628,7 +669,7 @@ public class AuthorizationResource {
         refreshTokenRepo.persist(rt);
     }
 
-    private Set<String> loadRoles(Long principalId) {
+    private Set<String> loadRoles(String principalId) {
         return roleRepo.findByPrincipalId(principalId).stream()
             .map(pr -> pr.roleName)
             .collect(Collectors.toSet());
@@ -696,6 +737,43 @@ public class AuthorizationResource {
         return URLEncoder.encode(value, StandardCharsets.UTF_8);
     }
 
+    /**
+     * Determine which clients the user can access based on their scope.
+     *
+     * @return List of client IDs as strings, or ["*"] for anchor users
+     */
+    private List<String> determineAccessibleClients(Principal principal, Set<String> roles) {
+        // Check explicit scope first
+        if (principal.scope != null) {
+            switch (principal.scope) {
+                case ANCHOR:
+                    return List.of("*");
+                case CLIENT:
+                    if (principal.clientId != null) {
+                        return List.of(String.valueOf(principal.clientId));
+                    }
+                    return List.of();
+                case PARTNER:
+                    if (principal.clientId != null) {
+                        return List.of(String.valueOf(principal.clientId));
+                    }
+                    return List.of();
+            }
+        }
+
+        // Fallback: check roles for platform admins
+        if (roles.stream().anyMatch(r -> r.contains("platform:admin") || r.contains("super-admin"))) {
+            return List.of("*");
+        }
+
+        // User is bound to a specific client
+        if (principal.clientId != null) {
+            return List.of(String.valueOf(principal.clientId));
+        }
+
+        return List.of();
+    }
+
     // ==================== DTOs ====================
 
     public record TokenResponse(
@@ -703,6 +781,7 @@ public class AuthorizationResource {
         String token_type,
         long expires_in,
         String refresh_token,
-        String scope
+        String scope,
+        String id_token
     ) {}
 }

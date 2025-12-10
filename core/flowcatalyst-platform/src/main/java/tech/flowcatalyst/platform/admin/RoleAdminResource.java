@@ -89,7 +89,7 @@ public class RoleAdminResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        Long principalId = extractPrincipalId(sessionToken, authHeader);
+        String principalId = extractPrincipalId(sessionToken, authHeader);
         if (principalId == null) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("UNAUTHORIZED", "Not authenticated"))
@@ -141,7 +141,7 @@ public class RoleAdminResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        Long principalId = extractPrincipalId(sessionToken, authHeader);
+        String principalId = extractPrincipalId(sessionToken, authHeader);
         if (principalId == null) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("UNAUTHORIZED", "Not authenticated"))
@@ -174,7 +174,7 @@ public class RoleAdminResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        Long principalId = extractPrincipalId(sessionToken, authHeader);
+        String principalId = extractPrincipalId(sessionToken, authHeader);
         if (principalId == null) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("UNAUTHORIZED", "Not authenticated"))
@@ -246,7 +246,7 @@ public class RoleAdminResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        Long principalId = extractPrincipalId(sessionToken, authHeader);
+        String principalId = extractPrincipalId(sessionToken, authHeader);
         if (principalId == null) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("UNAUTHORIZED", "Not authenticated"))
@@ -293,7 +293,7 @@ public class RoleAdminResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        Long principalId = extractPrincipalId(sessionToken, authHeader);
+        String principalId = extractPrincipalId(sessionToken, authHeader);
         if (principalId == null) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("UNAUTHORIZED", "Not authenticated"))
@@ -333,7 +333,7 @@ public class RoleAdminResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        Long principalId = extractPrincipalId(sessionToken, authHeader);
+        String principalId = extractPrincipalId(sessionToken, authHeader);
         if (principalId == null) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("UNAUTHORIZED", "Not authenticated"))
@@ -365,7 +365,7 @@ public class RoleAdminResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        Long principalId = extractPrincipalId(sessionToken, authHeader);
+        String principalId = extractPrincipalId(sessionToken, authHeader);
         if (principalId == null) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("UNAUTHORIZED", "Not authenticated"))
@@ -381,7 +381,7 @@ public class RoleAdminResource {
 
     // ==================== Helper Methods ====================
 
-    private Long extractPrincipalId(String sessionToken, String authHeader) {
+    private String extractPrincipalId(String sessionToken, String authHeader) {
         String token = sessionToken;
         if (token == null && authHeader != null && authHeader.startsWith("Bearer ")) {
             token = authHeader.substring("Bearer ".length());
@@ -423,7 +423,7 @@ public class RoleAdminResource {
     private PermissionDto toPermissionDto(PermissionDefinition perm) {
         return new PermissionDto(
             perm.toPermissionString(),
-            perm.subdomain(),
+            perm.application(),
             perm.context(),
             perm.aggregate(),
             perm.action(),
@@ -469,7 +469,7 @@ public class RoleAdminResource {
 
     public record PermissionDto(
         String permission,
-        String subdomain,
+        String application,
         String context,
         String aggregate,
         String action,

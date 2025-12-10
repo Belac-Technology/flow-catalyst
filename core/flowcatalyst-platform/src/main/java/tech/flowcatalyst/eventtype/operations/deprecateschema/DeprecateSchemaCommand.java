@@ -11,6 +11,6 @@ package tech.flowcatalyst.eventtype.operations.deprecateschema;
  * @param version     The version to deprecate
  */
 public record DeprecateSchemaCommand(
-    Long eventTypeId,
+    String eventTypeId,
     String version
 ) {}

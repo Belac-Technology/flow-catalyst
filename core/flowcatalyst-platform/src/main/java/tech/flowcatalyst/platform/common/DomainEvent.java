@@ -26,9 +26,9 @@ import java.time.Instant;
 public interface DomainEvent {
 
     /**
-     * Unique identifier for this event (TSID).
+     * Unique identifier for this event (TSID Crockford Base32 string).
      */
-    Long eventId();
+    String eventId();
 
     /**
      * Event type code following the format: {app}:{domain}:{aggregate}:{action}
@@ -81,7 +81,7 @@ public interface DomainEvent {
     /**
      * Principal who initiated the action that produced this event.
      */
-    Long principalId();
+    String principalId();
 
     /**
      * Message group for ordering guarantees.

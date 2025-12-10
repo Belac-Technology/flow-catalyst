@@ -179,7 +179,7 @@ public class KeycloakSyncAdapter implements IdpSyncAdapter {
         // Store permissions as role attributes (Keycloak doesn't have first-class permissions)
         Map<String, List<String>> attributes = new HashMap<>();
         attributes.put("permissions", new ArrayList<>(role.permissionStrings()));
-        attributes.put("subdomain", List.of(role.subdomain()));
+        attributes.put("application", List.of(role.application()));
         representation.put("attributes", attributes);
 
         return representation;

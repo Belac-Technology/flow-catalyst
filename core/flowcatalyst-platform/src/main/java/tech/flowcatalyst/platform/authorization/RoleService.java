@@ -4,8 +4,11 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.NotFoundException;
+import tech.flowcatalyst.platform.authorization.platform.PlatformSuperAdminRole;
+import tech.flowcatalyst.platform.client.ClientAccessService;
 import tech.flowcatalyst.platform.principal.Principal;
 import tech.flowcatalyst.platform.principal.PrincipalRepository;
+import tech.flowcatalyst.platform.principal.PrincipalType;
 
 import java.util.List;
 import java.util.Set;
@@ -38,6 +41,9 @@ public class RoleService {
     @Inject
     AuthRoleRepository authRoleRepo;
 
+    @Inject
+    ClientAccessService clientAccessService;
+
     /**
      * Assign a role to a principal.
      *
@@ -52,7 +58,7 @@ public class RoleService {
      * @throws NotFoundException if principal not found
      * @throws BadRequestException if assignment already exists or role not defined
      */
-    public PrincipalRole assignRole(Long principalId, String roleName, String assignmentSource) {
+    public PrincipalRole assignRole(String principalId, String roleName, String assignmentSource) {
         // Find principal
         Principal principal = principalRepo.findByIdOptional(principalId)
             .orElseThrow(() -> new NotFoundException("Principal not found: " + principalId));
@@ -61,6 +67,18 @@ public class RoleService {
         if (!isValidRole(roleName)) {
             throw new BadRequestException("Role not defined: " + roleName + ". " +
                 "Role must exist in auth_roles table or be defined in code.");
+        }
+
+        // SECURITY: Super Admin role can only be assigned to anchor domain users
+        if (isSuperAdminRole(roleName)) {
+            if (principal.type != PrincipalType.USER) {
+                throw new BadRequestException(
+                    "Super Admin role can only be assigned to users, not service accounts");
+            }
+            if (!clientAccessService.isAnchorDomainUser(principal)) {
+                throw new BadRequestException(
+                    "Super Admin role can only be assigned to users from anchor domains");
+            }
         }
 
         // Check if assignment already exists
@@ -101,13 +119,34 @@ public class RoleService {
     }
 
     /**
+     * Check if a role is the Super Admin role.
+     * Super Admin has special restrictions - can only be assigned to anchor domain users.
+     *
+     * @param roleName Role name to check
+     * @return true if this is the Super Admin role
+     */
+    public boolean isSuperAdminRole(String roleName) {
+        return PlatformSuperAdminRole.ROLE_NAME.equals(roleName);
+    }
+
+    /**
+     * Check if a principal has the Super Admin role.
+     *
+     * @param principalId Principal ID
+     * @return true if principal has Super Admin role
+     */
+    public boolean isSuperAdmin(String principalId) {
+        return hasRole(principalId, PlatformSuperAdminRole.ROLE_NAME);
+    }
+
+    /**
      * Remove a role from a principal.
      *
      * @param principalId Principal ID
      * @param roleName Role name string (e.g., "platform:tenant-admin")
      * @throws NotFoundException if assignment not found
      */
-    public void removeRole(Long principalId, String roleName) {
+    public void removeRole(String principalId, String roleName) {
         Principal principal = principalRepo.findByIdOptional(principalId)
             .orElseThrow(() -> new NotFoundException("Principal not found: " + principalId));
 
@@ -127,7 +166,7 @@ public class RoleService {
      * @param assignmentSource Assignment source to remove (e.g., "IDP_SYNC")
      * @return Number of roles removed
      */
-    public long removeRolesBySource(Long principalId, String assignmentSource) {
+    public long removeRolesBySource(String principalId, String assignmentSource) {
         Principal principal = principalRepo.findByIdOptional(principalId).orElse(null);
         if (principal == null) {
             return 0;
@@ -150,7 +189,7 @@ public class RoleService {
      * @param principalId Principal ID
      * @return Set of role name strings (e.g., "platform:tenant-admin")
      */
-    public Set<String> findRoleNamesByPrincipal(Long principalId) {
+    public Set<String> findRoleNamesByPrincipal(String principalId) {
         return principalRepo.findByIdOptional(principalId)
             .map(Principal::getRoleNames)
             .orElse(Set.of());
@@ -163,7 +202,7 @@ public class RoleService {
      * @param principalId Principal ID
      * @return Set of role definitions
      */
-    public Set<RoleDefinition> findRoleDefinitionsByPrincipal(Long principalId) {
+    public Set<RoleDefinition> findRoleDefinitionsByPrincipal(String principalId) {
         return findRoleNamesByPrincipal(principalId).stream()
             .map(roleName -> permissionRegistry.getRole(roleName))
             .filter(opt -> opt.isPresent())
@@ -178,7 +217,7 @@ public class RoleService {
      * @param principalId Principal ID
      * @return List of principal role assignments
      */
-    public List<PrincipalRole> findAssignmentsByPrincipal(Long principalId) {
+    public List<PrincipalRole> findAssignmentsByPrincipal(String principalId) {
         return principalRepo.findByIdOptional(principalId)
             .map(principal -> principal.roles.stream()
                 .map(r -> {
@@ -200,7 +239,7 @@ public class RoleService {
      * @param roleName Role name string
      * @return true if principal has the role
      */
-    public boolean hasRole(Long principalId, String roleName) {
+    public boolean hasRole(String principalId, String roleName) {
         return principalRepo.findByIdOptional(principalId)
             .map(p -> p.hasRole(roleName))
             .orElse(false);
@@ -212,7 +251,7 @@ public class RoleService {
      * @param principalId Principal ID
      * @return Set of permission strings
      */
-    public Set<String> getPermissionsForPrincipal(Long principalId) {
+    public Set<String> getPermissionsForPrincipal(String principalId) {
         Set<String> roleNames = findRoleNamesByPrincipal(principalId);
         return permissionRegistry.getPermissionsForRoles(roleNames);
     }

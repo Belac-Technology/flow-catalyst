@@ -47,11 +47,11 @@ public class OidcSyncService {
      * @param email User email from OIDC token
      * @param name User display name from OIDC token
      * @param externalIdpId Subject from OIDC token (IDP's user ID)
-     * @param tenantId Home tenant ID (nullable for anchor domain users)
+     * @param clientId Home tenant ID (nullable for anchor domain users)
      * @return Synchronized principal
      */
-    public Principal syncOidcUser(String email, String name, String externalIdpId, Long tenantId) {
-        Principal principal = userService.createOrUpdateOidcUser(email, name, externalIdpId, tenantId);
+    public Principal syncOidcUser(String email, String name, String externalIdpId, String clientId) {
+        Principal principal = userService.createOrUpdateOidcUser(email, name, externalIdpId, clientId);
         userService.updateLastLogin(principal.id);
         return principal;
     }
@@ -142,14 +142,14 @@ public class OidcSyncService {
      * @param email User email from OIDC token
      * @param name User display name from OIDC token
      * @param externalIdpId Subject from OIDC token
-     * @param tenantId Home tenant ID (nullable for anchor users)
+     * @param clientId Home tenant ID (nullable for anchor users)
      * @param idpRoleNames List of role names from OIDC token
      * @return Synchronized principal
      */
     public Principal syncOidcLogin(String email, String name, String externalIdpId,
-                                   Long tenantId, List<String> idpRoleNames) {
+                                   String clientId, List<String> idpRoleNames) {
         // Sync user information
-        Principal principal = syncOidcUser(email, name, externalIdpId, tenantId);
+        Principal principal = syncOidcUser(email, name, externalIdpId, clientId);
 
         // CRITICAL SECURITY: Sync IDP roles with authorization check
         syncIdpRoles(principal, idpRoleNames);
@@ -164,7 +164,7 @@ public class OidcSyncService {
      * @param principalId Principal ID
      * @return Audit information as a string
      */
-    public String auditIdpRoles(Long principalId) {
+    public String auditIdpRoles(String principalId) {
         var assignments = roleService.findAssignmentsByPrincipal(principalId);
         var idpRoles = assignments.stream()
             .filter(a -> "IDP_SYNC".equals(a.assignmentSource))

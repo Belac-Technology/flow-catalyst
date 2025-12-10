@@ -92,7 +92,7 @@ public class ApplicationService {
      * @return Updated application
      * @throws NotFoundException if application not found
      */
-    public Application updateApplication(Long applicationId, String name, String description,
+    public Application updateApplication(String applicationId, String name, String description,
                                          String defaultBaseUrl, String iconUrl) {
         Application app = applicationRepo.findByIdOptional(applicationId)
             .orElseThrow(() -> new NotFoundException("Application not found"));
@@ -109,7 +109,7 @@ public class ApplicationService {
     /**
      * Activate an application.
      */
-    public void activateApplication(Long applicationId) {
+    public void activateApplication(String applicationId) {
         Application app = applicationRepo.findByIdOptional(applicationId)
             .orElseThrow(() -> new NotFoundException("Application not found"));
         app.active = true;
@@ -119,7 +119,7 @@ public class ApplicationService {
     /**
      * Deactivate an application.
      */
-    public void deactivateApplication(Long applicationId) {
+    public void deactivateApplication(String applicationId) {
         Application app = applicationRepo.findByIdOptional(applicationId)
             .orElseThrow(() -> new NotFoundException("Application not found"));
         app.active = false;
@@ -140,7 +140,7 @@ public class ApplicationService {
      * @param config Optional additional configuration
      * @return Created or updated config
      */
-    public ApplicationClientConfig configureForClient(Long applicationId, Long clientId,
+    public ApplicationClientConfig configureForClient(String applicationId, String clientId,
                                                        boolean enabled, String baseUrlOverride,
                                                        Map<String, Object> config) {
         Application app = applicationRepo.findByIdOptional(applicationId)
@@ -175,14 +175,14 @@ public class ApplicationService {
     /**
      * Enable an application for a client.
      */
-    public void enableForClient(Long applicationId, Long clientId) {
+    public void enableForClient(String applicationId, String clientId) {
         configureForClient(applicationId, clientId, true, null, null);
     }
 
     /**
      * Disable an application for a client.
      */
-    public void disableForClient(Long applicationId, Long clientId) {
+    public void disableForClient(String applicationId, String clientId) {
         Optional<ApplicationClientConfig> config = configRepo.findByApplicationAndClient(applicationId, clientId);
         if (config.isPresent()) {
             config.get().enabled = false;
@@ -198,7 +198,7 @@ public class ApplicationService {
      * @param clientId Client ID
      * @return The effective URL (client override or default)
      */
-    public String getEffectiveUrl(Long applicationId, Long clientId) {
+    public String getEffectiveUrl(String applicationId, String clientId) {
         Application app = applicationRepo.findByIdOptional(applicationId)
             .orElseThrow(() -> new NotFoundException("Application not found"));
 
@@ -221,7 +221,7 @@ public class ApplicationService {
      * @param principalId Principal ID
      * @return List of accessible applications
      */
-    public List<Application> getAccessibleApplications(Long principalId) {
+    public List<Application> getAccessibleApplications(String principalId) {
         // Get all roles for the principal
         List<PrincipalRole> principalRoles = roleRepo.findByPrincipalId(principalId);
         Set<String> roleStrings = principalRoles.stream()
@@ -246,7 +246,7 @@ public class ApplicationService {
      * @param applicationCode Application code
      * @return Set of role strings for that application
      */
-    public Set<String> getRolesForApplication(Long principalId, String applicationCode) {
+    public Set<String> getRolesForApplication(String principalId, String applicationCode) {
         List<PrincipalRole> principalRoles = roleRepo.findByPrincipalId(principalId);
         Set<String> roleStrings = principalRoles.stream()
             .map(pr -> pr.roleName)
@@ -262,7 +262,7 @@ public class ApplicationService {
      * @param applicationCode Application code
      * @return true if the principal has any roles for this application
      */
-    public boolean canAccessApplication(Long principalId, String applicationCode) {
+    public boolean canAccessApplication(String principalId, String applicationCode) {
         return !getRolesForApplication(principalId, applicationCode).isEmpty();
     }
 
@@ -278,7 +278,7 @@ public class ApplicationService {
      * @param clientId Client ID
      * @return true if access is allowed
      */
-    public boolean canAccessApplicationForClient(Long principalId, String applicationCode, Long clientId) {
+    public boolean canAccessApplicationForClient(String principalId, String applicationCode, String clientId) {
         // Check if principal has roles for this application
         if (!canAccessApplication(principalId, applicationCode)) {
             return false;
@@ -305,7 +305,7 @@ public class ApplicationService {
     // Query Methods
     // ========================================================================
 
-    public Optional<Application> findById(Long id) {
+    public Optional<Application> findById(String id) {
         return applicationRepo.findByIdOptional(id);
     }
 
@@ -321,11 +321,11 @@ public class ApplicationService {
         return applicationRepo.listAll();
     }
 
-    public List<ApplicationClientConfig> getConfigsForApplication(Long applicationId) {
+    public List<ApplicationClientConfig> getConfigsForApplication(String applicationId) {
         return configRepo.findByApplication(applicationId);
     }
 
-    public List<ApplicationClientConfig> getConfigsForClient(Long clientId) {
+    public List<ApplicationClientConfig> getConfigsForClient(String clientId) {
         return configRepo.findByClient(clientId);
     }
 

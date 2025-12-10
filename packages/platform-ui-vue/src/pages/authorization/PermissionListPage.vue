@@ -17,20 +17,20 @@ const loading = ref(true);
 
 // Filters
 const searchQuery = ref('');
-const selectedSubdomain = ref<string | null>(null);
+const selectedApplication = ref<string | null>(null);
 const selectedContext = ref<string | null>(null);
 const selectedAction = ref<string | null>(null);
 
 // Compute unique filter options
-const subdomainOptions = computed(() => {
-  const unique = [...new Set(permissions.value.map(p => p.subdomain))];
+const applicationOptions = computed(() => {
+  const unique = [...new Set(permissions.value.map(p => p.application))];
   return unique.sort().map(s => ({ label: s, value: s }));
 });
 
 const contextOptions = computed(() => {
   let filtered = permissions.value;
-  if (selectedSubdomain.value) {
-    filtered = filtered.filter(p => p.subdomain === selectedSubdomain.value);
+  if (selectedApplication.value) {
+    filtered = filtered.filter(p => p.application === selectedApplication.value);
   }
   const unique = [...new Set(filtered.map(p => p.context))];
   return unique.sort().map(c => ({ label: c, value: c }));
@@ -45,7 +45,7 @@ const actionOptions = computed(() => [
 ]);
 
 const hasActiveFilters = computed(() => {
-  return searchQuery.value || selectedSubdomain.value || selectedContext.value || selectedAction.value;
+  return searchQuery.value || selectedApplication.value || selectedContext.value || selectedAction.value;
 });
 
 const filteredPermissions = computed(() => {
@@ -59,8 +59,8 @@ const filteredPermissions = computed(() => {
     );
   }
 
-  if (selectedSubdomain.value) {
-    result = result.filter(p => p.subdomain === selectedSubdomain.value);
+  if (selectedApplication.value) {
+    result = result.filter(p => p.application === selectedApplication.value);
   }
 
   if (selectedContext.value) {
@@ -97,7 +97,7 @@ async function loadPermissions() {
 
 function clearFilters() {
   searchQuery.value = '';
-  selectedSubdomain.value = null;
+  selectedApplication.value = null;
   selectedContext.value = null;
   selectedAction.value = null;
 }
@@ -138,13 +138,13 @@ function getActionSeverity(action: string) {
         </div>
 
         <div class="filter-group">
-          <label>Subdomain</label>
+          <label>Application</label>
           <Select
-            v-model="selectedSubdomain"
-            :options="subdomainOptions"
+            v-model="selectedApplication"
+            :options="applicationOptions"
             optionLabel="label"
             optionValue="value"
-            placeholder="All Subdomains"
+            placeholder="All Applications"
             :showClear="true"
             class="filter-input"
           />
@@ -211,9 +211,9 @@ function getActionSeverity(action: string) {
           </template>
         </Column>
 
-        <Column field="subdomain" header="Subdomain" style="width: 12%">
+        <Column field="application" header="Application" style="width: 12%">
           <template #body="{ data }">
-            <Tag :value="data.subdomain" severity="secondary" />
+            <Tag :value="data.application" severity="secondary" />
           </template>
         </Column>
 

@@ -17,13 +17,13 @@ import java.time.Instant;
  * <p>Event type: {@code platform:control-plane:role:deleted}
  */
 public record RoleDeleted(
-    Long eventId,
+    String eventId,
     Instant time,
     String executionId,
     String correlationId,
     String causationId,
-    Long principalId,
-    Long roleId,
+    String principalId,
+    String roleId,
     String roleName
 ) implements DomainEvent {
 
@@ -76,20 +76,20 @@ public record RoleDeleted(
         }
     }
 
-    public record Data(Long roleId, String roleName) {}
+    public record Data(String roleId, String roleName) {}
 
     public static Builder builder() {
         return new Builder();
     }
 
     public static class Builder {
-        private Long eventId;
+        private String eventId;
         private Instant time;
         private String executionId;
         private String correlationId;
         private String causationId;
-        private Long principalId;
-        private Long roleId;
+        private String principalId;
+        private String roleId;
         private String roleName;
 
         public Builder from(ExecutionContext ctx) {
@@ -102,7 +102,7 @@ public record RoleDeleted(
             return this;
         }
 
-        public Builder roleId(Long roleId) { this.roleId = roleId; return this; }
+        public Builder roleId(String roleId) { this.roleId = roleId; return this; }
         public Builder roleName(String roleName) { this.roleName = roleName; return this; }
 
         public RoleDeleted build() {

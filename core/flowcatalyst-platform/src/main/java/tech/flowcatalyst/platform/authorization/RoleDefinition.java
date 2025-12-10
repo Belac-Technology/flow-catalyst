@@ -5,56 +5,41 @@ import java.util.Set;
 /**
  * Definition of a role in the FlowCatalyst system.
  *
- * Roles follow the structure: {subdomain}:{role-name}
+ * Roles follow the structure: {application}:{role-name}
  *
  * Examples:
- * - logistics:operator
- * - logistics:dispatcher
- * - logistics:warehouse-manager
- * - platform:tenant-admin
+ * - platform:admin
+ * - platform:iam-admin
+ * - platform:messaging-admin
+ * - tms:dispatcher
+ * - tms:warehouse-manager
  *
  * Each role maps to a set of permission strings.
  * All parts must be lowercase alphanumeric with hyphens allowed.
- * This is code-first - roles are defined in code and synced to IDP at startup.
- *
- * Usage:
- * <pre>
- * @Role
- * public class MyRole {
- *     public static final RoleDefinition INSTANCE = RoleDefinition.make(
- *         "platform",
- *         "tenant-admin",
- *         Set.of(
- *             PlatformTenantUserCreatePermission.INSTANCE,
- *             PlatformTenantUserViewPermission.INSTANCE
- *         ),
- *         "Tenant administrator role"
- *     );
- * }
- * </pre>
+ * Roles are defined in code using the @Role annotation.
  */
 public interface RoleDefinition {
 
-    String subdomain();           // Business domain (e.g., "logistics", "platform")
-    String roleName();            // Role name within domain (e.g., "operator", "warehouse-manager")
+    String application();         // Application code (e.g., "platform", "tms")
+    String roleName();            // Role name within app (e.g., "admin", "dispatcher")
     Set<PermissionRecord> permissions();    // Permissions this role grants
     String description();         // Human-readable description
 
     /**
      * Generate the string representation of this role.
-     * Format: {subdomain}:{role-name}
+     * Format: {application}:{role-name}
      *
-     * @return Role string (e.g., "logistics:dispatcher")
+     * @return Role string (e.g., "platform:admin")
      */
     default String toRoleString() {
-        return String.format("%s:%s", subdomain(), roleName());
+        return String.format("%s:%s", application(), roleName());
     }
 
     /**
      * Get permission strings for this role.
      * Convenience method that converts PermissionRecord objects to strings.
      *
-     * @return Set of permission strings (e.g., "platform:tenant:user:create")
+     * @return Set of permission strings (e.g., "platform:iam:user:create")
      */
     default Set<String> permissionStrings() {
         return permissions().stream()
@@ -66,44 +51,42 @@ public interface RoleDefinition {
      * Static factory method to create a role from PermissionDefinition instances.
      * This is the preferred approach as it provides type safety and full metadata.
      *
-     * @param subdomain Business domain
-     * @param roleName Role name within domain
+     * @param application Application code
+     * @param roleName Role name within application
      * @param permissions Permission instances this role grants
      * @param description Human-readable description
      * @return Role instance
      */
-    static RoleRecord make(String subdomain, String roleName, Set<PermissionDefinition> permissions, String description) {
+    static RoleRecord make(String application, String roleName, Set<PermissionDefinition> permissions, String description) {
         // Convert PermissionDefinitions to concrete PermissionRecord instances
         Set<PermissionRecord> permissionRecords = permissions.stream()
             .map(pd -> pd instanceof PermissionRecord pr ? pr :
-                 PermissionDefinition.make(pd.subdomain(), pd.context(), pd.aggregate(), pd.action(), pd.description()))
+                 PermissionDefinition.make(pd.application(), pd.context(), pd.aggregate(), pd.action(), pd.description()))
             .collect(java.util.stream.Collectors.toSet());
-        return new RoleRecord(subdomain, roleName, permissionRecords, description);
+        return new RoleRecord(application, roleName, permissionRecords, description);
     }
 
     /**
      * Static factory method to create a role from permission strings.
-     * Use this only when you don't have PermissionDefinition instances available (e.g., in tests with mocks).
+     * Use this only when you don't have PermissionDefinition instances available.
      *
-     * Note: This converts strings to Permission records.
-     *
-     * @param subdomain Business domain
-     * @param roleName Role name within domain
+     * @param application Application code
+     * @param roleName Role name within application
      * @param permissionStrings Permission strings this role grants
      * @param description Human-readable description
      * @return Role instance
      */
-    static RoleRecord makeFromStrings(String subdomain, String roleName, Set<String> permissionStrings, String description) {
+    static RoleRecord makeFromStrings(String application, String roleName, Set<String> permissionStrings, String description) {
         // Convert strings to PermissionRecord objects
         Set<PermissionRecord> permissions = permissionStrings.stream()
             .map(RoleDefinition::parsePermissionString)
             .collect(java.util.stream.Collectors.toSet());
-        return new RoleRecord(subdomain, roleName, permissions, description);
+        return new RoleRecord(application, roleName, permissions, description);
     }
 
     /**
      * Parse a permission string into a PermissionRecord.
-     * Format: subdomain:context:aggregate:action
+     * Format: application:context:aggregate:action
      */
     private static PermissionRecord parsePermissionString(String permissionString) {
         String[] parts = permissionString.split(":");

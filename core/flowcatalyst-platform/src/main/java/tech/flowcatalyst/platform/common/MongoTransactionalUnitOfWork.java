@@ -306,14 +306,14 @@ public class MongoTransactionalUnitOfWork implements UnitOfWork {
      * <p>Subject format: "platform.eventtype.123456789"
      * <p>Returns: 123456789
      */
-    private Long extractEntityIdFromSubject(String subject) {
+    private String extractEntityIdFromSubject(String subject) {
         if (subject == null) {
             return null;
         }
         String[] parts = subject.split("\\.");
         if (parts.length >= 3) {
             try {
-                return Long.parseLong(parts[2]);
+                return parts[2];
             } catch (NumberFormatException e) {
                 return null;
             }

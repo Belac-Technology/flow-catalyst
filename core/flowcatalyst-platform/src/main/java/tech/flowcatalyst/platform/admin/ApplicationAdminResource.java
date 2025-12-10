@@ -75,7 +75,7 @@ public class ApplicationAdminResource {
     @GET
     @Path("/{id}")
     @Operation(summary = "Get application by ID")
-    public Response getApplication(@PathParam("id") Long id) {
+    public Response getApplication(@PathParam("id") String id) {
         return applicationService.findById(id)
             .map(app -> Response.ok(toApplicationDetailResponse(app)).build())
             .orElse(Response.status(Response.Status.NOT_FOUND)
@@ -133,7 +133,7 @@ public class ApplicationAdminResource {
     @PUT
     @Path("/{id}")
     @Operation(summary = "Update an application")
-    public Response updateApplication(@PathParam("id") Long id, UpdateApplicationRequest request) {
+    public Response updateApplication(@PathParam("id") String id, UpdateApplicationRequest request) {
         try {
             Application app = applicationService.updateApplication(
                 id,
@@ -153,7 +153,7 @@ public class ApplicationAdminResource {
     @POST
     @Path("/{id}/activate")
     @Operation(summary = "Activate an application")
-    public Response activateApplication(@PathParam("id") Long id) {
+    public Response activateApplication(@PathParam("id") String id) {
         try {
             applicationService.activateApplication(id);
             return Response.ok(Map.of("message", "Application activated")).build();
@@ -167,7 +167,7 @@ public class ApplicationAdminResource {
     @POST
     @Path("/{id}/deactivate")
     @Operation(summary = "Deactivate an application")
-    public Response deactivateApplication(@PathParam("id") Long id) {
+    public Response deactivateApplication(@PathParam("id") String id) {
         try {
             applicationService.deactivateApplication(id);
             return Response.ok(Map.of("message", "Application deactivated")).build();
@@ -185,7 +185,7 @@ public class ApplicationAdminResource {
     @GET
     @Path("/{id}/clients")
     @Operation(summary = "Get client configurations for an application")
-    public Response getClientConfigs(@PathParam("id") Long id) {
+    public Response getClientConfigs(@PathParam("id") String id) {
         if (applicationService.findById(id).isEmpty()) {
             return Response.status(Response.Status.NOT_FOUND)
                 .entity(Map.of("error", "Application not found"))
@@ -205,8 +205,8 @@ public class ApplicationAdminResource {
     @Path("/{id}/clients/{clientId}")
     @Operation(summary = "Configure application for a specific client")
     public Response configureClient(
-            @PathParam("id") Long applicationId,
-            @PathParam("clientId") Long clientId,
+            @PathParam("id") String applicationId,
+            @PathParam("clientId") String clientId,
             ClientConfigRequest request) {
 
         try {
@@ -229,8 +229,8 @@ public class ApplicationAdminResource {
     @Path("/{id}/clients/{clientId}/enable")
     @Operation(summary = "Enable application for a client")
     public Response enableForClient(
-            @PathParam("id") Long applicationId,
-            @PathParam("clientId") Long clientId) {
+            @PathParam("id") String applicationId,
+            @PathParam("clientId") String clientId) {
 
         try {
             applicationService.enableForClient(applicationId, clientId);
@@ -246,8 +246,8 @@ public class ApplicationAdminResource {
     @Path("/{id}/clients/{clientId}/disable")
     @Operation(summary = "Disable application for a client")
     public Response disableForClient(
-            @PathParam("id") Long applicationId,
-            @PathParam("clientId") Long clientId) {
+            @PathParam("id") String applicationId,
+            @PathParam("clientId") String clientId) {
 
         try {
             applicationService.disableForClient(applicationId, clientId);
@@ -266,7 +266,7 @@ public class ApplicationAdminResource {
     @GET
     @Path("/{id}/roles")
     @Operation(summary = "Get all roles defined for this application")
-    public Response getApplicationRoles(@PathParam("id") Long id) {
+    public Response getApplicationRoles(@PathParam("id") String id) {
         return applicationService.findById(id)
             .map(app -> {
                 var roles = PermissionRegistry.extractApplicationCodes(List.of(app.code));

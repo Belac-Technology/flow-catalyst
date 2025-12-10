@@ -18,15 +18,15 @@ import java.time.Instant;
  */
 public record ApplicationUpdated(
     // Event metadata
-    Long eventId,
+    String eventId,
     Instant time,
     String executionId,
     String correlationId,
     String causationId,
-    Long principalId,
+    String principalId,
 
     // Event-specific payload (what happened)
-    Long applicationId,
+    String applicationId,
     String code,
     String name,
     String description,
@@ -87,7 +87,7 @@ public record ApplicationUpdated(
      * The event data schema.
      */
     public record Data(
-        Long applicationId,
+        String applicationId,
         String code,
         String name,
         String description,
@@ -100,13 +100,13 @@ public record ApplicationUpdated(
     }
 
     public static class Builder {
-        private Long eventId;
+        private String eventId;
         private Instant time;
         private String executionId;
         private String correlationId;
         private String causationId;
-        private Long principalId;
-        private Long applicationId;
+        private String principalId;
+        private String applicationId;
         private String code;
         private String name;
         private String description;
@@ -123,7 +123,7 @@ public record ApplicationUpdated(
             return this;
         }
 
-        public Builder applicationId(Long applicationId) {
+        public Builder applicationId(String applicationId) {
             this.applicationId = applicationId;
             return this;
         }

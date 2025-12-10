@@ -11,7 +11,7 @@ import java.util.Set;
  * @param removeUnlisted  If true, removes SDK roles not in the list
  */
 public record SyncRolesCommand(
-    Long applicationId,
+    String applicationId,
     List<SyncRoleItem> roles,
     boolean removeUnlisted
 ) {

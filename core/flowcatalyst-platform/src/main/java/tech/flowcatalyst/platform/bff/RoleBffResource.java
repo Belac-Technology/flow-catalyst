@@ -124,7 +124,7 @@ public class RoleBffResource {
         @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
         @HeaderParam("Authorization") String authHeader
     ) {
-        Long principalId = extractPrincipalId(sessionToken, authHeader);
+        String principalId = extractPrincipalId(sessionToken, authHeader);
         if (principalId == null) {
             return Response.status(401).entity(new ErrorResponse("UNAUTHORIZED", "Not authenticated")).build();
         }
@@ -176,7 +176,7 @@ public class RoleBffResource {
         @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
         @HeaderParam("Authorization") String authHeader
     ) {
-        Long principalId = extractPrincipalId(sessionToken, authHeader);
+        String principalId = extractPrincipalId(sessionToken, authHeader);
         if (principalId == null) {
             return Response.status(401).entity(new ErrorResponse("UNAUTHORIZED", "Not authenticated")).build();
         }
@@ -211,7 +211,7 @@ public class RoleBffResource {
         @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
         @HeaderParam("Authorization") String authHeader
     ) {
-        Long principalId = extractPrincipalId(sessionToken, authHeader);
+        String principalId = extractPrincipalId(sessionToken, authHeader);
         if (principalId == null) {
             return Response.status(401).entity(new ErrorResponse("UNAUTHORIZED", "Not authenticated")).build();
         }
@@ -256,7 +256,7 @@ public class RoleBffResource {
                 .build());
     }
 
-    private Long extractPrincipalId(String sessionToken, String authHeader) {
+    private String extractPrincipalId(String sessionToken, String authHeader) {
         String token = sessionToken;
         if (token == null && authHeader != null && authHeader.startsWith("Bearer ")) {
             token = authHeader.substring("Bearer ".length());
@@ -345,7 +345,7 @@ public class RoleBffResource {
 
     public record BffPermissionResponse(
         String permission,
-        String subdomain,
+        String application,
         String context,
         String aggregate,
         String action,
@@ -354,7 +354,7 @@ public class RoleBffResource {
         public static BffPermissionResponse from(PermissionDefinition perm) {
             return new BffPermissionResponse(
                 perm.toPermissionString(),
-                perm.subdomain(),
+                perm.application(),
                 perm.context(),
                 perm.aggregate(),
                 perm.action(),

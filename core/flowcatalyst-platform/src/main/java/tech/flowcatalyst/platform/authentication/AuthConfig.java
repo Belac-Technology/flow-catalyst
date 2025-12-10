@@ -56,6 +56,15 @@ public interface AuthConfig {
     RemoteConfig remote();
 
     /**
+     * External base URL for OAuth/OIDC callbacks.
+     * Set this to the public URL where users access the platform.
+     * In dev: http://localhost:4200
+     * In prod: https://platform.example.com
+     */
+    @WithName("external-base-url")
+    Optional<String> externalBaseUrl();
+
+    /**
      * JWT configuration.
      */
     interface JwtConfig {

@@ -7,7 +7,7 @@ import java.util.List;
 import java.util.Optional;
 
 @ApplicationScoped
-public class OAuthClientRepository implements PanacheMongoRepositoryBase<OAuthClient, Long> {
+public class OAuthClientRepository implements PanacheMongoRepositoryBase<OAuthClient, String> {
 
     public Optional<OAuthClient> findByClientId(String clientId) {
         return find("clientId = ?1 and active = true", clientId).firstResultOptional();

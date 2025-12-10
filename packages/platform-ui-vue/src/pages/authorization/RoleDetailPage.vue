@@ -19,6 +19,8 @@ const error = ref<string | null>(null);
 
 const roleName = computed(() => route.params.roleName as string);
 
+const canEdit = computed(() => role.value?.source === 'DATABASE');
+
 onMounted(async () => {
   await loadRole();
 });
@@ -44,6 +46,10 @@ async function loadRole() {
 
 function goBack() {
   router.push('/authorization/roles');
+}
+
+function editRole() {
+  router.push(`/authorization/roles/${encodeURIComponent(roleName.value)}/edit`);
 }
 
 function getSourceSeverity(source: RoleSource) {
@@ -73,7 +79,7 @@ function formatDate(dateStr: string | undefined) {
 function parsePermission(permission: string) {
   const parts = permission.split(':');
   return {
-    subdomain: parts[0] || '',
+    application: parts[0] || '',
     context: parts[1] || '',
     aggregate: parts[2] || '',
     action: parts[3] || '',
@@ -99,6 +105,12 @@ function parsePermission(permission: string) {
         </div>
       </div>
       <div v-if="role" class="header-right">
+        <Button
+          v-if="canEdit"
+          label="Edit Role"
+          icon="pi pi-pencil"
+          @click="editRole"
+        />
         <Tag
           :value="getSourceLabel(role.source)"
           :severity="getSourceSeverity(role.source)"
@@ -171,9 +183,9 @@ function parsePermission(permission: string) {
               <span class="permission-string">{{ data.permission }}</span>
             </template>
           </Column>
-          <Column field="subdomain" header="Subdomain" style="width: 15%">
+          <Column field="application" header="Application" style="width: 15%">
             <template #body="{ data }">
-              <Tag :value="data.subdomain" severity="secondary" />
+              <Tag :value="data.application" severity="secondary" />
             </template>
           </Column>
           <Column field="context" header="Context" style="width: 15%">

@@ -11,7 +11,7 @@ import java.util.Optional;
  * Indexes are created by MongoIndexInitializer on startup.
  */
 @ApplicationScoped
-public class EventRepository implements PanacheMongoRepositoryBase<Event, Long> {
+public class EventRepository implements PanacheMongoRepositoryBase<Event, String> {
 
     /**
      * Find an event by its ID.
@@ -19,7 +19,7 @@ public class EventRepository implements PanacheMongoRepositoryBase<Event, Long> 
      * @param id The event ID
      * @return The event if found
      */
-    public Optional<Event> findByIdOptional(Long id) {
+    public Optional<Event> findByIdOptional(String id) {
         return Optional.ofNullable(findById(id));
     }
 

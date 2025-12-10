@@ -122,8 +122,11 @@ public class AuthResource {
                 .map(pr -> pr.roleName)
                 .collect(Collectors.toSet());
 
+        // Determine accessible clients
+        List<String> clients = determineAccessibleClients(principal, roles);
+
         // Issue session token
-        String token = jwtKeyService.issueSessionToken(principal.id, request.email(), roles);
+        String token = jwtKeyService.issueSessionToken(principal.id, request.email(), roles, clients);
 
         // Update last login
         principal.userIdentity.lastLoginAt = Instant.now();
@@ -188,7 +191,7 @@ public class AuthResource {
         // For now, we parse the token to get user info
         try {
             // Use JwtKeyService to validate and parse the token
-            Long principalId = jwtKeyService.validateAndGetPrincipalId(sessionToken);
+            String principalId = jwtKeyService.validateAndGetPrincipalId(sessionToken);
             if (principalId == null) {
                 return Response.status(Response.Status.UNAUTHORIZED)
                         .entity(new ErrorResponse("Invalid session"))
@@ -238,16 +241,53 @@ public class AuthResource {
                 .build();
     }
 
+    /**
+     * Determine which clients the user can access based on their scope.
+     *
+     * @return List of client IDs as strings, or ["*"] for anchor users
+     */
+    private List<String> determineAccessibleClients(Principal principal, Set<String> roles) {
+        // Check explicit scope first
+        if (principal.scope != null) {
+            switch (principal.scope) {
+                case ANCHOR:
+                    return List.of("*");
+                case CLIENT:
+                    if (principal.clientId != null) {
+                        return List.of(String.valueOf(principal.clientId));
+                    }
+                    return List.of();
+                case PARTNER:
+                    if (principal.clientId != null) {
+                        return List.of(String.valueOf(principal.clientId));
+                    }
+                    return List.of();
+            }
+        }
+
+        // Fallback: check roles for platform admins
+        if (roles.stream().anyMatch(r -> r.contains("platform:admin") || r.contains("super-admin"))) {
+            return List.of("*");
+        }
+
+        // User is bound to a specific client
+        if (principal.clientId != null) {
+            return List.of(String.valueOf(principal.clientId));
+        }
+
+        return List.of();
+    }
+
     // DTOs
 
     public record LoginRequest(String email, String password) {}
 
     public record LoginResponse(
-            Long principalId,
+            String principalId,
             String name,
             String email,
             Set<String> roles,
-            Long clientId
+            String clientId
     ) {}
 
     public record ErrorResponse(String error) {}

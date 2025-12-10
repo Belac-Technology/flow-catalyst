@@ -73,6 +73,16 @@ const router = createRouter({
           name: 'users',
           component: () => import('@/pages/users/UserListPage.vue'),
         },
+        {
+          path: 'users/new',
+          name: 'user-create',
+          component: () => import('@/pages/users/UserCreatePage.vue'),
+        },
+        {
+          path: 'users/:id',
+          name: 'user-detail',
+          component: () => import('@/pages/users/UserDetailPage.vue'),
+        },
         // Authorization - Roles
         {
           path: 'authorization/roles',
@@ -84,11 +94,33 @@ const router = createRouter({
           name: 'role-detail',
           component: () => import('@/pages/authorization/RoleDetailPage.vue'),
         },
+        {
+          path: 'authorization/roles/:roleName/edit',
+          name: 'role-edit',
+          component: () => import('@/pages/authorization/RoleEditPage.vue'),
+        },
         // Authorization - Permissions
         {
           path: 'authorization/permissions',
           name: 'permissions',
           component: () => import('@/pages/authorization/PermissionListPage.vue'),
+        },
+        // Authentication - Domain IDPs
+        {
+          path: 'authentication/domain-idps',
+          name: 'domain-idps',
+          component: () => import('@/pages/authentication/AuthConfigListPage.vue'),
+        },
+        {
+          path: 'authentication/domain-idps/:id',
+          name: 'domain-idp-detail',
+          component: () => import('@/pages/authentication/AuthConfigDetailPage.vue'),
+        },
+        // Authentication - Anchor Domains
+        {
+          path: 'authentication/anchor-domains',
+          name: 'anchor-domains',
+          component: () => import('@/pages/authentication/AnchorDomainListPage.vue'),
         },
         // Legacy redirect
         {

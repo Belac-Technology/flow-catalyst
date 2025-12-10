@@ -19,17 +19,17 @@ import java.util.Set;
  * <p>Event type: {@code platform:control-plane:role:created}
  */
 public record RoleCreated(
-    Long eventId,
+    String eventId,
     Instant time,
     String executionId,
     String correlationId,
     String causationId,
-    Long principalId,
-    Long roleId,
+    String principalId,
+    String roleId,
     String roleName,
     String displayName,
     String description,
-    Long applicationId,
+    String applicationId,
     String applicationCode,
     Set<String> permissions,
     String source,
@@ -87,11 +87,11 @@ public record RoleCreated(
     }
 
     public record Data(
-        Long roleId,
+        String roleId,
         String roleName,
         String displayName,
         String description,
-        Long applicationId,
+        String applicationId,
         String applicationCode,
         Set<String> permissions,
         String source,
@@ -103,17 +103,17 @@ public record RoleCreated(
     }
 
     public static class Builder {
-        private Long eventId;
+        private String eventId;
         private Instant time;
         private String executionId;
         private String correlationId;
         private String causationId;
-        private Long principalId;
-        private Long roleId;
+        private String principalId;
+        private String roleId;
         private String roleName;
         private String displayName;
         private String description;
-        private Long applicationId;
+        private String applicationId;
         private String applicationCode;
         private Set<String> permissions;
         private String source;
@@ -129,11 +129,11 @@ public record RoleCreated(
             return this;
         }
 
-        public Builder roleId(Long roleId) { this.roleId = roleId; return this; }
+        public Builder roleId(String roleId) { this.roleId = roleId; return this; }
         public Builder roleName(String roleName) { this.roleName = roleName; return this; }
         public Builder displayName(String displayName) { this.displayName = displayName; return this; }
         public Builder description(String description) { this.description = description; return this; }
-        public Builder applicationId(Long applicationId) { this.applicationId = applicationId; return this; }
+        public Builder applicationId(String applicationId) { this.applicationId = applicationId; return this; }
         public Builder applicationCode(String applicationCode) { this.applicationCode = applicationCode; return this; }
         public Builder permissions(Set<String> permissions) { this.permissions = permissions; return this; }
         public Builder source(AuthRole.RoleSource source) { this.source = source.name(); return this; }

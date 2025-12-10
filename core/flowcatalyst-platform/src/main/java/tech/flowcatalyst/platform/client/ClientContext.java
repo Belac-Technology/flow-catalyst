@@ -54,16 +54,16 @@ public class ClientContext {
     @Inject
     PrincipalRepository principalRepo;
 
-    private Long principalId;
+    private String principalId;
     private Principal principal;
-    private Set<Long> accessibleClientIds;
+    private Set<String> accessibleClientIds;
     private Boolean isAnchorUser;
 
     /**
      * Set the principal ID for this request context.
      * Should be called by authentication filter.
      */
-    public void setPrincipalId(Long principalId) {
+    public void setPrincipalId(String principalId) {
         this.principalId = principalId;
         // Reset cached values
         this.principal = null;
@@ -74,7 +74,7 @@ public class ClientContext {
     /**
      * Get the current principal ID.
      */
-    public Long getPrincipalId() {
+    public String getPrincipalId() {
         return principalId;
     }
 
@@ -105,7 +105,7 @@ public class ClientContext {
      *
      * @return Set of accessible client IDs (empty if no principal set)
      */
-    public Set<Long> getAccessibleClientIds() {
+    public Set<String> getAccessibleClientIds() {
         if (accessibleClientIds == null) {
             Principal p = getPrincipal();
             if (p != null) {
@@ -170,15 +170,15 @@ public class ClientContext {
      * @throws ForbiddenException if access is denied to any client
      * @throws IllegalStateException if no principal is set
      */
-    public void requireAccessToAll(Collection<Long> clientIds) {
+    public void requireAccessToAll(Collection<String> clientIds) {
         requirePrincipal();
 
         if (clientIds == null || clientIds.isEmpty()) {
             return;
         }
 
-        Set<Long> accessible = getAccessibleClientIds();
-        for (Long clientId : clientIds) {
+        Set<String> accessible = getAccessibleClientIds();
+        for (String clientId : clientIds) {
             if (!accessible.contains(clientId)) {
                 throw new ForbiddenException("Access denied to client: " + clientId);
             }
@@ -190,7 +190,7 @@ public class ClientContext {
      *
      * @return The home client ID, or null if not set
      */
-    public Long getHomeClientId() {
+    public String getHomeClientId() {
         Principal p = getPrincipal();
         return p != null ? p.clientId : null;
     }

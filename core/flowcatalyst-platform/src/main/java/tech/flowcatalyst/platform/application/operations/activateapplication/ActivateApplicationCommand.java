@@ -5,4 +5,4 @@ package tech.flowcatalyst.platform.application.operations.activateapplication;
  *
  * @param applicationId The ID of the application to activate
  */
-public record ActivateApplicationCommand(Long applicationId) {}
+public record ActivateApplicationCommand(String applicationId) {}

@@ -34,7 +34,7 @@ public class TokenService {
      * @param expiry Token expiry duration (null for default)
      * @return JWT token string
      */
-    public String issueToken(Long principalId, PrincipalType principalType, Duration expiry) {
+    public String issueToken(String principalId, PrincipalType principalType, Duration expiry) {
         if (expiry == null) {
             expiry = defaultExpiry;
         }
@@ -58,7 +58,7 @@ public class TokenService {
      * @param expiry Token expiry duration
      * @return JWT token string
      */
-    public String issueTokenWithRoles(Long principalId, PrincipalType principalType, Set<String> roles, Duration expiry) {
+    public String issueTokenWithRoles(String principalId, PrincipalType principalType, Set<String> roles, Duration expiry) {
         if (expiry == null) {
             expiry = defaultExpiry;
         }
@@ -80,7 +80,7 @@ public class TokenService {
      * @param principalId The service account principal ID
      * @return JWT token string
      */
-    public String issueServiceAccountToken(Long principalId) {
+    public String issueServiceAccountToken(String principalId) {
         return issueToken(principalId, PrincipalType.SERVICE, defaultExpiry);
     }
 
@@ -91,7 +91,7 @@ public class TokenService {
      * @param roles User's roles
      * @return JWT token string
      */
-    public String issueSessionToken(Long principalId, Set<String> roles) {
+    public String issueSessionToken(String principalId, Set<String> roles) {
         // Session tokens expire in 8 hours
         return issueTokenWithRoles(principalId, PrincipalType.USER, roles, Duration.ofHours(8));
     }

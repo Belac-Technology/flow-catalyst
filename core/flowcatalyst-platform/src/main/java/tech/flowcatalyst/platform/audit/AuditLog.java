@@ -15,7 +15,7 @@ import java.time.Instant;
 public class AuditLog extends PanacheMongoEntityBase {
 
     @BsonId
-    public Long id;
+    public String id;
 
     /**
      * The type of entity (e.g., "EventType", "Tenant").
@@ -25,7 +25,7 @@ public class AuditLog extends PanacheMongoEntityBase {
     /**
      * The entity's TSID.
      */
-    public Long entityId;
+    public String entityId;
 
     /**
      * The operation name (e.g., "CreateEventType", "AddSchema").
@@ -40,7 +40,7 @@ public class AuditLog extends PanacheMongoEntityBase {
     /**
      * The principal who performed the operation.
      */
-    public Long principalId;
+    public String principalId;
 
     /**
      * When the operation was performed.

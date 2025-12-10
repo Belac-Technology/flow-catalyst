@@ -72,9 +72,9 @@ const onCheckEmail = handleEmailSubmit(async (values) => {
   try {
     const result = await checkEmailDomain(values.email);
 
-    if (result.authMethod === 'external' && result.idpUrl) {
+    if (result.authMethod === 'external' && result.loginUrl) {
       step.value = 'redirecting';
-      window.location.href = result.idpUrl;
+      window.location.href = result.loginUrl;
     } else {
       step.value = 'password';
     }

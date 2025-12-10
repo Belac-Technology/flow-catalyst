@@ -141,7 +141,7 @@ public class ApplicationOperations {
     /**
      * Find an Application by ID.
      */
-    public Optional<Application> findById(Long id) {
+    public Optional<Application> findById(String id) {
         return repo.findByIdOptional(id);
     }
 

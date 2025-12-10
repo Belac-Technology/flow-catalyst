@@ -18,13 +18,13 @@ import java.util.List;
  * <p>Event type: {@code platform:control-plane:role:synced}
  */
 public record RolesSynced(
-    Long eventId,
+    String eventId,
     Instant time,
     String executionId,
     String correlationId,
     String causationId,
-    Long principalId,
-    Long applicationId,
+    String principalId,
+    String applicationId,
     String applicationCode,
     int rolesCreated,
     int rolesUpdated,
@@ -82,7 +82,7 @@ public record RolesSynced(
     }
 
     public record Data(
-        Long applicationId,
+        String applicationId,
         String applicationCode,
         int rolesCreated,
         int rolesUpdated,
@@ -95,13 +95,13 @@ public record RolesSynced(
     }
 
     public static class Builder {
-        private Long eventId;
+        private String eventId;
         private Instant time;
         private String executionId;
         private String correlationId;
         private String causationId;
-        private Long principalId;
-        private Long applicationId;
+        private String principalId;
+        private String applicationId;
         private String applicationCode;
         private int rolesCreated;
         private int rolesUpdated;
@@ -118,7 +118,7 @@ public record RolesSynced(
             return this;
         }
 
-        public Builder applicationId(Long applicationId) { this.applicationId = applicationId; return this; }
+        public Builder applicationId(String applicationId) { this.applicationId = applicationId; return this; }
         public Builder applicationCode(String applicationCode) { this.applicationCode = applicationCode; return this; }
         public Builder rolesCreated(int rolesCreated) { this.rolesCreated = rolesCreated; return this; }
         public Builder rolesUpdated(int rolesUpdated) { this.rolesUpdated = rolesUpdated; return this; }

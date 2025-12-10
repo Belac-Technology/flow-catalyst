@@ -18,11 +18,11 @@ import java.util.Map;
 public class ApplicationClientConfig extends PanacheMongoEntityBase {
 
     @BsonId
-    public Long id;
+    public String id;
 
-    public Long applicationId;
+    public String applicationId;
 
-    public Long clientId;
+    public String clientId;
 
     /**
      * Whether this client has access to this application.

@@ -7,7 +7,7 @@ import tech.flowcatalyst.dispatchjob.model.SignatureAlgorithm;
 import java.time.Instant;
 
 public record CredentialsResponse(
-    @JsonProperty("id") Long id,
+    @JsonProperty("id") String id,
     @JsonProperty("algorithm") SignatureAlgorithm algorithm,
     @JsonProperty("createdAt") Instant createdAt,
     @JsonProperty("updatedAt") Instant updatedAt

@@ -25,6 +25,18 @@ export type AddSchemaRequest1 = {
   schemaType?: SchemaType;
 };
 
+export type AnchorDomainDto = {
+  id?: string;
+  domain?: string;
+  userCount?: number;
+  createdAt?: Instant;
+};
+
+export type AnchorDomainListResponse = {
+  domains?: Array<AnchorDomainDto>;
+  total?: number;
+};
+
 export type ApplicationListResponse = {
   items?: Array<ApplicationResponse>;
 };
@@ -44,6 +56,27 @@ export type ApplicationResponse = {
 export type AssignRoleRequest = {
   roleName: string;
 };
+
+export type AuthConfigDto = {
+  id?: string;
+  emailDomain?: string;
+  clientId?: string;
+  authProvider?: AuthProvider;
+  oidcIssuerUrl?: string;
+  oidcClientId?: string;
+  hasClientSecret?: boolean;
+  oidcMultiTenant?: boolean;
+  oidcIssuerPattern?: string;
+  createdAt?: Instant;
+  updatedAt?: Instant;
+};
+
+export type AuthConfigListResponse = {
+  configs?: Array<AuthConfigDto>;
+  total?: number;
+};
+
+export type AuthProvider = "INTERNAL" | "OIDC";
 
 export type ClientConfigRequest = {
   enabled?: boolean;
@@ -107,6 +140,10 @@ export type ContextData = {
 export type ContextDataResponse = {
   key?: string;
   value?: string;
+};
+
+export type CreateAnchorDomainRequest = {
+  domain: string;
 };
 
 export type CreateApplicationRequest = {
@@ -201,6 +238,21 @@ export type CreateEventTypeRequest1 = {
   description?: string;
 };
 
+export type CreateInternalConfigRequest = {
+  emailDomain: string;
+  clientId?: number;
+};
+
+export type CreateOidcConfigRequest = {
+  emailDomain: string;
+  clientId?: number;
+  oidcIssuerUrl: string;
+  oidcClientId: string;
+  oidcClientSecretRef?: string;
+  oidcMultiTenant?: boolean;
+  oidcIssuerPattern?: string;
+};
+
 export type CreateRoleRequest = {
   applicationCode?: string;
   name?: string;
@@ -229,7 +281,7 @@ export type CreateRoleRequest2 = {
 
 export type CreateUserRequest = {
   email: string;
-  password: string;
+  password?: string;
   name: string;
   clientId?: number;
 };
@@ -239,6 +291,12 @@ export type CredentialsResponse = {
   algorithm?: SignatureAlgorithm;
   createdAt?: Instant;
   updatedAt?: Instant;
+};
+
+export type DeleteAnchorDomainResponse = {
+  domain?: string;
+  affectedUsers?: number;
+  message?: string;
 };
 
 export type DispatchAttemptResponse = {
@@ -312,8 +370,25 @@ export type DomainCheckRequest = {
 };
 
 export type DomainCheckResponse = {
+  domain?: string;
+  isAnchorDomain?: boolean;
+  userCount?: number;
+};
+
+export type DomainCheckResponse1 = {
   authMethod?: string;
-  idpUrl?: string;
+  loginUrl?: string;
+  idpIssuer?: string;
+};
+
+export type EmailDomainCheckResponse = {
+  domain?: string;
+  authProvider?: string;
+  isAnchorDomain?: boolean;
+  hasAuthConfig?: boolean;
+  emailExists?: boolean;
+  info?: string;
+  warning?: string;
 };
 
 export type ErrorResponse = {
@@ -396,7 +471,7 @@ export type PagedDispatchJobResponse = {
 
 export type PermissionDto = {
   permission?: string;
-  subdomain?: string;
+  application?: string;
   context?: string;
   aggregate?: string;
   action?: string;
@@ -417,6 +492,7 @@ export type PlatformStats = {
 export type PrincipalDetailDto = {
   id?: number;
   type?: PrincipalType;
+  scope?: UserScope;
   clientId?: number;
   name?: string;
   active?: boolean;
@@ -424,6 +500,7 @@ export type PrincipalDetailDto = {
   idpType?: IdpType;
   lastLoginAt?: Instant;
   roles?: Array<string>;
+  isAnchorUser?: boolean;
   grantedClientIds?: Array<number>;
   createdAt?: Instant;
   updatedAt?: Instant;
@@ -432,12 +509,15 @@ export type PrincipalDetailDto = {
 export type PrincipalDto = {
   id?: number;
   type?: PrincipalType;
+  scope?: UserScope;
   clientId?: number;
   name?: string;
   active?: boolean;
   email?: string;
   idpType?: IdpType;
   roles?: Array<string>;
+  isAnchorUser?: boolean;
+  grantedClientIds?: Array<number>;
   createdAt?: Instant;
   updatedAt?: Instant;
 };
@@ -501,6 +581,11 @@ export type RotateSecretResponse = {
 };
 
 export type SchemaType = "JSON_SCHEMA" | "PROTO" | "XSD";
+
+export type SecretValidationResponse = {
+  valid?: boolean;
+  message?: string;
+};
 
 export type SignatureAlgorithm = "HMAC_SHA256" | "HMAC_SHA512";
 
@@ -583,6 +668,14 @@ export type UpdateEventTypeRequest1 = {
   description?: string;
 };
 
+export type UpdateOidcConfigRequest = {
+  oidcIssuerUrl: string;
+  oidcClientId: string;
+  oidcClientSecretRef?: string;
+  oidcMultiTenant?: boolean;
+  oidcIssuerPattern?: string;
+};
+
 export type UpdatePrincipalRequest = {
   name: string;
 };
@@ -599,6 +692,12 @@ export type UpdateRoleRequest1 = {
   description?: string;
   permissions?: Array<string>;
   clientManaged?: boolean;
+};
+
+export type UserScope = "ANCHOR" | "PARTNER" | "CLIENT";
+
+export type ValidateSecretRequest = {
+  secretRef: string;
 };
 
 export type ValueType =
@@ -732,6 +831,148 @@ export type GetApiAdminDispatchCredentialsByIdResponses = {
 
 export type GetApiAdminDispatchCredentialsByIdResponse =
   GetApiAdminDispatchCredentialsByIdResponses[keyof GetApiAdminDispatchCredentialsByIdResponses];
+
+export type GetApiAdminPlatformAnchorDomainsData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/api/admin/platform/anchor-domains";
+};
+
+export type GetApiAdminPlatformAnchorDomainsErrors = {
+  /**
+   * Not authenticated
+   */
+  401: unknown;
+  /**
+   * Insufficient permissions
+   */
+  403: unknown;
+};
+
+export type GetApiAdminPlatformAnchorDomainsResponses = {
+  /**
+   * List of anchor domains
+   */
+  200: AnchorDomainListResponse;
+};
+
+export type GetApiAdminPlatformAnchorDomainsResponse =
+  GetApiAdminPlatformAnchorDomainsResponses[keyof GetApiAdminPlatformAnchorDomainsResponses];
+
+export type PostApiAdminPlatformAnchorDomainsData = {
+  body: CreateAnchorDomainRequest;
+  path?: never;
+  query?: never;
+  url: "/api/admin/platform/anchor-domains";
+};
+
+export type PostApiAdminPlatformAnchorDomainsErrors = {
+  /**
+   * Invalid request or domain already exists
+   */
+  400: unknown;
+  /**
+   * Not authenticated
+   */
+  401: unknown;
+};
+
+export type PostApiAdminPlatformAnchorDomainsResponses = {
+  /**
+   * Anchor domain created
+   */
+  201: AnchorDomainDto;
+};
+
+export type PostApiAdminPlatformAnchorDomainsResponse =
+  PostApiAdminPlatformAnchorDomainsResponses[keyof PostApiAdminPlatformAnchorDomainsResponses];
+
+export type GetApiAdminPlatformAnchorDomainsCheckByDomainData = {
+  body?: never;
+  path: {
+    domain: string;
+  };
+  query?: never;
+  url: "/api/admin/platform/anchor-domains/check/{domain}";
+};
+
+export type GetApiAdminPlatformAnchorDomainsCheckByDomainErrors = {
+  /**
+   * Not authenticated
+   */
+  401: unknown;
+};
+
+export type GetApiAdminPlatformAnchorDomainsCheckByDomainResponses = {
+  /**
+   * Domain check result
+   */
+  200: DomainCheckResponse;
+};
+
+export type GetApiAdminPlatformAnchorDomainsCheckByDomainResponse =
+  GetApiAdminPlatformAnchorDomainsCheckByDomainResponses[keyof GetApiAdminPlatformAnchorDomainsCheckByDomainResponses];
+
+export type DeleteApiAdminPlatformAnchorDomainsByIdData = {
+  body?: never;
+  path: {
+    id: string;
+  };
+  query?: never;
+  url: "/api/admin/platform/anchor-domains/{id}";
+};
+
+export type DeleteApiAdminPlatformAnchorDomainsByIdErrors = {
+  /**
+   * Not authenticated
+   */
+  401: unknown;
+  /**
+   * Anchor domain not found
+   */
+  404: unknown;
+};
+
+export type DeleteApiAdminPlatformAnchorDomainsByIdResponses = {
+  /**
+   * Anchor domain removed
+   */
+  200: DeleteAnchorDomainResponse;
+};
+
+export type DeleteApiAdminPlatformAnchorDomainsByIdResponse =
+  DeleteApiAdminPlatformAnchorDomainsByIdResponses[keyof DeleteApiAdminPlatformAnchorDomainsByIdResponses];
+
+export type GetApiAdminPlatformAnchorDomainsByIdData = {
+  body?: never;
+  path: {
+    id: string;
+  };
+  query?: never;
+  url: "/api/admin/platform/anchor-domains/{id}";
+};
+
+export type GetApiAdminPlatformAnchorDomainsByIdErrors = {
+  /**
+   * Not authenticated
+   */
+  401: unknown;
+  /**
+   * Anchor domain not found
+   */
+  404: unknown;
+};
+
+export type GetApiAdminPlatformAnchorDomainsByIdResponses = {
+  /**
+   * Anchor domain details
+   */
+  200: AnchorDomainDto;
+};
+
+export type GetApiAdminPlatformAnchorDomainsByIdResponse =
+  GetApiAdminPlatformAnchorDomainsByIdResponses[keyof GetApiAdminPlatformAnchorDomainsByIdResponses];
 
 export type GetApiAdminPlatformApplicationsData = {
   body?: never;
@@ -945,6 +1186,229 @@ export type GetApiAdminPlatformApplicationsByIdRolesData = {
 export type GetApiAdminPlatformApplicationsByIdRolesResponses = {
   /**
    * OK
+   */
+  200: unknown;
+};
+
+export type GetApiAdminPlatformAuthConfigsData = {
+  body?: never;
+  path?: never;
+  query?: {
+    /**
+     * Filter by client ID
+     */
+    clientId?: number;
+  };
+  url: "/api/admin/platform/auth-configs";
+};
+
+export type GetApiAdminPlatformAuthConfigsErrors = {
+  /**
+   * Not authenticated
+   */
+  401: unknown;
+  /**
+   * Insufficient permissions
+   */
+  403: unknown;
+};
+
+export type GetApiAdminPlatformAuthConfigsResponses = {
+  /**
+   * List of auth configurations
+   */
+  200: AuthConfigListResponse;
+};
+
+export type GetApiAdminPlatformAuthConfigsResponse =
+  GetApiAdminPlatformAuthConfigsResponses[keyof GetApiAdminPlatformAuthConfigsResponses];
+
+export type GetApiAdminPlatformAuthConfigsByDomainByDomainData = {
+  body?: never;
+  path: {
+    domain: string;
+  };
+  query?: never;
+  url: "/api/admin/platform/auth-configs/by-domain/{domain}";
+};
+
+export type GetApiAdminPlatformAuthConfigsByDomainByDomainErrors = {
+  /**
+   * No configuration for this domain
+   */
+  404: unknown;
+};
+
+export type GetApiAdminPlatformAuthConfigsByDomainByDomainResponses = {
+  /**
+   * Auth configuration details
+   */
+  200: unknown;
+};
+
+export type PostApiAdminPlatformAuthConfigsInternalData = {
+  body: CreateInternalConfigRequest;
+  path?: never;
+  query?: never;
+  url: "/api/admin/platform/auth-configs/internal";
+};
+
+export type PostApiAdminPlatformAuthConfigsInternalErrors = {
+  /**
+   * Invalid request or domain already configured
+   */
+  400: unknown;
+  /**
+   * Not authenticated
+   */
+  401: unknown;
+};
+
+export type PostApiAdminPlatformAuthConfigsInternalResponses = {
+  /**
+   * Configuration created
+   */
+  201: AuthConfigDto;
+};
+
+export type PostApiAdminPlatformAuthConfigsInternalResponse =
+  PostApiAdminPlatformAuthConfigsInternalResponses[keyof PostApiAdminPlatformAuthConfigsInternalResponses];
+
+export type PostApiAdminPlatformAuthConfigsOidcData = {
+  body: CreateOidcConfigRequest;
+  path?: never;
+  query?: never;
+  url: "/api/admin/platform/auth-configs/oidc";
+};
+
+export type PostApiAdminPlatformAuthConfigsOidcErrors = {
+  /**
+   * Invalid request or domain already configured
+   */
+  400: unknown;
+  /**
+   * Not authenticated
+   */
+  401: unknown;
+};
+
+export type PostApiAdminPlatformAuthConfigsOidcResponses = {
+  /**
+   * Configuration created
+   */
+  201: AuthConfigDto;
+};
+
+export type PostApiAdminPlatformAuthConfigsOidcResponse =
+  PostApiAdminPlatformAuthConfigsOidcResponses[keyof PostApiAdminPlatformAuthConfigsOidcResponses];
+
+export type PostApiAdminPlatformAuthConfigsValidateSecretData = {
+  body: ValidateSecretRequest;
+  path?: never;
+  query?: never;
+  url: "/api/admin/platform/auth-configs/validate-secret";
+};
+
+export type PostApiAdminPlatformAuthConfigsValidateSecretErrors = {
+  /**
+   * Bad Request
+   */
+  400: unknown;
+  /**
+   * Not authenticated
+   */
+  401: unknown;
+};
+
+export type PostApiAdminPlatformAuthConfigsValidateSecretResponses = {
+  /**
+   * Validation result
+   */
+  200: SecretValidationResponse;
+};
+
+export type PostApiAdminPlatformAuthConfigsValidateSecretResponse =
+  PostApiAdminPlatformAuthConfigsValidateSecretResponses[keyof PostApiAdminPlatformAuthConfigsValidateSecretResponses];
+
+export type DeleteApiAdminPlatformAuthConfigsByIdData = {
+  body?: never;
+  path: {
+    id: string;
+  };
+  query?: never;
+  url: "/api/admin/platform/auth-configs/{id}";
+};
+
+export type DeleteApiAdminPlatformAuthConfigsByIdErrors = {
+  /**
+   * Configuration not found
+   */
+  404: unknown;
+};
+
+export type DeleteApiAdminPlatformAuthConfigsByIdResponses = {
+  /**
+   * Configuration deleted
+   */
+  204: void;
+};
+
+export type DeleteApiAdminPlatformAuthConfigsByIdResponse =
+  DeleteApiAdminPlatformAuthConfigsByIdResponses[keyof DeleteApiAdminPlatformAuthConfigsByIdResponses];
+
+export type GetApiAdminPlatformAuthConfigsByIdData = {
+  body?: never;
+  path: {
+    id: string;
+  };
+  query?: never;
+  url: "/api/admin/platform/auth-configs/{id}";
+};
+
+export type GetApiAdminPlatformAuthConfigsByIdErrors = {
+  /**
+   * Not authenticated
+   */
+  401: unknown;
+  /**
+   * Auth configuration not found
+   */
+  404: unknown;
+};
+
+export type GetApiAdminPlatformAuthConfigsByIdResponses = {
+  /**
+   * Auth configuration details
+   */
+  200: AuthConfigDto;
+};
+
+export type GetApiAdminPlatformAuthConfigsByIdResponse =
+  GetApiAdminPlatformAuthConfigsByIdResponses[keyof GetApiAdminPlatformAuthConfigsByIdResponses];
+
+export type PutApiAdminPlatformAuthConfigsByIdOidcData = {
+  body: UpdateOidcConfigRequest;
+  path: {
+    id: string;
+  };
+  query?: never;
+  url: "/api/admin/platform/auth-configs/{id}/oidc";
+};
+
+export type PutApiAdminPlatformAuthConfigsByIdOidcErrors = {
+  /**
+   * Invalid request or not an OIDC config
+   */
+  400: unknown;
+  /**
+   * Configuration not found
+   */
+  404: unknown;
+};
+
+export type PutApiAdminPlatformAuthConfigsByIdOidcResponses = {
+  /**
+   * Configuration updated
    */
   200: unknown;
 };
@@ -1439,6 +1903,35 @@ export type GetApiAdminPlatformPrincipalsResponses = {
 
 export type GetApiAdminPlatformPrincipalsResponse =
   GetApiAdminPlatformPrincipalsResponses[keyof GetApiAdminPlatformPrincipalsResponses];
+
+export type GetApiAdminPlatformPrincipalsCheckEmailDomainData = {
+  body?: never;
+  path?: never;
+  query?: {
+    /**
+     * Email address to check
+     */
+    email?: string;
+  };
+  url: "/api/admin/platform/principals/check-email-domain";
+};
+
+export type GetApiAdminPlatformPrincipalsCheckEmailDomainErrors = {
+  /**
+   * Invalid email format
+   */
+  400: unknown;
+};
+
+export type GetApiAdminPlatformPrincipalsCheckEmailDomainResponses = {
+  /**
+   * Domain info returned
+   */
+  200: EmailDomainCheckResponse;
+};
+
+export type GetApiAdminPlatformPrincipalsCheckEmailDomainResponse =
+  GetApiAdminPlatformPrincipalsCheckEmailDomainResponses[keyof GetApiAdminPlatformPrincipalsCheckEmailDomainResponses];
 
 export type PostApiAdminPlatformPrincipalsUsersData = {
   body: CreateUserRequest;
@@ -2800,7 +3293,7 @@ export type PostAuthCheckDomainResponses = {
   /**
    * Domain check result
    */
-  200: DomainCheckResponse;
+  200: DomainCheckResponse1;
 };
 
 export type PostAuthCheckDomainResponse =
@@ -2947,6 +3440,55 @@ export type GetAuthMeResponses = {
 };
 
 export type GetAuthMeResponse = GetAuthMeResponses[keyof GetAuthMeResponses];
+
+export type GetAuthOidcCallbackData = {
+  body?: never;
+  path?: never;
+  query?: {
+    code?: string;
+    error?: string;
+    error_description?: string;
+    state?: string;
+  };
+  url: "/auth/oidc/callback";
+};
+
+export type GetAuthOidcCallbackResponses = {
+  /**
+   * OK
+   */
+  200: unknown;
+};
+
+export type GetAuthOidcLoginData = {
+  body?: never;
+  path?: never;
+  query: {
+    /**
+     * Email domain to authenticate
+     */
+    domain: string;
+    oauth_client_id?: string;
+    oauth_code_challenge?: string;
+    oauth_code_challenge_method?: string;
+    oauth_nonce?: string;
+    oauth_redirect_uri?: string;
+    oauth_scope?: string;
+    oauth_state?: string;
+    /**
+     * URL to return to after login
+     */
+    return_url?: string;
+  };
+  url: "/auth/oidc/login";
+};
+
+export type GetAuthOidcLoginResponses = {
+  /**
+   * OK
+   */
+  200: unknown;
+};
 
 export type GetBffEventTypesData = {
   body?: never;

@@ -20,7 +20,7 @@ import java.util.*;
  * Uses embedded documents for metadata and attempts arrays.
  */
 @ApplicationScoped
-public class DispatchJobRepository implements PanacheMongoRepositoryBase<DispatchJob, Long> {
+public class DispatchJobRepository implements PanacheMongoRepositoryBase<DispatchJob, String> {
 
     /**
      * Create a new dispatch job with embedded metadata
@@ -71,7 +71,7 @@ public class DispatchJobRepository implements PanacheMongoRepositoryBase<Dispatc
     /**
      * Add delivery attempt to job
      */
-    public void addAttempt(Long jobId, DispatchAttempt attempt) {
+    public void addAttempt(String jobId, DispatchAttempt attempt) {
         attempt.id = TsidGenerator.generate();
         attempt.createdAt = Instant.now();
 
@@ -88,7 +88,7 @@ public class DispatchJobRepository implements PanacheMongoRepositoryBase<Dispatc
     /**
      * Update job status
      */
-    public void updateStatus(Long jobId, DispatchStatus status,
+    public void updateStatus(String jobId, DispatchStatus status,
                              Instant completedAt, Long durationMillis, String lastError) {
         DispatchJob job = findById(jobId);
         if (job != null) {

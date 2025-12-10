@@ -21,7 +21,7 @@ import java.time.Instant;
 public class Application extends PanacheMongoEntityBase {
 
     @BsonId
-    public Long id;
+    public String id;
 
     /**
      * Unique application code used in role prefixes.

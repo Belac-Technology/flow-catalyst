@@ -95,7 +95,7 @@ public class DispatchJobService {
         }
     }
 
-    public DispatchJobProcessResult processDispatchJob(Long dispatchJobId) {
+    public DispatchJobProcessResult processDispatchJob(String dispatchJobId) {
         // Load the dispatch job (single document read - includes metadata and attempts)
         DispatchJob job = dispatchJobRepository.findByIdOptional(dispatchJobId)
             .orElseThrow(() -> new IllegalArgumentException("Job not found: " + dispatchJobId));
@@ -153,7 +153,7 @@ public class DispatchJobService {
         }
     }
 
-    public Optional<DispatchJob> findById(Long id) {
+    public Optional<DispatchJob> findById(String id) {
         return dispatchJobRepository.findByIdOptional(id);
     }
 

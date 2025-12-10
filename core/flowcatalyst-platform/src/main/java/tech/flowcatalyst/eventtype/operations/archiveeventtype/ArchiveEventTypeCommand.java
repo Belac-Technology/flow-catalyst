@@ -9,5 +9,5 @@ package tech.flowcatalyst.eventtype.operations.archiveeventtype;
  * @param eventTypeId The ID of the event type to archive
  */
 public record ArchiveEventTypeCommand(
-    Long eventTypeId
+    String eventTypeId
 ) {}

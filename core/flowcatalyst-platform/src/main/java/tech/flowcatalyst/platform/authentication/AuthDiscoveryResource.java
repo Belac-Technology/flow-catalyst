@@ -68,25 +68,34 @@ public class AuthDiscoveryResource {
         if (configOpt.isEmpty()) {
             // Default to internal auth if no config
             LOG.debugf("No auth config for domain %s, defaulting to internal", domain);
-            return Response.ok(new DomainCheckResponse("internal", null)).build();
+            return Response.ok(new DomainCheckResponse("internal", null, null)).build();
         }
 
         ClientAuthConfig config = configOpt.get();
 
         if (config.authProvider == AuthProvider.OIDC && config.oidcIssuerUrl != null) {
-            LOG.debugf("Domain %s uses OIDC: %s", domain, config.oidcIssuerUrl);
-            return Response.ok(new DomainCheckResponse("external", config.oidcIssuerUrl)).build();
+            // Return the FlowCatalyst OIDC login URL (not the external IDP URL directly)
+            String loginUrl = "/auth/oidc/login?domain=" + domain;
+            LOG.debugf("Domain %s uses OIDC, login URL: %s", domain, loginUrl);
+            return Response.ok(new DomainCheckResponse("external", loginUrl, config.oidcIssuerUrl)).build();
         }
 
         // Internal auth
-        return Response.ok(new DomainCheckResponse("internal", null)).build();
+        return Response.ok(new DomainCheckResponse("internal", null, null)).build();
     }
 
     // DTOs
 
     public record DomainCheckRequest(String email) {}
 
-    public record DomainCheckResponse(String authMethod, String idpUrl) {}
+    /**
+     * Response for domain authentication check.
+     *
+     * @param authMethod "internal" for password auth, "external" for OIDC
+     * @param loginUrl The URL to redirect to for login (for external: /auth/oidc/login?domain=...)
+     * @param idpIssuer The external IDP issuer URL (informational, for external auth only)
+     */
+    public record DomainCheckResponse(String authMethod, String loginUrl, String idpIssuer) {}
 
     public record ErrorResponse(String error) {}
 }

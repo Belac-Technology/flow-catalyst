@@ -10,7 +10,7 @@ import java.time.Instant;
  */
 public class DispatchAttempt {
 
-    public Long id;
+    public String id;
     public Integer attemptNumber;
     public Instant attemptedAt;
     public Instant completedAt;

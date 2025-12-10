@@ -14,7 +14,7 @@ import java.time.Instant;
 public class DispatchCredentials extends PanacheMongoEntityBase {
 
     @BsonId
-    public Long id;
+    public String id;
 
     public String bearerToken;
 

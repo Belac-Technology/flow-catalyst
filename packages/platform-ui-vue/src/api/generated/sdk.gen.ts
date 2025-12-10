@@ -20,6 +20,16 @@ import type {
   GetApiAdminDispatchCredentialsByIdData,
   GetApiAdminDispatchCredentialsByIdResponse,
   GetApiAdminDispatchCredentialsByIdError,
+  GetApiAdminPlatformAnchorDomainsData,
+  GetApiAdminPlatformAnchorDomainsResponse,
+  PostApiAdminPlatformAnchorDomainsData,
+  PostApiAdminPlatformAnchorDomainsResponse,
+  GetApiAdminPlatformAnchorDomainsCheckByDomainData,
+  GetApiAdminPlatformAnchorDomainsCheckByDomainResponse,
+  DeleteApiAdminPlatformAnchorDomainsByIdData,
+  DeleteApiAdminPlatformAnchorDomainsByIdResponse,
+  GetApiAdminPlatformAnchorDomainsByIdData,
+  GetApiAdminPlatformAnchorDomainsByIdResponse,
   GetApiAdminPlatformApplicationsData,
   PostApiAdminPlatformApplicationsData,
   GetApiAdminPlatformApplicationsByCodeByCodeData,
@@ -32,6 +42,20 @@ import type {
   PostApiAdminPlatformApplicationsByIdClientsByClientIdEnableData,
   PostApiAdminPlatformApplicationsByIdDeactivateData,
   GetApiAdminPlatformApplicationsByIdRolesData,
+  GetApiAdminPlatformAuthConfigsData,
+  GetApiAdminPlatformAuthConfigsResponse,
+  GetApiAdminPlatformAuthConfigsByDomainByDomainData,
+  PostApiAdminPlatformAuthConfigsInternalData,
+  PostApiAdminPlatformAuthConfigsInternalResponse,
+  PostApiAdminPlatformAuthConfigsOidcData,
+  PostApiAdminPlatformAuthConfigsOidcResponse,
+  PostApiAdminPlatformAuthConfigsValidateSecretData,
+  PostApiAdminPlatformAuthConfigsValidateSecretResponse,
+  DeleteApiAdminPlatformAuthConfigsByIdData,
+  DeleteApiAdminPlatformAuthConfigsByIdResponse,
+  GetApiAdminPlatformAuthConfigsByIdData,
+  GetApiAdminPlatformAuthConfigsByIdResponse,
+  PutApiAdminPlatformAuthConfigsByIdOidcData,
   GetApiAdminPlatformClientsData,
   GetApiAdminPlatformClientsResponse,
   PostApiAdminPlatformClientsData,
@@ -58,6 +82,8 @@ import type {
   PostApiAdminPlatformOauthClientsByIdRotateSecretResponse,
   GetApiAdminPlatformPrincipalsData,
   GetApiAdminPlatformPrincipalsResponse,
+  GetApiAdminPlatformPrincipalsCheckEmailDomainData,
+  GetApiAdminPlatformPrincipalsCheckEmailDomainResponse,
   PostApiAdminPlatformPrincipalsUsersData,
   PostApiAdminPlatformPrincipalsUsersResponse,
   GetApiAdminPlatformPrincipalsByIdData,
@@ -152,6 +178,8 @@ import type {
   PostAuthLogoutData,
   GetAuthMeData,
   GetAuthMeResponse,
+  GetAuthOidcCallbackData,
+  GetAuthOidcLoginData,
   GetBffEventTypesData,
   PostBffEventTypesData,
   GetBffEventTypesFiltersAggregatesData,
@@ -285,6 +313,106 @@ export const getApiAdminDispatchCredentialsById = <
     ThrowOnError
   >({
     url: "/api/admin/dispatch/credentials/{id}",
+    ...options,
+  });
+};
+
+/**
+ * List all anchor domains
+ * Returns all configured anchor domains. Users from these domains have access to all clients.
+ */
+export const getApiAdminPlatformAnchorDomains = <
+  ThrowOnError extends boolean = false,
+>(
+  options?: Options<GetApiAdminPlatformAnchorDomainsData, ThrowOnError>,
+) => {
+  return (options?.client ?? _heyApiClient).get<
+    GetApiAdminPlatformAnchorDomainsResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/anchor-domains",
+    ...options,
+  });
+};
+
+/**
+ * Add anchor domain
+ * Add a new anchor domain. Users from this domain will have access to all clients.
+ */
+export const postApiAdminPlatformAnchorDomains = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<PostApiAdminPlatformAnchorDomainsData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).post<
+    PostApiAdminPlatformAnchorDomainsResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/anchor-domains",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options?.headers,
+    },
+  });
+};
+
+/**
+ * Check if domain is an anchor domain
+ */
+export const getApiAdminPlatformAnchorDomainsCheckByDomain = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<
+    GetApiAdminPlatformAnchorDomainsCheckByDomainData,
+    ThrowOnError
+  >,
+) => {
+  return (options.client ?? _heyApiClient).get<
+    GetApiAdminPlatformAnchorDomainsCheckByDomainResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/anchor-domains/check/{domain}",
+    ...options,
+  });
+};
+
+/**
+ * Remove anchor domain
+ * Remove an anchor domain. Users from this domain will lose global access.
+ */
+export const deleteApiAdminPlatformAnchorDomainsById = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<DeleteApiAdminPlatformAnchorDomainsByIdData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).delete<
+    DeleteApiAdminPlatformAnchorDomainsByIdResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/anchor-domains/{id}",
+    ...options,
+  });
+};
+
+/**
+ * Get anchor domain by ID
+ */
+export const getApiAdminPlatformAnchorDomainsById = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<GetApiAdminPlatformAnchorDomainsByIdData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).get<
+    GetApiAdminPlatformAnchorDomainsByIdResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/anchor-domains/{id}",
     ...options,
   });
 };
@@ -499,6 +627,168 @@ export const getApiAdminPlatformApplicationsByIdRoles = <
   return (options.client ?? _heyApiClient).get<unknown, unknown, ThrowOnError>({
     url: "/api/admin/platform/applications/{id}/roles",
     ...options,
+  });
+};
+
+/**
+ * List all auth configurations
+ * Returns all domain auth configurations
+ */
+export const getApiAdminPlatformAuthConfigs = <
+  ThrowOnError extends boolean = false,
+>(
+  options?: Options<GetApiAdminPlatformAuthConfigsData, ThrowOnError>,
+) => {
+  return (options?.client ?? _heyApiClient).get<
+    GetApiAdminPlatformAuthConfigsResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/auth-configs",
+    ...options,
+  });
+};
+
+/**
+ * Get auth configuration by email domain
+ */
+export const getApiAdminPlatformAuthConfigsByDomainByDomain = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<
+    GetApiAdminPlatformAuthConfigsByDomainByDomainData,
+    ThrowOnError
+  >,
+) => {
+  return (options.client ?? _heyApiClient).get<unknown, unknown, ThrowOnError>({
+    url: "/api/admin/platform/auth-configs/by-domain/{domain}",
+    ...options,
+  });
+};
+
+/**
+ * Create internal auth configuration
+ * Configure a domain to use internal (password) authentication
+ */
+export const postApiAdminPlatformAuthConfigsInternal = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<PostApiAdminPlatformAuthConfigsInternalData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).post<
+    PostApiAdminPlatformAuthConfigsInternalResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/auth-configs/internal",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options?.headers,
+    },
+  });
+};
+
+/**
+ * Create OIDC auth configuration
+ * Configure a domain to use external OIDC identity provider
+ */
+export const postApiAdminPlatformAuthConfigsOidc = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<PostApiAdminPlatformAuthConfigsOidcData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).post<
+    PostApiAdminPlatformAuthConfigsOidcResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/auth-configs/oidc",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options?.headers,
+    },
+  });
+};
+
+/**
+ * Validate secret reference
+ * Checks that a secret reference is valid and accessible without returning the value
+ */
+export const postApiAdminPlatformAuthConfigsValidateSecret = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<
+    PostApiAdminPlatformAuthConfigsValidateSecretData,
+    ThrowOnError
+  >,
+) => {
+  return (options.client ?? _heyApiClient).post<
+    PostApiAdminPlatformAuthConfigsValidateSecretResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/auth-configs/validate-secret",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options?.headers,
+    },
+  });
+};
+
+/**
+ * Delete auth configuration
+ */
+export const deleteApiAdminPlatformAuthConfigsById = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<DeleteApiAdminPlatformAuthConfigsByIdData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).delete<
+    DeleteApiAdminPlatformAuthConfigsByIdResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/auth-configs/{id}",
+    ...options,
+  });
+};
+
+/**
+ * Get auth configuration by ID
+ */
+export const getApiAdminPlatformAuthConfigsById = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<GetApiAdminPlatformAuthConfigsByIdData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).get<
+    GetApiAdminPlatformAuthConfigsByIdResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/auth-configs/{id}",
+    ...options,
+  });
+};
+
+/**
+ * Update OIDC configuration
+ */
+export const putApiAdminPlatformAuthConfigsByIdOidc = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<PutApiAdminPlatformAuthConfigsByIdOidcData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).put<unknown, unknown, ThrowOnError>({
+    url: "/api/admin/platform/auth-configs/{id}/oidc",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options?.headers,
+    },
   });
 };
 
@@ -841,6 +1131,28 @@ export const getApiAdminPlatformPrincipals = <
     ThrowOnError
   >({
     url: "/api/admin/platform/principals",
+    ...options,
+  });
+};
+
+/**
+ * Check email domain configuration
+ * Returns auth provider info and warnings for an email domain
+ */
+export const getApiAdminPlatformPrincipalsCheckEmailDomain = <
+  ThrowOnError extends boolean = false,
+>(
+  options?: Options<
+    GetApiAdminPlatformPrincipalsCheckEmailDomainData,
+    ThrowOnError
+  >,
+) => {
+  return (options?.client ?? _heyApiClient).get<
+    GetApiAdminPlatformPrincipalsCheckEmailDomainResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/principals/check-email-domain",
     ...options,
   });
 };
@@ -1910,6 +2222,34 @@ export const getAuthMe = <ThrowOnError extends boolean = false>(
     ThrowOnError
   >({
     url: "/auth/me",
+    ...options,
+  });
+};
+
+/**
+ * OIDC callback
+ * Handles callback from external IDP
+ */
+export const getAuthOidcCallback = <ThrowOnError extends boolean = false>(
+  options?: Options<GetAuthOidcCallbackData, ThrowOnError>,
+) => {
+  return (options?.client ?? _heyApiClient).get<unknown, unknown, ThrowOnError>(
+    {
+      url: "/auth/oidc/callback",
+      ...options,
+    },
+  );
+};
+
+/**
+ * Start OIDC login
+ * Redirects to external IDP for authentication
+ */
+export const getAuthOidcLogin = <ThrowOnError extends boolean = false>(
+  options: Options<GetAuthOidcLoginData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).get<unknown, unknown, ThrowOnError>({
+    url: "/auth/oidc/login",
     ...options,
   });
 };

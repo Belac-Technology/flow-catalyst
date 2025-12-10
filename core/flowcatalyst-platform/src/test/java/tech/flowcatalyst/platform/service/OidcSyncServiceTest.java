@@ -13,6 +13,7 @@ import tech.flowcatalyst.platform.authentication.OidcSyncService;
 import tech.flowcatalyst.platform.authorization.PrincipalRole;
 import tech.flowcatalyst.platform.authorization.RoleService;
 import tech.flowcatalyst.platform.principal.*;
+import tech.flowcatalyst.platform.shared.TsidGenerator;
 
 import java.time.Instant;
 import java.util.List;
@@ -341,12 +342,12 @@ class OidcSyncServiceTest {
         String email = "alice@customer.com";
         String name = "Alice Smith";
         String externalIdpId = "google-oauth2|123";
-        Long tenantId = 200L;
+        String clientId = TsidGenerator.generate();
         List<String> idpRoles = List.of("customer-viewer");
 
-        Principal principal = createOidcPrincipal(1L, email);
+        Principal principal = createOidcPrincipal(TsidGenerator.generate(), email);
 
-        when(userService.createOrUpdateOidcUser(email, name, externalIdpId, tenantId))
+        when(userService.createOrUpdateOidcUser(email, name, externalIdpId, clientId))
             .thenReturn(principal);
 
         when(idpRoleMappingRepo.findByIdpRoleName("customer-viewer"))
@@ -355,13 +356,13 @@ class OidcSyncServiceTest {
         when(roleService.removeRolesBySource(1L, "IDP_SYNC")).thenReturn(0L);
 
         // Act
-        Principal result = service.syncOidcLogin(email, name, externalIdpId, tenantId, idpRoles);
+        Principal result = service.syncOidcLogin(email, name, externalIdpId, clientId, idpRoles);
 
         // Assert
         assertThat(result).isEqualTo(principal);
 
         // Verify user sync
-        verify(userService).createOrUpdateOidcUser(email, name, externalIdpId, tenantId);
+        verify(userService).createOrUpdateOidcUser(email, name, externalIdpId, clientId);
         verify(userService).updateLastLogin(principal.id);
 
         // Verify role sync
@@ -460,7 +461,7 @@ class OidcSyncServiceTest {
     // HELPER METHODS
     // ========================================
 
-    private Principal createOidcPrincipal(Long id, String email) {
+    private Principal createOidcPrincipal(String id, String email) {
         Principal p = new Principal();
         p.id = id;
         p.type = PrincipalType.USER;

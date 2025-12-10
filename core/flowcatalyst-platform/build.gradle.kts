@@ -61,6 +61,18 @@ dependencies {
     implementation("software.amazon.awssdk:url-connection-client")
 
     // ==========================================================================
+    // Secret Management
+    // ==========================================================================
+    // AWS Secrets Manager
+    implementation("io.quarkiverse.amazonservices:quarkus-amazon-secretsmanager")
+    // AWS Systems Manager Parameter Store
+    implementation("io.quarkiverse.amazonservices:quarkus-amazon-ssm")
+    // GCP Secret Manager
+    implementation("com.google.cloud:google-cloud-secretmanager:2.54.0")
+    // HashiCorp Vault (quarkiverse extension)
+    implementation("io.quarkiverse.vault:quarkus-vault:4.4.0")
+
+    // ==========================================================================
     // Resilience & Fault Tolerance
     // ==========================================================================
     implementation("io.quarkus:quarkus-smallrye-fault-tolerance")
@@ -156,6 +168,18 @@ tasks.named("check") {
 tasks.withType<JavaCompile> {
     options.encoding = "UTF-8"
     options.compilerArgs.add("-parameters")
+}
+
+// ==========================================================================
+// Java 24+ Compatibility
+// ==========================================================================
+// Required for JBoss threads thread-local-reset capability on Java 24+
+tasks.withType<JavaExec> {
+    jvmArgs("--add-opens", "java.base/java.lang=ALL-UNNAMED")
+}
+
+tasks.withType<Test> {
+    jvmArgs("--add-opens", "java.base/java.lang=ALL-UNNAMED")
 }
 
 // ==========================================================================

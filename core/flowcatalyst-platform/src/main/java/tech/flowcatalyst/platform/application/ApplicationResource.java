@@ -69,7 +69,7 @@ public class ApplicationResource {
         @APIResponse(responseCode = "200", description = "Application found"),
         @APIResponse(responseCode = "404", description = "Application not found")
     })
-    public Response getApplication(@PathParam("id") Long id) {
+    public Response getApplication(@PathParam("id") String id) {
         return applicationOperations.findById(id)
             .map(app -> Response.ok(ApplicationResponse.from(app)).build())
             .orElse(Response.status(404)
@@ -130,7 +130,7 @@ public class ApplicationResource {
         @APIResponse(responseCode = "400", description = "Invalid request"),
         @APIResponse(responseCode = "404", description = "Application not found")
     })
-    public Response updateApplication(@PathParam("id") Long id, UpdateApplicationRequest request) {
+    public Response updateApplication(@PathParam("id") String id, UpdateApplicationRequest request) {
         ExecutionContext context = createExecutionContext();
 
         UpdateApplicationCommand command = new UpdateApplicationCommand(
@@ -161,7 +161,7 @@ public class ApplicationResource {
         @APIResponse(responseCode = "400", description = "Application already active"),
         @APIResponse(responseCode = "404", description = "Application not found")
     })
-    public Response activateApplication(@PathParam("id") Long id) {
+    public Response activateApplication(@PathParam("id") String id) {
         ExecutionContext context = createExecutionContext();
 
         ActivateApplicationCommand command = new ActivateApplicationCommand(id);
@@ -186,7 +186,7 @@ public class ApplicationResource {
         @APIResponse(responseCode = "400", description = "Application already deactivated"),
         @APIResponse(responseCode = "404", description = "Application not found")
     })
-    public Response deactivateApplication(@PathParam("id") Long id) {
+    public Response deactivateApplication(@PathParam("id") String id) {
         ExecutionContext context = createExecutionContext();
 
         DeactivateApplicationCommand command = new DeactivateApplicationCommand(id);
@@ -211,7 +211,7 @@ public class ApplicationResource {
         @APIResponse(responseCode = "400", description = "Cannot delete active application or application with configurations"),
         @APIResponse(responseCode = "404", description = "Application not found")
     })
-    public Response deleteApplication(@PathParam("id") Long id) {
+    public Response deleteApplication(@PathParam("id") String id) {
         ExecutionContext context = createExecutionContext();
 
         DeleteApplicationCommand command = new DeleteApplicationCommand(id);

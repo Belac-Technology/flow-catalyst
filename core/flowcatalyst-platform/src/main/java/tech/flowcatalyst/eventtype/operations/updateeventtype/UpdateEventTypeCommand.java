@@ -11,7 +11,7 @@ package tech.flowcatalyst.eventtype.operations.updateeventtype;
  * @param description New description (null to keep current)
  */
 public record UpdateEventTypeCommand(
-    Long eventTypeId,
+    String eventTypeId,
     String name,
     String description
 ) {}

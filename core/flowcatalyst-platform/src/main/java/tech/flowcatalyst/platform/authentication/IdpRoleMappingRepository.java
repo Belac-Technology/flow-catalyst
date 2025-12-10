@@ -9,7 +9,7 @@ import java.util.Optional;
  * SECURITY: Only explicitly authorized IDP roles should exist in this table.
  */
 @ApplicationScoped
-public class IdpRoleMappingRepository implements PanacheMongoRepositoryBase<IdpRoleMapping, Long> {
+public class IdpRoleMappingRepository implements PanacheMongoRepositoryBase<IdpRoleMapping, String> {
 
     public Optional<IdpRoleMapping> findByIdpRoleName(String idpRoleName) {
         return find("idpRoleName", idpRoleName).firstResultOptional();

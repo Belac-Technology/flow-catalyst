@@ -54,7 +54,7 @@ public class RefreshTokenRepository implements PanacheMongoRepositoryBase<Refres
     /**
      * Revoke all tokens for a principal (e.g., on password change, logout all).
      */
-    public void revokeAllForPrincipal(Long principalId) {
+    public void revokeAllForPrincipal(String principalId) {
         List<RefreshToken> tokens = list("principalId = ?1 and revoked = false", principalId);
         Instant now = Instant.now();
         for (RefreshToken token : tokens) {
@@ -67,7 +67,7 @@ public class RefreshTokenRepository implements PanacheMongoRepositoryBase<Refres
     /**
      * Revoke all tokens for a principal and client (e.g., on client deauthorization).
      */
-    public void revokeAllForPrincipalAndClient(Long principalId, String clientId) {
+    public void revokeAllForPrincipalAndClient(String principalId, String clientId) {
         List<RefreshToken> tokens = list("principalId = ?1 and clientId = ?2 and revoked = false", principalId, clientId);
         Instant now = Instant.now();
         for (RefreshToken token : tokens) {
@@ -80,7 +80,7 @@ public class RefreshTokenRepository implements PanacheMongoRepositoryBase<Refres
     /**
      * Find all active tokens for a principal (for token management UI).
      */
-    public List<RefreshToken> findActiveByPrincipalId(Long principalId) {
+    public List<RefreshToken> findActiveByPrincipalId(String principalId) {
         return find("principalId = ?1 and revoked = false and expiresAt > ?2",
             principalId, Instant.now()).list();
     }

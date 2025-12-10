@@ -13,11 +13,11 @@ import java.time.Instant;
 public class ClientAccessGrant extends PanacheMongoEntityBase {
 
     @BsonId
-    public Long id;
+    public String id;
 
-    public Long principalId;
+    public String principalId;
 
-    public Long clientId;
+    public String clientId;
 
     public Instant grantedAt = Instant.now();
 

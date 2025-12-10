@@ -67,7 +67,7 @@ public class ClientAdminResource {
             @HeaderParam("Authorization") String authHeader) {
 
         // TODO: Add permission check for platform:client:view
-        Long principalId = extractPrincipalId(sessionToken, authHeader);
+        String principalId = extractPrincipalId(sessionToken, authHeader);
         if (principalId == null) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
@@ -107,16 +107,16 @@ public class ClientAdminResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        Long principalId = extractPrincipalId(sessionToken, authHeader);
+        String principalId = extractPrincipalId(sessionToken, authHeader);
         if (principalId == null) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
                 .build();
         }
 
-        Long clientId;
+        String clientId;
         try {
-            clientId = Long.parseLong(id);
+            clientId = id;
         } catch (NumberFormatException e) {
             return Response.status(Response.Status.BAD_REQUEST)
                 .entity(new ErrorResponse("Invalid client ID"))
@@ -145,7 +145,7 @@ public class ClientAdminResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        Long principalId = extractPrincipalId(sessionToken, authHeader);
+        String principalId = extractPrincipalId(sessionToken, authHeader);
         if (principalId == null) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
@@ -176,7 +176,7 @@ public class ClientAdminResource {
             @HeaderParam("Authorization") String authHeader,
             @Context UriInfo uriInfo) {
 
-        Long principalId = extractPrincipalId(sessionToken, authHeader);
+        String principalId = extractPrincipalId(sessionToken, authHeader);
         if (principalId == null) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
@@ -216,16 +216,16 @@ public class ClientAdminResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        Long principalId = extractPrincipalId(sessionToken, authHeader);
+        String principalId = extractPrincipalId(sessionToken, authHeader);
         if (principalId == null) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
                 .build();
         }
 
-        Long clientId;
+        String clientId;
         try {
-            clientId = Long.parseLong(id);
+            clientId = id;
         } catch (NumberFormatException e) {
             return Response.status(Response.Status.BAD_REQUEST)
                 .entity(new ErrorResponse("Invalid client ID"))
@@ -260,16 +260,16 @@ public class ClientAdminResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        Long principalId = extractPrincipalId(sessionToken, authHeader);
+        String principalId = extractPrincipalId(sessionToken, authHeader);
         if (principalId == null) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
                 .build();
         }
 
-        Long clientId;
+        String clientId;
         try {
-            clientId = Long.parseLong(id);
+            clientId = id;
         } catch (NumberFormatException e) {
             return Response.status(Response.Status.BAD_REQUEST)
                 .entity(new ErrorResponse("Invalid client ID"))
@@ -303,16 +303,16 @@ public class ClientAdminResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        Long principalId = extractPrincipalId(sessionToken, authHeader);
+        String principalId = extractPrincipalId(sessionToken, authHeader);
         if (principalId == null) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
                 .build();
         }
 
-        Long clientId;
+        String clientId;
         try {
-            clientId = Long.parseLong(id);
+            clientId = id;
         } catch (NumberFormatException e) {
             return Response.status(Response.Status.BAD_REQUEST)
                 .entity(new ErrorResponse("Invalid client ID"))
@@ -346,16 +346,16 @@ public class ClientAdminResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        Long principalId = extractPrincipalId(sessionToken, authHeader);
+        String principalId = extractPrincipalId(sessionToken, authHeader);
         if (principalId == null) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
                 .build();
         }
 
-        Long clientId;
+        String clientId;
         try {
-            clientId = Long.parseLong(id);
+            clientId = id;
         } catch (NumberFormatException e) {
             return Response.status(Response.Status.BAD_REQUEST)
                 .entity(new ErrorResponse("Invalid client ID"))
@@ -391,16 +391,16 @@ public class ClientAdminResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        Long principalId = extractPrincipalId(sessionToken, authHeader);
+        String principalId = extractPrincipalId(sessionToken, authHeader);
         if (principalId == null) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
                 .build();
         }
 
-        Long clientId;
+        String clientId;
         try {
-            clientId = Long.parseLong(id);
+            clientId = id;
         } catch (NumberFormatException e) {
             return Response.status(Response.Status.BAD_REQUEST)
                 .entity(new ErrorResponse("Invalid client ID"))
@@ -421,7 +421,7 @@ public class ClientAdminResource {
 
     // ==================== Helper Methods ====================
 
-    private Long extractPrincipalId(String sessionToken, String authHeader) {
+    private String extractPrincipalId(String sessionToken, String authHeader) {
         String token = sessionToken;
         if (token == null && authHeader != null && authHeader.startsWith("Bearer ")) {
             token = authHeader.substring("Bearer ".length());
@@ -434,7 +434,7 @@ public class ClientAdminResource {
 
     private ClientDto toDto(Client client) {
         return new ClientDto(
-            client.id != null ? client.id.toString() : null,
+            client.id != null ? client.id : null,
             client.name,
             client.identifier,
             client.status,

@@ -67,8 +67,7 @@ public class InternalIdentityProvider implements IdentityProvider<TokenAuthentic
 
                 // If no roles in token, load from database
                 if (roles.isEmpty()) {
-                    Long principalIdLong = Long.parseLong(principalId);
-                    List<PrincipalRole> principalRoles = principalRoleRepository.findByPrincipalId(principalIdLong);
+                    List<PrincipalRole> principalRoles = principalRoleRepository.findByPrincipalId(principalId);
                     for (PrincipalRole pr : principalRoles) {
                         roles.add(pr.roleName);
                     }

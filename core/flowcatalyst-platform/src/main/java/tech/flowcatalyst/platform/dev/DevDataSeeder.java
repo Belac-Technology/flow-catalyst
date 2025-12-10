@@ -258,7 +258,7 @@ public class DevDataSeeder {
         }
     }
 
-    private Principal createUserIfNotExists(String email, String name, Long clientId,
+    private Principal createUserIfNotExists(String email, String name, String clientId,
                                             String passwordHash, List<String> roles) {
         Optional<Principal> existing = principalRepo.findByEmail(email);
         if (existing.isPresent()) {
@@ -289,7 +289,7 @@ public class DevDataSeeder {
         return user;
     }
 
-    private void createGrantIfNotExists(Long principalId, Long clientId) {
+    private void createGrantIfNotExists(String principalId, String clientId) {
         long count = grantRepo.count("principalId = ?1 AND clientId = ?2", principalId, clientId);
         if (count > 0) {
             return;

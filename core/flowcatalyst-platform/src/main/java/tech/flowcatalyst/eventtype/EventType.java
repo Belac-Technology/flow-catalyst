@@ -18,7 +18,7 @@ import java.util.List;
 @MongoEntity(collection = "event_types")
 public record EventType(
     @BsonId
-    Long id,
+    String id,
 
     /**
      * Unique event type code (globally unique, not tenant-scoped).

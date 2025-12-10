@@ -78,7 +78,7 @@ public class EventResource {
         @APIResponse(responseCode = "200", description = "Event found"),
         @APIResponse(responseCode = "404", description = "Event not found")
     })
-    public Response getEvent(@PathParam("id") Long id) {
+    public Response getEvent(@PathParam("id") String id) {
         return eventService.findById(id)
             .map(event -> Response.ok(EventResponse.from(event)).build())
             .orElse(Response.status(404)
@@ -105,7 +105,7 @@ public class EventResource {
     ) {}
 
     public record EventResponse(
-        Long id,
+        String id,
         String specVersion,
         String type,
         String source,

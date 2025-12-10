@@ -38,6 +38,21 @@ export const NAVIGATION_CONFIG: NavGroup[] = [
     ],
   },
   {
+    label: 'Authentication',
+    items: [
+      {
+        label: 'Domain IDPs',
+        icon: 'pi pi-id-card',
+        route: '/authentication/domain-idps',
+      },
+      {
+        label: 'Anchor Domains',
+        icon: 'pi pi-globe',
+        route: '/authentication/anchor-domains',
+      },
+    ],
+  },
+  {
     label: 'Authorization',
     items: [
       {

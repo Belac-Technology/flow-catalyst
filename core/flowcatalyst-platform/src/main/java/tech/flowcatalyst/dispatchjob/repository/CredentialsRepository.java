@@ -14,7 +14,7 @@ import java.time.Instant;
  * Credentials are stored in separate collection (not embedded).
  */
 @ApplicationScoped
-public class CredentialsRepository implements PanacheMongoRepositoryBase<DispatchCredentials, Long> {
+public class CredentialsRepository implements PanacheMongoRepositoryBase<DispatchCredentials, String> {
 
     /**
      * Create new credentials

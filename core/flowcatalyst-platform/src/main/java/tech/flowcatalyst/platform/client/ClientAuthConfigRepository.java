@@ -11,7 +11,7 @@ import java.util.Optional;
  * Used to look up authentication configuration by email domain.
  */
 @ApplicationScoped
-public class ClientAuthConfigRepository implements PanacheMongoRepositoryBase<ClientAuthConfig, Long> {
+public class ClientAuthConfigRepository implements PanacheMongoRepositoryBase<ClientAuthConfig, String> {
 
     /**
      * Find authentication configuration by email domain.

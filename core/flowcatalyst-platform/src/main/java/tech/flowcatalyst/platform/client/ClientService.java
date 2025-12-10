@@ -63,7 +63,7 @@ public class ClientService {
      * @return Updated client
      * @throws NotFoundException if client not found
      */
-    public Client updateClient(Long clientId, String name) {
+    public Client updateClient(String clientId, String name) {
         Client client = clientRepo.findByIdOptional(clientId)
             .orElseThrow(() -> new NotFoundException("Client not found"));
 
@@ -82,7 +82,7 @@ public class ClientService {
      * @param changedBy Principal ID of who made the change
      * @throws NotFoundException if client not found
      */
-    public void changeClientStatus(Long clientId, ClientStatus status, String reason, String note, String changedBy) {
+    public void changeClientStatus(String clientId, ClientStatus status, String reason, String note, String changedBy) {
         Client client = clientRepo.findByIdOptional(clientId)
             .orElseThrow(() -> new NotFoundException("Client not found"));
 
@@ -99,7 +99,7 @@ public class ClientService {
      * @param changedBy Who deactivated the client
      * @throws NotFoundException if client not found
      */
-    public void deactivateClient(Long clientId, String reason, String changedBy) {
+    public void deactivateClient(String clientId, String reason, String changedBy) {
         changeClientStatus(clientId, ClientStatus.INACTIVE, reason,
             "Client deactivated: " + reason, changedBy);
     }
@@ -112,7 +112,7 @@ public class ClientService {
      * @param changedBy Who suspended the client
      * @throws NotFoundException if client not found
      */
-    public void suspendClient(Long clientId, String reason, String changedBy) {
+    public void suspendClient(String clientId, String reason, String changedBy) {
         changeClientStatus(clientId, ClientStatus.SUSPENDED, reason,
             "Client suspended: " + reason, changedBy);
     }
@@ -124,7 +124,7 @@ public class ClientService {
      * @param changedBy Who activated the client
      * @throws NotFoundException if client not found
      */
-    public void activateClient(Long clientId, String changedBy) {
+    public void activateClient(String clientId, String changedBy) {
         changeClientStatus(clientId, ClientStatus.ACTIVE, null,
             "Client activated", changedBy);
     }
@@ -139,7 +139,7 @@ public class ClientService {
      * @throws NotFoundException if principal or client not found
      * @throws BadRequestException if grant already exists or if principal already belongs to client
      */
-    public ClientAccessGrant grantClientAccess(Long principalId, Long clientId) {
+    public ClientAccessGrant grantClientAccess(String principalId, String clientId) {
         // Validate principal exists
         Principal principal = principalRepo.findByIdOptional(principalId)
             .orElseThrow(() -> new NotFoundException("Principal not found"));
@@ -176,7 +176,7 @@ public class ClientService {
      * @param clientId Client ID
      * @throws NotFoundException if grant not found
      */
-    public void revokeClientAccess(Long principalId, Long clientId) {
+    public void revokeClientAccess(String principalId, String clientId) {
         long deleted = grantRepo.delete("principalId = ?1 AND clientId = ?2", principalId, clientId);
         if (deleted == 0) {
             throw new NotFoundException("Client access grant not found");
@@ -191,7 +191,7 @@ public class ClientService {
      * @return Set of accessible client IDs
      * @throws NotFoundException if principal not found
      */
-    public Set<Long> getAccessibleClients(Long principalId) {
+    public Set<String> getAccessibleClients(String principalId) {
         Principal principal = principalRepo.findByIdOptional(principalId)
             .orElseThrow(() -> new NotFoundException("Principal not found"));
 
@@ -204,12 +204,12 @@ public class ClientService {
      * @param clientId Client ID
      * @return List of principals
      */
-    public List<Principal> getPrincipalsWithAccess(Long clientId) {
+    public List<Principal> getPrincipalsWithAccess(String clientId) {
         // Get all grants for this client
         List<ClientAccessGrant> grants = grantRepo.findByClientId(clientId);
 
         // Get principals for those grants
-        List<Long> principalIds = grants.stream()
+        List<String> principalIds = grants.stream()
             .map(g -> g.principalId)
             .toList();
 
@@ -231,7 +231,7 @@ public class ClientService {
      * @param clientId Client ID
      * @return Optional containing the client if found
      */
-    public Optional<Client> findById(Long clientId) {
+    public Optional<Client> findById(String clientId) {
         return clientRepo.findByIdOptional(clientId);
     }
 
@@ -272,7 +272,7 @@ public class ClientService {
      * @param addedBy Who added the note
      * @throws NotFoundException if client not found
      */
-    public void addNote(Long clientId, String category, String text, String addedBy) {
+    public void addNote(String clientId, String category, String text, String addedBy) {
         Client client = clientRepo.findByIdOptional(clientId)
             .orElseThrow(() -> new NotFoundException("Client not found"));
 

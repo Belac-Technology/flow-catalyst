@@ -17,15 +17,29 @@ import java.util.stream.Collectors;
 public class Principal extends PanacheMongoEntityBase {
 
     @BsonId
-    public Long id;
+    public String id;
 
     public PrincipalType type;
 
     /**
-     * Client this principal belongs to.
-     * NULL for partners and anchor domain users.
+     * Access scope for user principals.
+     * Determines which clients this user can access.
+     * - ANCHOR: Can access all clients (platform admin)
+     * - PARTNER: Can access explicitly assigned clients
+     * - CLIENT: Can only access their home client
+     *
+     * For SERVICE principals, this is typically null.
      */
-    public Long clientId;
+    public UserScope scope;
+
+    /**
+     * Client this principal belongs to (home client).
+     * - For CLIENT scope: Required, determines their access
+     * - For PARTNER scope: Optional, may have a home client
+     * - For ANCHOR scope: Should be null
+     * - For SERVICE type: The client the service account belongs to
+     */
+    public String clientId;
 
     public String name;
 

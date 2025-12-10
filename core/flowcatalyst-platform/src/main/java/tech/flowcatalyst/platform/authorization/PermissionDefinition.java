@@ -3,57 +3,53 @@ package tech.flowcatalyst.platform.authorization;
 /**
  * Definition of a permission in the FlowCatalyst system.
  *
- * Permissions follow the structure: {subdomain}:{context}:{aggregate}:{action}
+ * Permissions follow the structure: {application}:{context}:{aggregate}:{action}
+ *
+ * Where:
+ * - application: The registered application (e.g., "platform", "tms", "inmotion")
+ * - context: Bounded context within the app (e.g., "iam", "admin", "messaging", "dispatch")
+ * - aggregate: The entity/resource being accessed (e.g., "user", "role", "order")
+ * - action: The operation (e.g., "view", "create", "update", "delete")
  *
  * Examples:
- * - logistics:dispatch:order:create
- * - logistics:warehouse:inventory:view
- * - platform:tenant:tenant:manage
- * - platform:billing:invoice:view
+ * - platform:iam:user:create
+ * - platform:admin:client:view
+ * - platform:messaging:event-type:create
+ * - tms:dispatch:order:update
  *
  * All parts must be lowercase alphanumeric with hyphens allowed.
- * This is code-first - permissions are defined in code and synced to IDP at startup.
- *
- * Usage:
- * <pre>
- * @tech.flowcatalyst.platform.authorization.Permission
- * public class MyPermissionClass {
- *     public static final PermissionDefinition INSTANCE = PermissionDefinition.make(
- *         "platform", "tenant", "user", "create", "Create users in tenant"
- *     );
- * }
- * </pre>
+ * Permissions are defined in code using the @Permission annotation.
  */
 public interface PermissionDefinition {
 
-    String subdomain();    // Business domain (e.g., "logistics", "platform")
-    String context();      // Bounded context within domain (e.g., "dispatch", "warehouse")
-    String aggregate();    // Resource/entity (e.g., "order", "inventory")
-    String action();       // Operation (e.g., "create", "view", "update", "delete")
+    String application();  // Application code (e.g., "platform", "tms")
+    String context();      // Bounded context within app (e.g., "iam", "admin", "messaging")
+    String aggregate();    // Resource/entity (e.g., "user", "role", "order")
+    String action();       // Operation (e.g., "view", "create", "update", "delete")
     String description();  // Human-readable description
 
     /**
      * Generate the string representation of this permission.
-     * Format: {subdomain}:{context}:{aggregate}:{action}
+     * Format: {application}:{context}:{aggregate}:{action}
      *
-     * @return Permission string (e.g., "logistics:dispatch:order:create")
+     * @return Permission string (e.g., "platform:iam:user:create")
      */
     default String toPermissionString() {
-        return String.format("%s:%s:%s:%s", subdomain(), context(), aggregate(), action());
+        return String.format("%s:%s:%s:%s", application(), context(), aggregate(), action());
     }
 
     /**
      * Static factory method to create a permission.
      *
-     * @param subdomain Business domain
+     * @param application Application code
      * @param context Bounded context
      * @param aggregate Resource/entity
      * @param action Operation
      * @param description Human-readable description
      * @return Permission instance
      */
-    static PermissionRecord make(String subdomain, String context, String aggregate,
+    static PermissionRecord make(String application, String context, String aggregate,
                           String action, String description) {
-        return new PermissionRecord(subdomain, context, aggregate, action, description);
+        return new PermissionRecord(application, context, aggregate, action, description);
     }
 }

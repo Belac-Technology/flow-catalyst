@@ -10,13 +10,13 @@ import java.util.Optional;
  * Repository for AuthPermission entities.
  */
 @ApplicationScoped
-public class AuthPermissionRepository implements PanacheMongoRepositoryBase<AuthPermission, Long> {
+public class AuthPermissionRepository implements PanacheMongoRepositoryBase<AuthPermission, String> {
 
     public Optional<AuthPermission> findByName(String name) {
         return find("name", name).firstResultOptional();
     }
 
-    public List<AuthPermission> findByApplicationId(Long applicationId) {
+    public List<AuthPermission> findByApplicationId(String applicationId) {
         return find("applicationId", applicationId).list();
     }
 
@@ -32,7 +32,7 @@ public class AuthPermissionRepository implements PanacheMongoRepositoryBase<Auth
         return delete("name", name);
     }
 
-    public long deleteByApplicationId(Long applicationId) {
+    public long deleteByApplicationId(String applicationId) {
         return delete("applicationId", applicationId);
     }
 }

@@ -10,7 +10,7 @@ import java.util.Optional;
  * Repository for Application entities.
  */
 @ApplicationScoped
-public class ApplicationRepository implements PanacheMongoRepositoryBase<Application, Long> {
+public class ApplicationRepository implements PanacheMongoRepositoryBase<Application, String> {
 
     public Optional<Application> findByCode(String code) {
         return find("code", code).firstResultOptional();

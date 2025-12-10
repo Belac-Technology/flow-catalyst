@@ -8,7 +8,7 @@ import java.util.Optional;
  * Repository for AnchorDomain entities.
  */
 @ApplicationScoped
-public class AnchorDomainRepository implements PanacheMongoRepositoryBase<AnchorDomain, Long> {
+public class AnchorDomainRepository implements PanacheMongoRepositoryBase<AnchorDomain, String> {
 
     public Optional<AnchorDomain> findByDomain(String domain) {
         return find("domain", domain).firstResultOptional();

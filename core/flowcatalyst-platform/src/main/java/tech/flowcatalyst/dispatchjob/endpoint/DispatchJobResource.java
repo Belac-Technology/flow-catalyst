@@ -83,7 +83,7 @@ public class DispatchJobResource {
             content = @Content(mediaType = MediaType.APPLICATION_JSON, schema = @Schema(implementation = ErrorResponse.class))
         )
     })
-    public Response getDispatchJob(@PathParam("id") Long id) {
+    public Response getDispatchJob(@PathParam("id") String id) {
         return dispatchJobService.findById(id)
             .map(job -> Response.ok(DispatchJobResponse.from(job)).build())
             .orElse(Response.status(404).entity(new ErrorResponse("Dispatch job not found")).build());
@@ -145,7 +145,7 @@ public class DispatchJobResource {
             content = @Content(mediaType = MediaType.APPLICATION_JSON, schema = @Schema(implementation = ErrorResponse.class))
         )
     })
-    public Response getDispatchJobAttempts(@PathParam("id") Long id) {
+    public Response getDispatchJobAttempts(@PathParam("id") String id) {
         return dispatchJobService.findById(id)
             .map(job -> {
                 List<DispatchAttemptResponse> responses = job.attempts.stream()

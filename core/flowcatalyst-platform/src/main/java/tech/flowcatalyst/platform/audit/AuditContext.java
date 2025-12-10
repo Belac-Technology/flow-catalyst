@@ -30,13 +30,13 @@ public class AuditContext {
     @Inject
     PrincipalRepository principalRepo;
 
-    private Long principalId;
+    private String principalId;
     private String principalType; // "USER", "SERVICE", or "SYSTEM"
 
     /**
      * Set principal ID manually (for tests, background jobs, CLI tools).
      */
-    public void setPrincipalId(Long principalId) {
+    public void setPrincipalId(String principalId) {
         this.principalId = principalId;
         this.principalType = "USER";
     }
@@ -54,7 +54,7 @@ public class AuditContext {
     /**
      * Get the current principal ID, or null if not set.
      */
-    public Long getPrincipalId() {
+    public String getPrincipalId() {
         return principalId;
     }
 
@@ -69,7 +69,7 @@ public class AuditContext {
      * Get the current principal ID, throwing if not set.
      * Use this when audit context is required.
      */
-    public Long requirePrincipalId() {
+    public String requirePrincipalId() {
         if (principalId == null) {
             throw new IllegalStateException("Audit context not set - operation rejected");
         }

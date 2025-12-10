@@ -20,6 +20,7 @@ import java.security.spec.X509EncodedKeySpec;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -163,7 +164,7 @@ public class JwtKeyService {
     /**
      * Issue an access token for a service account (client credentials).
      */
-    public String issueAccessToken(Long principalId, String clientId, Set<String> roles) {
+    public String issueAccessToken(String principalId, String clientId, Set<String> roles) {
         return Jwt.issuer(issuer)
                 .subject(String.valueOf(principalId))
                 .claim("client_id", clientId)
@@ -178,16 +179,59 @@ public class JwtKeyService {
 
     /**
      * Issue a session token for a human user.
+     *
+     * @param principalId The principal ID
+     * @param email The user's email
+     * @param roles The user's role strings
+     * @param clients List of client IDs the user can access, or ["*"] for all
      */
-    public String issueSessionToken(Long principalId, String email, Set<String> roles) {
+    public String issueSessionToken(String principalId, String email, Set<String> roles, List<String> clients) {
         return Jwt.issuer(issuer)
                 .subject(String.valueOf(principalId))
                 .claim("email", email)
                 .claim("type", "USER")
+                .claim("clients", clients)
                 .groups(roles)
                 .issuedAt(Instant.now())
                 .expiresAt(Instant.now().plus(sessionTokenExpiry))
                 .jws()
+                .keyId(keyId)
+                .sign(privateKey);
+    }
+
+    /**
+     * Issue an OIDC ID token.
+     *
+     * ID tokens are meant for the client application to verify the user's identity.
+     * They contain user identity claims but not authorization claims like roles.
+     *
+     * @param principalId The principal ID (sub claim)
+     * @param email The user's email
+     * @param name The user's display name
+     * @param audience The client_id of the requesting application (aud claim)
+     * @param nonce The nonce from the authorization request (for replay protection)
+     * @param clients List of client IDs the user can access
+     * @return Signed ID token
+     */
+    public String issueIdToken(String principalId, String email, String name,
+            String audience, String nonce, List<String> clients) {
+        var builder = Jwt.issuer(issuer)
+                .subject(String.valueOf(principalId))
+                .audience(audience)
+                .claim("email", email)
+                .claim("clients", clients)
+                .issuedAt(Instant.now())
+                .expiresAt(Instant.now().plus(sessionTokenExpiry));
+
+        if (name != null) {
+            builder.claim("name", name);
+        }
+
+        if (nonce != null) {
+            builder.claim("nonce", nonce);
+        }
+
+        return builder.jws()
                 .keyId(keyId)
                 .sign(privateKey);
     }
@@ -207,8 +251,8 @@ public class JwtKeyService {
      * @param clientId The client context
      * @return Signed JWT token
      */
-    public String issueSessionTokenWithClient(Long principalId, String email,
-            Set<String> roles, Set<String> permissions, Long clientId) {
+    public String issueSessionTokenWithClient(String principalId, String email,
+            Set<String> roles, Set<String> permissions, String clientId) {
         var jwtBuilder = Jwt.issuer(issuer)
                 .subject(String.valueOf(principalId))
                 .claim("email", email)
@@ -237,8 +281,8 @@ public class JwtKeyService {
      * Issue a session token with full context (client + permissions).
      * Convenience method that resolves permissions from roles using PermissionRegistry.
      */
-    public String issueSessionTokenWithClientAndPermissions(Long principalId, String email,
-            Set<String> roles, Long clientId,
+    public String issueSessionTokenWithClientAndPermissions(String principalId, String email,
+            Set<String> roles, String clientId,
             tech.flowcatalyst.platform.authorization.PermissionRegistry permissionRegistry) {
         Set<String> permissions = permissionRegistry.getPermissionsForRoles(roles);
         return issueSessionTokenWithClient(principalId, email, roles, permissions, clientId);
@@ -285,17 +329,41 @@ public class JwtKeyService {
     public JsonObject getOpenIdConfiguration(String baseUrl) {
         return Json.createObjectBuilder()
                 .add("issuer", issuer)
+                .add("authorization_endpoint", baseUrl + "/oauth/authorize")
                 .add("token_endpoint", baseUrl + "/oauth/token")
                 .add("jwks_uri", baseUrl + "/.well-known/jwks.json")
-                .add("response_types_supported", Json.createArrayBuilder().add("token"))
+                .add("response_types_supported", Json.createArrayBuilder()
+                        .add("code")
+                        .add("token")
+                        .add("id_token")
+                        .add("code id_token"))
                 .add("grant_types_supported", Json.createArrayBuilder()
+                        .add("authorization_code")
+                        .add("refresh_token")
                         .add("client_credentials")
                         .add("password"))
+                .add("scopes_supported", Json.createArrayBuilder()
+                        .add("openid")
+                        .add("profile")
+                        .add("email"))
                 .add("token_endpoint_auth_methods_supported", Json.createArrayBuilder()
                         .add("client_secret_basic")
                         .add("client_secret_post"))
+                .add("code_challenge_methods_supported", Json.createArrayBuilder()
+                        .add("S256")
+                        .add("plain"))
                 .add("subject_types_supported", Json.createArrayBuilder().add("public"))
                 .add("id_token_signing_alg_values_supported", Json.createArrayBuilder().add(ALGORITHM))
+                .add("claims_supported", Json.createArrayBuilder()
+                        .add("sub")
+                        .add("iss")
+                        .add("aud")
+                        .add("exp")
+                        .add("iat")
+                        .add("nonce")
+                        .add("email")
+                        .add("name")
+                        .add("clients"))
                 .build();
     }
 
@@ -327,7 +395,7 @@ public class JwtKeyService {
      * Validate a token and extract the principal ID.
      * Returns null if the token is invalid or expired.
      */
-    public Long validateAndGetPrincipalId(String token) {
+    public String validateAndGetPrincipalId(String token) {
         try {
             io.smallrye.jwt.auth.principal.JWTParser parser = new io.smallrye.jwt.auth.principal.DefaultJWTParser();
             org.eclipse.microprofile.jwt.JsonWebToken jwt = parser.verify(token, publicKey);
@@ -344,7 +412,7 @@ public class JwtKeyService {
                 return null;
             }
 
-            return Long.parseLong(jwt.getSubject());
+            return jwt.getSubject();
         } catch (Exception e) {
             LOG.debugf("Token validation failed: %s", e.getMessage());
             return null;
@@ -355,7 +423,7 @@ public class JwtKeyService {
      * Extract the client ID from a token.
      * Returns null if token is invalid or has no client claim.
      */
-    public Long extractClientId(String token) {
+    public String extractClientId(String token) {
         if (token == null) {
             return null;
         }
@@ -368,12 +436,12 @@ public class JwtKeyService {
                 return null;
             }
             if (clientClaim instanceof Long) {
-                return (Long) clientClaim;
+                return String.valueOf(clientClaim);
             }
             if (clientClaim instanceof Number) {
-                return ((Number) clientClaim).longValue();
+                return String.valueOf((Number) clientClaim);
             }
-            return Long.parseLong(clientClaim.toString());
+            return clientClaim.toString();
         } catch (Exception e) {
             LOG.debugf("Failed to extract client_id from token: %s", e.getMessage());
             return null;

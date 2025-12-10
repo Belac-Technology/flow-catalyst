@@ -7,7 +7,7 @@ import tech.flowcatalyst.dispatchjob.model.DispatchAttemptStatus;
 import java.time.Instant;
 
 public record DispatchAttemptResponse(
-    @JsonProperty("id") Long id,
+    @JsonProperty("id") String id,
     @JsonProperty("attemptNumber") Integer attemptNumber,
     @JsonProperty("attemptedAt") Instant attemptedAt,
     @JsonProperty("completedAt") Instant completedAt,

@@ -5,4 +5,4 @@ package tech.flowcatalyst.platform.application.operations.deleteapplication;
  *
  * @param applicationId The ID of the application to delete
  */
-public record DeleteApplicationCommand(Long applicationId) {}
+public record DeleteApplicationCommand(String applicationId) {}

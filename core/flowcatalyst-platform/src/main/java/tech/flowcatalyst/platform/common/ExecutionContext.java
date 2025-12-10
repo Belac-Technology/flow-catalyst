@@ -28,7 +28,7 @@ public record ExecutionContext(
     String executionId,
     String correlationId,
     String causationId,
-    Long principalId,
+    String principalId,
     Instant initiatedAt
 ) {
 
@@ -45,7 +45,7 @@ public record ExecutionContext(
      * @param principalId The principal performing the action
      * @return A new execution context
      */
-    public static ExecutionContext create(Long principalId) {
+    public static ExecutionContext create(String principalId) {
         // Check if there's a thread-local TracingContext (for background jobs)
         TracingContext threadLocalCtx = TracingContext.current();
         if (threadLocalCtx != null) {
@@ -72,11 +72,11 @@ public record ExecutionContext(
      * @param principalId    The principal performing the action
      * @return A new execution context with correlation/causation from tracing context
      */
-    public static ExecutionContext from(TracingContext tracingContext, Long principalId) {
+    public static ExecutionContext from(TracingContext tracingContext, String principalId) {
         return fromTracingContext(tracingContext, principalId);
     }
 
-    private static ExecutionContext fromTracingContext(TracingContext tracingContext, Long principalId) {
+    private static ExecutionContext fromTracingContext(TracingContext tracingContext, String principalId) {
         String execId = "exec-" + TsidGenerator.generate();
         return new ExecutionContext(
             execId,
@@ -97,7 +97,7 @@ public record ExecutionContext(
      * @param correlationId The correlation ID to use
      * @return A new execution context
      */
-    public static ExecutionContext withCorrelation(Long principalId, String correlationId) {
+    public static ExecutionContext withCorrelation(String principalId, String correlationId) {
         return new ExecutionContext(
             "exec-" + TsidGenerator.generate(),
             correlationId,
@@ -118,11 +118,11 @@ public record ExecutionContext(
      * @param principalId The principal performing the action
      * @return A new execution context linked to the parent event
      */
-    public static ExecutionContext fromParentEvent(DomainEvent parent, Long principalId) {
+    public static ExecutionContext fromParentEvent(DomainEvent parent, String principalId) {
         return new ExecutionContext(
             "exec-" + TsidGenerator.generate(),
             parent.correlationId(),
-            String.valueOf(parent.eventId()),
+            parent.eventId(),
             principalId,
             Instant.now()
         );
@@ -137,11 +137,11 @@ public record ExecutionContext(
      * @param causingEventId The event ID that caused this sub-operation
      * @return A new context with the same executionId but new causationId
      */
-    public ExecutionContext withCausation(Long causingEventId) {
+    public ExecutionContext withCausation(String causingEventId) {
         return new ExecutionContext(
             this.executionId,
             this.correlationId,
-            String.valueOf(causingEventId),
+            causingEventId,
             this.principalId,
             Instant.now()
         );

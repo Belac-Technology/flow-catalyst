@@ -48,7 +48,7 @@ public class DispatchProcessingResource {
         LOG.infof("Received dispatch job processing request: %s", request.messageId());
 
         try {
-            Long dispatchJobId = Long.parseLong(request.messageId());
+            String dispatchJobId = request.messageId();
 
             DispatchJobService.DispatchJobProcessResult result = dispatchJobService.processDispatchJob(dispatchJobId);
 

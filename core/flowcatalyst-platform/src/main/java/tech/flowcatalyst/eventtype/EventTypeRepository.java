@@ -22,7 +22,7 @@ import java.util.stream.Collectors;
  * Event type codes follow the format: application:subdomain:aggregate:action
  */
 @ApplicationScoped
-public class EventTypeRepository implements PanacheMongoRepositoryBase<EventType, Long> {
+public class EventTypeRepository implements PanacheMongoRepositoryBase<EventType, String> {
 
     @Inject
     MongoClient mongoClient;
@@ -357,7 +357,7 @@ public class EventTypeRepository implements PanacheMongoRepositoryBase<EventType
         // Execute aggregation and convert back to EventType entities
         List<EventType> results = new ArrayList<>();
         for (Document doc : collection.aggregate(pipeline)) {
-            Long id = doc.getLong("_id");
+            String id = doc.getString("_id");
             if (id != null) {
                 EventType eventType = findById(id);
                 if (eventType != null) {

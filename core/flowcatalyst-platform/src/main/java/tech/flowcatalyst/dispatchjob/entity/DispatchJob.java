@@ -25,7 +25,7 @@ import java.util.*;
 public class DispatchJob extends PanacheMongoEntityBase {
 
     @BsonId
-    public Long id;
+    public String id;
 
     public String externalId;
 
@@ -52,7 +52,7 @@ public class DispatchJob extends PanacheMongoEntityBase {
     public String payloadContentType = "application/json";
 
     // Credentials Reference (ID only, not embedded)
-    public Long credentialsId;
+    public String credentialsId;
 
     // Execution Control
     public DispatchStatus status = DispatchStatus.PENDING;

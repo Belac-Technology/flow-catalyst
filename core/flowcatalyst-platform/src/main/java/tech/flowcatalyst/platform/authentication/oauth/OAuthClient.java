@@ -16,7 +16,7 @@ import java.time.Instant;
 public class OAuthClient extends PanacheMongoEntityBase {
 
     @BsonId
-    public Long id;
+    public String id;
 
     /**
      * Unique client identifier used in OAuth flows.
@@ -66,7 +66,7 @@ public class OAuthClient extends PanacheMongoEntityBase {
      * Optional: restrict OAuth client to specific owning client.
      * NULL means OAuth client can be used by any client.
      */
-    public Long ownerClientId;
+    public String ownerClientId;
 
     public boolean active = true;
 

@@ -13,5 +13,5 @@ package tech.flowcatalyst.eventtype.operations.deleteeventtype;
  * @param eventTypeId The ID of the event type to delete
  */
 public record DeleteEventTypeCommand(
-    Long eventTypeId
+    String eventTypeId
 ) {}

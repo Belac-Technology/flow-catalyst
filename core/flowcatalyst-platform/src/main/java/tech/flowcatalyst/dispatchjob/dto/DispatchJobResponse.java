@@ -9,7 +9,7 @@ import java.time.Instant;
 import java.util.Map;
 
 public record DispatchJobResponse(
-    @JsonProperty("id") Long id,
+    @JsonProperty("id") String id,
     @JsonProperty("externalId") String externalId,
     @JsonProperty("source") String source,
     @JsonProperty("type") String type,
@@ -19,7 +19,7 @@ public record DispatchJobResponse(
     @JsonProperty("protocol") DispatchProtocol protocol,
     @JsonProperty("headers") Map<String, String> headers,
     @JsonProperty("payloadContentType") String payloadContentType,
-    @JsonProperty("credentialsId") Long credentialsId,
+    @JsonProperty("credentialsId") String credentialsId,
     @JsonProperty("status") DispatchStatus status,
     @JsonProperty("maxRetries") Integer maxRetries,
     @JsonProperty("retryStrategy") String retryStrategy,

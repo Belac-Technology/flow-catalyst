@@ -41,7 +41,7 @@ public class AuthorizationService {
      * @param permissionString The permission string to check
      * @return true if principal has the permission
      */
-    public boolean hasPermission(Long principalId, String permissionString) {
+    public boolean hasPermission(String principalId, String permissionString) {
         // Get all role names for this principal
         Set<String> roleNames = getRoleNames(principalId);
 
@@ -74,7 +74,7 @@ public class AuthorizationService {
      * @param action Operation (e.g., "create", "view", "update", "delete")
      * @return true if principal has the permission
      */
-    public boolean hasPermission(Long principalId, String subdomain, String context,
+    public boolean hasPermission(String principalId, String subdomain, String context,
                                  String aggregate, String action) {
         String permissionString = String.format("%s:%s:%s:%s", subdomain, context, aggregate, action);
         return hasPermission(principalId, permissionString);
@@ -88,7 +88,7 @@ public class AuthorizationService {
      * @param permissionString The permission string
      * @throws ForbiddenException if permission denied
      */
-    public void requirePermission(Long principalId, String permissionString) {
+    public void requirePermission(String principalId, String permissionString) {
         if (!hasPermission(principalId, permissionString)) {
             throw new ForbiddenException(
                 String.format("Missing permission: %s", permissionString));
@@ -117,7 +117,7 @@ public class AuthorizationService {
      * @param action Operation
      * @throws ForbiddenException if permission denied
      */
-    public void requirePermission(Long principalId, String subdomain, String context,
+    public void requirePermission(String principalId, String subdomain, String context,
                                   String aggregate, String action) {
         String permissionString = String.format("%s:%s:%s:%s", subdomain, context, aggregate, action);
         requirePermission(principalId, permissionString);
@@ -132,7 +132,7 @@ public class AuthorizationService {
      * @param principalId The principal ID
      * @return Set of role name strings
      */
-    public Set<String> getRoleNames(Long principalId) {
+    public Set<String> getRoleNames(String principalId) {
         List<PrincipalRole> principalRoles = principalRoleRepo.findByPrincipalId(principalId);
 
         return principalRoles.stream()
@@ -149,7 +149,7 @@ public class AuthorizationService {
      * @param principalId The principal ID
      * @return Set of permission strings
      */
-    public Set<String> getPermissions(Long principalId) {
+    public Set<String> getPermissions(String principalId) {
         Set<String> roleNames = getRoleNames(principalId);
         return permissionRegistry.getPermissionsForRoles(roleNames);
     }
@@ -161,7 +161,7 @@ public class AuthorizationService {
      * @param principalId The principal ID
      * @return Set of role definitions
      */
-    public Set<RoleDefinition> getRoleDefinitions(Long principalId) {
+    public Set<RoleDefinition> getRoleDefinitions(String principalId) {
         return getRoleNames(principalId).stream()
             .map(roleName -> permissionRegistry.getRole(roleName))
             .filter(opt -> opt.isPresent())
@@ -176,7 +176,7 @@ public class AuthorizationService {
      * @param principalId The principal ID
      * @return Set of permission definitions
      */
-    public Set<PermissionDefinition> getPermissionDefinitions(Long principalId) {
+    public Set<PermissionDefinition> getPermissionDefinitions(String principalId) {
         return getPermissions(principalId).stream()
             .map(permString -> permissionRegistry.getPermission(permString))
             .filter(opt -> opt.isPresent())
@@ -191,7 +191,7 @@ public class AuthorizationService {
      * @param roleName The role name to check
      * @return true if principal has the role
      */
-    public boolean hasRole(Long principalId, String roleName) {
+    public boolean hasRole(String principalId, String roleName) {
         return getRoleNames(principalId).contains(roleName);
     }
 
@@ -202,7 +202,7 @@ public class AuthorizationService {
      * @param roleNames The role names to check
      * @return true if principal has at least one of the roles
      */
-    public boolean hasAnyRole(Long principalId, String... roleNames) {
+    public boolean hasAnyRole(String principalId, String... roleNames) {
         Set<String> principalRoles = getRoleNames(principalId);
         for (String roleName : roleNames) {
             if (principalRoles.contains(roleName)) {
@@ -219,7 +219,7 @@ public class AuthorizationService {
      * @param roleNames The role names to check
      * @return true if principal has all of the roles
      */
-    public boolean hasAllRoles(Long principalId, String... roleNames) {
+    public boolean hasAllRoles(String principalId, String... roleNames) {
         Set<String> principalRoles = getRoleNames(principalId);
         for (String roleName : roleNames) {
             if (!principalRoles.contains(roleName)) {

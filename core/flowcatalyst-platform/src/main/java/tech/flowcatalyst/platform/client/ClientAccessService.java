@@ -38,8 +38,8 @@ public class ClientAccessService {
      * @param principal The principal (user or service account)
      * @return Set of accessible client IDs
      */
-    public Set<Long> getAccessibleClients(Principal principal) {
-        Set<Long> clientIds = new HashSet<>();
+    public Set<String> getAccessibleClients(Principal principal) {
+        Set<String> clientIds = new HashSet<>();
 
         // 1. Check if anchor domain user (global access)
         if (principal.type == PrincipalType.USER && principal.userIdentity != null) {
@@ -85,7 +85,7 @@ public class ClientAccessService {
      * @param clientId The client ID to check
      * @return true if principal can access the client
      */
-    public boolean canAccessClient(Principal principal, Long clientId) {
+    public boolean canAccessClient(Principal principal, String clientId) {
         return getAccessibleClients(principal).contains(clientId);
     }
 

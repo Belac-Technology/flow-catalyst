@@ -2,7 +2,7 @@ import { bffFetch } from './client';
 
 export interface Permission {
   permission: string;
-  subdomain: string;
+  application: string;
   context: string;
   aggregate: string;
   action: string;

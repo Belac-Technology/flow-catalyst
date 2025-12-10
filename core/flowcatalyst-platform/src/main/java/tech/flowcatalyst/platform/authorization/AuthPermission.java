@@ -19,12 +19,12 @@ import java.time.Instant;
 public class AuthPermission extends PanacheMongoEntityBase {
 
     @BsonId
-    public Long id;
+    public String id;
 
     /**
      * The application this permission belongs to (stored as ID reference).
      */
-    public Long applicationId;
+    public String applicationId;
 
     /**
      * Full permission name (e.g., "myapp:orders:order:create").
@@ -53,7 +53,7 @@ public class AuthPermission extends PanacheMongoEntityBase {
     public AuthPermission() {
     }
 
-    public AuthPermission(Long applicationId, String name, String description, PermissionSource source) {
+    public AuthPermission(String applicationId, String name, String description, PermissionSource source) {
         this.applicationId = applicationId;
         this.name = name;
         this.description = description;

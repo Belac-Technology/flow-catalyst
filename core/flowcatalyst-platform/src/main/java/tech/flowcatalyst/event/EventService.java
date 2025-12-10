@@ -80,7 +80,7 @@ public class EventService {
      * @param id The event ID
      * @return The event if found
      */
-    public Optional<Event> findById(Long id) {
+    public Optional<Event> findById(String id) {
         return eventRepository.findByIdOptional(id);
     }
 

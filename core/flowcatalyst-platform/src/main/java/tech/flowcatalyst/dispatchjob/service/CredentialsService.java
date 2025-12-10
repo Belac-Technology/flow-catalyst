@@ -30,13 +30,13 @@ public class CredentialsService {
     }
 
     @CacheResult(cacheName = CACHE_NAME)
-    public Optional<DispatchCredentials> findById(Long id) {
+    public Optional<DispatchCredentials> findById(String id) {
         LOG.debugf("Loading credentials [%s] from database (cache miss)", id);
         return credentialsRepository.findByIdOptional(id);
     }
 
     @CacheInvalidate(cacheName = CACHE_NAME)
-    public boolean delete(Long id) {
+    public boolean delete(String id) {
         boolean deleted = credentialsRepository.deleteById(id);
         if (deleted) {
             LOG.infof("Deleted credentials [%s]", id);
@@ -45,7 +45,7 @@ public class CredentialsService {
     }
 
     @CacheInvalidate(cacheName = CACHE_NAME)
-    public void invalidateCache(Long id) {
+    public void invalidateCache(String id) {
         LOG.debugf("Invalidated cache for credentials [%s]", id);
     }
 }

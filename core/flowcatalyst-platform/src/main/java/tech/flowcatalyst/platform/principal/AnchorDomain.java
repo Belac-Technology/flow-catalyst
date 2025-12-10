@@ -13,7 +13,7 @@ import java.time.Instant;
 public class AnchorDomain extends PanacheMongoEntityBase {
 
     @BsonId
-    public Long id;
+    public String id;
 
     public String domain; // e.g., "flowcatalyst.tech"
 

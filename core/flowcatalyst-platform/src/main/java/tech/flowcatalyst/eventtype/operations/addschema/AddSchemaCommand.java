@@ -15,7 +15,7 @@ import tech.flowcatalyst.eventtype.SchemaType;
  * @param schemaType  Type of schema (JSON_SCHEMA, PROTO, XSD)
  */
 public record AddSchemaCommand(
-    Long eventTypeId,
+    String eventTypeId,
     String version,
     String mimeType,
     String schema,

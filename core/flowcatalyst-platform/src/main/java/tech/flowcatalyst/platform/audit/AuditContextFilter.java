@@ -30,7 +30,7 @@ public class AuditContextFilter implements ContainerRequestFilter {
 
     @Override
     public void filter(ContainerRequestContext ctx) {
-        Long principalId = null;
+        String principalId = null;
 
         // Try session cookie first
         Cookie sessionCookie = ctx.getCookies().get(SESSION_COOKIE);

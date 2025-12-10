@@ -6,7 +6,7 @@ package tech.flowcatalyst.dispatchjob.entity;
  */
 public class DispatchJobMetadata {
 
-    public Long id;
+    public String id;
     public String key;
     public String value;
 

@@ -221,7 +221,7 @@ public class EntraSyncAdapter implements IdpSyncAdapter {
         // Display name (human-readable)
         String displayName = role.roleName().replace("-", " ");
         displayName = Character.toUpperCase(displayName.charAt(0)) + displayName.substring(1);
-        appRole.put("displayName", role.subdomain() + " - " + displayName);
+        appRole.put("displayName", role.application() + " - " + displayName);
 
         // Description (include permission count)
         String description = role.description() + " (" + role.permissions().size() + " permissions)";

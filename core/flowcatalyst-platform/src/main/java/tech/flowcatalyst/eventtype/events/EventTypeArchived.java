@@ -22,15 +22,15 @@ import java.time.Instant;
  */
 public record EventTypeArchived(
     // Event metadata
-    Long eventId,
+    String eventId,
     Instant time,
     String executionId,
     String correlationId,
     String causationId,
-    Long principalId,
+    String principalId,
 
     // Event-specific payload
-    Long eventTypeId,
+    String eventTypeId,
     String code
 ) implements DomainEvent {
 
@@ -84,7 +84,7 @@ public record EventTypeArchived(
     }
 
     public record Data(
-        Long eventTypeId,
+        String eventTypeId,
         String code
     ) {}
 
@@ -93,13 +93,13 @@ public record EventTypeArchived(
     }
 
     public static class Builder {
-        private Long eventId;
+        private String eventId;
         private Instant time;
         private String executionId;
         private String correlationId;
         private String causationId;
-        private Long principalId;
-        private Long eventTypeId;
+        private String principalId;
+        private String eventTypeId;
         private String code;
 
         public Builder from(ExecutionContext ctx) {
@@ -112,7 +112,7 @@ public record EventTypeArchived(
             return this;
         }
 
-        public Builder eventTypeId(Long eventTypeId) {
+        public Builder eventTypeId(String eventTypeId) {
             this.eventTypeId = eventTypeId;
             return this;
         }

@@ -5,4 +5,4 @@ package tech.flowcatalyst.platform.application.operations.deactivateapplication;
  *
  * @param applicationId The ID of the application to deactivate
  */
-public record DeactivateApplicationCommand(Long applicationId) {}
+public record DeactivateApplicationCommand(String applicationId) {}

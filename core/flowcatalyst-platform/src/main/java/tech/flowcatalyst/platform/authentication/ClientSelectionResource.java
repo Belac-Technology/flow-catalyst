@@ -78,7 +78,7 @@ public class ClientSelectionResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        Long principalId = extractPrincipalId(sessionToken, authHeader);
+        String principalId = extractPrincipalId(sessionToken, authHeader);
         if (principalId == null) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
@@ -95,7 +95,7 @@ public class ClientSelectionResource {
         }
 
         // Get accessible client IDs
-        Set<Long> clientIds = clientAccessService.getAccessibleClients(principal);
+        Set<String> clientIds = clientAccessService.getAccessibleClients(principal);
 
         // Load client details
         List<ClientInfo> clients = clientRepo.findByIds(clientIds).stream()
@@ -133,7 +133,7 @@ public class ClientSelectionResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        Long principalId = extractPrincipalId(sessionToken, authHeader);
+        String principalId = extractPrincipalId(sessionToken, authHeader);
         if (principalId == null) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
@@ -150,7 +150,7 @@ public class ClientSelectionResource {
         }
 
         // Verify access to requested client
-        Set<Long> accessibleClients = clientAccessService.getAccessibleClients(principal);
+        Set<String> accessibleClients = clientAccessService.getAccessibleClients(principal);
         if (!accessibleClients.contains(request.clientId())) {
             LOG.warnf("Principal %d attempted to switch to unauthorized client %d",
                 principalId, request.clientId());
@@ -224,7 +224,7 @@ public class ClientSelectionResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        Long principalId = extractPrincipalId(sessionToken, authHeader);
+        String principalId = extractPrincipalId(sessionToken, authHeader);
         if (principalId == null) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
@@ -241,7 +241,7 @@ public class ClientSelectionResource {
         }
 
         // Get current client from token or principal's home client
-        Long currentClientId = jwtKeyService.extractClientId(sessionToken != null ? sessionToken : extractBearerToken(authHeader));
+        String currentClientId = jwtKeyService.extractClientId(sessionToken != null ? sessionToken : extractBearerToken(authHeader));
 
         if (currentClientId == null) {
             currentClientId = principal.clientId;
@@ -263,7 +263,7 @@ public class ClientSelectionResource {
 
     // ==================== Helper Methods ====================
 
-    private Long extractPrincipalId(String sessionToken, String authHeader) {
+    private String extractPrincipalId(String sessionToken, String authHeader) {
         String token = sessionToken;
         if (token == null && authHeader != null && authHeader.startsWith("Bearer ")) {
             token = authHeader.substring("Bearer ".length());
@@ -284,19 +284,19 @@ public class ClientSelectionResource {
     // ==================== DTOs ====================
 
     public record ClientInfo(
-        Long id,
+        String id,
         String name,
         String identifier
     ) {}
 
     public record AccessibleClientsResponse(
         List<ClientInfo> clients,
-        Long currentClientId,
+        String currentClientId,
         boolean globalAccess
     ) {}
 
     public record SwitchClientRequest(
-        Long clientId
+        String clientId
     ) {}
 
     public record SwitchClientResponse(

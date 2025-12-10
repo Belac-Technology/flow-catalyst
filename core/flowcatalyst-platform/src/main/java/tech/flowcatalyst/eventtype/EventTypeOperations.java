@@ -179,7 +179,7 @@ public class EventTypeOperations {
     /**
      * Find an EventType by ID.
      */
-    public Optional<EventType> findById(Long id) {
+    public Optional<EventType> findById(String id) {
         return repo.findByIdOptional(id);
     }
 

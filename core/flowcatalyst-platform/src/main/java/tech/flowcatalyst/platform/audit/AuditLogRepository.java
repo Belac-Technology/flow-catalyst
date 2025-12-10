@@ -23,7 +23,7 @@ public class AuditLogRepository implements PanacheMongoRepository<AuditLog> {
     /**
      * Find audit logs by principal.
      */
-    public List<AuditLog> findByPrincipal(Long principalId) {
+    public List<AuditLog> findByPrincipal(String principalId) {
         return list("principalId", Sort.descending("performedAt"), principalId);
     }
 

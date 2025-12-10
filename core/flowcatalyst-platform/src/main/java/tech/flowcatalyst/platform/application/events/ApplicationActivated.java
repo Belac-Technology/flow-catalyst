@@ -18,15 +18,15 @@ import java.time.Instant;
  */
 public record ApplicationActivated(
     // Event metadata
-    Long eventId,
+    String eventId,
     Instant time,
     String executionId,
     String correlationId,
     String causationId,
-    Long principalId,
+    String principalId,
 
     // Event-specific payload (what happened)
-    Long applicationId,
+    String applicationId,
     String code
 ) implements DomainEvent {
 
@@ -83,7 +83,7 @@ public record ApplicationActivated(
      * The event data schema.
      */
     public record Data(
-        Long applicationId,
+        String applicationId,
         String code
     ) {}
 
@@ -92,13 +92,13 @@ public record ApplicationActivated(
     }
 
     public static class Builder {
-        private Long eventId;
+        private String eventId;
         private Instant time;
         private String executionId;
         private String correlationId;
         private String causationId;
-        private Long principalId;
-        private Long applicationId;
+        private String principalId;
+        private String applicationId;
         private String code;
 
         public Builder from(ExecutionContext ctx) {
@@ -111,7 +111,7 @@ public record ApplicationActivated(
             return this;
         }
 
-        public Builder applicationId(Long applicationId) {
+        public Builder applicationId(String applicationId) {
             this.applicationId = applicationId;
             return this;
         }

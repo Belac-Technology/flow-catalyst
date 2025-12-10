@@ -16,21 +16,35 @@ import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponses;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 import org.jboss.logging.Logger;
+import tech.flowcatalyst.platform.audit.AuditContext;
 import tech.flowcatalyst.platform.authentication.EmbeddedModeOnly;
 import tech.flowcatalyst.platform.authentication.IdpType;
 import tech.flowcatalyst.platform.authentication.JwtKeyService;
 import tech.flowcatalyst.platform.authorization.PrincipalRole;
 import tech.flowcatalyst.platform.authorization.RoleService;
-import tech.flowcatalyst.platform.principal.Principal;
-import tech.flowcatalyst.platform.principal.PrincipalRepository;
-import tech.flowcatalyst.platform.principal.PrincipalType;
-import tech.flowcatalyst.platform.principal.UserService;
+import tech.flowcatalyst.platform.authentication.AuthProvider;
 import tech.flowcatalyst.platform.client.ClientAccessGrant;
 import tech.flowcatalyst.platform.client.ClientAccessGrantRepository;
-import tech.flowcatalyst.platform.client.ClientService;
+import tech.flowcatalyst.platform.client.ClientAccessService;
+import tech.flowcatalyst.platform.client.ClientAuthConfig;
+import tech.flowcatalyst.platform.client.ClientAuthConfigRepository;
+import tech.flowcatalyst.platform.common.ExecutionContext;
+import tech.flowcatalyst.platform.common.Result;
+import tech.flowcatalyst.platform.common.TracingContext;
+import tech.flowcatalyst.platform.common.errors.UseCaseError;
+import tech.flowcatalyst.platform.principal.*;
+import tech.flowcatalyst.platform.principal.events.*;
+import tech.flowcatalyst.platform.principal.operations.activateuser.ActivateUserCommand;
+import tech.flowcatalyst.platform.principal.operations.createuser.CreateUserCommand;
+import tech.flowcatalyst.platform.principal.operations.deactivateuser.DeactivateUserCommand;
+import tech.flowcatalyst.platform.principal.operations.deleteuser.DeleteUserCommand;
+import tech.flowcatalyst.platform.principal.operations.grantclientaccess.GrantClientAccessCommand;
+import tech.flowcatalyst.platform.principal.operations.revokeclientaccess.RevokeClientAccessCommand;
+import tech.flowcatalyst.platform.principal.operations.updateuser.UpdateUserCommand;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -56,13 +70,13 @@ public class PrincipalAdminResource {
     private static final Logger LOG = Logger.getLogger(PrincipalAdminResource.class);
 
     @Inject
+    UserOperations userOperations;
+
+    @Inject
     UserService userService;
 
     @Inject
     RoleService roleService;
-
-    @Inject
-    ClientService clientService;
 
     @Inject
     PrincipalRepository principalRepo;
@@ -72,6 +86,21 @@ public class PrincipalAdminResource {
 
     @Inject
     JwtKeyService jwtKeyService;
+
+    @Inject
+    ClientAccessService clientAccessService;
+
+    @Inject
+    ClientAuthConfigRepository authConfigRepo;
+
+    @Inject
+    AnchorDomainRepository anchorDomainRepo;
+
+    @Inject
+    AuditContext auditContext;
+
+    @Inject
+    TracingContext tracingContext;
 
     // ==================== CRUD Operations ====================
 
@@ -86,13 +115,13 @@ public class PrincipalAdminResource {
         @APIResponse(responseCode = "401", description = "Not authenticated")
     })
     public Response listPrincipals(
-            @QueryParam("clientId") @Parameter(description = "Filter by client ID") Long clientId,
+            @QueryParam("clientId") @Parameter(description = "Filter by client ID") String clientId,
             @QueryParam("type") @Parameter(description = "Filter by type (USER/SERVICE)") PrincipalType type,
             @QueryParam("active") @Parameter(description = "Filter by active status") Boolean active,
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        Long principalId = extractPrincipalId(sessionToken, authHeader);
+        String principalId = extractPrincipalId(sessionToken, authHeader);
         if (principalId == null) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
@@ -138,11 +167,11 @@ public class PrincipalAdminResource {
         @APIResponse(responseCode = "404", description = "Principal not found")
     })
     public Response getPrincipal(
-            @PathParam("id") Long id,
+            @PathParam("id") String id,
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        Long principalId = extractPrincipalId(sessionToken, authHeader);
+        String principalId = extractPrincipalId(sessionToken, authHeader);
         if (principalId == null) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
@@ -154,7 +183,7 @@ public class PrincipalAdminResource {
                 // Include roles and client access grants
                 Set<String> roles = roleService.findRoleNamesByPrincipal(id);
                 List<ClientAccessGrant> grants = grantRepo.findByPrincipalId(id);
-                Set<Long> grantedClientIds = grants.stream()
+                Set<String> grantedClientIds = grants.stream()
                     .map(g -> g.clientId)
                     .collect(Collectors.toSet());
 
@@ -182,39 +211,39 @@ public class PrincipalAdminResource {
             @HeaderParam("Authorization") String authHeader,
             @Context UriInfo uriInfo) {
 
-        Long adminPrincipalId = extractPrincipalId(sessionToken, authHeader);
+        String adminPrincipalId = extractPrincipalId(sessionToken, authHeader);
         if (adminPrincipalId == null) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
                 .build();
         }
 
-        try {
-            Principal principal = userService.createInternalUser(
-                request.email(),
-                request.password(),
-                request.name(),
-                request.clientId()
-            );
+        auditContext.setPrincipalId(adminPrincipalId);
+        ExecutionContext context = ExecutionContext.from(tracingContext, adminPrincipalId);
 
-            LOG.infof("User created: %s by principal %d", request.email(), adminPrincipalId);
+        CreateUserCommand command = new CreateUserCommand(
+            request.email(),
+            request.password(),
+            request.name(),
+            request.clientId()
+        );
 
-            return Response.status(Response.Status.CREATED)
-                .entity(toDto(principal))
-                .location(uriInfo.getBaseUriBuilder()
-                    .path(PrincipalAdminResource.class)
-                    .path(String.valueOf(principal.id))
-                    .build())
-                .build();
-        } catch (BadRequestException e) {
-            return Response.status(Response.Status.BAD_REQUEST)
-                .entity(new ErrorResponse(e.getMessage()))
-                .build();
-        } catch (IllegalArgumentException e) {
-            return Response.status(Response.Status.BAD_REQUEST)
-                .entity(new ErrorResponse(e.getMessage()))
-                .build();
-        }
+        Result<UserCreated> result = userOperations.createUser(command, context);
+
+        return switch (result) {
+            case Result.Success<UserCreated> s -> {
+                Principal principal = userOperations.findById(s.value().userId()).orElseThrow();
+                LOG.infof("User created: %s by principal %d", request.email(), adminPrincipalId);
+                yield Response.status(Response.Status.CREATED)
+                    .entity(toDto(principal))
+                    .location(uriInfo.getBaseUriBuilder()
+                        .path(PrincipalAdminResource.class)
+                        .path(String.valueOf(principal.id))
+                        .build())
+                    .build();
+            }
+            case Result.Failure<UserCreated> f -> mapErrorToResponse(f.error());
+        };
     }
 
     /**
@@ -228,27 +257,32 @@ public class PrincipalAdminResource {
         @APIResponse(responseCode = "404", description = "Principal not found")
     })
     public Response updatePrincipal(
-            @PathParam("id") Long id,
+            @PathParam("id") String id,
             @Valid UpdatePrincipalRequest request,
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        Long adminPrincipalId = extractPrincipalId(sessionToken, authHeader);
+        String adminPrincipalId = extractPrincipalId(sessionToken, authHeader);
         if (adminPrincipalId == null) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
                 .build();
         }
 
-        try {
-            Principal principal = userService.updateUser(id, request.name());
-            LOG.infof("Principal %d updated by principal %d", id, adminPrincipalId);
-            return Response.ok(toDto(principal)).build();
-        } catch (NotFoundException e) {
-            return Response.status(Response.Status.NOT_FOUND)
-                .entity(new ErrorResponse("Principal not found"))
-                .build();
-        }
+        auditContext.setPrincipalId(adminPrincipalId);
+        ExecutionContext context = ExecutionContext.from(tracingContext, adminPrincipalId);
+
+        UpdateUserCommand command = new UpdateUserCommand(id, request.name(), null);
+        Result<UserUpdated> result = userOperations.updateUser(command, context);
+
+        return switch (result) {
+            case Result.Success<UserUpdated> s -> {
+                Principal principal = userOperations.findById(s.value().userId()).orElseThrow();
+                LOG.infof("Principal %d updated by principal %d", id, adminPrincipalId);
+                yield Response.ok(toDto(principal)).build();
+            }
+            case Result.Failure<UserUpdated> f -> mapErrorToResponse(f.error());
+        };
     }
 
     // ==================== Status Management ====================
@@ -264,26 +298,30 @@ public class PrincipalAdminResource {
         @APIResponse(responseCode = "404", description = "Principal not found")
     })
     public Response activatePrincipal(
-            @PathParam("id") Long id,
+            @PathParam("id") String id,
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        Long adminPrincipalId = extractPrincipalId(sessionToken, authHeader);
+        String adminPrincipalId = extractPrincipalId(sessionToken, authHeader);
         if (adminPrincipalId == null) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
                 .build();
         }
 
-        try {
-            userService.activateUser(id);
-            LOG.infof("Principal %d activated by principal %d", id, adminPrincipalId);
-            return Response.ok(new StatusResponse("Principal activated")).build();
-        } catch (NotFoundException e) {
-            return Response.status(Response.Status.NOT_FOUND)
-                .entity(new ErrorResponse("Principal not found"))
-                .build();
-        }
+        auditContext.setPrincipalId(adminPrincipalId);
+        ExecutionContext context = ExecutionContext.from(tracingContext, adminPrincipalId);
+
+        ActivateUserCommand command = new ActivateUserCommand(id);
+        Result<UserActivated> result = userOperations.activateUser(command, context);
+
+        return switch (result) {
+            case Result.Success<UserActivated> s -> {
+                LOG.infof("Principal %d activated by principal %d", id, adminPrincipalId);
+                yield Response.ok(new StatusResponse("Principal activated")).build();
+            }
+            case Result.Failure<UserActivated> f -> mapErrorToResponse(f.error());
+        };
     }
 
     /**
@@ -297,26 +335,30 @@ public class PrincipalAdminResource {
         @APIResponse(responseCode = "404", description = "Principal not found")
     })
     public Response deactivatePrincipal(
-            @PathParam("id") Long id,
+            @PathParam("id") String id,
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        Long adminPrincipalId = extractPrincipalId(sessionToken, authHeader);
+        String adminPrincipalId = extractPrincipalId(sessionToken, authHeader);
         if (adminPrincipalId == null) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
                 .build();
         }
 
-        try {
-            userService.deactivateUser(id);
-            LOG.infof("Principal %d deactivated by principal %d", id, adminPrincipalId);
-            return Response.ok(new StatusResponse("Principal deactivated")).build();
-        } catch (NotFoundException e) {
-            return Response.status(Response.Status.NOT_FOUND)
-                .entity(new ErrorResponse("Principal not found"))
-                .build();
-        }
+        auditContext.setPrincipalId(adminPrincipalId);
+        ExecutionContext context = ExecutionContext.from(tracingContext, adminPrincipalId);
+
+        DeactivateUserCommand command = new DeactivateUserCommand(id, null);
+        Result<UserDeactivated> result = userOperations.deactivateUser(command, context);
+
+        return switch (result) {
+            case Result.Success<UserDeactivated> s -> {
+                LOG.infof("Principal %d deactivated by principal %d", id, adminPrincipalId);
+                yield Response.ok(new StatusResponse("Principal deactivated")).build();
+            }
+            case Result.Failure<UserDeactivated> f -> mapErrorToResponse(f.error());
+        };
     }
 
     // ==================== Password Management ====================
@@ -333,12 +375,12 @@ public class PrincipalAdminResource {
         @APIResponse(responseCode = "404", description = "User not found")
     })
     public Response resetPassword(
-            @PathParam("id") Long id,
+            @PathParam("id") String id,
             @Valid ResetPasswordRequest request,
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        Long adminPrincipalId = extractPrincipalId(sessionToken, authHeader);
+        String adminPrincipalId = extractPrincipalId(sessionToken, authHeader);
         if (adminPrincipalId == null) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
@@ -373,11 +415,11 @@ public class PrincipalAdminResource {
         @APIResponse(responseCode = "404", description = "Principal not found")
     })
     public Response getPrincipalRoles(
-            @PathParam("id") Long id,
+            @PathParam("id") String id,
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        Long adminPrincipalId = extractPrincipalId(sessionToken, authHeader);
+        String adminPrincipalId = extractPrincipalId(sessionToken, authHeader);
         if (adminPrincipalId == null) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
@@ -410,12 +452,12 @@ public class PrincipalAdminResource {
         @APIResponse(responseCode = "404", description = "Principal not found")
     })
     public Response assignRole(
-            @PathParam("id") Long id,
+            @PathParam("id") String id,
             @Valid AssignRoleRequest request,
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        Long adminPrincipalId = extractPrincipalId(sessionToken, authHeader);
+        String adminPrincipalId = extractPrincipalId(sessionToken, authHeader);
         if (adminPrincipalId == null) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
@@ -457,12 +499,12 @@ public class PrincipalAdminResource {
         @APIResponse(responseCode = "404", description = "Principal or role assignment not found")
     })
     public Response removeRole(
-            @PathParam("id") Long id,
+            @PathParam("id") String id,
             @PathParam("roleName") String roleName,
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        Long adminPrincipalId = extractPrincipalId(sessionToken, authHeader);
+        String adminPrincipalId = extractPrincipalId(sessionToken, authHeader);
         if (adminPrincipalId == null) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
@@ -494,11 +536,11 @@ public class PrincipalAdminResource {
         @APIResponse(responseCode = "404", description = "Principal not found")
     })
     public Response getClientAccessGrants(
-            @PathParam("id") Long id,
+            @PathParam("id") String id,
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        Long adminPrincipalId = extractPrincipalId(sessionToken, authHeader);
+        String adminPrincipalId = extractPrincipalId(sessionToken, authHeader);
         if (adminPrincipalId == null) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
@@ -531,40 +573,39 @@ public class PrincipalAdminResource {
         @APIResponse(responseCode = "404", description = "Principal or client not found")
     })
     public Response grantClientAccess(
-            @PathParam("id") Long id,
+            @PathParam("id") String id,
             @Valid GrantClientAccessRequest request,
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        Long adminPrincipalId = extractPrincipalId(sessionToken, authHeader);
+        String adminPrincipalId = extractPrincipalId(sessionToken, authHeader);
         if (adminPrincipalId == null) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
                 .build();
         }
 
-        try {
-            ClientAccessGrant grant = clientService.grantClientAccess(id, request.clientId());
-            LOG.infof("Client access to %d granted to principal %d by principal %d",
-                request.clientId(), id, adminPrincipalId);
+        auditContext.setPrincipalId(adminPrincipalId);
+        ExecutionContext context = ExecutionContext.from(tracingContext, adminPrincipalId);
 
-            return Response.status(Response.Status.CREATED)
-                .entity(new ClientAccessGrantDto(
-                    grant.id,
-                    grant.clientId,
-                    grant.grantedAt,
-                    grant.expiresAt
-                ))
-                .build();
-        } catch (NotFoundException e) {
-            return Response.status(Response.Status.NOT_FOUND)
-                .entity(new ErrorResponse(e.getMessage()))
-                .build();
-        } catch (BadRequestException e) {
-            return Response.status(Response.Status.BAD_REQUEST)
-                .entity(new ErrorResponse(e.getMessage()))
-                .build();
-        }
+        GrantClientAccessCommand command = new GrantClientAccessCommand(id, request.clientId(), null);
+        Result<ClientAccessGranted> result = userOperations.grantClientAccess(command, context);
+
+        return switch (result) {
+            case Result.Success<ClientAccessGranted> s -> {
+                LOG.infof("Client access to %d granted to principal %d by principal %d",
+                    request.clientId(), id, adminPrincipalId);
+                yield Response.status(Response.Status.CREATED)
+                    .entity(new ClientAccessGrantDto(
+                        s.value().grantId(),
+                        s.value().clientId(),
+                        s.value().time(),
+                        s.value().expiresAt()
+                    ))
+                    .build();
+            }
+            case Result.Failure<ClientAccessGranted> f -> mapErrorToResponse(f.error());
+        };
     }
 
     /**
@@ -578,33 +619,37 @@ public class PrincipalAdminResource {
         @APIResponse(responseCode = "404", description = "Grant not found")
     })
     public Response revokeClientAccess(
-            @PathParam("id") Long id,
-            @PathParam("clientId") Long clientId,
+            @PathParam("id") String id,
+            @PathParam("clientId") String clientId,
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        Long adminPrincipalId = extractPrincipalId(sessionToken, authHeader);
+        String adminPrincipalId = extractPrincipalId(sessionToken, authHeader);
         if (adminPrincipalId == null) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
                 .build();
         }
 
-        try {
-            clientService.revokeClientAccess(id, clientId);
-            LOG.infof("Client access to %d revoked from principal %d by principal %d",
-                clientId, id, adminPrincipalId);
-            return Response.noContent().build();
-        } catch (NotFoundException e) {
-            return Response.status(Response.Status.NOT_FOUND)
-                .entity(new ErrorResponse("Grant not found"))
-                .build();
-        }
+        auditContext.setPrincipalId(adminPrincipalId);
+        ExecutionContext context = ExecutionContext.from(tracingContext, adminPrincipalId);
+
+        RevokeClientAccessCommand command = new RevokeClientAccessCommand(id, clientId);
+        Result<ClientAccessRevoked> result = userOperations.revokeClientAccess(command, context);
+
+        return switch (result) {
+            case Result.Success<ClientAccessRevoked> s -> {
+                LOG.infof("Client access to %d revoked from principal %d by principal %d",
+                    clientId, id, adminPrincipalId);
+                yield Response.noContent().build();
+            }
+            case Result.Failure<ClientAccessRevoked> f -> mapErrorToResponse(f.error());
+        };
     }
 
     // ==================== Helper Methods ====================
 
-    private Long extractPrincipalId(String sessionToken, String authHeader) {
+    private String extractPrincipalId(String sessionToken, String authHeader) {
         String token = sessionToken;
         if (token == null && authHeader != null && authHeader.startsWith("Bearer ")) {
             token = authHeader.substring("Bearer ".length());
@@ -615,6 +660,21 @@ public class PrincipalAdminResource {
         return jwtKeyService.validateAndGetPrincipalId(token);
     }
 
+    /**
+     * Require authentication. Returns unauthorized response if not authenticated,
+     * otherwise sets the audit context and returns null (proceed with request).
+     */
+    private Response requireAuth(String sessionToken, String authHeader) {
+        String principalId = extractPrincipalId(sessionToken, authHeader);
+        if (principalId == null) {
+            return Response.status(Response.Status.UNAUTHORIZED)
+                .entity(new ErrorResponse("Not authenticated"))
+                .build();
+        }
+        auditContext.setPrincipalId(principalId);
+        return null;
+    }
+
     private PrincipalDto toDto(Principal principal) {
         String email = null;
         IdpType idpType = null;
@@ -623,21 +683,32 @@ public class PrincipalAdminResource {
             idpType = principal.userIdentity.idpType;
         }
 
+        boolean isAnchorUser = clientAccessService.isAnchorDomainUser(principal);
+
+        // Get granted client IDs as strings (TSIDs exceed JS Number.MAX_SAFE_INTEGER)
+        List<ClientAccessGrant> grants = grantRepo.findByPrincipalId(principal.id);
+        Set<String> grantedClientIds = grants.stream()
+            .map(g -> String.valueOf(g.clientId))
+            .collect(Collectors.toSet());
+
         return new PrincipalDto(
-            principal.id,
+            String.valueOf(principal.id),
             principal.type,
-            principal.clientId,
+            principal.scope,
+            principal.clientId != null ? String.valueOf(principal.clientId) : null,
             principal.name,
             principal.active,
             email,
             idpType,
             principal.getRoleNames(),
+            isAnchorUser,
+            grantedClientIds,
             principal.createdAt,
             principal.updatedAt
         );
     }
 
-    private PrincipalDetailDto toDetailDto(Principal principal, Set<String> roles, Set<Long> grantedClientIds) {
+    private PrincipalDetailDto toDetailDto(Principal principal, Set<String> roles, Set<String> grantedClientIds) {
         String email = null;
         IdpType idpType = null;
         Instant lastLoginAt = null;
@@ -647,48 +718,148 @@ public class PrincipalAdminResource {
             lastLoginAt = principal.userIdentity.lastLoginAt;
         }
 
+        boolean isAnchorUser = clientAccessService.isAnchorDomainUser(principal);
+
+        // Convert IDs to strings (TSIDs exceed JS Number.MAX_SAFE_INTEGER)
+        Set<String> grantedClientIdsAsStrings = grantedClientIds.stream()
+            .map(String::valueOf)
+            .collect(Collectors.toSet());
+
         return new PrincipalDetailDto(
-            principal.id,
+            String.valueOf(principal.id),
             principal.type,
-            principal.clientId,
+            principal.scope,
+            principal.clientId != null ? String.valueOf(principal.clientId) : null,
             principal.name,
             principal.active,
             email,
             idpType,
             lastLoginAt,
             roles,
-            grantedClientIds,
+            isAnchorUser,
+            grantedClientIdsAsStrings,
             principal.createdAt,
             principal.updatedAt
         );
     }
 
+    // ==================== Email Domain Check ====================
+
+    /**
+     * Check email domain configuration.
+     * Returns the authentication provider configured for the domain,
+     * whether it's an anchor domain, and any warnings.
+     */
+    @GET
+    @Path("/check-email-domain")
+    @Operation(summary = "Check email domain configuration",
+        description = "Returns auth provider info and warnings for an email domain")
+    @APIResponses({
+        @APIResponse(responseCode = "200", description = "Domain info returned",
+            content = @Content(schema = @Schema(implementation = EmailDomainCheckResponse.class))),
+        @APIResponse(responseCode = "400", description = "Invalid email format")
+    })
+    public Response checkEmailDomain(
+            @QueryParam("email") @Parameter(description = "Email address to check") String email,
+            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @HeaderParam("Authorization") String authHeader) {
+
+        String principalId = extractPrincipalId(sessionToken, authHeader);
+        if (principalId == null) {
+            return Response.status(Response.Status.UNAUTHORIZED)
+                .entity(new ErrorResponse("Not authenticated"))
+                .build();
+        }
+
+        if (email == null || !email.contains("@")) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                .entity(new ErrorResponse("Invalid email format"))
+                .build();
+        }
+
+        String domain = email.substring(email.indexOf('@') + 1).toLowerCase();
+
+        // Check if email already exists
+        boolean emailExists = principalRepo.findByEmail(email).isPresent();
+
+        // Check if anchor domain
+        boolean isAnchorDomain = anchorDomainRepo.existsByDomain(domain);
+
+        // Check auth configuration
+        var authConfigOpt = authConfigRepo.findByEmailDomain(domain);
+
+        String authProvider = null;
+        String warning = null;
+        String info = null;
+
+        if (emailExists) {
+            warning = "A user with this email address already exists.";
+            // Still determine auth provider for display
+            if (isAnchorDomain) {
+                authProvider = "INTERNAL";
+            } else if (authConfigOpt.isPresent()) {
+                authProvider = authConfigOpt.get().authProvider.name();
+            } else {
+                authProvider = "INTERNAL";
+            }
+        } else if (isAnchorDomain) {
+            info = "This is an anchor domain. User will have access to all clients.";
+            authProvider = "INTERNAL";
+        } else if (authConfigOpt.isPresent()) {
+            ClientAuthConfig config = authConfigOpt.get();
+            authProvider = config.authProvider.name();
+            if (config.authProvider == AuthProvider.OIDC) {
+                info = "This domain uses external OIDC authentication. User will authenticate via their organization's identity provider.";
+            } else {
+                info = "This domain uses internal authentication.";
+            }
+        } else {
+            warning = "No authentication configuration found for this email domain. The user will be created with internal authentication but may not be linked to any client.";
+            authProvider = "INTERNAL";
+        }
+
+        return Response.ok(new EmailDomainCheckResponse(
+            domain,
+            authProvider,
+            isAnchorDomain,
+            authConfigOpt.isPresent(),
+            emailExists,
+            info,
+            warning
+        )).build();
+    }
+
     // ==================== DTOs ====================
 
     public record PrincipalDto(
-        Long id,
+        String id,
         PrincipalType type,
-        Long clientId,
+        UserScope scope,
+        String clientId,
         String name,
         boolean active,
         String email,
         IdpType idpType,
         Set<String> roles,
+        boolean isAnchorUser,
+        Set<String> grantedClientIds,
         Instant createdAt,
         Instant updatedAt
     ) {}
 
     public record PrincipalDetailDto(
-        Long id,
+        String id,
         PrincipalType type,
-        Long clientId,
+        UserScope scope,
+        String clientId,
         String name,
         boolean active,
         String email,
         IdpType idpType,
         Instant lastLoginAt,
         Set<String> roles,
-        Set<Long> grantedClientIds,
+        boolean isAnchorUser,
+        Set<String> grantedClientIds,
         Instant createdAt,
         Instant updatedAt
     ) {}
@@ -703,14 +874,15 @@ public class PrincipalAdminResource {
         @Email(message = "Invalid email format")
         String email,
 
-        @NotBlank(message = "Password is required")
+        // Password is optional - only required for INTERNAL auth users
+        // OIDC users will authenticate via their identity provider
         @Size(min = 8, message = "Password must be at least 8 characters")
         String password,
 
         @NotBlank(message = "Name is required")
         String name,
 
-        Long clientId
+        String clientId
     ) {}
 
     public record UpdatePrincipalRequest(
@@ -731,11 +903,11 @@ public class PrincipalAdminResource {
 
     public record GrantClientAccessRequest(
         @NotNull(message = "Client ID is required")
-        Long clientId
+        String clientId
     ) {}
 
     public record RoleAssignmentDto(
-        Long id,
+        String id,
         String roleName,
         String assignmentSource,
         Instant assignedAt
@@ -746,8 +918,8 @@ public class PrincipalAdminResource {
     ) {}
 
     public record ClientAccessGrantDto(
-        Long id,
-        Long clientId,
+        String id,
+        String clientId,
         Instant grantedAt,
         Instant expiresAt
     ) {}
@@ -760,7 +932,38 @@ public class PrincipalAdminResource {
         String message
     ) {}
 
-    public record ErrorResponse(
-        String error
+    public record EmailDomainCheckResponse(
+        String domain,
+        String authProvider,
+        boolean isAnchorDomain,
+        boolean hasAuthConfig,
+        boolean emailExists,
+        String info,
+        String warning
     ) {}
+
+    public record ErrorResponse(
+        String code,
+        String message,
+        Map<String, Object> details
+    ) {
+        public ErrorResponse(String message) {
+            this("ERROR", message, Map.of());
+        }
+    }
+
+    // ==================== Error Mapping ====================
+
+    private Response mapErrorToResponse(UseCaseError error) {
+        Response.Status status = switch (error) {
+            case UseCaseError.ValidationError v -> Response.Status.BAD_REQUEST;
+            case UseCaseError.NotFoundError n -> Response.Status.NOT_FOUND;
+            case UseCaseError.BusinessRuleViolation b -> Response.Status.CONFLICT;
+            case UseCaseError.ConcurrencyError c -> Response.Status.CONFLICT;
+        };
+
+        return Response.status(status)
+            .entity(new ErrorResponse(error.code(), error.message(), error.details()))
+            .build();
+    }
 }

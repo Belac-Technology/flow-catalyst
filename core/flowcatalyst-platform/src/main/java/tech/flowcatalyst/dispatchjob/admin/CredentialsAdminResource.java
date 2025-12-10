@@ -67,7 +67,7 @@ public class CredentialsAdminResource {
             content = @Content(mediaType = MediaType.APPLICATION_JSON, schema = @Schema(implementation = ErrorResponse.class))
         )
     })
-    public Response getCredentials(@PathParam("id") Long id) {
+    public Response getCredentials(@PathParam("id") String id) {
         return credentialsService.findById(id)
             .map(credentials -> Response.ok(CredentialsResponse.from(credentials)).build())
             .orElse(Response.status(404).entity(new ErrorResponse("Credentials not found")).build());
@@ -89,7 +89,7 @@ public class CredentialsAdminResource {
             content = @Content(mediaType = MediaType.APPLICATION_JSON, schema = @Schema(implementation = ErrorResponse.class))
         )
     })
-    public Response deleteCredentials(@PathParam("id") Long id) {
+    public Response deleteCredentials(@PathParam("id") String id) {
         boolean deleted = credentialsService.delete(id);
 
         if (deleted) {

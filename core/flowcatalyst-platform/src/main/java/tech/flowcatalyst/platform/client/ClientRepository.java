@@ -10,7 +10,7 @@ import java.util.Set;
  * Repository for Client entities.
  */
 @ApplicationScoped
-public class ClientRepository implements PanacheMongoRepositoryBase<Client, Long> {
+public class ClientRepository implements PanacheMongoRepositoryBase<Client, String> {
 
     public Optional<Client> findByIdentifier(String identifier) {
         return find("identifier", identifier).firstResultOptional();
@@ -20,7 +20,7 @@ public class ClientRepository implements PanacheMongoRepositoryBase<Client, Long
         return find("status", ClientStatus.ACTIVE).list();
     }
 
-    public List<Client> findByIds(Set<Long> ids) {
+    public List<Client> findByIds(Set<String> ids) {
         return find("id in ?1", ids).list();
     }
 }

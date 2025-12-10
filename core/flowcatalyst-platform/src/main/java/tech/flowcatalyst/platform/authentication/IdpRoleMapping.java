@@ -17,7 +17,7 @@ import java.time.Instant;
 public class IdpRoleMapping extends PanacheMongoEntityBase {
 
     @BsonId
-    public Long id;
+    public String id;
 
     /**
      * Role name from the external IDP (e.g., Keycloak role name from partner IDP).

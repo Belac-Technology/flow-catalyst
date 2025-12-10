@@ -72,7 +72,7 @@ public class EventTypeBffResource {
     @GET
     @Path("/{id}")
     @Operation(summary = "Get event type by ID (BFF)")
-    public Response getEventType(@PathParam("id") Long id) {
+    public Response getEventType(@PathParam("id") String id) {
         return eventTypeOperations.findById(id)
             .map(et -> Response.ok(BffEventTypeResponse.from(et)).build())
             .orElse(Response.status(404)
@@ -139,7 +139,7 @@ public class EventTypeBffResource {
     @PATCH
     @Path("/{id}")
     @Operation(summary = "Update an event type (BFF)")
-    public Response updateEventType(@PathParam("id") Long id, UpdateEventTypeRequest request) {
+    public Response updateEventType(@PathParam("id") String id, UpdateEventTypeRequest request) {
         ExecutionContext context = createExecutionContext();
 
         UpdateEventTypeCommand command = new UpdateEventTypeCommand(
@@ -163,7 +163,7 @@ public class EventTypeBffResource {
     @POST
     @Path("/{id}/schemas")
     @Operation(summary = "Add a schema version (BFF)")
-    public Response addSchema(@PathParam("id") Long id, AddSchemaRequest request) {
+    public Response addSchema(@PathParam("id") String id, AddSchemaRequest request) {
         ExecutionContext context = createExecutionContext();
 
         AddSchemaCommand command = new AddSchemaCommand(
@@ -189,7 +189,7 @@ public class EventTypeBffResource {
     @POST
     @Path("/{id}/schemas/{version}/finalise")
     @Operation(summary = "Finalise a schema version (BFF)")
-    public Response finaliseSchema(@PathParam("id") Long id, @PathParam("version") String version) {
+    public Response finaliseSchema(@PathParam("id") String id, @PathParam("version") String version) {
         ExecutionContext context = createExecutionContext();
 
         FinaliseSchemaCommand command = new FinaliseSchemaCommand(id, version);
@@ -209,7 +209,7 @@ public class EventTypeBffResource {
     @POST
     @Path("/{id}/schemas/{version}/deprecate")
     @Operation(summary = "Deprecate a schema version (BFF)")
-    public Response deprecateSchema(@PathParam("id") Long id, @PathParam("version") String version) {
+    public Response deprecateSchema(@PathParam("id") String id, @PathParam("version") String version) {
         ExecutionContext context = createExecutionContext();
 
         DeprecateSchemaCommand command = new DeprecateSchemaCommand(id, version);
@@ -229,7 +229,7 @@ public class EventTypeBffResource {
     @POST
     @Path("/{id}/archive")
     @Operation(summary = "Archive an event type (BFF)")
-    public Response archiveEventType(@PathParam("id") Long id) {
+    public Response archiveEventType(@PathParam("id") String id) {
         ExecutionContext context = createExecutionContext();
 
         ArchiveEventTypeCommand command = new ArchiveEventTypeCommand(id);
@@ -249,7 +249,7 @@ public class EventTypeBffResource {
     @DELETE
     @Path("/{id}")
     @Operation(summary = "Delete an event type (BFF)")
-    public Response deleteEventType(@PathParam("id") Long id) {
+    public Response deleteEventType(@PathParam("id") String id) {
         ExecutionContext context = createExecutionContext();
 
         DeleteEventTypeCommand command = new DeleteEventTypeCommand(id);

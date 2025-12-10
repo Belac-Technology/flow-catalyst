@@ -34,7 +34,7 @@ public class AuthorizationCodeRepository implements PanacheMongoRepositoryBase<A
     /**
      * Delete all codes for a principal (e.g., on logout/revoke).
      */
-    public long deleteByPrincipalId(Long principalId) {
+    public long deleteByPrincipalId(String principalId) {
         return delete("principalId", principalId);
     }
 }

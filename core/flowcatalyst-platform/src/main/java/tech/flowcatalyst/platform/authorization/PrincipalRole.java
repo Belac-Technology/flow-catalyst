@@ -16,9 +16,9 @@ import java.time.Instant;
 public class PrincipalRole extends PanacheMongoEntityBase {
 
     @BsonId
-    public Long id;
+    public String id;
 
-    public Long principalId;
+    public String principalId;
 
     /**
      * String role name (e.g., "platform:tenant-admin", "logistics:dispatcher").

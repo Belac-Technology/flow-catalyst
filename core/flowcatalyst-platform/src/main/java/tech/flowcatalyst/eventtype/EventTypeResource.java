@@ -98,7 +98,7 @@ public class EventTypeResource {
         @APIResponse(responseCode = "200", description = "Event type found"),
         @APIResponse(responseCode = "404", description = "Event type not found")
     })
-    public Response getEventType(@PathParam("id") Long id) {
+    public Response getEventType(@PathParam("id") String id) {
         return eventTypeOperations.findById(id)
             .map(et -> Response.ok(EventTypeResponse.from(et)).build())
             .orElse(Response.status(404)
@@ -182,7 +182,7 @@ public class EventTypeResource {
         @APIResponse(responseCode = "400", description = "Invalid request"),
         @APIResponse(responseCode = "404", description = "Event type not found")
     })
-    public Response updateEventType(@PathParam("id") Long id, UpdateEventTypeRequest request) {
+    public Response updateEventType(@PathParam("id") String id, UpdateEventTypeRequest request) {
         ExecutionContext context = createExecutionContext();
 
         UpdateEventTypeCommand command = new UpdateEventTypeCommand(
@@ -212,7 +212,7 @@ public class EventTypeResource {
         @APIResponse(responseCode = "404", description = "Event type not found"),
         @APIResponse(responseCode = "409", description = "Version already exists")
     })
-    public Response addSchema(@PathParam("id") Long id, AddSchemaRequest request) {
+    public Response addSchema(@PathParam("id") String id, AddSchemaRequest request) {
         ExecutionContext context = createExecutionContext();
 
         AddSchemaCommand command = new AddSchemaCommand(
@@ -243,7 +243,7 @@ public class EventTypeResource {
         @APIResponse(responseCode = "400", description = "Invalid request"),
         @APIResponse(responseCode = "404", description = "Event type or version not found")
     })
-    public Response finaliseSchema(@PathParam("id") Long id, @PathParam("version") String version) {
+    public Response finaliseSchema(@PathParam("id") String id, @PathParam("version") String version) {
         ExecutionContext context = createExecutionContext();
 
         FinaliseSchemaCommand command = new FinaliseSchemaCommand(id, version);
@@ -268,7 +268,7 @@ public class EventTypeResource {
         @APIResponse(responseCode = "400", description = "Invalid request"),
         @APIResponse(responseCode = "404", description = "Event type or version not found")
     })
-    public Response deprecateSchema(@PathParam("id") Long id, @PathParam("version") String version) {
+    public Response deprecateSchema(@PathParam("id") String id, @PathParam("version") String version) {
         ExecutionContext context = createExecutionContext();
 
         DeprecateSchemaCommand command = new DeprecateSchemaCommand(id, version);
@@ -293,7 +293,7 @@ public class EventTypeResource {
         @APIResponse(responseCode = "400", description = "Invalid request - all schemas must be deprecated first"),
         @APIResponse(responseCode = "404", description = "Event type not found")
     })
-    public Response archiveEventType(@PathParam("id") Long id) {
+    public Response archiveEventType(@PathParam("id") String id) {
         ExecutionContext context = createExecutionContext();
 
         ArchiveEventTypeCommand command = new ArchiveEventTypeCommand(id);
@@ -318,7 +318,7 @@ public class EventTypeResource {
         @APIResponse(responseCode = "400", description = "Invalid request - must be archived or have no finalized schemas"),
         @APIResponse(responseCode = "404", description = "Event type not found")
     })
-    public Response deleteEventType(@PathParam("id") Long id) {
+    public Response deleteEventType(@PathParam("id") String id) {
         ExecutionContext context = createExecutionContext();
 
         DeleteEventTypeCommand command = new DeleteEventTypeCommand(id);
@@ -366,7 +366,7 @@ public class EventTypeResource {
     public record EventTypeListResponse(List<EventTypeResponse> items) {}
 
     public record EventTypeResponse(
-        Long id,
+        String id,
         String code,
         String name,
         String description,

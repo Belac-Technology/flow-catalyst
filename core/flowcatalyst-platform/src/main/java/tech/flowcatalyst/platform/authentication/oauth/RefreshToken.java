@@ -28,7 +28,7 @@ public class RefreshToken extends PanacheMongoEntityBase {
     /**
      * The principal this token was issued for.
      */
-    public Long principalId;
+    public String principalId;
 
     /**
      * OAuth client that requested this token.
@@ -38,7 +38,7 @@ public class RefreshToken extends PanacheMongoEntityBase {
     /**
      * Client context for this token.
      */
-    public Long contextClientId;
+    public String contextClientId;
 
     /**
      * Scopes granted with this token.

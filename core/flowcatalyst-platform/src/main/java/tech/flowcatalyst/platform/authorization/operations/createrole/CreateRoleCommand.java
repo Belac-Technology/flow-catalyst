@@ -16,7 +16,7 @@ import java.util.Set;
  * @param clientManaged  Whether this role syncs to client-managed IDPs
  */
 public record CreateRoleCommand(
-    Long applicationId,
+    String applicationId,
     String name,
     String displayName,
     String description,

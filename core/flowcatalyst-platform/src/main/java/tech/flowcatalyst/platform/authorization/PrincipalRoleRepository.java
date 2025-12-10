@@ -8,13 +8,13 @@ import java.util.List;
  * Repository for PrincipalRole junction entities.
  */
 @ApplicationScoped
-public class PrincipalRoleRepository implements PanacheMongoRepositoryBase<PrincipalRole, Long> {
+public class PrincipalRoleRepository implements PanacheMongoRepositoryBase<PrincipalRole, String> {
 
-    public List<PrincipalRole> findByPrincipalId(Long principalId) {
+    public List<PrincipalRole> findByPrincipalId(String principalId) {
         return find("principalId", principalId).list();
     }
 
-    public void deleteByPrincipalIdAndAssignmentSource(Long principalId, String assignmentSource) {
+    public void deleteByPrincipalIdAndAssignmentSource(String principalId, String assignmentSource) {
         delete("principalId = ?1 and assignmentSource = ?2", principalId, assignmentSource);
     }
 }
