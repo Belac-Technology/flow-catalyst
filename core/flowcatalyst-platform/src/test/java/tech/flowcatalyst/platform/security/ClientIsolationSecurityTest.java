@@ -61,7 +61,7 @@ class ClientIsolationSecurityTest {
         );
 
         // Act: Check accessible clients
-        Set<Long> accessible = clientService.getAccessibleClients(userA.id);
+        Set<String> accessible = clientService.getAccessibleClients(userA.id);
 
         // Assert: Can ONLY access own client
         assertThat(accessible).containsExactly(clientA.id);
@@ -96,7 +96,7 @@ class ClientIsolationSecurityTest {
             .containsExactly(client3.id);
 
         // Verify no cross-client visibility
-        Set<Long> user1Access = clientService.getAccessibleClients(user1.id);
+        Set<String> user1Access = clientService.getAccessibleClients(user1.id);
         assertThat(user1Access).doesNotContain(client2.id, client3.id);
     }
 
@@ -129,7 +129,7 @@ class ClientIsolationSecurityTest {
         clientService.revokeClientAccess(partner.id, customerClient.id);
 
         // Assert: Access IMMEDIATELY removed (no grace period)
-        Set<Long> accessAfterRevoke = clientService.getAccessibleClients(partner.id);
+        Set<String> accessAfterRevoke = clientService.getAccessibleClients(partner.id);
         assertThat(accessAfterRevoke).doesNotContain(customerClient.id);
         assertThat(accessAfterRevoke).isEmpty();
     }
@@ -205,7 +205,7 @@ class ClientIsolationSecurityTest {
         clientService.deactivateClient(client.id, "NON_PAYMENT", "billing-system");
 
         // Assert: Client not in accessible list
-        Set<Long> accessible = clientService.getAccessibleClients(user.id);
+        Set<String> accessible = clientService.getAccessibleClients(user.id);
         assertThat(accessible).doesNotContain(client.id);
     }
 
@@ -231,7 +231,7 @@ class ClientIsolationSecurityTest {
         clientService.suspendClient(client.id, "PAYMENT_FAILED", "billing-system");
 
         // Assert: Client not accessible during suspension
-        Set<Long> accessible = clientService.getAccessibleClients(user.id);
+        Set<String> accessible = clientService.getAccessibleClients(user.id);
         assertThat(accessible).doesNotContain(client.id);
     }
 
@@ -259,7 +259,7 @@ class ClientIsolationSecurityTest {
         clientService.activateClient(client.id, "billing-system");
 
         // Assert: Access restored
-        Set<Long> accessible = clientService.getAccessibleClients(user.id);
+        Set<String> accessible = clientService.getAccessibleClients(user.id);
         assertThat(accessible).contains(client.id);
     }
 
@@ -292,7 +292,7 @@ class ClientIsolationSecurityTest {
         clientService.grantClientAccess(partner.id, c3.id);
 
         // Act
-        Set<Long> accessible = clientService.getAccessibleClients(partner.id);
+        Set<String> accessible = clientService.getAccessibleClients(partner.id);
 
         // Assert: Can ONLY access granted clients
         assertThat(accessible).containsExactlyInAnyOrder(c1.id, c2.id, c3.id);
@@ -318,7 +318,7 @@ class ClientIsolationSecurityTest {
         );
 
         // Act
-        Set<Long> accessible = clientService.getAccessibleClients(partner.id);
+        Set<String> accessible = clientService.getAccessibleClients(partner.id);
 
         // Assert: Zero access
         assertThat(accessible).isEmpty();
@@ -353,7 +353,7 @@ class ClientIsolationSecurityTest {
         clientService.revokeClientAccess(partner.id, c2.id);
 
         // Assert: Still has access to c1 and c3
-        Set<Long> accessible = clientService.getAccessibleClients(partner.id);
+        Set<String> accessible = clientService.getAccessibleClients(partner.id);
         assertThat(accessible).containsExactlyInAnyOrder(c1.id, c3.id);
         assertThat(accessible).doesNotContain(c2.id);
     }
@@ -452,7 +452,7 @@ class ClientIsolationSecurityTest {
         clientService.deactivateClient(homeClient.id, "BUSINESS_CLOSED", "system");
 
         // Assert: Can still access granted client, but not home client
-        Set<Long> accessible = clientService.getAccessibleClients(user.id);
+        Set<String> accessible = clientService.getAccessibleClients(user.id);
         assertThat(accessible).containsExactly(grantedClient.id);
         assertThat(accessible).doesNotContain(homeClient.id);
     }

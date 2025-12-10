@@ -124,10 +124,11 @@ public class RoleBffResource {
         @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
         @HeaderParam("Authorization") String authHeader
     ) {
-        String principalId = extractPrincipalId(sessionToken, authHeader);
-        if (principalId == null) {
+        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
+        if (principalIdOpt.isEmpty()) {
             return Response.status(401).entity(new ErrorResponse("UNAUTHORIZED", "Not authenticated")).build();
         }
+        String principalId = principalIdOpt.get();
 
         if (request.applicationCode() == null || request.applicationCode().isBlank()) {
             return Response.status(400).entity(new ErrorResponse("APPLICATION_CODE_REQUIRED", "applicationCode is required")).build();
@@ -176,10 +177,11 @@ public class RoleBffResource {
         @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
         @HeaderParam("Authorization") String authHeader
     ) {
-        String principalId = extractPrincipalId(sessionToken, authHeader);
-        if (principalId == null) {
+        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
+        if (principalIdOpt.isEmpty()) {
             return Response.status(401).entity(new ErrorResponse("UNAUTHORIZED", "Not authenticated")).build();
         }
+        String principalId = principalIdOpt.get();
 
         auditContext.setPrincipalId(principalId);
         ExecutionContext context = ExecutionContext.from(tracingContext, principalId);
@@ -211,10 +213,11 @@ public class RoleBffResource {
         @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
         @HeaderParam("Authorization") String authHeader
     ) {
-        String principalId = extractPrincipalId(sessionToken, authHeader);
-        if (principalId == null) {
+        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
+        if (principalIdOpt.isEmpty()) {
             return Response.status(401).entity(new ErrorResponse("UNAUTHORIZED", "Not authenticated")).build();
         }
+        String principalId = principalIdOpt.get();
 
         auditContext.setPrincipalId(principalId);
         ExecutionContext context = ExecutionContext.from(tracingContext, principalId);
@@ -254,17 +257,6 @@ public class RoleBffResource {
             .orElse(Response.status(404)
                 .entity(new ErrorResponse("PERMISSION_NOT_FOUND", "Permission not found: " + permission))
                 .build());
-    }
-
-    private String extractPrincipalId(String sessionToken, String authHeader) {
-        String token = sessionToken;
-        if (token == null && authHeader != null && authHeader.startsWith("Bearer ")) {
-            token = authHeader.substring("Bearer ".length());
-        }
-        if (token == null) {
-            return null;
-        }
-        return jwtKeyService.validateAndGetPrincipalId(token);
     }
 
     private Response mapErrorToResponse(UseCaseError error) {

@@ -77,8 +77,8 @@ public class OAuthClientAdminResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        String principalId = extractPrincipalId(sessionToken, authHeader);
-        if (principalId == null) {
+        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
+        if (principalIdOpt.isEmpty()) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
                 .build();
@@ -118,8 +118,8 @@ public class OAuthClientAdminResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        String principalId = extractPrincipalId(sessionToken, authHeader);
-        if (principalId == null) {
+        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
+        if (principalIdOpt.isEmpty()) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
                 .build();
@@ -147,8 +147,8 @@ public class OAuthClientAdminResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        String principalId = extractPrincipalId(sessionToken, authHeader);
-        if (principalId == null) {
+        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
+        if (principalIdOpt.isEmpty()) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
                 .build();
@@ -181,12 +181,13 @@ public class OAuthClientAdminResource {
             @HeaderParam("Authorization") String authHeader,
             @Context UriInfo uriInfo) {
 
-        String adminPrincipalId = extractPrincipalId(sessionToken, authHeader);
-        if (adminPrincipalId == null) {
+        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
+        if (principalIdOpt.isEmpty()) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
                 .build();
         }
+        String adminPrincipalId = principalIdOpt.get();
 
         // Generate unique client_id
         String clientId = generateClientId();
@@ -250,12 +251,13 @@ public class OAuthClientAdminResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        String adminPrincipalId = extractPrincipalId(sessionToken, authHeader);
-        if (adminPrincipalId == null) {
+        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
+        if (principalIdOpt.isEmpty()) {
             return Response.status(Response.Status.UNAUTHORIZED)
                     .entity(new ErrorResponse("Not authenticated"))
                     .build();
         }
+        String adminPrincipalId = principalIdOpt.get();
 
         OAuthClient client = clientRepo.findByIdOptional(id).orElse(null);
         if (client == null) {
@@ -312,12 +314,13 @@ public class OAuthClientAdminResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        String adminPrincipalId = extractPrincipalId(sessionToken, authHeader);
-        if (adminPrincipalId == null) {
+        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
+        if (principalIdOpt.isEmpty()) {
             return Response.status(Response.Status.UNAUTHORIZED)
                     .entity(new ErrorResponse("Not authenticated"))
                     .build();
         }
+        String adminPrincipalId = principalIdOpt.get();
 
         OAuthClient client = clientRepo.findByIdOptional(id).orElse(null);
         if (client == null) {
@@ -357,12 +360,13 @@ public class OAuthClientAdminResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        String adminPrincipalId = extractPrincipalId(sessionToken, authHeader);
-        if (adminPrincipalId == null) {
+        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
+        if (principalIdOpt.isEmpty()) {
             return Response.status(Response.Status.UNAUTHORIZED)
                     .entity(new ErrorResponse("Not authenticated"))
                     .build();
         }
+        String adminPrincipalId = principalIdOpt.get();
 
         OAuthClient client = clientRepo.findByIdOptional(id).orElse(null);
         if (client == null) {
@@ -393,12 +397,13 @@ public class OAuthClientAdminResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        String adminPrincipalId = extractPrincipalId(sessionToken, authHeader);
-        if (adminPrincipalId == null) {
+        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
+        if (principalIdOpt.isEmpty()) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
                 .build();
         }
+        String adminPrincipalId = principalIdOpt.get();
 
         OAuthClient client = clientRepo.findByIdOptional(id).orElse(null);
         if (client == null) {
@@ -415,17 +420,6 @@ public class OAuthClientAdminResource {
     }
 
     // ==================== Helper Methods ====================
-
-    private String extractPrincipalId(String sessionToken, String authHeader) {
-        String token = sessionToken;
-        if (token == null && authHeader != null && authHeader.startsWith("Bearer ")) {
-            token = authHeader.substring("Bearer ".length());
-        }
-        if (token == null) {
-            return null;
-        }
-        return jwtKeyService.validateAndGetPrincipalId(token);
-    }
 
     private String generateClientId() {
         // Format: fc_{tsid} for easy identification

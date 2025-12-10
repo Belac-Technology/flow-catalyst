@@ -51,7 +51,7 @@ public class OidcSyncService {
      * @return Synchronized principal
      */
     public Principal syncOidcUser(String email, String name, String externalIdpId, String clientId) {
-        Principal principal = userService.createOrUpdateOidcUser(email, name, externalIdpId, clientId);
+        Principal principal = userService.createOrUpdateOidcUser(email, name, externalIdpId, clientId, null);
         userService.updateLastLogin(principal.id);
         return principal;
     }

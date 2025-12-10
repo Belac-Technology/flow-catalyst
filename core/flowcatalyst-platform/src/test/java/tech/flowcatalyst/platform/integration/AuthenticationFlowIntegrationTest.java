@@ -267,6 +267,7 @@ class AuthenticationFlowIntegrationTest {
             "alice@customer.com",
             "Alice Smith",
             "google-oauth2|123456",
+            null,
             null
         );
 
@@ -284,6 +285,7 @@ class AuthenticationFlowIntegrationTest {
             "alice@customer.com",
             "Alice Smith",
             "google-oauth2|123456",
+            null,
             null
         );
 
@@ -292,6 +294,7 @@ class AuthenticationFlowIntegrationTest {
             "alice@customer.com",
             "Alice Johnson",  // Name changed (married)
             "google-oauth2|789012",  // External ID changed
+            null,
             null
         );
 
@@ -309,6 +312,7 @@ class AuthenticationFlowIntegrationTest {
             "alice@customer.com",
             "Alice Smith",
             "google-oauth2|123456",
+            null,
             null
         );
 

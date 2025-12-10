@@ -67,8 +67,8 @@ public class ClientAdminResource {
             @HeaderParam("Authorization") String authHeader) {
 
         // TODO: Add permission check for platform:client:view
-        String principalId = extractPrincipalId(sessionToken, authHeader);
-        if (principalId == null) {
+        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
+        if (principalIdOpt.isEmpty()) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
                 .build();
@@ -107,23 +107,14 @@ public class ClientAdminResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        String principalId = extractPrincipalId(sessionToken, authHeader);
-        if (principalId == null) {
+        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
+        if (principalIdOpt.isEmpty()) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
                 .build();
         }
 
-        String clientId;
-        try {
-            clientId = id;
-        } catch (NumberFormatException e) {
-            return Response.status(Response.Status.BAD_REQUEST)
-                .entity(new ErrorResponse("Invalid client ID"))
-                .build();
-        }
-
-        return clientService.findById(clientId)
+        return clientService.findById(id)
             .map(client -> Response.ok(toDto(client)).build())
             .orElse(Response.status(Response.Status.NOT_FOUND)
                 .entity(new ErrorResponse("Client not found"))
@@ -145,8 +136,8 @@ public class ClientAdminResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        String principalId = extractPrincipalId(sessionToken, authHeader);
-        if (principalId == null) {
+        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
+        if (principalIdOpt.isEmpty()) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
                 .build();
@@ -176,16 +167,17 @@ public class ClientAdminResource {
             @HeaderParam("Authorization") String authHeader,
             @Context UriInfo uriInfo) {
 
-        String principalId = extractPrincipalId(sessionToken, authHeader);
-        if (principalId == null) {
+        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
+        if (principalIdOpt.isEmpty()) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
                 .build();
         }
+        String principalId = principalIdOpt.get();
 
         try {
             Client client = clientService.createClient(request.name(), request.identifier());
-            LOG.infof("Client created: %s (%s) by principal %d",
+            LOG.infof("Client created: %s (%s) by principal %s",
                 client.name, client.identifier, principalId);
 
             return Response.status(Response.Status.CREATED)
@@ -216,25 +208,17 @@ public class ClientAdminResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        String principalId = extractPrincipalId(sessionToken, authHeader);
-        if (principalId == null) {
+        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
+        if (principalIdOpt.isEmpty()) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
                 .build();
         }
-
-        String clientId;
-        try {
-            clientId = id;
-        } catch (NumberFormatException e) {
-            return Response.status(Response.Status.BAD_REQUEST)
-                .entity(new ErrorResponse("Invalid client ID"))
-                .build();
-        }
+        String principalId = principalIdOpt.get();
 
         try {
-            Client client = clientService.updateClient(clientId, request.name());
-            LOG.infof("Client updated: %s by principal %d", id, principalId);
+            Client client = clientService.updateClient(id, request.name());
+            LOG.infof("Client updated: %s by principal %s", id, principalId);
             return Response.ok(toDto(client)).build();
         } catch (NotFoundException e) {
             return Response.status(Response.Status.NOT_FOUND)
@@ -260,25 +244,17 @@ public class ClientAdminResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        String principalId = extractPrincipalId(sessionToken, authHeader);
-        if (principalId == null) {
+        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
+        if (principalIdOpt.isEmpty()) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
                 .build();
         }
-
-        String clientId;
-        try {
-            clientId = id;
-        } catch (NumberFormatException e) {
-            return Response.status(Response.Status.BAD_REQUEST)
-                .entity(new ErrorResponse("Invalid client ID"))
-                .build();
-        }
+        String principalId = principalIdOpt.get();
 
         try {
-            clientService.activateClient(clientId, String.valueOf(principalId));
-            LOG.infof("Client %s activated by principal %d", id, principalId);
+            clientService.activateClient(id, principalId);
+            LOG.infof("Client %s activated by principal %s", id, principalId);
             return Response.ok(new StatusChangeResponse("Client activated")).build();
         } catch (NotFoundException e) {
             return Response.status(Response.Status.NOT_FOUND)
@@ -303,25 +279,17 @@ public class ClientAdminResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        String principalId = extractPrincipalId(sessionToken, authHeader);
-        if (principalId == null) {
+        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
+        if (principalIdOpt.isEmpty()) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
                 .build();
         }
-
-        String clientId;
-        try {
-            clientId = id;
-        } catch (NumberFormatException e) {
-            return Response.status(Response.Status.BAD_REQUEST)
-                .entity(new ErrorResponse("Invalid client ID"))
-                .build();
-        }
+        String principalId = principalIdOpt.get();
 
         try {
-            clientService.suspendClient(clientId, request.reason(), String.valueOf(principalId));
-            LOG.infof("Client %s suspended by principal %d: %s", id, principalId, request.reason());
+            clientService.suspendClient(id, request.reason(), principalId);
+            LOG.infof("Client %s suspended by principal %s: %s", id, principalId, request.reason());
             return Response.ok(new StatusChangeResponse("Client suspended")).build();
         } catch (NotFoundException e) {
             return Response.status(Response.Status.NOT_FOUND)
@@ -346,25 +314,17 @@ public class ClientAdminResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        String principalId = extractPrincipalId(sessionToken, authHeader);
-        if (principalId == null) {
+        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
+        if (principalIdOpt.isEmpty()) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
                 .build();
         }
-
-        String clientId;
-        try {
-            clientId = id;
-        } catch (NumberFormatException e) {
-            return Response.status(Response.Status.BAD_REQUEST)
-                .entity(new ErrorResponse("Invalid client ID"))
-                .build();
-        }
+        String principalId = principalIdOpt.get();
 
         try {
-            clientService.deactivateClient(clientId, request.reason(), String.valueOf(principalId));
-            LOG.infof("Client %s deactivated by principal %d: %s", id, principalId, request.reason());
+            clientService.deactivateClient(id, request.reason(), principalId);
+            LOG.infof("Client %s deactivated by principal %s: %s", id, principalId, request.reason());
             return Response.ok(new StatusChangeResponse("Client deactivated")).build();
         } catch (NotFoundException e) {
             return Response.status(Response.Status.NOT_FOUND)
@@ -391,24 +351,16 @@ public class ClientAdminResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        String principalId = extractPrincipalId(sessionToken, authHeader);
-        if (principalId == null) {
+        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
+        if (principalIdOpt.isEmpty()) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
                 .build();
         }
-
-        String clientId;
-        try {
-            clientId = id;
-        } catch (NumberFormatException e) {
-            return Response.status(Response.Status.BAD_REQUEST)
-                .entity(new ErrorResponse("Invalid client ID"))
-                .build();
-        }
+        String principalId = principalIdOpt.get();
 
         try {
-            clientService.addNote(clientId, request.category(), request.text(), String.valueOf(principalId));
+            clientService.addNote(id, request.category(), request.text(), principalId);
             return Response.status(Response.Status.CREATED)
                 .entity(new StatusChangeResponse("Note added"))
                 .build();
@@ -420,17 +372,6 @@ public class ClientAdminResource {
     }
 
     // ==================== Helper Methods ====================
-
-    private String extractPrincipalId(String sessionToken, String authHeader) {
-        String token = sessionToken;
-        if (token == null && authHeader != null && authHeader.startsWith("Bearer ")) {
-            token = authHeader.substring("Bearer ".length());
-        }
-        if (token == null) {
-            return null;
-        }
-        return jwtKeyService.validateAndGetPrincipalId(token);
-    }
 
     private ClientDto toDto(Client client) {
         return new ClientDto(

@@ -68,8 +68,8 @@ public class ClientAuthConfigAdminResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        String principalId = extractPrincipalId(sessionToken, authHeader);
-        if (principalId == null) {
+        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
+        if (principalIdOpt.isEmpty()) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
                 .build();
@@ -106,23 +106,14 @@ public class ClientAuthConfigAdminResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        String principalId = extractPrincipalId(sessionToken, authHeader);
-        if (principalId == null) {
+        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
+        if (principalIdOpt.isEmpty()) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
                 .build();
         }
 
-        String configId;
-        try {
-            configId = id;
-        } catch (NumberFormatException e) {
-            return Response.status(Response.Status.BAD_REQUEST)
-                .entity(new ErrorResponse("Invalid configuration ID"))
-                .build();
-        }
-
-        return authConfigService.findById(configId)
+        return authConfigService.findById(id)
             .map(config -> Response.ok(toDto(config)).build())
             .orElse(Response.status(Response.Status.NOT_FOUND)
                 .entity(new ErrorResponse("Auth configuration not found"))
@@ -144,8 +135,8 @@ public class ClientAuthConfigAdminResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        String principalId = extractPrincipalId(sessionToken, authHeader);
-        if (principalId == null) {
+        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
+        if (principalIdOpt.isEmpty()) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
                 .build();
@@ -179,17 +170,18 @@ public class ClientAuthConfigAdminResource {
             @HeaderParam("Authorization") String authHeader,
             @Context UriInfo uriInfo) {
 
-        String principalId = extractPrincipalId(sessionToken, authHeader);
-        if (principalId == null) {
+        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
+        if (principalIdOpt.isEmpty()) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
                 .build();
         }
+        String principalId = principalIdOpt.get();
 
         try {
             ClientAuthConfig config = authConfigService.createInternal(
                 request.emailDomain(), request.clientId());
-            LOG.infof("Created INTERNAL auth config for domain: %s by principal %d",
+            LOG.infof("Created INTERNAL auth config for domain: %s by principal %s",
                 config.emailDomain, principalId);
 
             return Response.status(Response.Status.CREATED)
@@ -223,12 +215,13 @@ public class ClientAuthConfigAdminResource {
             @HeaderParam("Authorization") String authHeader,
             @Context UriInfo uriInfo) {
 
-        String principalId = extractPrincipalId(sessionToken, authHeader);
-        if (principalId == null) {
+        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
+        if (principalIdOpt.isEmpty()) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
                 .build();
         }
+        String principalId = principalIdOpt.get();
 
         try {
             ClientAuthConfig config = authConfigService.createOidc(
@@ -240,7 +233,7 @@ public class ClientAuthConfigAdminResource {
                 request.oidcMultiTenant() != null && request.oidcMultiTenant(),
                 request.oidcIssuerPattern());
 
-            LOG.infof("Created OIDC auth config for domain: %s (multiTenant: %s) by principal %d",
+            LOG.infof("Created OIDC auth config for domain: %s (multiTenant: %s) by principal %s",
                 config.emailDomain, config.oidcMultiTenant, principalId);
 
             return Response.status(Response.Status.CREATED)
@@ -274,32 +267,24 @@ public class ClientAuthConfigAdminResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        String principalId = extractPrincipalId(sessionToken, authHeader);
-        if (principalId == null) {
+        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
+        if (principalIdOpt.isEmpty()) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
                 .build();
         }
-
-        String configId;
-        try {
-            configId = id;
-        } catch (NumberFormatException e) {
-            return Response.status(Response.Status.BAD_REQUEST)
-                .entity(new ErrorResponse("Invalid configuration ID"))
-                .build();
-        }
+        String principalId = principalIdOpt.get();
 
         try {
             ClientAuthConfig config = authConfigService.updateOidc(
-                configId,
+                id,
                 request.oidcIssuerUrl(),
                 request.oidcClientId(),
                 request.oidcClientSecretRef(),
                 request.oidcMultiTenant(),
                 request.oidcIssuerPattern());
 
-            LOG.infof("Updated OIDC auth config for domain: %s (multiTenant: %s) by principal %d",
+            LOG.infof("Updated OIDC auth config for domain: %s (multiTenant: %s) by principal %s",
                 config.emailDomain, config.oidcMultiTenant, principalId);
 
             return Response.ok(toDto(config)).build();
@@ -332,25 +317,17 @@ public class ClientAuthConfigAdminResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        String principalId = extractPrincipalId(sessionToken, authHeader);
-        if (principalId == null) {
+        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
+        if (principalIdOpt.isEmpty()) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
                 .build();
         }
-
-        String configId;
-        try {
-            configId = id;
-        } catch (NumberFormatException e) {
-            return Response.status(Response.Status.BAD_REQUEST)
-                .entity(new ErrorResponse("Invalid configuration ID"))
-                .build();
-        }
+        String principalId = principalIdOpt.get();
 
         try {
-            authConfigService.delete(configId);
-            LOG.infof("Deleted auth config %s by principal %d", id, principalId);
+            authConfigService.delete(id);
+            LOG.infof("Deleted auth config %s by principal %s", id, principalId);
             return Response.noContent().build();
         } catch (IllegalArgumentException e) {
             return Response.status(Response.Status.NOT_FOUND)
@@ -379,8 +356,8 @@ public class ClientAuthConfigAdminResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        String principalId = extractPrincipalId(sessionToken, authHeader);
-        if (principalId == null) {
+        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
+        if (principalIdOpt.isEmpty()) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
                 .build();
@@ -395,17 +372,6 @@ public class ClientAuthConfigAdminResource {
     }
 
     // ==================== Helper Methods ====================
-
-    private String extractPrincipalId(String sessionToken, String authHeader) {
-        String token = sessionToken;
-        if (token == null && authHeader != null && authHeader.startsWith("Bearer ")) {
-            token = authHeader.substring("Bearer ".length());
-        }
-        if (token == null) {
-            return null;
-        }
-        return jwtKeyService.validateAndGetPrincipalId(token);
-    }
 
     private AuthConfigDto toDto(ClientAuthConfig config) {
         return new AuthConfigDto(

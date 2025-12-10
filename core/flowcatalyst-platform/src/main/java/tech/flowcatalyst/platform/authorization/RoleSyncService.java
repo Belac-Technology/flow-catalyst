@@ -79,6 +79,7 @@ public class RoleSyncService {
             if (appOpt.isEmpty()) {
                 Log.warn("Application not found for role " + roleName + ", creating: " + appCode);
                 Application app = new Application(appCode, appCode);
+                app.id = tech.flowcatalyst.platform.shared.TsidGenerator.generate();
                 applicationRepository.persist(app);
                 appOpt = Optional.of(app);
             }

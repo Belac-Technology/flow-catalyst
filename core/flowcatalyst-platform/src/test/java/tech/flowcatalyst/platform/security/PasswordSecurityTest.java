@@ -352,6 +352,7 @@ class PasswordSecurityTest {
             "alice@customer.com",
             "Alice Smith",
             "google-oauth2|123456",
+            null,
             null
         );
 
@@ -381,6 +382,7 @@ class PasswordSecurityTest {
             "alice@customer.com",
             "Alice Smith",
             "google-oauth2|123",
+            null,
             null
         );
 
@@ -391,6 +393,7 @@ class PasswordSecurityTest {
             "alice@customer.com",
             "Alice Johnson",  // Name changed
             "google-oauth2|456",
+            null,
             null
         );
 

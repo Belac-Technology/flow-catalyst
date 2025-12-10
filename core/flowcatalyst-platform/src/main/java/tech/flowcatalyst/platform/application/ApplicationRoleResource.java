@@ -82,8 +82,8 @@ public class ApplicationRoleResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        String principalId = extractPrincipalId(sessionToken, authHeader);
-        if (principalId == null) {
+        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
+        if (principalIdOpt.isEmpty()) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("UNAUTHORIZED", "Not authenticated"))
                 .build();
@@ -144,12 +144,13 @@ public class ApplicationRoleResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        String principalId = extractPrincipalId(sessionToken, authHeader);
-        if (principalId == null) {
+        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
+        if (principalIdOpt.isEmpty()) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("UNAUTHORIZED", "Not authenticated"))
                 .build();
         }
+        String principalId = principalIdOpt.get();
 
         Application app = applicationRepository.findByCode(appCode).orElse(null);
         if (app == null) {
@@ -214,12 +215,13 @@ public class ApplicationRoleResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        String principalId = extractPrincipalId(sessionToken, authHeader);
-        if (principalId == null) {
+        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
+        if (principalIdOpt.isEmpty()) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("UNAUTHORIZED", "Not authenticated"))
                 .build();
         }
+        String principalId = principalIdOpt.get();
 
         Application app = applicationRepository.findByCode(appCode).orElse(null);
         if (app == null) {
@@ -278,12 +280,13 @@ public class ApplicationRoleResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        String principalId = extractPrincipalId(sessionToken, authHeader);
-        if (principalId == null) {
+        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
+        if (principalIdOpt.isEmpty()) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("UNAUTHORIZED", "Not authenticated"))
                 .build();
         }
+        String principalId = principalIdOpt.get();
 
         // Construct full role name
         String fullRoleName = appCode + ":" + roleName;
@@ -317,17 +320,6 @@ public class ApplicationRoleResource {
     }
 
     // ==================== Helper Methods ====================
-
-    private String extractPrincipalId(String sessionToken, String authHeader) {
-        String token = sessionToken;
-        if (token == null && authHeader != null && authHeader.startsWith("Bearer ")) {
-            token = authHeader.substring("Bearer ".length());
-        }
-        if (token == null) {
-            return null;
-        }
-        return jwtKeyService.validateAndGetPrincipalId(token);
-    }
 
     private Response mapErrorToResponse(UseCaseError error) {
         Response.Status status = switch (error) {

@@ -121,8 +121,8 @@ public class PrincipalAdminResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        String principalId = extractPrincipalId(sessionToken, authHeader);
-        if (principalId == null) {
+        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
+        if (principalIdOpt.isEmpty()) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
                 .build();
@@ -171,8 +171,8 @@ public class PrincipalAdminResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        String principalId = extractPrincipalId(sessionToken, authHeader);
-        if (principalId == null) {
+        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
+        if (principalIdOpt.isEmpty()) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
                 .build();
@@ -211,12 +211,13 @@ public class PrincipalAdminResource {
             @HeaderParam("Authorization") String authHeader,
             @Context UriInfo uriInfo) {
 
-        String adminPrincipalId = extractPrincipalId(sessionToken, authHeader);
-        if (adminPrincipalId == null) {
+        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
+        if (principalIdOpt.isEmpty()) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
                 .build();
         }
+        String adminPrincipalId = principalIdOpt.get();
 
         auditContext.setPrincipalId(adminPrincipalId);
         ExecutionContext context = ExecutionContext.from(tracingContext, adminPrincipalId);
@@ -262,12 +263,13 @@ public class PrincipalAdminResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        String adminPrincipalId = extractPrincipalId(sessionToken, authHeader);
-        if (adminPrincipalId == null) {
+        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
+        if (principalIdOpt.isEmpty()) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
                 .build();
         }
+        String adminPrincipalId = principalIdOpt.get();
 
         auditContext.setPrincipalId(adminPrincipalId);
         ExecutionContext context = ExecutionContext.from(tracingContext, adminPrincipalId);
@@ -302,12 +304,13 @@ public class PrincipalAdminResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        String adminPrincipalId = extractPrincipalId(sessionToken, authHeader);
-        if (adminPrincipalId == null) {
+        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
+        if (principalIdOpt.isEmpty()) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
                 .build();
         }
+        String adminPrincipalId = principalIdOpt.get();
 
         auditContext.setPrincipalId(adminPrincipalId);
         ExecutionContext context = ExecutionContext.from(tracingContext, adminPrincipalId);
@@ -339,12 +342,13 @@ public class PrincipalAdminResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        String adminPrincipalId = extractPrincipalId(sessionToken, authHeader);
-        if (adminPrincipalId == null) {
+        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
+        if (principalIdOpt.isEmpty()) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
                 .build();
         }
+        String adminPrincipalId = principalIdOpt.get();
 
         auditContext.setPrincipalId(adminPrincipalId);
         ExecutionContext context = ExecutionContext.from(tracingContext, adminPrincipalId);
@@ -380,12 +384,13 @@ public class PrincipalAdminResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        String adminPrincipalId = extractPrincipalId(sessionToken, authHeader);
-        if (adminPrincipalId == null) {
+        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
+        if (principalIdOpt.isEmpty()) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
                 .build();
         }
+        String adminPrincipalId = principalIdOpt.get();
 
         try {
             userService.resetPassword(id, request.newPassword());
@@ -419,12 +424,13 @@ public class PrincipalAdminResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        String adminPrincipalId = extractPrincipalId(sessionToken, authHeader);
-        if (adminPrincipalId == null) {
+        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
+        if (principalIdOpt.isEmpty()) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
                 .build();
         }
+        String adminPrincipalId = principalIdOpt.get();
 
         if (!principalRepo.findByIdOptional(id).isPresent()) {
             return Response.status(Response.Status.NOT_FOUND)
@@ -457,12 +463,13 @@ public class PrincipalAdminResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        String adminPrincipalId = extractPrincipalId(sessionToken, authHeader);
-        if (adminPrincipalId == null) {
+        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
+        if (principalIdOpt.isEmpty()) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
                 .build();
         }
+        String adminPrincipalId = principalIdOpt.get();
 
         try {
             PrincipalRole assignment = roleService.assignRole(id, request.roleName(), "MANUAL");
@@ -504,12 +511,13 @@ public class PrincipalAdminResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        String adminPrincipalId = extractPrincipalId(sessionToken, authHeader);
-        if (adminPrincipalId == null) {
+        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
+        if (principalIdOpt.isEmpty()) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
                 .build();
         }
+        String adminPrincipalId = principalIdOpt.get();
 
         try {
             roleService.removeRole(id, roleName);
@@ -540,12 +548,13 @@ public class PrincipalAdminResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        String adminPrincipalId = extractPrincipalId(sessionToken, authHeader);
-        if (adminPrincipalId == null) {
+        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
+        if (principalIdOpt.isEmpty()) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
                 .build();
         }
+        String adminPrincipalId = principalIdOpt.get();
 
         if (!principalRepo.findByIdOptional(id).isPresent()) {
             return Response.status(Response.Status.NOT_FOUND)
@@ -578,12 +587,13 @@ public class PrincipalAdminResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        String adminPrincipalId = extractPrincipalId(sessionToken, authHeader);
-        if (adminPrincipalId == null) {
+        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
+        if (principalIdOpt.isEmpty()) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
                 .build();
         }
+        String adminPrincipalId = principalIdOpt.get();
 
         auditContext.setPrincipalId(adminPrincipalId);
         ExecutionContext context = ExecutionContext.from(tracingContext, adminPrincipalId);
@@ -624,12 +634,13 @@ public class PrincipalAdminResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        String adminPrincipalId = extractPrincipalId(sessionToken, authHeader);
-        if (adminPrincipalId == null) {
+        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
+        if (principalIdOpt.isEmpty()) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
                 .build();
         }
+        String adminPrincipalId = principalIdOpt.get();
 
         auditContext.setPrincipalId(adminPrincipalId);
         ExecutionContext context = ExecutionContext.from(tracingContext, adminPrincipalId);
@@ -649,29 +660,18 @@ public class PrincipalAdminResource {
 
     // ==================== Helper Methods ====================
 
-    private String extractPrincipalId(String sessionToken, String authHeader) {
-        String token = sessionToken;
-        if (token == null && authHeader != null && authHeader.startsWith("Bearer ")) {
-            token = authHeader.substring("Bearer ".length());
-        }
-        if (token == null) {
-            return null;
-        }
-        return jwtKeyService.validateAndGetPrincipalId(token);
-    }
-
     /**
      * Require authentication. Returns unauthorized response if not authenticated,
      * otherwise sets the audit context and returns null (proceed with request).
      */
     private Response requireAuth(String sessionToken, String authHeader) {
-        String principalId = extractPrincipalId(sessionToken, authHeader);
-        if (principalId == null) {
+        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
+        if (principalIdOpt.isEmpty()) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
                 .build();
         }
-        auditContext.setPrincipalId(principalId);
+        auditContext.setPrincipalId(principalIdOpt.get());
         return null;
     }
 
@@ -764,8 +764,8 @@ public class PrincipalAdminResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        String principalId = extractPrincipalId(sessionToken, authHeader);
-        if (principalId == null) {
+        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
+        if (principalIdOpt.isEmpty()) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
                 .build();

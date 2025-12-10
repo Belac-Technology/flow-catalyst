@@ -71,8 +71,8 @@ public class AnchorDomainAdminResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        String principalId = extractPrincipalId(sessionToken, authHeader);
-        if (principalId == null) {
+        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
+        if (principalIdOpt.isEmpty()) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
                 .build();
@@ -104,23 +104,14 @@ public class AnchorDomainAdminResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        String principalId = extractPrincipalId(sessionToken, authHeader);
-        if (principalId == null) {
+        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
+        if (principalIdOpt.isEmpty()) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
                 .build();
         }
 
-        String domainId;
-        try {
-            domainId = id;
-        } catch (NumberFormatException e) {
-            return Response.status(Response.Status.BAD_REQUEST)
-                .entity(new ErrorResponse("Invalid anchor domain ID"))
-                .build();
-        }
-
-        return anchorDomainRepo.findByIdOptional(domainId)
+        return anchorDomainRepo.findByIdOptional(id)
             .map(domain -> Response.ok(toDto(domain)).build())
             .orElse(Response.status(Response.Status.NOT_FOUND)
                 .entity(new ErrorResponse("Anchor domain not found"))
@@ -143,8 +134,8 @@ public class AnchorDomainAdminResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        String principalId = extractPrincipalId(sessionToken, authHeader);
-        if (principalId == null) {
+        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
+        if (principalIdOpt.isEmpty()) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
                 .build();
@@ -179,12 +170,13 @@ public class AnchorDomainAdminResource {
             @HeaderParam("Authorization") String authHeader,
             @Context UriInfo uriInfo) {
 
-        String principalId = extractPrincipalId(sessionToken, authHeader);
-        if (principalId == null) {
+        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
+        if (principalIdOpt.isEmpty()) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
                 .build();
         }
+        String principalId = principalIdOpt.get();
 
         String normalizedDomain = request.domain().toLowerCase().trim();
 
@@ -238,23 +230,15 @@ public class AnchorDomainAdminResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        String principalId = extractPrincipalId(sessionToken, authHeader);
-        if (principalId == null) {
+        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
+        if (principalIdOpt.isEmpty()) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
                 .build();
         }
+        String principalId = principalIdOpt.get();
 
-        String domainId;
-        try {
-            domainId = id;
-        } catch (NumberFormatException e) {
-            return Response.status(Response.Status.BAD_REQUEST)
-                .entity(new ErrorResponse("Invalid anchor domain ID"))
-                .build();
-        }
-
-        AnchorDomain domain = anchorDomainRepo.findByIdOptional(domainId).orElse(null);
+        AnchorDomain domain = anchorDomainRepo.findByIdOptional(id).orElse(null);
         if (domain == null) {
             return Response.status(Response.Status.NOT_FOUND)
                 .entity(new ErrorResponse("Anchor domain not found"))
@@ -279,17 +263,6 @@ public class AnchorDomainAdminResource {
     }
 
     // ==================== Helper Methods ====================
-
-    private String extractPrincipalId(String sessionToken, String authHeader) {
-        String token = sessionToken;
-        if (token == null && authHeader != null && authHeader.startsWith("Bearer ")) {
-            token = authHeader.substring("Bearer ".length());
-        }
-        if (token == null) {
-            return null;
-        }
-        return jwtKeyService.validateAndGetPrincipalId(token);
-    }
 
     private AnchorDomainDto toDto(AnchorDomain domain) {
         // Count users from this domain

@@ -194,7 +194,7 @@ public class UserOperations {
     /**
      * Find Users by client ID.
      */
-    public List<Principal> findByClientId(Long clientId) {
+    public List<Principal> findByClientId(String clientId) {
         return principalRepo.findByClientId(clientId).stream()
             .filter(p -> p.type == PrincipalType.USER)
             .collect(Collectors.toList());
@@ -203,7 +203,7 @@ public class UserOperations {
     /**
      * Get client IDs a user has been granted access to (not including home client).
      */
-    public Set<Long> getGrantedClientIds(Long userId) {
+    public Set<String> getGrantedClientIds(String userId) {
         return grantRepo.findByPrincipalId(userId).stream()
             .map(g -> g.clientId)
             .collect(Collectors.toSet());
@@ -219,7 +219,7 @@ public class UserOperations {
     /**
      * Get all accessible client IDs for a user (home + grants + anchor).
      */
-    public Set<Long> getAccessibleClients(Principal user) {
+    public Set<String> getAccessibleClients(Principal user) {
         return clientAccessService.getAccessibleClients(user);
     }
 }

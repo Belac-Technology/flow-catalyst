@@ -97,7 +97,7 @@ class MultiClientAccessIntegrationTest {
         );
 
         // Act
-        Set<Long> accessible = clientService.getAccessibleClients(admin.id);
+        Set<String> accessible = clientService.getAccessibleClients(admin.id);
 
         // Assert: Only active clients visible
         assertThat(accessible).containsExactlyInAnyOrder(active1.id, active2.id);
@@ -124,7 +124,7 @@ class MultiClientAccessIntegrationTest {
         );
 
         // Act
-        Set<Long> accessible = clientService.getAccessibleClients(user.id);
+        Set<String> accessible = clientService.getAccessibleClients(user.id);
 
         // Assert: Only has access to home client
         assertThat(accessible).containsExactly(client1.id);
@@ -146,7 +146,7 @@ class MultiClientAccessIntegrationTest {
         );
 
         // Act
-        Set<Long> accessible = clientService.getAccessibleClients(partner.id);
+        Set<String> accessible = clientService.getAccessibleClients(partner.id);
 
         // Assert: No access to any client
         assertThat(accessible).isEmpty();
@@ -177,7 +177,7 @@ class MultiClientAccessIntegrationTest {
         clientService.grantClientAccess(partner.id, customerB.id);
 
         // Act
-        Set<Long> accessible = clientService.getAccessibleClients(partner.id);
+        Set<String> accessible = clientService.getAccessibleClients(partner.id);
 
         // Assert: Can access A and B, but not C
         assertThat(accessible).containsExactlyInAnyOrder(customerA.id, customerB.id);
@@ -205,7 +205,7 @@ class MultiClientAccessIntegrationTest {
         clientService.grantClientAccess(user.id, grantedB.id);
 
         // Act
-        Set<Long> accessible = clientService.getAccessibleClients(user.id);
+        Set<String> accessible = clientService.getAccessibleClients(user.id);
 
         // Assert: Access to home + 2 granted = 3 total
         assertThat(accessible).containsExactlyInAnyOrder(
@@ -231,14 +231,14 @@ class MultiClientAccessIntegrationTest {
         clientService.grantClientAccess(partner.id, client.id);
 
         // Verify access granted
-        Set<Long> beforeRevoke = clientService.getAccessibleClients(partner.id);
+        Set<String> beforeRevoke = clientService.getAccessibleClients(partner.id);
         assertThat(beforeRevoke).contains(client.id);
 
         // Act: Revoke access
         clientService.revokeClientAccess(partner.id, client.id);
 
         // Assert: Access immediately removed
-        Set<Long> afterRevoke = clientService.getAccessibleClients(partner.id);
+        Set<String> afterRevoke = clientService.getAccessibleClients(partner.id);
         assertThat(afterRevoke).doesNotContain(client.id);
         assertThat(afterRevoke).isEmpty();
     }
@@ -336,8 +336,8 @@ class MultiClientAccessIntegrationTest {
         );
 
         // Act
-        Set<Long> userAAccess = clientService.getAccessibleClients(userA.id);
-        Set<Long> userBAccess = clientService.getAccessibleClients(userB.id);
+        Set<String> userAAccess = clientService.getAccessibleClients(userA.id);
+        Set<String> userBAccess = clientService.getAccessibleClients(userB.id);
 
         // Assert: Complete isolation
         assertThat(userAAccess).containsExactly(clientA.id);
@@ -399,10 +399,10 @@ class MultiClientAccessIntegrationTest {
         clientService.grantClientAccess(partner.id, customer2.id);
 
         // Act: Get access for all users
-        Set<Long> adminAccess = clientService.getAccessibleClients(platformAdmin.id);
-        Set<Long> customer1Access = clientService.getAccessibleClients(customer1User.id);
-        Set<Long> customer2Access = clientService.getAccessibleClients(customer2User.id);
-        Set<Long> partnerAccess = clientService.getAccessibleClients(partner.id);
+        Set<String> adminAccess = clientService.getAccessibleClients(platformAdmin.id);
+        Set<String> customer1Access = clientService.getAccessibleClients(customer1User.id);
+        Set<String> customer2Access = clientService.getAccessibleClients(customer2User.id);
+        Set<String> partnerAccess = clientService.getAccessibleClients(partner.id);
 
         // Assert: Platform admin sees all
         assertThat(adminAccess).containsExactlyInAnyOrder(
@@ -437,14 +437,14 @@ class MultiClientAccessIntegrationTest {
         clientService.grantClientAccess(partner.id, toBeDeactivated.id);
 
         // Verify initial access
-        Set<Long> beforeDeactivation = clientService.getAccessibleClients(partner.id);
+        Set<String> beforeDeactivation = clientService.getAccessibleClients(partner.id);
         assertThat(beforeDeactivation).containsExactlyInAnyOrder(active.id, toBeDeactivated.id);
 
         // Act: Deactivate one client
         clientService.deactivateClient(toBeDeactivated.id, "Test", "system");
 
         // Assert: Deactivated client not in accessible list
-        Set<Long> afterDeactivation = clientService.getAccessibleClients(partner.id);
+        Set<String> afterDeactivation = clientService.getAccessibleClients(partner.id);
         assertThat(afterDeactivation).containsExactly(active.id);
         assertThat(afterDeactivation).doesNotContain(toBeDeactivated.id);
     }

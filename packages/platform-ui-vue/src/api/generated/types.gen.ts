@@ -2,7 +2,7 @@
 
 export type AccessibleClientsResponse = {
   clients?: Array<ClientInfo>;
-  currentClientId?: number;
+  currentClientId?: string;
   globalAccess?: boolean;
 };
 
@@ -98,7 +98,7 @@ export type ClientDto = {
 };
 
 export type ClientDto1 = {
-  id?: number;
+  id?: string;
   clientId?: string;
   clientName?: string;
   clientType?: ClientType;
@@ -106,14 +106,14 @@ export type ClientDto1 = {
   grantTypes?: Array<string>;
   defaultScopes?: Array<string>;
   pkceRequired?: boolean;
-  ownerClientId?: number;
+  ownerClientId?: string;
   active?: boolean;
   createdAt?: Instant;
   updatedAt?: Instant;
 };
 
 export type ClientInfo = {
-  id?: number;
+  id?: string;
   name?: string;
   identifier?: string;
 };
@@ -174,7 +174,7 @@ export type CreateClientRequest1 = {
   grantTypes: Array<string>;
   defaultScopes?: Array<string>;
   pkceRequired?: boolean;
-  ownerClientId?: number;
+  ownerClientId?: string;
 };
 
 export type CreateClientResponse = {
@@ -202,7 +202,7 @@ export type CreateDispatchJobRequest = {
   };
   payload: string;
   payloadContentType?: string;
-  credentialsId: number;
+  credentialsId: string;
   maxRetries?: number;
   retryStrategy?: string;
   scheduledFor?: Instant;
@@ -240,12 +240,12 @@ export type CreateEventTypeRequest1 = {
 
 export type CreateInternalConfigRequest = {
   emailDomain: string;
-  clientId?: number;
+  clientId?: string;
 };
 
 export type CreateOidcConfigRequest = {
   emailDomain: string;
-  clientId?: number;
+  clientId?: string;
   oidcIssuerUrl: string;
   oidcClientId: string;
   oidcClientSecretRef?: string;
@@ -283,11 +283,11 @@ export type CreateUserRequest = {
   email: string;
   password?: string;
   name: string;
-  clientId?: number;
+  clientId?: string;
 };
 
 export type CredentialsResponse = {
-  id?: number;
+  id?: string;
   algorithm?: SignatureAlgorithm;
   createdAt?: Instant;
   updatedAt?: Instant;
@@ -300,7 +300,7 @@ export type DeleteAnchorDomainResponse = {
 };
 
 export type DispatchAttemptResponse = {
-  id?: number;
+  id?: string;
   attemptNumber?: number;
   attemptedAt?: Instant;
   completedAt?: Instant;
@@ -319,7 +319,7 @@ export type DispatchAttemptStatus =
   | "CIRCUIT_OPEN";
 
 export type DispatchJobResponse = {
-  id?: number;
+  id?: string;
   externalId?: string;
   source?: string;
   type?: string;
@@ -333,7 +333,7 @@ export type DispatchJobResponse = {
     [key: string]: string;
   };
   payloadContentType?: string;
-  credentialsId?: number;
+  credentialsId?: string;
   status?: DispatchStatus;
   maxRetries?: number;
   retryStrategy?: string;
@@ -396,7 +396,7 @@ export type ErrorResponse = {
 };
 
 export type EventResponse = {
-  id?: number;
+  id?: string;
   specVersion?: string;
   type?: string;
   source?: string;
@@ -415,7 +415,7 @@ export type EventTypeListResponse = {
 };
 
 export type EventTypeResponse = {
-  id?: number;
+  id?: string;
   code?: string;
   name?: string;
   description?: string;
@@ -432,7 +432,7 @@ export type EventTypeResponse = {
 export type EventTypeStatus = "CURRENT" | "ARCHIVE";
 
 export type GrantClientAccessRequest = {
-  clientId: number;
+  clientId: string;
 };
 
 export type HealthResponse = {
@@ -454,11 +454,11 @@ export type LoginRequest = {
 };
 
 export type LoginResponse = {
-  principalId?: number;
+  principalId?: string;
   name?: string;
   email?: string;
   roles?: Array<string>;
-  clientId?: number;
+  clientId?: string;
 };
 
 export type PagedDispatchJobResponse = {
@@ -490,10 +490,10 @@ export type PlatformStats = {
 };
 
 export type PrincipalDetailDto = {
-  id?: number;
+  id?: string;
   type?: PrincipalType;
   scope?: UserScope;
-  clientId?: number;
+  clientId?: string;
   name?: string;
   active?: boolean;
   email?: string;
@@ -501,23 +501,23 @@ export type PrincipalDetailDto = {
   lastLoginAt?: Instant;
   roles?: Array<string>;
   isAnchorUser?: boolean;
-  grantedClientIds?: Array<number>;
+  grantedClientIds?: Array<string>;
   createdAt?: Instant;
   updatedAt?: Instant;
 };
 
 export type PrincipalDto = {
-  id?: number;
+  id?: string;
   type?: PrincipalType;
   scope?: UserScope;
-  clientId?: number;
+  clientId?: string;
   name?: string;
   active?: boolean;
   email?: string;
   idpType?: IdpType;
   roles?: Array<string>;
   isAnchorUser?: boolean;
-  grantedClientIds?: Array<number>;
+  grantedClientIds?: Array<string>;
   createdAt?: Instant;
   updatedAt?: Instant;
 };
@@ -605,7 +605,7 @@ export type SuccessResponse = {
 };
 
 export type SwitchClientRequest = {
-  clientId?: number;
+  clientId?: string;
 };
 
 export type SwitchClientResponse = {
@@ -777,7 +777,7 @@ export type PostApiAdminDispatchCredentialsResponse =
 export type DeleteApiAdminDispatchCredentialsByIdData = {
   body?: never;
   path: {
-    id: number;
+    id: string;
   };
   query?: never;
   url: "/api/admin/dispatch/credentials/{id}";
@@ -806,7 +806,7 @@ export type DeleteApiAdminDispatchCredentialsByIdResponse =
 export type GetApiAdminDispatchCredentialsByIdData = {
   body?: never;
   path: {
-    id: number;
+    id: string;
   };
   query?: never;
   url: "/api/admin/dispatch/credentials/{id}";
@@ -1030,7 +1030,7 @@ export type GetApiAdminPlatformApplicationsByCodeByCodeResponses = {
 export type GetApiAdminPlatformApplicationsByIdData = {
   body?: never;
   path: {
-    id: number;
+    id: string;
   };
   query?: never;
   url: "/api/admin/platform/applications/{id}";
@@ -1046,7 +1046,7 @@ export type GetApiAdminPlatformApplicationsByIdResponses = {
 export type PutApiAdminPlatformApplicationsByIdData = {
   body: UpdateApplicationRequest;
   path: {
-    id: number;
+    id: string;
   };
   query?: never;
   url: "/api/admin/platform/applications/{id}";
@@ -1069,7 +1069,7 @@ export type PutApiAdminPlatformApplicationsByIdResponses = {
 export type PostApiAdminPlatformApplicationsByIdActivateData = {
   body?: never;
   path: {
-    id: number;
+    id: string;
   };
   query?: never;
   url: "/api/admin/platform/applications/{id}/activate";
@@ -1085,7 +1085,7 @@ export type PostApiAdminPlatformApplicationsByIdActivateResponses = {
 export type GetApiAdminPlatformApplicationsByIdClientsData = {
   body?: never;
   path: {
-    id: number;
+    id: string;
   };
   query?: never;
   url: "/api/admin/platform/applications/{id}/clients";
@@ -1101,8 +1101,8 @@ export type GetApiAdminPlatformApplicationsByIdClientsResponses = {
 export type PutApiAdminPlatformApplicationsByIdClientsByClientIdData = {
   body: ClientConfigRequest;
   path: {
-    clientId: number;
-    id: number;
+    clientId: string;
+    id: string;
   };
   query?: never;
   url: "/api/admin/platform/applications/{id}/clients/{clientId}";
@@ -1125,8 +1125,8 @@ export type PutApiAdminPlatformApplicationsByIdClientsByClientIdResponses = {
 export type PostApiAdminPlatformApplicationsByIdClientsByClientIdDisableData = {
   body?: never;
   path: {
-    clientId: number;
-    id: number;
+    clientId: string;
+    id: string;
   };
   query?: never;
   url: "/api/admin/platform/applications/{id}/clients/{clientId}/disable";
@@ -1143,8 +1143,8 @@ export type PostApiAdminPlatformApplicationsByIdClientsByClientIdDisableResponse
 export type PostApiAdminPlatformApplicationsByIdClientsByClientIdEnableData = {
   body?: never;
   path: {
-    clientId: number;
-    id: number;
+    clientId: string;
+    id: string;
   };
   query?: never;
   url: "/api/admin/platform/applications/{id}/clients/{clientId}/enable";
@@ -1161,7 +1161,7 @@ export type PostApiAdminPlatformApplicationsByIdClientsByClientIdEnableResponses
 export type PostApiAdminPlatformApplicationsByIdDeactivateData = {
   body?: never;
   path: {
-    id: number;
+    id: string;
   };
   query?: never;
   url: "/api/admin/platform/applications/{id}/deactivate";
@@ -1177,7 +1177,7 @@ export type PostApiAdminPlatformApplicationsByIdDeactivateResponses = {
 export type GetApiAdminPlatformApplicationsByIdRolesData = {
   body?: never;
   path: {
-    id: number;
+    id: string;
   };
   query?: never;
   url: "/api/admin/platform/applications/{id}/roles";
@@ -1197,7 +1197,7 @@ export type GetApiAdminPlatformAuthConfigsData = {
     /**
      * Filter by client ID
      */
-    clientId?: number;
+    clientId?: string;
   };
   url: "/api/admin/platform/auth-configs";
 };
@@ -1741,7 +1741,7 @@ export type GetApiAdminPlatformOauthClientsByClientIdByClientIdResponses = {
 export type GetApiAdminPlatformOauthClientsByIdData = {
   body?: never;
   path: {
-    id: number;
+    id: string;
   };
   query?: never;
   url: "/api/admin/platform/oauth-clients/{id}";
@@ -1767,7 +1767,7 @@ export type GetApiAdminPlatformOauthClientsByIdResponse =
 export type PutApiAdminPlatformOauthClientsByIdData = {
   body: UpdateClientRequest1;
   path: {
-    id: number;
+    id: string;
   };
   query?: never;
   url: "/api/admin/platform/oauth-clients/{id}";
@@ -1794,7 +1794,7 @@ export type PutApiAdminPlatformOauthClientsByIdResponses = {
 export type PostApiAdminPlatformOauthClientsByIdActivateData = {
   body?: never;
   path: {
-    id: number;
+    id: string;
   };
   query?: never;
   url: "/api/admin/platform/oauth-clients/{id}/activate";
@@ -1817,7 +1817,7 @@ export type PostApiAdminPlatformOauthClientsByIdActivateResponses = {
 export type PostApiAdminPlatformOauthClientsByIdDeactivateData = {
   body?: never;
   path: {
-    id: number;
+    id: string;
   };
   query?: never;
   url: "/api/admin/platform/oauth-clients/{id}/deactivate";
@@ -1840,7 +1840,7 @@ export type PostApiAdminPlatformOauthClientsByIdDeactivateResponses = {
 export type PostApiAdminPlatformOauthClientsByIdRotateSecretData = {
   body?: never;
   path: {
-    id: number;
+    id: string;
   };
   query?: never;
   url: "/api/admin/platform/oauth-clients/{id}/rotate-secret";
@@ -1878,7 +1878,7 @@ export type GetApiAdminPlatformPrincipalsData = {
     /**
      * Filter by client ID
      */
-    clientId?: number;
+    clientId?: string;
     /**
      * Filter by type (USER/SERVICE)
      */
@@ -1960,7 +1960,7 @@ export type PostApiAdminPlatformPrincipalsUsersResponse =
 export type GetApiAdminPlatformPrincipalsByIdData = {
   body?: never;
   path: {
-    id: number;
+    id: string;
   };
   query?: never;
   url: "/api/admin/platform/principals/{id}";
@@ -1986,7 +1986,7 @@ export type GetApiAdminPlatformPrincipalsByIdResponse =
 export type PutApiAdminPlatformPrincipalsByIdData = {
   body: UpdatePrincipalRequest;
   path: {
-    id: number;
+    id: string;
   };
   query?: never;
   url: "/api/admin/platform/principals/{id}";
@@ -2013,7 +2013,7 @@ export type PutApiAdminPlatformPrincipalsByIdResponses = {
 export type PostApiAdminPlatformPrincipalsByIdActivateData = {
   body?: never;
   path: {
-    id: number;
+    id: string;
   };
   query?: never;
   url: "/api/admin/platform/principals/{id}/activate";
@@ -2036,7 +2036,7 @@ export type PostApiAdminPlatformPrincipalsByIdActivateResponses = {
 export type GetApiAdminPlatformPrincipalsByIdClientAccessData = {
   body?: never;
   path: {
-    id: number;
+    id: string;
   };
   query?: never;
   url: "/api/admin/platform/principals/{id}/client-access";
@@ -2059,7 +2059,7 @@ export type GetApiAdminPlatformPrincipalsByIdClientAccessResponses = {
 export type PostApiAdminPlatformPrincipalsByIdClientAccessData = {
   body: GrantClientAccessRequest;
   path: {
-    id: number;
+    id: string;
   };
   query?: never;
   url: "/api/admin/platform/principals/{id}/client-access";
@@ -2086,8 +2086,8 @@ export type PostApiAdminPlatformPrincipalsByIdClientAccessResponses = {
 export type DeleteApiAdminPlatformPrincipalsByIdClientAccessByClientIdData = {
   body?: never;
   path: {
-    clientId: number;
-    id: number;
+    clientId: string;
+    id: string;
   };
   query?: never;
   url: "/api/admin/platform/principals/{id}/client-access/{clientId}";
@@ -2114,7 +2114,7 @@ export type DeleteApiAdminPlatformPrincipalsByIdClientAccessByClientIdResponse =
 export type PostApiAdminPlatformPrincipalsByIdDeactivateData = {
   body?: never;
   path: {
-    id: number;
+    id: string;
   };
   query?: never;
   url: "/api/admin/platform/principals/{id}/deactivate";
@@ -2137,7 +2137,7 @@ export type PostApiAdminPlatformPrincipalsByIdDeactivateResponses = {
 export type PostApiAdminPlatformPrincipalsByIdResetPasswordData = {
   body: ResetPasswordRequest;
   path: {
-    id: number;
+    id: string;
   };
   query?: never;
   url: "/api/admin/platform/principals/{id}/reset-password";
@@ -2164,7 +2164,7 @@ export type PostApiAdminPlatformPrincipalsByIdResetPasswordResponses = {
 export type GetApiAdminPlatformPrincipalsByIdRolesData = {
   body?: never;
   path: {
-    id: number;
+    id: string;
   };
   query?: never;
   url: "/api/admin/platform/principals/{id}/roles";
@@ -2187,7 +2187,7 @@ export type GetApiAdminPlatformPrincipalsByIdRolesResponses = {
 export type PostApiAdminPlatformPrincipalsByIdRolesData = {
   body: AssignRoleRequest;
   path: {
-    id: number;
+    id: string;
   };
   query?: never;
   url: "/api/admin/platform/principals/{id}/roles";
@@ -2214,7 +2214,7 @@ export type PostApiAdminPlatformPrincipalsByIdRolesResponses = {
 export type DeleteApiAdminPlatformPrincipalsByIdRolesByRoleNameData = {
   body?: never;
   path: {
-    id: number;
+    id: string;
     roleName: string;
   };
   query?: never;
@@ -2625,7 +2625,7 @@ export type DeleteApiApplicationsByAppCodeRolesByRoleNameResponse =
 export type DeleteApiApplicationsByIdData = {
   body?: never;
   path: {
-    id: number;
+    id: string;
   };
   query?: never;
   url: "/api/applications/{id}";
@@ -2655,7 +2655,7 @@ export type DeleteApiApplicationsByIdResponse =
 export type GetApiApplicationsByIdData = {
   body?: never;
   path: {
-    id: number;
+    id: string;
   };
   query?: never;
   url: "/api/applications/{id}";
@@ -2678,7 +2678,7 @@ export type GetApiApplicationsByIdResponses = {
 export type PutApiApplicationsByIdData = {
   body: UpdateApplicationRequest1;
   path: {
-    id: number;
+    id: string;
   };
   query?: never;
   url: "/api/applications/{id}";
@@ -2705,7 +2705,7 @@ export type PutApiApplicationsByIdResponses = {
 export type PostApiApplicationsByIdActivateData = {
   body?: never;
   path: {
-    id: number;
+    id: string;
   };
   query?: never;
   url: "/api/applications/{id}/activate";
@@ -2732,7 +2732,7 @@ export type PostApiApplicationsByIdActivateResponses = {
 export type PostApiApplicationsByIdDeactivateData = {
   body?: never;
   path: {
-    id: number;
+    id: string;
   };
   query?: never;
   url: "/api/applications/{id}/deactivate";
@@ -2816,7 +2816,7 @@ export type PostApiDispatchJobsResponse =
 export type GetApiDispatchJobsByIdData = {
   body?: never;
   path: {
-    id: number;
+    id: string;
   };
   query?: never;
   url: "/api/dispatch/jobs/{id}";
@@ -2845,7 +2845,7 @@ export type GetApiDispatchJobsByIdResponse =
 export type GetApiDispatchJobsByIdAttemptsData = {
   body?: never;
   path: {
-    id: number;
+    id: string;
   };
   query?: never;
   url: "/api/dispatch/jobs/{id}/attempts";
@@ -2999,7 +2999,7 @@ export type GetApiEventTypesFiltersSubdomainsResponses = {
 export type DeleteApiEventTypesByIdData = {
   body?: never;
   path: {
-    id: number;
+    id: string;
   };
   query?: never;
   url: "/api/event-types/{id}";
@@ -3029,7 +3029,7 @@ export type DeleteApiEventTypesByIdResponse =
 export type GetApiEventTypesByIdData = {
   body?: never;
   path: {
-    id: number;
+    id: string;
   };
   query?: never;
   url: "/api/event-types/{id}";
@@ -3052,7 +3052,7 @@ export type GetApiEventTypesByIdResponses = {
 export type PatchApiEventTypesByIdData = {
   body: UpdateEventTypeRequest;
   path: {
-    id: number;
+    id: string;
   };
   query?: never;
   url: "/api/event-types/{id}";
@@ -3079,7 +3079,7 @@ export type PatchApiEventTypesByIdResponses = {
 export type PostApiEventTypesByIdArchiveData = {
   body?: never;
   path: {
-    id: number;
+    id: string;
   };
   query?: never;
   url: "/api/event-types/{id}/archive";
@@ -3106,7 +3106,7 @@ export type PostApiEventTypesByIdArchiveResponses = {
 export type PostApiEventTypesByIdSchemasData = {
   body: AddSchemaRequest;
   path: {
-    id: number;
+    id: string;
   };
   query?: never;
   url: "/api/event-types/{id}/schemas";
@@ -3137,7 +3137,7 @@ export type PostApiEventTypesByIdSchemasResponses = {
 export type PostApiEventTypesByIdSchemasByVersionDeprecateData = {
   body?: never;
   path: {
-    id: number;
+    id: string;
     version: string;
   };
   query?: never;
@@ -3165,7 +3165,7 @@ export type PostApiEventTypesByIdSchemasByVersionDeprecateResponses = {
 export type PostApiEventTypesByIdSchemasByVersionFinaliseData = {
   body?: never;
   path: {
-    id: number;
+    id: string;
     version: string;
   };
   query?: never;
@@ -3221,7 +3221,7 @@ export type PostApiEventsResponse =
 export type GetApiEventsByIdData = {
   body?: never;
   path: {
-    id: number;
+    id: string;
   };
   query?: never;
   url: "/api/events/{id}";
@@ -3580,7 +3580,7 @@ export type GetBffEventTypesFiltersSubdomainsResponses = {
 export type DeleteBffEventTypesByIdData = {
   body?: never;
   path: {
-    id: number;
+    id: string;
   };
   query?: never;
   url: "/bff/event-types/{id}";
@@ -3596,7 +3596,7 @@ export type DeleteBffEventTypesByIdResponses = {
 export type GetBffEventTypesByIdData = {
   body?: never;
   path: {
-    id: number;
+    id: string;
   };
   query?: never;
   url: "/bff/event-types/{id}";
@@ -3612,7 +3612,7 @@ export type GetBffEventTypesByIdResponses = {
 export type PatchBffEventTypesByIdData = {
   body: UpdateEventTypeRequest1;
   path: {
-    id: number;
+    id: string;
   };
   query?: never;
   url: "/bff/event-types/{id}";
@@ -3628,7 +3628,7 @@ export type PatchBffEventTypesByIdResponses = {
 export type PostBffEventTypesByIdArchiveData = {
   body?: never;
   path: {
-    id: number;
+    id: string;
   };
   query?: never;
   url: "/bff/event-types/{id}/archive";
@@ -3644,7 +3644,7 @@ export type PostBffEventTypesByIdArchiveResponses = {
 export type PostBffEventTypesByIdSchemasData = {
   body: AddSchemaRequest1;
   path: {
-    id: number;
+    id: string;
   };
   query?: never;
   url: "/bff/event-types/{id}/schemas";
@@ -3667,7 +3667,7 @@ export type PostBffEventTypesByIdSchemasResponses = {
 export type PostBffEventTypesByIdSchemasByVersionDeprecateData = {
   body?: never;
   path: {
-    id: number;
+    id: string;
     version: string;
   };
   query?: never;
@@ -3684,7 +3684,7 @@ export type PostBffEventTypesByIdSchemasByVersionDeprecateResponses = {
 export type PostBffEventTypesByIdSchemasByVersionFinaliseData = {
   body?: never;
   path: {
-    id: number;
+    id: string;
     version: string;
   };
   query?: never;

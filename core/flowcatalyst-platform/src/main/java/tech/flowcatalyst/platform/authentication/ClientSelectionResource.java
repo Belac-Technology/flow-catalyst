@@ -78,14 +78,14 @@ public class ClientSelectionResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        String principalId = extractPrincipalId(sessionToken, authHeader);
-        if (principalId == null) {
+        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
+        if (principalIdOpt.isEmpty()) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
                 .build();
         }
 
-        Principal principal = principalRepo.findByIdOptional(principalId)
+        Principal principal = principalRepo.findByIdOptional(principalIdOpt.get())
             .orElse(null);
 
         if (principal == null || !principal.active) {
@@ -133,12 +133,13 @@ public class ClientSelectionResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        String principalId = extractPrincipalId(sessionToken, authHeader);
-        if (principalId == null) {
+        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
+        if (principalIdOpt.isEmpty()) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
                 .build();
         }
+        String principalId = principalIdOpt.get();
 
         Principal principal = principalRepo.findByIdOptional(principalId)
             .orElse(null);
@@ -152,7 +153,7 @@ public class ClientSelectionResource {
         // Verify access to requested client
         Set<String> accessibleClients = clientAccessService.getAccessibleClients(principal);
         if (!accessibleClients.contains(request.clientId())) {
-            LOG.warnf("Principal %d attempted to switch to unauthorized client %d",
+            LOG.warnf("Principal %s attempted to switch to unauthorized client %s",
                 principalId, request.clientId());
             return Response.status(Response.Status.FORBIDDEN)
                 .entity(new ErrorResponse("Access denied to client"))
@@ -224,14 +225,14 @@ public class ClientSelectionResource {
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
-        String principalId = extractPrincipalId(sessionToken, authHeader);
-        if (principalId == null) {
+        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
+        if (principalIdOpt.isEmpty()) {
             return Response.status(Response.Status.UNAUTHORIZED)
                 .entity(new ErrorResponse("Not authenticated"))
                 .build();
         }
 
-        Principal principal = principalRepo.findByIdOptional(principalId)
+        Principal principal = principalRepo.findByIdOptional(principalIdOpt.get())
             .orElse(null);
 
         if (principal == null) {
@@ -262,17 +263,6 @@ public class ClientSelectionResource {
     }
 
     // ==================== Helper Methods ====================
-
-    private String extractPrincipalId(String sessionToken, String authHeader) {
-        String token = sessionToken;
-        if (token == null && authHeader != null && authHeader.startsWith("Bearer ")) {
-            token = authHeader.substring("Bearer ".length());
-        }
-        if (token == null) {
-            return null;
-        }
-        return jwtKeyService.validateAndGetPrincipalId(token);
-    }
 
     private String extractBearerToken(String authHeader) {
         if (authHeader != null && authHeader.startsWith("Bearer ")) {

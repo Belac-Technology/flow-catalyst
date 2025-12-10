@@ -25,7 +25,7 @@ public record UserUpdated(
     String principalId,
     String userId,
     String name,
-    Long clientId
+    String clientId
 ) implements DomainEvent {
 
     private static final String EVENT_TYPE = "platform:iam:user:updated";
@@ -80,7 +80,7 @@ public record UserUpdated(
     public record Data(
         String userId,
         String name,
-        Long clientId
+        String clientId
     ) {}
 
     public static Builder builder() {

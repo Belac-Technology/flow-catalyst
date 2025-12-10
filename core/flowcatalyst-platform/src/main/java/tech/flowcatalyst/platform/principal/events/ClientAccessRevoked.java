@@ -24,7 +24,7 @@ public record ClientAccessRevoked(
     String causationId,
     String principalId,
     String userId,
-    Long clientId
+    String clientId
 ) implements DomainEvent {
 
     private static final String EVENT_TYPE = "platform:iam:user:client-access-revoked";
@@ -78,7 +78,7 @@ public record ClientAccessRevoked(
 
     public record Data(
         String userId,
-        Long clientId
+        String clientId
     ) {}
 
     public static Builder builder() {

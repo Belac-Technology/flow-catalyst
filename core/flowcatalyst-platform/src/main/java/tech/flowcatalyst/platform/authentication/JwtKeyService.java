@@ -392,6 +392,26 @@ public class JwtKeyService {
     }
 
     /**
+     * Extract token from session cookie or Authorization header, then validate and return principal ID.
+     * This is the preferred method for resources to use - consolidates the common pattern of
+     * checking cookie first, then Bearer token.
+     *
+     * @param sessionToken The session token from cookie (may be null)
+     * @param authHeader The Authorization header value (may be null)
+     * @return Optional containing the principal ID if valid, empty otherwise
+     */
+    public Optional<String> extractAndValidatePrincipalId(String sessionToken, String authHeader) {
+        String token = sessionToken;
+        if (token == null && authHeader != null && authHeader.startsWith("Bearer ")) {
+            token = authHeader.substring("Bearer ".length());
+        }
+        if (token == null) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(validateAndGetPrincipalId(token));
+    }
+
+    /**
      * Validate a token and extract the principal ID.
      * Returns null if the token is invalid or expired.
      */
