@@ -1,4 +1,4 @@
-package tech.flowcatalyst.messagerouter.standby;
+package tech.flowcatalyst.standby;
 
 import io.quarkus.runtime.ShutdownEvent;
 import io.quarkus.runtime.StartupEvent;
@@ -6,13 +6,11 @@ import io.quarkus.runtime.Quarkus;
 import io.quarkus.scheduler.Scheduled;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
+import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
-import tech.flowcatalyst.messagerouter.config.StandbyConfig;
-import tech.flowcatalyst.messagerouter.model.Warning;
-import tech.flowcatalyst.messagerouter.traffic.TrafficManagementService;
-import tech.flowcatalyst.messagerouter.warning.WarningService;
 
 import java.time.Instant;
+import java.util.UUID;
 import java.util.logging.Logger;
 
 /**
@@ -37,10 +35,7 @@ public class StandbyService {
     LockManager lockManager;
 
     @Inject
-    WarningService warningService;
-
-    @Inject
-    jakarta.enterprise.inject.Instance<TrafficManagementService> trafficManagementServiceInstance;
+    Instance<StandbyWarningService> warningServiceInstance;
 
     // State tracking
     private volatile boolean isPrimary = false;
@@ -79,27 +74,18 @@ public class StandbyService {
                 this.isPrimary = true;
                 this.lastSuccessfulRefresh = Instant.now();
                 this.redisAvailable = true;
-                LOG.info("Acquired primary lock. Starting message processing.");
-
-                // Register with load balancer as active instance
-                registerWithLoadBalancer();
+                LOG.info("Acquired primary lock. Starting processing.");
             } else {
                 this.isPrimary = false;
                 LOG.info("Standby mode: Waiting for primary to fail. Will attempt takeover in " +
                         standbyConfig.lockTtlSeconds() + " seconds.");
-
-                // Deregister from load balancer since we're standby
-                deregisterFromLoadBalancer();
             }
         } catch (LockManager.LockException e) {
             // Redis unavailable at startup
             this.redisAvailable = false;
             this.isPrimary = false;
-            LOG.severe("Redis unavailable at startup. System will not process messages until Redis is restored.");
+            LOG.severe("Redis unavailable at startup. System will not process until Redis is restored.");
             fireRedisUnavailableWarning();
-
-            // Deregister from load balancer since we can't process
-            deregisterFromLoadBalancer();
         }
     }
 
@@ -122,15 +108,13 @@ public class StandbyService {
 
                     // Clear warning if Redis was previously unavailable
                     if (warningId != null) {
-                        warningService.acknowledgeWarning(warningId);
+                        acknowledgeWarning(warningId);
                         warningId = null;
                     }
                 } else {
                     // Lost the lock - something went wrong (network partition, Redis issue, manual intervention)
-                    // Deregister from load balancer before shutting down
-                    LOG.severe("CRITICAL: Primary lost lock unexpectedly. Deregistering from load balancer and shutting down.");
+                    LOG.severe("CRITICAL: Primary lost lock unexpectedly. Shutting down.");
                     this.isPrimary = false;
-                    deregisterFromLoadBalancer();
 
                     // Trigger application shutdown
                     // Use asyncExit to allow this scheduled task to complete gracefully
@@ -149,14 +133,11 @@ public class StandbyService {
                     this.isPrimary = true;
                     this.lastSuccessfulRefresh = Instant.now();
                     this.redisAvailable = true;
-                    LOG.info("Acquired primary lock. Taking over message processing.");
-
-                    // Register with load balancer as active instance
-                    registerWithLoadBalancer();
+                    LOG.info("Acquired primary lock. Taking over processing.");
 
                     // Clear warning if Redis was previously unavailable
                     if (warningId != null) {
-                        warningService.acknowledgeWarning(warningId);
+                        acknowledgeWarning(warningId);
                         warningId = null;
                     }
                 } else {
@@ -186,10 +167,7 @@ public class StandbyService {
         }
 
         try {
-            // Deregister from load balancer first
-            deregisterFromLoadBalancer();
-
-            // Then release the lock
+            // Release the lock
             lockManager.releaseLock();
             LOG.info("Primary lock released. Standby instance can now take over immediately.");
         } catch (Exception e) {
@@ -200,7 +178,7 @@ public class StandbyService {
 
     /**
      * Check if this instance is the primary.
-     * Used by QueueManager to decide whether to process messages.
+     * Used by consumers to decide whether to process.
      *
      * @return true if primary, false if standby
      */
@@ -246,59 +224,38 @@ public class StandbyService {
      * Prevents silent failures in distributed setup.
      */
     private void fireRedisUnavailableWarning() {
-        try {
-            String warningMessage = "Redis is unavailable and standby mode cannot function. " +
-                    "Instance: " + standbyConfig.instanceId() + ". " +
-                    "Manual intervention required. Server health checks will report FAILED.";
+        this.warningId = UUID.randomUUID().toString();
 
-            this.warningId = java.util.UUID.randomUUID().toString();
+        String warningMessage = "Redis is unavailable and standby mode cannot function. " +
+                "Instance: " + standbyConfig.instanceId() + ". " +
+                "Manual intervention required. Server health checks will report FAILED.";
 
-            // Use the WarningService.addWarning method with proper signature
-            warningService.addWarning(
-                    this.warningId,
-                    "CRITICAL",
-                    "Standby Redis Connection Lost",
-                    warningMessage
-            );
-            LOG.severe("CRITICAL: Redis unavailable - fired warning: " + warningId);
-        } catch (Exception e) {
-            LOG.severe("Failed to fire Redis unavailable warning: " + e.getMessage());
+        if (warningServiceInstance.isResolvable()) {
+            try {
+                warningServiceInstance.get().addWarning(
+                        this.warningId,
+                        "CRITICAL",
+                        "Standby Redis Connection Lost",
+                        warningMessage
+                );
+            } catch (Exception e) {
+                LOG.severe("Failed to fire Redis unavailable warning: " + e.getMessage());
+            }
         }
+
+        LOG.severe("CRITICAL: Redis unavailable - warning ID: " + warningId);
     }
 
     /**
-     * Register this instance with the load balancer.
-     * Called when becoming PRIMARY.
+     * Acknowledge a warning by ID.
      */
-    private void registerWithLoadBalancer() {
-        if (!trafficManagementServiceInstance.isResolvable()) {
-            return;
-        }
-
-        try {
-            TrafficManagementService trafficService = trafficManagementServiceInstance.get();
-            trafficService.registerAsActive();
-        } catch (Exception e) {
-            LOG.warning("Failed to register with load balancer: " + e.getMessage());
-            // Don't fail - traffic management is best-effort
-        }
-    }
-
-    /**
-     * Deregister this instance from the load balancer.
-     * Called when becoming STANDBY or shutting down.
-     */
-    private void deregisterFromLoadBalancer() {
-        if (!trafficManagementServiceInstance.isResolvable()) {
-            return;
-        }
-
-        try {
-            TrafficManagementService trafficService = trafficManagementServiceInstance.get();
-            trafficService.deregisterFromActive();
-        } catch (Exception e) {
-            LOG.warning("Failed to deregister from load balancer: " + e.getMessage());
-            // Don't fail - traffic management is best-effort
+    private void acknowledgeWarning(String id) {
+        if (warningServiceInstance.isResolvable()) {
+            try {
+                warningServiceInstance.get().acknowledgeWarning(id);
+            } catch (Exception e) {
+                LOG.warning("Failed to acknowledge warning: " + e.getMessage());
+            }
         }
     }
 

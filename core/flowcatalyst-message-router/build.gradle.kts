@@ -1,7 +1,6 @@
 plugins {
     java
     id("io.quarkus")
-    id("org.kordamp.gradle.jandex") version "2.0.0"
     id("com.google.cloud.tools.jib") version "3.4.0"
 }
 
@@ -18,6 +17,9 @@ val resilience4jVersion: String by project
 dependencies {
     implementation(enforcedPlatform("${quarkusPlatformGroupId}:${quarkusPlatformArtifactId}:${quarkusPlatformVersion}"))
     implementation(enforcedPlatform("${quarkusPlatformGroupId}:quarkus-amazon-services-bom:${quarkusPlatformVersion}"))
+
+    // Shared standby module
+    implementation(project(":core:flowcatalyst-standby"))
 
     // REST API
     implementation("io.quarkus:quarkus-rest")

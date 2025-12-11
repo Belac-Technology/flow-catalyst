@@ -80,11 +80,11 @@ public class QueueManager implements MessageCallback {
     @Inject
     MeterRegistry meterRegistry;
 
-    // StandbyService is optional - injected if standby is enabled
+    // StandbyService is optional - injected if standby is enabled (from shared module)
     @jakarta.inject.Inject
-    jakarta.enterprise.inject.Instance<tech.flowcatalyst.messagerouter.standby.StandbyService> standbyServiceInstance;
+    jakarta.enterprise.inject.Instance<tech.flowcatalyst.standby.StandbyService> standbyServiceInstance;
 
-    private tech.flowcatalyst.messagerouter.standby.StandbyService standbyService() {
+    private tech.flowcatalyst.standby.StandbyService standbyService() {
         return standbyServiceInstance.isResolvable() ? standbyServiceInstance.get() : null;
     }
 

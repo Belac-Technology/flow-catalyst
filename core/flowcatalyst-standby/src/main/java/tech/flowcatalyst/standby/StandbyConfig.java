@@ -1,8 +1,7 @@
-package tech.flowcatalyst.messagerouter.config;
+package tech.flowcatalyst.standby;
 
 import io.smallrye.config.ConfigMapping;
 import io.smallrye.config.WithDefault;
-import jakarta.enterprise.context.ApplicationScoped;
 
 /**
  * Hot standby configuration for distributed primary/standby deployment.
@@ -10,7 +9,6 @@ import jakarta.enterprise.context.ApplicationScoped;
  * Disabled by default - single instance mode requires no Redis.
  */
 @ConfigMapping(prefix = "standby")
-@ApplicationScoped
 public interface StandbyConfig {
 
     /**
@@ -23,15 +21,17 @@ public interface StandbyConfig {
     /**
      * Unique instance identifier for this server.
      * Used to identify which instance holds the lock.
-     * Defaults to HOSTNAME environment variable.
+     * Defaults to HOSTNAME environment variable or "instance-1".
      */
-    @WithDefault("instance-1")
+    @WithDefault("${HOSTNAME:instance-1}")
     String instanceId();
 
     /**
      * Redis key name for the distributed lock.
+     * Each service should use a unique key (e.g., "message-router-primary-lock",
+     * "event-processor-primary-lock").
      */
-    @WithDefault("message-router-primary-lock")
+    @WithDefault("standby-primary-lock")
     String lockKey();
 
     /**

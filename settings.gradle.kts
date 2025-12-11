@@ -16,11 +16,17 @@ rootProject.name = "flowcatalyst"
 // Core Modules (Java/Quarkus)
 // =============================================================================
 
+// Shared hot standby module (Redis-based leader election)
+include("core:flowcatalyst-standby")
+
 // The main platform service (auth, admin, dispatch, mediation, event types)
 include("core:flowcatalyst-platform")
 
 // High-volume message pointer routing (scales independently)
 include("core:flowcatalyst-message-router")
+
+// Event stream processor (MongoDB change streams to projection collection)
+include("core:flowcatalyst-event-processor")
 
 // SDK for integrating applications (postbox, events, roles)
 include("core:flowcatalyst-sdk")

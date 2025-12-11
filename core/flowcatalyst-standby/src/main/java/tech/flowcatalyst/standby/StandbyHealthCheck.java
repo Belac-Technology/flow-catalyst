@@ -1,13 +1,12 @@
-package tech.flowcatalyst.messagerouter.standby;
+package tech.flowcatalyst.standby;
 
-import io.quarkus.arc.profile.IfBuildProfile;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
 import org.eclipse.microprofile.health.HealthCheck;
 import org.eclipse.microprofile.health.HealthCheckResponse;
 import org.eclipse.microprofile.health.Liveness;
 import org.eclipse.microprofile.health.Readiness;
-import tech.flowcatalyst.messagerouter.config.StandbyConfig;
 
 /**
  * Health check for standby mode.
@@ -26,7 +25,7 @@ public class StandbyHealthCheck implements HealthCheck {
     StandbyConfig standbyConfig;
 
     @Inject
-    jakarta.enterprise.inject.Instance<StandbyService> standbyServiceInstance;
+    Instance<StandbyService> standbyServiceInstance;
 
     @Override
     public HealthCheckResponse call() {

@@ -1,4 +1,4 @@
-package tech.flowcatalyst.messagerouter.standby;
+package tech.flowcatalyst.standby;
 
 import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -6,7 +6,6 @@ import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
-import tech.flowcatalyst.messagerouter.config.StandbyConfig;
 
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;

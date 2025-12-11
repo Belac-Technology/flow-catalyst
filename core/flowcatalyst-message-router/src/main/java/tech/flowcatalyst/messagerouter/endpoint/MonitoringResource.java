@@ -50,7 +50,7 @@ public class MonitoringResource {
     tech.flowcatalyst.messagerouter.manager.QueueManager queueManager;
 
     @jakarta.inject.Inject
-    jakarta.enterprise.inject.Instance<tech.flowcatalyst.messagerouter.standby.StandbyService> standbyServiceInstance;
+    jakarta.enterprise.inject.Instance<tech.flowcatalyst.standby.StandbyService> standbyServiceInstance;
 
     @jakarta.inject.Inject
     jakarta.enterprise.inject.Instance<tech.flowcatalyst.messagerouter.traffic.TrafficManagementService> trafficManagementServiceInstance;
