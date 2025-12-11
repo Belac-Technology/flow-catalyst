@@ -10,6 +10,7 @@ import tech.flowcatalyst.platform.authentication.JwtKeyService;
 import tech.flowcatalyst.platform.principal.Principal;
 import tech.flowcatalyst.platform.principal.UserService;
 
+import java.util.List;
 import java.util.Set;
 
 import static io.restassured.RestAssured.given;
@@ -41,7 +42,7 @@ class RoleAdminResourceTest {
             null
         );
 
-        adminToken = jwtKeyService.issueSessionToken(adminUser.id, adminUser.userIdentity.email, Set.of("platform:admin"));
+        adminToken = jwtKeyService.issueSessionToken(adminUser.id, adminUser.userIdentity.email, Set.of("platform:admin"), List.of("*"));
     }
 
     // ==================== List Roles ====================

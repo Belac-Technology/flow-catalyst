@@ -9,7 +9,7 @@ import java.time.Instant;
  * Represents an application in the FlowCatalyst platform ecosystem.
  *
  * Applications are the software products that users access. Each application
- * has a unique code that is used as the prefix for roles (e.g., "inmotion:dispatch:admin").
+ * has a unique code that is used as the prefix for roles (e.g., "operant:dispatch:admin").
  *
  * Application access is determined by roles:
  * - If a user has any role prefixed with the application code, they can access that app
@@ -25,7 +25,7 @@ public class Application extends PanacheMongoEntityBase {
 
     /**
      * Unique application code used in role prefixes.
-     * Examples: "inmotion", "dispatch", "analytics", "platform"
+     * Examples: "execute", "dispatch", "analytics", "platform"
      */
     public String code;
 

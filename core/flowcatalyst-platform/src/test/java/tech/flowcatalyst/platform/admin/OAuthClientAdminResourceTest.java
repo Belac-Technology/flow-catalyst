@@ -16,6 +16,7 @@ import tech.flowcatalyst.platform.principal.Principal;
 import tech.flowcatalyst.platform.principal.UserService;
 import tech.flowcatalyst.platform.shared.TsidGenerator;
 
+import java.util.List;
 import java.util.Set;
 
 import static io.restassured.RestAssured.given;
@@ -49,7 +50,7 @@ class OAuthClientAdminResourceTest {
             null
         );
 
-        adminToken = jwtKeyService.issueSessionToken(adminUser.id, adminUser.userIdentity.email, Set.of("platform:admin"));
+        adminToken = jwtKeyService.issueSessionToken(adminUser.id, adminUser.userIdentity.email, Set.of("platform:admin"), List.of("*"));
     }
 
     // ==================== List Clients ====================

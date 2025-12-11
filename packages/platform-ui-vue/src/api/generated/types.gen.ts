@@ -57,9 +57,37 @@ export type AssignRoleRequest = {
   roleName: string;
 };
 
+export type AssignRolesRequest = {
+  roles: Array<string>;
+};
+
+export type AuditLogDto = {
+  id?: string;
+  entityType?: string;
+  entityId?: string;
+  operation?: string;
+  principalId?: string;
+  principalName?: string;
+  performedAt?: Instant;
+};
+
+export type AuditLogListResponse = {
+  auditLogs?: Array<AuditLogDto>;
+  total?: number;
+  page?: number;
+  pageSize?: number;
+};
+
 export type AuthConfigDto = {
   id?: string;
   emailDomain?: string;
+  configType?: AuthConfigType;
+  primaryClientId?: string;
+  additionalClientIds?: Array<string>;
+  grantedClientIds?: Array<string>;
+  /**
+   * @deprecated
+   */
   clientId?: string;
   authProvider?: AuthProvider;
   oidcIssuerUrl?: string;
@@ -75,6 +103,8 @@ export type AuthConfigListResponse = {
   configs?: Array<AuthConfigDto>;
   total?: number;
 };
+
+export type AuthConfigType = "ANCHOR" | "PARTNER" | "CLIENT";
 
 export type AuthProvider = "INTERNAL" | "OIDC";
 
@@ -240,11 +270,21 @@ export type CreateEventTypeRequest1 = {
 
 export type CreateInternalConfigRequest = {
   emailDomain: string;
+  configType: AuthConfigType;
+  primaryClientId?: string;
+  /**
+   * @deprecated
+   */
   clientId?: string;
 };
 
 export type CreateOidcConfigRequest = {
   emailDomain: string;
+  configType: AuthConfigType;
+  primaryClientId?: string;
+  /**
+   * @deprecated
+   */
   clientId?: string;
   oidcIssuerUrl: string;
   oidcClientId: string;
@@ -632,6 +672,10 @@ export type SyncRolesRequest = {
   roles?: Array<SyncRoleItem>;
 };
 
+export type UpdateAdditionalClientsRequest = {
+  clientIds?: Array<string>;
+};
+
 export type UpdateApplicationRequest = {
   name?: string;
   description?: string;
@@ -646,6 +690,10 @@ export type UpdateApplicationRequest1 = {
   iconUrl?: string;
 };
 
+export type UpdateClientBindingRequest = {
+  clientId?: string;
+};
+
 export type UpdateClientRequest = {
   name: string;
 };
@@ -658,6 +706,11 @@ export type UpdateClientRequest1 = {
   pkceRequired?: boolean;
 };
 
+export type UpdateConfigTypeRequest = {
+  configType: AuthConfigType;
+  primaryClientId?: string;
+};
+
 export type UpdateEventTypeRequest = {
   name?: string;
   description?: string;
@@ -666,6 +719,10 @@ export type UpdateEventTypeRequest = {
 export type UpdateEventTypeRequest1 = {
   name?: string;
   description?: string;
+};
+
+export type UpdateGrantedClientsRequest = {
+  clientIds?: Array<string>;
 };
 
 export type UpdateOidcConfigRequest = {
@@ -1190,6 +1247,152 @@ export type GetApiAdminPlatformApplicationsByIdRolesResponses = {
   200: unknown;
 };
 
+export type GetApiAdminPlatformAuditLogsData = {
+  body?: never;
+  path?: never;
+  query?: {
+    /**
+     * Filter by entity ID
+     */
+    entityId?: string;
+    /**
+     * Filter by entity type (e.g., 'ClientAuthConfig', 'Role')
+     */
+    entityType?: string;
+    /**
+     * Filter by operation name
+     */
+    operation?: string;
+    /**
+     * Page number (0-based)
+     */
+    page?: number;
+    /**
+     * Page size
+     */
+    pageSize?: number;
+    /**
+     * Filter by principal ID
+     */
+    principalId?: string;
+  };
+  url: "/api/admin/platform/audit-logs";
+};
+
+export type GetApiAdminPlatformAuditLogsErrors = {
+  /**
+   * Not authenticated
+   */
+  401: unknown;
+};
+
+export type GetApiAdminPlatformAuditLogsResponses = {
+  /**
+   * Audit logs retrieved
+   */
+  200: AuditLogListResponse;
+};
+
+export type GetApiAdminPlatformAuditLogsResponse =
+  GetApiAdminPlatformAuditLogsResponses[keyof GetApiAdminPlatformAuditLogsResponses];
+
+export type GetApiAdminPlatformAuditLogsEntityTypesData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/api/admin/platform/audit-logs/entity-types";
+};
+
+export type GetApiAdminPlatformAuditLogsEntityTypesErrors = {
+  /**
+   * Not authenticated
+   */
+  401: unknown;
+};
+
+export type GetApiAdminPlatformAuditLogsEntityTypesResponses = {
+  /**
+   * Entity types retrieved
+   */
+  200: unknown;
+};
+
+export type GetApiAdminPlatformAuditLogsEntityByEntityTypeByEntityIdData = {
+  body?: never;
+  path: {
+    entityId: string;
+    entityType: string;
+  };
+  query?: never;
+  url: "/api/admin/platform/audit-logs/entity/{entityType}/{entityId}";
+};
+
+export type GetApiAdminPlatformAuditLogsEntityByEntityTypeByEntityIdErrors = {
+  /**
+   * Not authenticated
+   */
+  401: unknown;
+};
+
+export type GetApiAdminPlatformAuditLogsEntityByEntityTypeByEntityIdResponses =
+  {
+    /**
+     * Audit logs retrieved
+     */
+    200: unknown;
+  };
+
+export type GetApiAdminPlatformAuditLogsOperationsData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/api/admin/platform/audit-logs/operations";
+};
+
+export type GetApiAdminPlatformAuditLogsOperationsErrors = {
+  /**
+   * Not authenticated
+   */
+  401: unknown;
+};
+
+export type GetApiAdminPlatformAuditLogsOperationsResponses = {
+  /**
+   * Operations retrieved
+   */
+  200: unknown;
+};
+
+export type GetApiAdminPlatformAuditLogsByIdData = {
+  body?: never;
+  path: {
+    id: string;
+  };
+  query?: never;
+  url: "/api/admin/platform/audit-logs/{id}";
+};
+
+export type GetApiAdminPlatformAuditLogsByIdErrors = {
+  /**
+   * Not authenticated
+   */
+  401: unknown;
+  /**
+   * Audit log not found
+   */
+  404: unknown;
+};
+
+export type GetApiAdminPlatformAuditLogsByIdResponses = {
+  /**
+   * Audit log retrieved
+   */
+  200: AuditLogDto;
+};
+
+export type GetApiAdminPlatformAuditLogsByIdResponse =
+  GetApiAdminPlatformAuditLogsByIdResponses[keyof GetApiAdminPlatformAuditLogsByIdResponses];
+
 export type GetApiAdminPlatformAuthConfigsData = {
   body?: never;
   path?: never;
@@ -1385,6 +1588,118 @@ export type GetApiAdminPlatformAuthConfigsByIdResponses = {
 
 export type GetApiAdminPlatformAuthConfigsByIdResponse =
   GetApiAdminPlatformAuthConfigsByIdResponses[keyof GetApiAdminPlatformAuthConfigsByIdResponses];
+
+export type PutApiAdminPlatformAuthConfigsByIdAdditionalClientsData = {
+  body: UpdateAdditionalClientsRequest;
+  path: {
+    id: string;
+  };
+  query?: never;
+  url: "/api/admin/platform/auth-configs/{id}/additional-clients";
+};
+
+export type PutApiAdminPlatformAuthConfigsByIdAdditionalClientsErrors = {
+  /**
+   * Invalid request or not a CLIENT type config
+   */
+  400: unknown;
+  /**
+   * Configuration not found
+   */
+  404: unknown;
+};
+
+export type PutApiAdminPlatformAuthConfigsByIdAdditionalClientsResponses = {
+  /**
+   * Additional clients updated
+   */
+  200: unknown;
+};
+
+export type PutApiAdminPlatformAuthConfigsByIdClientBindingData = {
+  body: UpdateClientBindingRequest;
+  path: {
+    id: string;
+  };
+  query?: never;
+  url: "/api/admin/platform/auth-configs/{id}/client-binding";
+};
+
+export type PutApiAdminPlatformAuthConfigsByIdClientBindingErrors = {
+  /**
+   * Bad Request
+   */
+  400: unknown;
+  /**
+   * Insufficient permissions
+   */
+  403: unknown;
+  /**
+   * Configuration not found
+   */
+  404: unknown;
+};
+
+export type PutApiAdminPlatformAuthConfigsByIdClientBindingResponses = {
+  /**
+   * Client binding updated
+   */
+  200: unknown;
+};
+
+export type PutApiAdminPlatformAuthConfigsByIdConfigTypeData = {
+  body: UpdateConfigTypeRequest;
+  path: {
+    id: string;
+  };
+  query?: never;
+  url: "/api/admin/platform/auth-configs/{id}/config-type";
+};
+
+export type PutApiAdminPlatformAuthConfigsByIdConfigTypeErrors = {
+  /**
+   * Invalid config type or constraint violation
+   */
+  400: unknown;
+  /**
+   * Configuration not found
+   */
+  404: unknown;
+};
+
+export type PutApiAdminPlatformAuthConfigsByIdConfigTypeResponses = {
+  /**
+   * Config type updated
+   */
+  200: unknown;
+};
+
+export type PutApiAdminPlatformAuthConfigsByIdGrantedClientsData = {
+  body: UpdateGrantedClientsRequest;
+  path: {
+    id: string;
+  };
+  query?: never;
+  url: "/api/admin/platform/auth-configs/{id}/granted-clients";
+};
+
+export type PutApiAdminPlatformAuthConfigsByIdGrantedClientsErrors = {
+  /**
+   * Invalid request or not a PARTNER type config
+   */
+  400: unknown;
+  /**
+   * Configuration not found
+   */
+  404: unknown;
+};
+
+export type PutApiAdminPlatformAuthConfigsByIdGrantedClientsResponses = {
+  /**
+   * Granted clients updated
+   */
+  200: unknown;
+};
 
 export type PutApiAdminPlatformAuthConfigsByIdOidcData = {
   body: UpdateOidcConfigRequest;
@@ -2209,6 +2524,33 @@ export type PostApiAdminPlatformPrincipalsByIdRolesResponses = {
    * Role assigned
    */
   201: unknown;
+};
+
+export type PutApiAdminPlatformPrincipalsByIdRolesData = {
+  body: AssignRolesRequest;
+  path: {
+    id: string;
+  };
+  query?: never;
+  url: "/api/admin/platform/principals/{id}/roles";
+};
+
+export type PutApiAdminPlatformPrincipalsByIdRolesErrors = {
+  /**
+   * Invalid role names
+   */
+  400: unknown;
+  /**
+   * Principal not found
+   */
+  404: unknown;
+};
+
+export type PutApiAdminPlatformPrincipalsByIdRolesResponses = {
+  /**
+   * Roles assigned
+   */
+  200: unknown;
 };
 
 export type DeleteApiAdminPlatformPrincipalsByIdRolesByRoleNameData = {

@@ -60,18 +60,18 @@ class OidcSyncServiceTest {
         String email = "alice@customer.com";
         String name = "Alice Smith";
         String externalIdpId = "google-oauth2|123";
-        Long tenantId = 200L;
+        String clientId = "0HZTEST00200";
 
-        Principal principal = createOidcPrincipal(1L, email);
-        when(userService.createOrUpdateOidcUser(email, name, externalIdpId, tenantId))
+        Principal principal = createOidcPrincipal("0HZTEST00001", email);
+        when(userService.createOrUpdateOidcUser(email, name, externalIdpId, clientId, null))
             .thenReturn(principal);
 
         // Act
-        Principal result = service.syncOidcUser(email, name, externalIdpId, tenantId);
+        Principal result = service.syncOidcUser(email, name, externalIdpId, clientId);
 
         // Assert
         assertThat(result).isEqualTo(principal);
-        verify(userService).createOrUpdateOidcUser(email, name, externalIdpId, tenantId);
+        verify(userService).createOrUpdateOidcUser(email, name, externalIdpId, clientId, null);
         verify(userService).updateLastLogin(principal.id);
     }
 
@@ -83,7 +83,7 @@ class OidcSyncServiceTest {
     @DisplayName("SECURITY: syncIdpRoles should only accept whitelisted IDP roles")
     void syncIdpRoles_shouldOnlyAcceptWhitelistedRoles_whenIdpRolesProvided() {
         // Arrange
-        Principal principal = createOidcPrincipal(1L, "alice@customer.com");
+        Principal principal = createOidcPrincipal("0HZTEST00001", "alice@customer.com");
 
         // IDP provides 3 roles from token
         List<String> idpRoles = List.of(
@@ -94,13 +94,13 @@ class OidcSyncServiceTest {
 
         // Only 2 roles are in the whitelist (idp_role_mappings table)
         when(idpRoleMappingRepo.findByIdpRoleName("customer-viewer"))
-            .thenReturn(Optional.of(createMapping(1L, "customer-viewer", "platform:viewer")));
+            .thenReturn(Optional.of(createMapping("0HZMAPPING01", "customer-viewer", "platform:viewer")));
         when(idpRoleMappingRepo.findByIdpRoleName("customer-operator"))
-            .thenReturn(Optional.of(createMapping(2L, "customer-operator", "platform:operator")));
+            .thenReturn(Optional.of(createMapping("0HZMAPPING02", "customer-operator", "platform:operator")));
         when(idpRoleMappingRepo.findByIdpRoleName("super-admin"))
             .thenReturn(Optional.empty()); // NOT IN WHITELIST - REJECTED
 
-        when(roleService.removeRolesBySource(1L, "IDP_SYNC")).thenReturn(0L);
+        when(roleService.removeRolesBySource("0HZTEST00001", "IDP_SYNC")).thenReturn(0L);
 
         // Act
         Set<String> result = service.syncIdpRoles(principal, idpRoles);
@@ -110,19 +110,19 @@ class OidcSyncServiceTest {
         assertThat(result).doesNotContain("super-admin"); // super-admin was not mapped
 
         // Verify role assignments
-        verify(roleService).assignRole(1L, "platform:viewer", "IDP_SYNC");
-        verify(roleService).assignRole(1L, "platform:operator", "IDP_SYNC");
-        verify(roleService, never()).assignRole(eq(1L), eq("super-admin"), anyString());
+        verify(roleService).assignRole("0HZTEST00001", "platform:viewer", "IDP_SYNC");
+        verify(roleService).assignRole("0HZTEST00001", "platform:operator", "IDP_SYNC");
+        verify(roleService, never()).assignRole(eq("0HZTEST00001"), eq("super-admin"), anyString());
 
         // Verify old roles removed
-        verify(roleService).removeRolesBySource(1L, "IDP_SYNC");
+        verify(roleService).removeRolesBySource("0HZTEST00001", "IDP_SYNC");
     }
 
     @Test
     @DisplayName("SECURITY: syncIdpRoles should reject all roles when none are whitelisted")
     void syncIdpRoles_shouldRejectAllRoles_whenNoneWhitelisted() {
         // Arrange: Compromised IDP sending unauthorized roles
-        Principal principal = createOidcPrincipal(1L, "attacker@malicious.com");
+        Principal principal = createOidcPrincipal("0HZTEST00001", "attacker@malicious.com");
 
         List<String> maliciousRoles = List.of(
             "super-admin",
@@ -134,7 +134,7 @@ class OidcSyncServiceTest {
         when(idpRoleMappingRepo.findByIdpRoleName(anyString()))
             .thenReturn(Optional.empty());
 
-        when(roleService.removeRolesBySource(1L, "IDP_SYNC")).thenReturn(0L);
+        when(roleService.removeRolesBySource("0HZTEST00001", "IDP_SYNC")).thenReturn(0L);
 
         // Act
         Set<String> result = service.syncIdpRoles(principal, maliciousRoles);
@@ -143,93 +143,93 @@ class OidcSyncServiceTest {
         assertThat(result).isEmpty();
 
         // Verify NO roles assigned
-        verify(roleService, never()).assignRole(eq(1L), anyString(), anyString());
+        verify(roleService, never()).assignRole(eq("0HZTEST00001"), anyString(), anyString());
 
         // Verify old roles still removed (clean slate)
-        verify(roleService).removeRolesBySource(1L, "IDP_SYNC");
+        verify(roleService).removeRolesBySource("0HZTEST00001", "IDP_SYNC");
     }
 
     @Test
     @DisplayName("SECURITY: syncIdpRoles should remove old IDP roles before assigning new ones")
     void syncIdpRoles_shouldRemoveOldIdpRoles_beforeAssigningNew() {
         // Arrange
-        Principal principal = createOidcPrincipal(1L, "alice@customer.com");
+        Principal principal = createOidcPrincipal("0HZTEST00001", "alice@customer.com");
 
         List<String> idpRoles = List.of("customer-viewer");
 
         when(idpRoleMappingRepo.findByIdpRoleName("customer-viewer"))
-            .thenReturn(Optional.of(createMapping(1L, "customer-viewer", "platform:viewer")));
+            .thenReturn(Optional.of(createMapping("0HZMAPPING01", "customer-viewer", "platform:viewer")));
 
-        when(roleService.removeRolesBySource(1L, "IDP_SYNC")).thenReturn(3L); // 3 old roles removed
+        when(roleService.removeRolesBySource("0HZTEST00001", "IDP_SYNC")).thenReturn(3L); // 3 old roles removed
 
         // Act
         service.syncIdpRoles(principal, idpRoles);
 
         // Assert: Old roles removed BEFORE new ones assigned
         var inOrder = inOrder(roleService);
-        inOrder.verify(roleService).removeRolesBySource(1L, "IDP_SYNC");
-        inOrder.verify(roleService).assignRole(1L, "platform:viewer", "IDP_SYNC");
+        inOrder.verify(roleService).removeRolesBySource("0HZTEST00001", "IDP_SYNC");
+        inOrder.verify(roleService).assignRole("0HZTEST00001", "platform:viewer", "IDP_SYNC");
     }
 
     @Test
     @DisplayName("syncIdpRoles should handle null IDP roles list")
     void syncIdpRoles_shouldHandleNull_whenIdpRolesIsNull() {
         // Arrange
-        Principal principal = createOidcPrincipal(1L, "alice@customer.com");
-        when(roleService.removeRolesBySource(1L, "IDP_SYNC")).thenReturn(0L);
+        Principal principal = createOidcPrincipal("0HZTEST00001", "alice@customer.com");
+        when(roleService.removeRolesBySource("0HZTEST00001", "IDP_SYNC")).thenReturn(0L);
 
         // Act
         Set<String> result = service.syncIdpRoles(principal, null);
 
         // Assert: No crash, empty result
         assertThat(result).isEmpty();
-        verify(roleService, never()).assignRole(anyLong(), anyString(), anyString());
+        verify(roleService, never()).assignRole(anyString(), anyString(), anyString());
 
         // Still removes old roles (clean slate)
-        verify(roleService).removeRolesBySource(1L, "IDP_SYNC");
+        verify(roleService).removeRolesBySource("0HZTEST00001", "IDP_SYNC");
     }
 
     @Test
     @DisplayName("syncIdpRoles should handle empty IDP roles list")
     void syncIdpRoles_shouldHandleEmpty_whenIdpRolesIsEmpty() {
         // Arrange
-        Principal principal = createOidcPrincipal(1L, "alice@customer.com");
-        when(roleService.removeRolesBySource(1L, "IDP_SYNC")).thenReturn(2L);
+        Principal principal = createOidcPrincipal("0HZTEST00001", "alice@customer.com");
+        when(roleService.removeRolesBySource("0HZTEST00001", "IDP_SYNC")).thenReturn(2L);
 
         // Act
         Set<String> result = service.syncIdpRoles(principal, List.of());
 
         // Assert: No crash, empty result, old roles removed
         assertThat(result).isEmpty();
-        verify(roleService, never()).assignRole(anyLong(), anyString(), anyString());
-        verify(roleService).removeRolesBySource(1L, "IDP_SYNC");
+        verify(roleService, never()).assignRole(anyString(), anyString(), anyString());
+        verify(roleService).removeRolesBySource("0HZTEST00001", "IDP_SYNC");
     }
 
     @Test
     @DisplayName("syncIdpRoles should continue when role assignment fails")
     void syncIdpRoles_shouldContinue_whenRoleAssignmentFails() {
         // Arrange
-        Principal principal = createOidcPrincipal(1L, "alice@customer.com");
+        Principal principal = createOidcPrincipal("0HZTEST00001", "alice@customer.com");
 
         List<String> idpRoles = List.of("role1", "role2", "role3");
 
         when(idpRoleMappingRepo.findByIdpRoleName("role1"))
-            .thenReturn(Optional.of(createMapping(1L, "role1", "platform:role1")));
+            .thenReturn(Optional.of(createMapping("0HZMAPPING01", "role1", "platform:role1")));
         when(idpRoleMappingRepo.findByIdpRoleName("role2"))
-            .thenReturn(Optional.of(createMapping(2L, "role2", "platform:role2")));
+            .thenReturn(Optional.of(createMapping("0HZMAPPING02", "role2", "platform:role2")));
         when(idpRoleMappingRepo.findByIdpRoleName("role3"))
-            .thenReturn(Optional.of(createMapping(3L, "role3", "platform:role3")));
+            .thenReturn(Optional.of(createMapping("0HZMAPPING03", "role3", "platform:role3")));
 
-        when(roleService.removeRolesBySource(1L, "IDP_SYNC")).thenReturn(0L);
+        when(roleService.removeRolesBySource("0HZTEST00001", "IDP_SYNC")).thenReturn(0L);
 
         // Role assignment fails for role2 (e.g., already assigned from different source)
-        PrincipalRole pr1 = createPrincipalRole(1L, 1L, "platform:role1", "IDP_SYNC");
-        PrincipalRole pr3 = createPrincipalRole(3L, 1L, "platform:role3", "IDP_SYNC");
+        PrincipalRole pr1 = createPrincipalRole("0HZPR00001", "0HZTEST00001", "platform:role1", "IDP_SYNC");
+        PrincipalRole pr3 = createPrincipalRole("0HZPR00003", "0HZTEST00001", "platform:role3", "IDP_SYNC");
 
-        when(roleService.assignRole(1L, "platform:role1", "IDP_SYNC")).thenReturn(pr1);
-        when(roleService.assignRole(1L, "platform:role2", "IDP_SYNC"))
+        when(roleService.assignRole("0HZTEST00001", "platform:role1", "IDP_SYNC")).thenReturn(pr1);
+        when(roleService.assignRole("0HZTEST00001", "platform:role2", "IDP_SYNC"))
             .thenThrow(new RuntimeException("Role already assigned"));
-        when(roleService.assignRole(1L, "platform:role3", "IDP_SYNC")).thenReturn(pr3);
+        when(roleService.assignRole("0HZTEST00001", "platform:role3", "IDP_SYNC")).thenReturn(pr3);
 
         // Act: Should not throw exception
         Set<String> result = service.syncIdpRoles(principal, idpRoles);
@@ -238,29 +238,29 @@ class OidcSyncServiceTest {
         assertThat(result).containsExactlyInAnyOrder("platform:role1", "platform:role2", "platform:role3");
 
         // Verify attempts were made for all roles
-        verify(roleService).assignRole(1L, "platform:role1", "IDP_SYNC");
-        verify(roleService).assignRole(1L, "platform:role2", "IDP_SYNC");
-        verify(roleService).assignRole(1L, "platform:role3", "IDP_SYNC");
+        verify(roleService).assignRole("0HZTEST00001", "platform:role1", "IDP_SYNC");
+        verify(roleService).assignRole("0HZTEST00001", "platform:role2", "IDP_SYNC");
+        verify(roleService).assignRole("0HZTEST00001", "platform:role3", "IDP_SYNC");
     }
 
     @Test
     @DisplayName("syncIdpRoles should assign roles with IDP_SYNC source")
     void syncIdpRoles_shouldAssignRolesWithIdpSyncSource_whenAssigningRoles() {
         // Arrange
-        Principal principal = createOidcPrincipal(1L, "alice@customer.com");
+        Principal principal = createOidcPrincipal("0HZTEST00001", "alice@customer.com");
 
         List<String> idpRoles = List.of("customer-viewer");
 
         when(idpRoleMappingRepo.findByIdpRoleName("customer-viewer"))
-            .thenReturn(Optional.of(createMapping(1L, "customer-viewer", "platform:viewer")));
+            .thenReturn(Optional.of(createMapping("0HZMAPPING01", "customer-viewer", "platform:viewer")));
 
-        when(roleService.removeRolesBySource(1L, "IDP_SYNC")).thenReturn(0L);
+        when(roleService.removeRolesBySource("0HZTEST00001", "IDP_SYNC")).thenReturn(0L);
 
         // Act
         service.syncIdpRoles(principal, idpRoles);
 
         // Assert: Role assigned with correct source
-        verify(roleService).assignRole(1L, "platform:viewer", "IDP_SYNC");
+        verify(roleService).assignRole("0HZTEST00001", "platform:viewer", "IDP_SYNC");
     }
 
     @Test
@@ -268,16 +268,16 @@ class OidcSyncServiceTest {
     void syncIdpRoles_shouldMapMultipleIdpRoles_whenMappedToSameInternalRole() {
         // Arrange: 2 different IDP roles map to same internal role
         // (e.g., "admin" and "administrator" both map to internal role "platform:admin")
-        Principal principal = createOidcPrincipal(1L, "alice@customer.com");
+        Principal principal = createOidcPrincipal("0HZTEST00001", "alice@customer.com");
 
         List<String> idpRoles = List.of("admin", "administrator");
 
         when(idpRoleMappingRepo.findByIdpRoleName("admin"))
-            .thenReturn(Optional.of(createMapping(1L, "admin", "platform:admin")));
+            .thenReturn(Optional.of(createMapping("0HZMAPPING01", "admin", "platform:admin")));
         when(idpRoleMappingRepo.findByIdpRoleName("administrator"))
-            .thenReturn(Optional.of(createMapping(2L, "administrator", "platform:admin")));
+            .thenReturn(Optional.of(createMapping("0HZMAPPING02", "administrator", "platform:admin")));
 
-        when(roleService.removeRolesBySource(1L, "IDP_SYNC")).thenReturn(0L);
+        when(roleService.removeRolesBySource("0HZTEST00001", "IDP_SYNC")).thenReturn(0L);
 
         // Act
         Set<String> result = service.syncIdpRoles(principal, idpRoles);
@@ -286,14 +286,14 @@ class OidcSyncServiceTest {
         assertThat(result).containsExactly("platform:admin");
 
         // Verify assignment attempted (may fail on second attempt due to duplicate, but that's ok)
-        verify(roleService, atLeastOnce()).assignRole(1L, "platform:admin", "IDP_SYNC");
+        verify(roleService, atLeastOnce()).assignRole("0HZTEST00001", "platform:admin", "IDP_SYNC");
     }
 
     @Test
     @DisplayName("SECURITY: syncIdpRoles should handle mixed authorized and unauthorized roles")
     void syncIdpRoles_shouldHandleMixed_whenSomeAuthorizedSomeNot() {
         // Arrange: Realistic scenario - some roles authorized, others not
-        Principal principal = createOidcPrincipal(1L, "alice@customer.com");
+        Principal principal = createOidcPrincipal("0HZTEST00001", "alice@customer.com");
 
         List<String> idpRoles = List.of(
             "customer-viewer",      // Authorized
@@ -304,9 +304,9 @@ class OidcSyncServiceTest {
         );
 
         when(idpRoleMappingRepo.findByIdpRoleName("customer-viewer"))
-            .thenReturn(Optional.of(createMapping(1L, "customer-viewer", "platform:viewer")));
+            .thenReturn(Optional.of(createMapping("0HZMAPPING01", "customer-viewer", "platform:viewer")));
         when(idpRoleMappingRepo.findByIdpRoleName("customer-operator"))
-            .thenReturn(Optional.of(createMapping(2L, "customer-operator", "platform:operator")));
+            .thenReturn(Optional.of(createMapping("0HZMAPPING02", "customer-operator", "platform:operator")));
 
         // Unauthorized roles not in whitelist
         when(idpRoleMappingRepo.findByIdpRoleName("hacker-role"))
@@ -316,7 +316,7 @@ class OidcSyncServiceTest {
         when(idpRoleMappingRepo.findByIdpRoleName("offline_access"))
             .thenReturn(Optional.empty());
 
-        when(roleService.removeRolesBySource(1L, "IDP_SYNC")).thenReturn(0L);
+        when(roleService.removeRolesBySource("0HZTEST00001", "IDP_SYNC")).thenReturn(0L);
 
         // Act
         Set<String> result = service.syncIdpRoles(principal, idpRoles);
@@ -326,9 +326,9 @@ class OidcSyncServiceTest {
         assertThat(result).hasSize(2);
 
         // Verify only authorized roles assigned
-        verify(roleService).assignRole(1L, "platform:viewer", "IDP_SYNC");
-        verify(roleService).assignRole(1L, "platform:operator", "IDP_SYNC");
-        verify(roleService, times(2)).assignRole(anyLong(), anyString(), eq("IDP_SYNC"));
+        verify(roleService).assignRole("0HZTEST00001", "platform:viewer", "IDP_SYNC");
+        verify(roleService).assignRole("0HZTEST00001", "platform:operator", "IDP_SYNC");
+        verify(roleService, times(2)).assignRole(anyString(), anyString(), eq("IDP_SYNC"));
     }
 
     // ========================================
@@ -345,15 +345,16 @@ class OidcSyncServiceTest {
         String clientId = TsidGenerator.generate();
         List<String> idpRoles = List.of("customer-viewer");
 
-        Principal principal = createOidcPrincipal(TsidGenerator.generate(), email);
+        String principalId = TsidGenerator.generate();
+        Principal principal = createOidcPrincipal(principalId, email);
 
-        when(userService.createOrUpdateOidcUser(email, name, externalIdpId, clientId))
+        when(userService.createOrUpdateOidcUser(email, name, externalIdpId, clientId, null))
             .thenReturn(principal);
 
         when(idpRoleMappingRepo.findByIdpRoleName("customer-viewer"))
-            .thenReturn(Optional.of(createMapping(1L, "customer-viewer", "platform:viewer")));
+            .thenReturn(Optional.of(createMapping("0HZMAPPING01", "customer-viewer", "platform:viewer")));
 
-        when(roleService.removeRolesBySource(1L, "IDP_SYNC")).thenReturn(0L);
+        when(roleService.removeRolesBySource(principalId, "IDP_SYNC")).thenReturn(0L);
 
         // Act
         Principal result = service.syncOidcLogin(email, name, externalIdpId, clientId, idpRoles);
@@ -362,13 +363,13 @@ class OidcSyncServiceTest {
         assertThat(result).isEqualTo(principal);
 
         // Verify user sync
-        verify(userService).createOrUpdateOidcUser(email, name, externalIdpId, clientId);
+        verify(userService).createOrUpdateOidcUser(email, name, externalIdpId, clientId, null);
         verify(userService).updateLastLogin(principal.id);
 
         // Verify role sync
         verify(idpRoleMappingRepo).findByIdpRoleName("customer-viewer");
-        verify(roleService).removeRolesBySource(1L, "IDP_SYNC");
-        verify(roleService).assignRole(1L, "platform:viewer", "IDP_SYNC");
+        verify(roleService).removeRolesBySource(principalId, "IDP_SYNC");
+        verify(roleService).assignRole(principalId, "platform:viewer", "IDP_SYNC");
     }
 
     @Test
@@ -376,19 +377,19 @@ class OidcSyncServiceTest {
     void syncOidcLogin_shouldHandleNullRoles_whenIdpRolesIsNull() {
         // Arrange
         String email = "alice@customer.com";
-        Principal principal = createOidcPrincipal(1L, email);
+        Principal principal = createOidcPrincipal("0HZTEST00001", email);
 
-        when(userService.createOrUpdateOidcUser(anyString(), anyString(), anyString(), anyLong()))
+        when(userService.createOrUpdateOidcUser(anyString(), anyString(), anyString(), anyString(), any()))
             .thenReturn(principal);
-        when(roleService.removeRolesBySource(1L, "IDP_SYNC")).thenReturn(0L);
+        when(roleService.removeRolesBySource("0HZTEST00001", "IDP_SYNC")).thenReturn(0L);
 
         // Act: Should not crash
-        Principal result = service.syncOidcLogin(email, "Alice", "idp-123", 200L, null);
+        Principal result = service.syncOidcLogin(email, "Alice", "idp-123", "0HZTEST00200", null);
 
         // Assert
         assertThat(result).isEqualTo(principal);
         verify(userService).updateLastLogin(principal.id);
-        verify(roleService).removeRolesBySource(1L, "IDP_SYNC");
+        verify(roleService).removeRolesBySource("0HZTEST00001", "IDP_SYNC");
     }
 
     @Test
@@ -396,20 +397,20 @@ class OidcSyncServiceTest {
     void syncOidcLogin_shouldHandleEmptyRoles_whenIdpRolesIsEmpty() {
         // Arrange
         String email = "alice@customer.com";
-        Principal principal = createOidcPrincipal(1L, email);
+        Principal principal = createOidcPrincipal("0HZTEST00001", email);
 
-        when(userService.createOrUpdateOidcUser(anyString(), anyString(), anyString(), anyLong()))
+        when(userService.createOrUpdateOidcUser(anyString(), anyString(), anyString(), anyString(), any()))
             .thenReturn(principal);
-        when(roleService.removeRolesBySource(1L, "IDP_SYNC")).thenReturn(0L);
+        when(roleService.removeRolesBySource("0HZTEST00001", "IDP_SYNC")).thenReturn(0L);
 
         // Act
-        Principal result = service.syncOidcLogin(email, "Alice", "idp-123", 200L, List.of());
+        Principal result = service.syncOidcLogin(email, "Alice", "idp-123", "0HZTEST00200", List.of());
 
         // Assert
         assertThat(result).isEqualTo(principal);
         verify(userService).updateLastLogin(principal.id);
-        verify(roleService).removeRolesBySource(1L, "IDP_SYNC");
-        verify(roleService, never()).assignRole(anyLong(), anyString(), anyString());
+        verify(roleService).removeRolesBySource("0HZTEST00001", "IDP_SYNC");
+        verify(roleService, never()).assignRole(anyString(), anyString(), anyString());
     }
 
     // ========================================
@@ -420,11 +421,11 @@ class OidcSyncServiceTest {
     @DisplayName("auditIdpRoles should return audit log of IDP-sourced roles")
     void auditIdpRoles_shouldReturnAuditLog_whenPrincipalHasIdpRoles() {
         // Arrange
-        Long principalId = 1L;
+        String principalId = "0HZTEST00001";
 
-        PrincipalRole idpRole1 = createPrincipalRole(1L, principalId, "platform:viewer", "IDP_SYNC");
-        PrincipalRole idpRole2 = createPrincipalRole(2L, principalId, "platform:operator", "IDP_SYNC");
-        PrincipalRole manualRole = createPrincipalRole(3L, principalId, "platform:admin", "MANUAL");
+        PrincipalRole idpRole1 = createPrincipalRole("0HZPR00001", principalId, "platform:viewer", "IDP_SYNC");
+        PrincipalRole idpRole2 = createPrincipalRole("0HZPR00002", principalId, "platform:operator", "IDP_SYNC");
+        PrincipalRole manualRole = createPrincipalRole("0HZPR00003", principalId, "platform:admin", "MANUAL");
 
         when(roleService.findAssignmentsByPrincipal(principalId))
             .thenReturn(List.of(idpRole1, idpRole2, manualRole));
@@ -433,7 +434,7 @@ class OidcSyncServiceTest {
         String audit = service.auditIdpRoles(principalId);
 
         // Assert
-        assertThat(audit).contains("Principal 1 has 2 IDP-sourced roles");
+        assertThat(audit).contains("Principal " + principalId + " has 2 IDP-sourced roles");
         assertThat(audit).contains("platform:viewer");
         assertThat(audit).contains("platform:operator");
         assertThat(audit).doesNotContain("platform:admin"); // Manual role excluded
@@ -443,9 +444,9 @@ class OidcSyncServiceTest {
     @DisplayName("auditIdpRoles should handle principal with no IDP roles")
     void auditIdpRoles_shouldReturnEmptyAudit_whenPrincipalHasNoIdpRoles() {
         // Arrange
-        Long principalId = 1L;
+        String principalId = "0HZTEST00001";
 
-        PrincipalRole manualRole = createPrincipalRole(1L, principalId, "platform:admin", "MANUAL");
+        PrincipalRole manualRole = createPrincipalRole("0HZPR00001", principalId, "platform:admin", "MANUAL");
 
         when(roleService.findAssignmentsByPrincipal(principalId))
             .thenReturn(List.of(manualRole));
@@ -454,7 +455,7 @@ class OidcSyncServiceTest {
         String audit = service.auditIdpRoles(principalId);
 
         // Assert
-        assertThat(audit).contains("Principal 1 has 0 IDP-sourced roles");
+        assertThat(audit).contains("Principal " + principalId + " has 0 IDP-sourced roles");
     }
 
     // ========================================
@@ -477,7 +478,7 @@ class OidcSyncServiceTest {
         return p;
     }
 
-    private IdpRoleMapping createMapping(Long id, String idpRoleName, String internalRoleName) {
+    private IdpRoleMapping createMapping(String id, String idpRoleName, String internalRoleName) {
         IdpRoleMapping mapping = new IdpRoleMapping();
         mapping.id = id;
         mapping.idpRoleName = idpRoleName;
@@ -486,9 +487,9 @@ class OidcSyncServiceTest {
         return mapping;
     }
 
-    private PrincipalRole createPrincipalRole(Long id, Long principalId, String roleName, String source) {
+    private PrincipalRole createPrincipalRole(String id, String principalId, String roleName, String source) {
         PrincipalRole pr = new PrincipalRole();
-        pr.id = id;
+        // Note: PrincipalRole no longer has an id field (it's now a DTO, not an entity)
         pr.principalId = principalId;
         pr.roleName = roleName;
         pr.assignmentSource = source;

@@ -9,7 +9,6 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 import org.jboss.logging.Logger;
-import tech.flowcatalyst.platform.authorization.PrincipalRoleRepository;
 import tech.flowcatalyst.platform.authorization.PermissionRegistry;
 import tech.flowcatalyst.platform.principal.Principal;
 import tech.flowcatalyst.platform.principal.PrincipalRepository;
@@ -47,9 +46,6 @@ public class ClientSelectionResource {
 
     @Inject
     PrincipalRepository principalRepo;
-
-    @Inject
-    PrincipalRoleRepository roleRepo;
 
     @Inject
     ClientRepository clientRepo;
@@ -170,10 +166,8 @@ public class ClientSelectionResource {
                 .build();
         }
 
-        // Load roles and resolve permissions
-        Set<String> roles = roleRepo.findByPrincipalId(principal.id).stream()
-            .map(pr -> pr.roleName)
-            .collect(Collectors.toSet());
+        // Load roles from embedded Principal.roles
+        Set<String> roles = principal.getRoleNames();
 
         Set<String> permissions = permissionRegistry.getPermissionsForRoles(roles);
 
@@ -186,7 +180,7 @@ public class ClientSelectionResource {
             request.clientId()
         );
 
-        LOG.infof("Principal %d switched to client %d (%s)",
+        LOG.infof("Principal %s switched to client %s (%s)",
             principalId, client.id, client.identifier);
 
         // Build response with optional cookie

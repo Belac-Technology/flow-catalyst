@@ -5,18 +5,31 @@ import io.quarkus.mongodb.panache.PanacheMongoEntityBase;
 import org.bson.codecs.pojo.annotations.BsonId;
 import org.bson.codecs.pojo.annotations.BsonIgnore;
 import tech.flowcatalyst.platform.authentication.AuthProvider;
+
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Authentication configuration per email domain.
  * Determines whether users from a specific domain authenticate via
  * INTERNAL (password) or OIDC (external IDP).
  *
- * Example:
- * - acmecorp.com -> INTERNAL (users set passwords in FlowCatalyst)
- * - bigcustomer.com -> OIDC (redirect to customer's Keycloak)
+ * <p>Each config has an {@link AuthConfigType} that determines user access scope:
+ * <ul>
+ *   <li>ANCHOR: Platform-wide access, users get ANCHOR scope (all clients)</li>
+ *   <li>PARTNER: Partner access, users get PARTNER scope (only granted clients)</li>
+ *   <li>CLIENT: Client-specific access, users get CLIENT scope (primary + additional clients)</li>
+ * </ul>
  *
- * IMPORTANT: The oidcClientSecretRef field stores a reference to the secret,
+ * <p>Example:
+ * <ul>
+ *   <li>flowcatalyst.local (ANCHOR) -> INTERNAL (platform admins)</li>
+ *   <li>acmecorp.com (CLIENT) -> INTERNAL (users bound to Acme Corp client)</li>
+ *   <li>partner.com (PARTNER) -> OIDC (partner users with multi-client access)</li>
+ * </ul>
+ *
+ * <p>IMPORTANT: The oidcClientSecretRef field stores a reference to the secret,
  * not the secret itself. Use ClientAuthConfigService to resolve the actual secret.
  */
 @MongoEntity(collection = "client_auth_config")
@@ -31,9 +44,42 @@ public class ClientAuthConfig extends PanacheMongoEntityBase {
     public String emailDomain;
 
     /**
-     * The client this auth config belongs to (nullable for platform-wide configs)
+     * The type of this auth configuration, determining user access scope.
+     * - ANCHOR: Platform-wide, no client associations allowed
+     * - PARTNER: Partner IDP, has granted clients list
+     * - CLIENT: Client-specific, has primary client + optional additional clients
      */
+    public AuthConfigType configType;
+
+    /**
+     * The primary client this auth config belongs to.
+     * Required for CLIENT type, must be null for ANCHOR and PARTNER types.
+     *
+     * @deprecated Use {@link #primaryClientId} instead. This field is kept for
+     *             backwards compatibility during migration.
+     */
+    @Deprecated
     public String clientId;
+
+    /**
+     * The primary client this auth config belongs to.
+     * Required for CLIENT type, must be null for ANCHOR and PARTNER types.
+     */
+    public String primaryClientId;
+
+    /**
+     * Additional client IDs for CLIENT type configurations.
+     * Allows client-bound users to access additional clients as exceptions.
+     * Must be empty for ANCHOR and PARTNER types.
+     */
+    public List<String> additionalClientIds = new ArrayList<>();
+
+    /**
+     * Granted client IDs for PARTNER type configurations.
+     * Users authenticating through this config can access these clients.
+     * Must be empty for ANCHOR and CLIENT types.
+     */
+    public List<String> grantedClientIds = new ArrayList<>();
 
     /**
      * Authentication provider type: INTERNAL or OIDC
@@ -97,6 +143,109 @@ public class ClientAuthConfig extends PanacheMongoEntityBase {
                 throw new IllegalStateException("OIDC client ID is required for OIDC auth provider");
             }
         }
+    }
+
+    /**
+     * Validate configuration constraints based on config type.
+     * @throws IllegalStateException if constraints are violated
+     */
+    public void validateConfigTypeConstraints() {
+        if (configType == null) {
+            throw new IllegalStateException("Config type is required");
+        }
+
+        // Get effective primary client ID (support both old and new field)
+        String effectivePrimaryClientId = getEffectivePrimaryClientId();
+
+        switch (configType) {
+            case ANCHOR -> {
+                if (effectivePrimaryClientId != null) {
+                    throw new IllegalStateException("ANCHOR config cannot have a primary client");
+                }
+                if (additionalClientIds != null && !additionalClientIds.isEmpty()) {
+                    throw new IllegalStateException("ANCHOR config cannot have additional clients");
+                }
+                if (grantedClientIds != null && !grantedClientIds.isEmpty()) {
+                    throw new IllegalStateException("ANCHOR config cannot have granted clients");
+                }
+            }
+            case PARTNER -> {
+                if (effectivePrimaryClientId != null) {
+                    throw new IllegalStateException("PARTNER config cannot have a primary client");
+                }
+                if (additionalClientIds != null && !additionalClientIds.isEmpty()) {
+                    throw new IllegalStateException("PARTNER config cannot have additional clients");
+                }
+                // grantedClientIds is allowed (can be empty or have values)
+            }
+            case CLIENT -> {
+                if (effectivePrimaryClientId == null) {
+                    throw new IllegalStateException("CLIENT config must have a primary client");
+                }
+                if (grantedClientIds != null && !grantedClientIds.isEmpty()) {
+                    throw new IllegalStateException("CLIENT config cannot have granted clients");
+                }
+                // additionalClientIds is allowed (can be empty or have values)
+            }
+        }
+    }
+
+    /**
+     * Get the effective primary client ID, supporting both old clientId and new primaryClientId fields.
+     * Prefers primaryClientId if set, falls back to clientId for backwards compatibility.
+     */
+    @BsonIgnore
+    public String getEffectivePrimaryClientId() {
+        if (primaryClientId != null) {
+            return primaryClientId;
+        }
+        return clientId; // Backwards compatibility
+    }
+
+    /**
+     * Get all client IDs this config grants access to.
+     * For CLIENT type: primary + additional clients
+     * For PARTNER type: granted clients
+     * For ANCHOR type: empty (users have access to all via scope)
+     */
+    @BsonIgnore
+    public List<String> getAllAccessibleClientIds() {
+        if (configType == null) {
+            // Backwards compatibility: derive from clientId
+            if (clientId != null) {
+                return List.of(clientId);
+            }
+            return List.of();
+        }
+
+        return switch (configType) {
+            case ANCHOR -> List.of(); // Access determined by scope, not client list
+            case PARTNER -> grantedClientIds != null ? List.copyOf(grantedClientIds) : List.of();
+            case CLIENT -> {
+                List<String> result = new ArrayList<>();
+                String primary = getEffectivePrimaryClientId();
+                if (primary != null) {
+                    result.add(primary);
+                }
+                if (additionalClientIds != null) {
+                    result.addAll(additionalClientIds);
+                }
+                yield List.copyOf(result);
+            }
+        };
+    }
+
+    /**
+     * Get the effective config type, deriving from clientId if not explicitly set.
+     * Used for backwards compatibility during migration.
+     */
+    @BsonIgnore
+    public AuthConfigType getEffectiveConfigType() {
+        if (configType != null) {
+            return configType;
+        }
+        // Backwards compatibility: derive from clientId
+        return clientId != null ? AuthConfigType.CLIENT : AuthConfigType.ANCHOR;
     }
 
     /**

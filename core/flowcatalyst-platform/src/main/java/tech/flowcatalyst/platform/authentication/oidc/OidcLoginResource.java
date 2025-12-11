@@ -11,7 +11,6 @@ import tech.flowcatalyst.platform.authentication.AuthConfig;
 import tech.flowcatalyst.platform.authentication.AuthProvider;
 import tech.flowcatalyst.platform.authentication.EmbeddedModeOnly;
 import tech.flowcatalyst.platform.authentication.JwtKeyService;
-import tech.flowcatalyst.platform.authorization.PrincipalRoleRepository;
 import tech.flowcatalyst.platform.client.ClientAuthConfig;
 import tech.flowcatalyst.platform.client.ClientAuthConfigService;
 import tech.flowcatalyst.platform.principal.Principal;
@@ -58,9 +57,6 @@ public class OidcLoginResource {
 
     @Inject
     OidcLoginStateRepository stateRepository;
-
-    @Inject
-    PrincipalRoleRepository roleRepo;
 
     @Inject
     UserService userService;
@@ -219,11 +215,11 @@ public class OidcLoginResource {
             // Find or create user
             Principal principal = findOrCreateUser(claims, config);
 
-            // Load roles
-            Set<String> roles = loadRoles(principal.id);
+            // Load roles from embedded Principal.roles
+            Set<String> roles = loadRoles(principal);
 
-            // Determine accessible clients
-            List<String> clients = determineAccessibleClients(principal, roles);
+            // Determine accessible clients based on scope and config type
+            List<String> clients = determineAccessibleClients(principal, roles, config);
 
             // Issue session token
             String sessionToken = jwtKeyService.issueSessionToken(
@@ -246,7 +242,7 @@ public class OidcLoginResource {
             // Determine redirect URL
             String redirectUrl = determineRedirectUrl(loginState);
 
-            LOG.infof("OIDC login successful for %s (principal %d) from %s",
+            LOG.infof("OIDC login successful for %s (principal %s) from %s",
                 claims.email, principal.id, config.oidcIssuerUrl);
 
             return Response.seeOther(URI.create(redirectUrl))
@@ -382,20 +378,27 @@ public class OidcLoginResource {
 
     private Principal findOrCreateUser(IdTokenClaims claims, ClientAuthConfig config) throws OidcException {
         try {
-            // Determine scope based on domain config
-            // - If clientId is set, user is bound to that client (CLIENT scope)
-            // - If clientId is null, user is an anchor/platform user (ANCHOR scope)
-            tech.flowcatalyst.platform.principal.UserScope scope =
-                config.clientId != null
-                    ? tech.flowcatalyst.platform.principal.UserScope.CLIENT
-                    : tech.flowcatalyst.platform.principal.UserScope.ANCHOR;
+            // Determine scope based on IDP config type
+            // - ANCHOR: Platform-wide access, no client binding
+            // - PARTNER: Partner IDP, access to granted clients stored on config
+            // - CLIENT: Client-specific, bound to primary client
+            tech.flowcatalyst.platform.principal.UserScope scope = config.getEffectiveConfigType().toUserScope();
+
+            // Determine client ID to associate with user
+            // - CLIENT type: Use the primary client as user's home client
+            // - PARTNER type: No home client (access determined by IDP's grantedClientIds)
+            // - ANCHOR type: No home client (access to all clients)
+            String userClientId = switch (config.getEffectiveConfigType()) {
+                case CLIENT -> config.getEffectivePrimaryClientId();
+                case PARTNER, ANCHOR -> null;
+            };
 
             // Use existing service method which handles both create and update
             return userService.createOrUpdateOidcUser(
                 claims.email,
                 claims.name,
                 claims.subject,
-                config.clientId,  // Associate with client if domain is client-specific
+                userClientId,
                 scope
             );
         } catch (Exception e) {
@@ -519,36 +522,29 @@ public class OidcLoginResource {
         }
     }
 
-    private Set<String> loadRoles(String principalId) {
-        return roleRepo.findByPrincipalId(principalId).stream()
-            .map(pr -> pr.roleName)
-            .collect(Collectors.toSet());
+    private Set<String> loadRoles(Principal principal) {
+        return principal.getRoleNames();
     }
 
     /**
-     * Determine which clients the user can access based on their scope.
+     * Determine which clients the user can access based on their scope and IDP config.
      *
+     * @param principal The authenticated user principal
+     * @param roles The user's roles
+     * @param config The IDP auth config used for authentication
      * @return List of client IDs as strings, or ["*"] for anchor users
      */
-    private List<String> determineAccessibleClients(Principal principal, Set<String> roles) {
-        // Check explicit scope first
-        if (principal.scope != null) {
-            switch (principal.scope) {
-                case ANCHOR:
-                    return List.of("*");
-                case CLIENT:
-                    if (principal.clientId != null) {
-                        return List.of(String.valueOf(principal.clientId));
-                    }
-                    return List.of();
-                case PARTNER:
-                    // Partners have access to granted clients - return home client if set
-                    // Full list of granted clients is looked up separately
-                    if (principal.clientId != null) {
-                        return List.of(String.valueOf(principal.clientId));
-                    }
-                    return List.of();
-            }
+    private List<String> determineAccessibleClients(Principal principal, Set<String> roles, ClientAuthConfig config) {
+        // Use config type to determine accessible clients
+        switch (config.getEffectiveConfigType()) {
+            case ANCHOR:
+                return List.of("*");
+            case CLIENT:
+                // CLIENT type: primary client + additional clients
+                return config.getAllAccessibleClientIds();
+            case PARTNER:
+                // PARTNER type: granted clients from IDP config
+                return config.getAllAccessibleClientIds();
         }
 
         // Fallback: check roles for platform admins
@@ -558,7 +554,7 @@ public class OidcLoginResource {
 
         // User is bound to a specific client
         if (principal.clientId != null) {
-            return List.of(String.valueOf(principal.clientId));
+            return List.of(principal.clientId);
         }
 
         // User has no specific client - could be a partner or unassigned

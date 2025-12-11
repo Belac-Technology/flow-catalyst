@@ -42,6 +42,13 @@ import type {
   PostApiAdminPlatformApplicationsByIdClientsByClientIdEnableData,
   PostApiAdminPlatformApplicationsByIdDeactivateData,
   GetApiAdminPlatformApplicationsByIdRolesData,
+  GetApiAdminPlatformAuditLogsData,
+  GetApiAdminPlatformAuditLogsResponse,
+  GetApiAdminPlatformAuditLogsEntityTypesData,
+  GetApiAdminPlatformAuditLogsEntityByEntityTypeByEntityIdData,
+  GetApiAdminPlatformAuditLogsOperationsData,
+  GetApiAdminPlatformAuditLogsByIdData,
+  GetApiAdminPlatformAuditLogsByIdResponse,
   GetApiAdminPlatformAuthConfigsData,
   GetApiAdminPlatformAuthConfigsResponse,
   GetApiAdminPlatformAuthConfigsByDomainByDomainData,
@@ -55,6 +62,10 @@ import type {
   DeleteApiAdminPlatformAuthConfigsByIdResponse,
   GetApiAdminPlatformAuthConfigsByIdData,
   GetApiAdminPlatformAuthConfigsByIdResponse,
+  PutApiAdminPlatformAuthConfigsByIdAdditionalClientsData,
+  PutApiAdminPlatformAuthConfigsByIdClientBindingData,
+  PutApiAdminPlatformAuthConfigsByIdConfigTypeData,
+  PutApiAdminPlatformAuthConfigsByIdGrantedClientsData,
   PutApiAdminPlatformAuthConfigsByIdOidcData,
   GetApiAdminPlatformClientsData,
   GetApiAdminPlatformClientsResponse,
@@ -98,6 +109,7 @@ import type {
   PostApiAdminPlatformPrincipalsByIdResetPasswordData,
   GetApiAdminPlatformPrincipalsByIdRolesData,
   PostApiAdminPlatformPrincipalsByIdRolesData,
+  PutApiAdminPlatformPrincipalsByIdRolesData,
   DeleteApiAdminPlatformPrincipalsByIdRolesByRoleNameData,
   DeleteApiAdminPlatformPrincipalsByIdRolesByRoleNameResponse,
   GetApiAdminPlatformRolesData,
@@ -631,6 +643,95 @@ export const getApiAdminPlatformApplicationsByIdRoles = <
 };
 
 /**
+ * List audit logs
+ * Returns audit logs with optional filtering by entity type, entity ID, principal, or operation
+ */
+export const getApiAdminPlatformAuditLogs = <
+  ThrowOnError extends boolean = false,
+>(
+  options?: Options<GetApiAdminPlatformAuditLogsData, ThrowOnError>,
+) => {
+  return (options?.client ?? _heyApiClient).get<
+    GetApiAdminPlatformAuditLogsResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/audit-logs",
+    ...options,
+  });
+};
+
+/**
+ * Get entity types with audit logs
+ * Returns distinct entity types that have audit log entries
+ */
+export const getApiAdminPlatformAuditLogsEntityTypes = <
+  ThrowOnError extends boolean = false,
+>(
+  options?: Options<GetApiAdminPlatformAuditLogsEntityTypesData, ThrowOnError>,
+) => {
+  return (options?.client ?? _heyApiClient).get<unknown, unknown, ThrowOnError>(
+    {
+      url: "/api/admin/platform/audit-logs/entity-types",
+      ...options,
+    },
+  );
+};
+
+/**
+ * Get audit logs for entity
+ * Returns all audit logs for a specific entity
+ */
+export const getApiAdminPlatformAuditLogsEntityByEntityTypeByEntityId = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<
+    GetApiAdminPlatformAuditLogsEntityByEntityTypeByEntityIdData,
+    ThrowOnError
+  >,
+) => {
+  return (options.client ?? _heyApiClient).get<unknown, unknown, ThrowOnError>({
+    url: "/api/admin/platform/audit-logs/entity/{entityType}/{entityId}",
+    ...options,
+  });
+};
+
+/**
+ * Get operations with audit logs
+ * Returns distinct operation names that have audit log entries
+ */
+export const getApiAdminPlatformAuditLogsOperations = <
+  ThrowOnError extends boolean = false,
+>(
+  options?: Options<GetApiAdminPlatformAuditLogsOperationsData, ThrowOnError>,
+) => {
+  return (options?.client ?? _heyApiClient).get<unknown, unknown, ThrowOnError>(
+    {
+      url: "/api/admin/platform/audit-logs/operations",
+      ...options,
+    },
+  );
+};
+
+/**
+ * Get audit log by ID
+ */
+export const getApiAdminPlatformAuditLogsById = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<GetApiAdminPlatformAuditLogsByIdData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).get<
+    GetApiAdminPlatformAuditLogsByIdResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/audit-logs/{id}",
+    ...options,
+  });
+};
+
+/**
  * List all auth configurations
  * Returns all domain auth configurations
  */
@@ -771,6 +872,94 @@ export const getApiAdminPlatformAuthConfigsById = <
   >({
     url: "/api/admin/platform/auth-configs/{id}",
     ...options,
+  });
+};
+
+/**
+ * Update additional clients
+ * Set additional client IDs for CLIENT type configurations
+ */
+export const putApiAdminPlatformAuthConfigsByIdAdditionalClients = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<
+    PutApiAdminPlatformAuthConfigsByIdAdditionalClientsData,
+    ThrowOnError
+  >,
+) => {
+  return (options.client ?? _heyApiClient).put<unknown, unknown, ThrowOnError>({
+    url: "/api/admin/platform/auth-configs/{id}/additional-clients",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options?.headers,
+    },
+  });
+};
+
+/**
+ * Update client binding
+ * Change which client this domain is bound to, or remove binding for platform-wide access
+ */
+export const putApiAdminPlatformAuthConfigsByIdClientBinding = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<
+    PutApiAdminPlatformAuthConfigsByIdClientBindingData,
+    ThrowOnError
+  >,
+) => {
+  return (options.client ?? _heyApiClient).put<unknown, unknown, ThrowOnError>({
+    url: "/api/admin/platform/auth-configs/{id}/client-binding",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options?.headers,
+    },
+  });
+};
+
+/**
+ * Update config type
+ * Change the config type (ANCHOR, PARTNER, CLIENT). This will reset client associations.
+ */
+export const putApiAdminPlatformAuthConfigsByIdConfigType = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<
+    PutApiAdminPlatformAuthConfigsByIdConfigTypeData,
+    ThrowOnError
+  >,
+) => {
+  return (options.client ?? _heyApiClient).put<unknown, unknown, ThrowOnError>({
+    url: "/api/admin/platform/auth-configs/{id}/config-type",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options?.headers,
+    },
+  });
+};
+
+/**
+ * Update granted clients
+ * Set granted client IDs for PARTNER type configurations
+ */
+export const putApiAdminPlatformAuthConfigsByIdGrantedClients = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<
+    PutApiAdminPlatformAuthConfigsByIdGrantedClientsData,
+    ThrowOnError
+  >,
+) => {
+  return (options.client ?? _heyApiClient).put<unknown, unknown, ThrowOnError>({
+    url: "/api/admin/platform/auth-configs/{id}/granted-clients",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options?.headers,
+    },
   });
 };
 
@@ -1369,6 +1558,25 @@ export const postApiAdminPlatformPrincipalsByIdRoles = <
       },
     },
   );
+};
+
+/**
+ * Batch assign roles to principal
+ * Sets the complete list of roles for a principal. Roles not in the list will be removed.
+ */
+export const putApiAdminPlatformPrincipalsByIdRoles = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<PutApiAdminPlatformPrincipalsByIdRolesData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).put<unknown, unknown, ThrowOnError>({
+    url: "/api/admin/platform/principals/{id}/roles",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options?.headers,
+    },
+  });
 };
 
 /**

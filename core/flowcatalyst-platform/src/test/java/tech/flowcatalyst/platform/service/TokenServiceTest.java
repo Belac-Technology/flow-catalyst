@@ -49,7 +49,7 @@ class TokenServiceTest {
     @DisplayName("issueToken should include subject when token is issued")
     void issueToken_shouldIncludeSubject_whenTokenIssued() throws ParseException {
         // Arrange
-        Long principalId = 12345L;
+        String principalId = "0HZTEST12345";
         PrincipalType principalType = PrincipalType.USER;
 
         // Act
@@ -57,14 +57,14 @@ class TokenServiceTest {
 
         // Assert
         JsonWebToken jwt = parseToken(token);
-        assertThat(jwt.getSubject()).isEqualTo("12345");
+        assertThat(jwt.getSubject()).isEqualTo("0HZTEST12345");
     }
 
     @Test
     @DisplayName("issueToken should include type claim when token is issued")
     void issueToken_shouldIncludeType_whenTokenIssued() throws ParseException {
         // Arrange
-        Long principalId = 12345L;
+        String principalId = "0HZTEST12345";
         PrincipalType principalType = PrincipalType.USER;
 
         // Act
@@ -82,7 +82,7 @@ class TokenServiceTest {
         Instant beforeIssuance = Instant.now();
 
         // Act
-        String token = service.issueToken(12345L, PrincipalType.USER, Duration.ofHours(8));
+        String token = service.issueToken("0HZTEST12345", PrincipalType.USER, Duration.ofHours(8));
 
         Instant afterIssuance = Instant.now();
 
@@ -99,7 +99,7 @@ class TokenServiceTest {
     @DisplayName("issueToken should use default expiry when expiry is null")
     void issueToken_shouldUseDefaultExpiry_whenExpiryIsNull() throws ParseException {
         // Act
-        String token = service.issueToken(12345L, PrincipalType.SERVICE, null);
+        String token = service.issueToken("0HZTEST12345", PrincipalType.SERVICE, null);
 
         // Assert
         JsonWebToken jwt = parseToken(token);
@@ -117,7 +117,7 @@ class TokenServiceTest {
         Instant beforeIssuance = Instant.now().truncatedTo(java.time.temporal.ChronoUnit.SECONDS);
 
         // Act
-        String token = service.issueToken(12345L, PrincipalType.USER, Duration.ofHours(8));
+        String token = service.issueToken("0HZTEST12345", PrincipalType.USER, Duration.ofHours(8));
 
         Instant afterIssuance = Instant.now().truncatedTo(java.time.temporal.ChronoUnit.SECONDS);
 
@@ -134,7 +134,7 @@ class TokenServiceTest {
     @DisplayName("issueToken should include issuer claim")
     void issueToken_shouldIncludeIssuer_whenTokenIssued() throws ParseException {
         // Act
-        String token = service.issueToken(12345L, PrincipalType.USER, Duration.ofHours(8));
+        String token = service.issueToken("0HZTEST12345", PrincipalType.USER, Duration.ofHours(8));
 
         // Assert
         JsonWebToken jwt = parseToken(token);
@@ -145,12 +145,12 @@ class TokenServiceTest {
     @DisplayName("issueToken should handle SERVICE type correctly")
     void issueToken_shouldHandleServiceType_whenTypeIsService() throws ParseException {
         // Act
-        String token = service.issueToken(99999L, PrincipalType.SERVICE, Duration.ofDays(365));
+        String token = service.issueToken("0HZTEST99999", PrincipalType.SERVICE, Duration.ofDays(365));
 
         // Assert
         JsonWebToken jwt = parseToken(token);
         assertThat((String) jwt.getClaim("type")).isEqualTo("SERVICE");
-        assertThat(jwt.getSubject()).isEqualTo("99999");
+        assertThat(jwt.getSubject()).isEqualTo("0HZTEST99999");
     }
 
     // ========================================
@@ -164,7 +164,7 @@ class TokenServiceTest {
         Set<String> roles = Set.of("admin", "operator", "viewer");
 
         // Act
-        String token = service.issueTokenWithRoles(12345L, PrincipalType.USER, roles, Duration.ofHours(8));
+        String token = service.issueTokenWithRoles("0HZTEST12345", PrincipalType.USER, roles, Duration.ofHours(8));
 
         // Assert
         JsonWebToken jwt = parseToken(token);
@@ -178,11 +178,11 @@ class TokenServiceTest {
         Set<String> roles = Set.of("user");
 
         // Act
-        String token = service.issueTokenWithRoles(12345L, PrincipalType.USER, roles, Duration.ofHours(8));
+        String token = service.issueTokenWithRoles("0HZTEST12345", PrincipalType.USER, roles, Duration.ofHours(8));
 
         // Assert
         JsonWebToken jwt = parseToken(token);
-        assertThat(jwt.getSubject()).isEqualTo("12345");
+        assertThat(jwt.getSubject()).isEqualTo("0HZTEST12345");
         assertThat((String) jwt.getClaim("type")).isEqualTo("USER");
     }
 
@@ -193,7 +193,7 @@ class TokenServiceTest {
         Set<String> emptyRoles = Set.of();
 
         // Act
-        String token = service.issueTokenWithRoles(12345L, PrincipalType.USER, emptyRoles, Duration.ofHours(8));
+        String token = service.issueTokenWithRoles("0HZTEST12345", PrincipalType.USER, emptyRoles, Duration.ofHours(8));
 
         // Assert
         JsonWebToken jwt = parseToken(token);
@@ -207,7 +207,7 @@ class TokenServiceTest {
         Set<String> roles = Set.of("admin");
 
         // Act
-        String token = service.issueTokenWithRoles(12345L, PrincipalType.USER, roles, null);
+        String token = service.issueTokenWithRoles("0HZTEST12345", PrincipalType.USER, roles, null);
 
         // Assert
         JsonWebToken jwt = parseToken(token);
@@ -229,7 +229,7 @@ class TokenServiceTest {
         Instant beforeIssuance = Instant.now();
 
         // Act
-        String token = service.issueSessionToken(12345L, roles);
+        String token = service.issueSessionToken("0HZTEST12345", roles);
 
         Instant afterIssuance = Instant.now();
 
@@ -249,7 +249,7 @@ class TokenServiceTest {
         Set<String> roles = Set.of("admin", "operator");
 
         // Act
-        String token = service.issueSessionToken(12345L, roles);
+        String token = service.issueSessionToken("0HZTEST12345", roles);
 
         // Assert
         JsonWebToken jwt = parseToken(token);
@@ -263,7 +263,7 @@ class TokenServiceTest {
         Set<String> roles = Set.of("user");
 
         // Act
-        String token = service.issueSessionToken(12345L, roles);
+        String token = service.issueSessionToken("0HZTEST12345", roles);
 
         // Assert
         JsonWebToken jwt = parseToken(token);
@@ -277,11 +277,11 @@ class TokenServiceTest {
         Set<String> roles = Set.of("user");
 
         // Act
-        String token = service.issueSessionToken(12345L, roles);
+        String token = service.issueSessionToken("0HZTEST12345", roles);
 
         // Assert
         JsonWebToken jwt = parseToken(token);
-        assertThat(jwt.getSubject()).isEqualTo("12345");
+        assertThat(jwt.getSubject()).isEqualTo("0HZTEST12345");
     }
 
     // ========================================
@@ -292,7 +292,7 @@ class TokenServiceTest {
     @DisplayName("issueServiceAccountToken should have long expiry")
     void issueServiceAccountToken_shouldHaveLongExpiry_whenCalled() throws ParseException {
         // Act
-        String token = service.issueServiceAccountToken(99999L);
+        String token = service.issueServiceAccountToken("0HZTEST99999");
 
         // Assert
         JsonWebToken jwt = parseToken(token);
@@ -307,7 +307,7 @@ class TokenServiceTest {
     @DisplayName("issueServiceAccountToken should have SERVICE type")
     void issueServiceAccountToken_shouldHaveServiceType_whenCalled() throws ParseException {
         // Act
-        String token = service.issueServiceAccountToken(99999L);
+        String token = service.issueServiceAccountToken("0HZTEST99999");
 
         // Assert
         JsonWebToken jwt = parseToken(token);
@@ -318,11 +318,11 @@ class TokenServiceTest {
     @DisplayName("issueServiceAccountToken should include subject")
     void issueServiceAccountToken_shouldIncludeSubject_whenCalled() throws ParseException {
         // Act
-        String token = service.issueServiceAccountToken(99999L);
+        String token = service.issueServiceAccountToken("0HZTEST99999");
 
         // Assert
         JsonWebToken jwt = parseToken(token);
-        assertThat(jwt.getSubject()).isEqualTo("99999");
+        assertThat(jwt.getSubject()).isEqualTo("0HZTEST99999");
     }
 
     // ========================================
@@ -333,7 +333,7 @@ class TokenServiceTest {
     @DisplayName("Token should be valid JWT format")
     void token_shouldBeValidJwtFormat_whenGenerated() {
         // Act
-        String token = service.issueToken(12345L, PrincipalType.USER, Duration.ofHours(8));
+        String token = service.issueToken("0HZTEST12345", PrincipalType.USER, Duration.ofHours(8));
 
         // Assert: JWT format is header.payload.signature (3 parts separated by dots)
         assertThat(token).contains(".");
@@ -345,7 +345,7 @@ class TokenServiceTest {
     @DisplayName("Token should be signed and verifiable")
     void token_shouldBeVerifiable_whenGenerated() {
         // Act
-        String token = service.issueToken(12345L, PrincipalType.USER, Duration.ofHours(8));
+        String token = service.issueToken("0HZTEST12345", PrincipalType.USER, Duration.ofHours(8));
 
         // Assert: Should be able to parse without exception (validates signature)
         assertThatCode(() -> parseToken(token))
@@ -356,9 +356,9 @@ class TokenServiceTest {
     @DisplayName("Multiple tokens for same principal should be different")
     void tokens_shouldBeDifferent_whenGeneratedMultipleTimes() {
         // Act: Generate 3 tokens for same principal
-        String token1 = service.issueToken(12345L, PrincipalType.USER, Duration.ofHours(8));
-        String token2 = service.issueToken(12345L, PrincipalType.USER, Duration.ofHours(8));
-        String token3 = service.issueToken(12345L, PrincipalType.USER, Duration.ofHours(8));
+        String token1 = service.issueToken("0HZTEST12345", PrincipalType.USER, Duration.ofHours(8));
+        String token2 = service.issueToken("0HZTEST12345", PrincipalType.USER, Duration.ofHours(8));
+        String token3 = service.issueToken("0HZTEST12345", PrincipalType.USER, Duration.ofHours(8));
 
         // Assert: Tokens should be different (different issued-at timestamps)
         assertThat(token1).isNotEqualTo(token2);
@@ -374,7 +374,7 @@ class TokenServiceTest {
     @DisplayName("issueToken should handle very short expiry")
     void issueToken_shouldHandleVeryShortExpiry_whenExpiryIsVeryShort() throws ParseException {
         // Act: 1 minute expiry
-        String token = service.issueToken(12345L, PrincipalType.USER, Duration.ofMinutes(1));
+        String token = service.issueToken("0HZTEST12345", PrincipalType.USER, Duration.ofMinutes(1));
 
         // Assert
         JsonWebToken jwt = parseToken(token);
@@ -388,7 +388,7 @@ class TokenServiceTest {
     @DisplayName("issueToken should handle very long expiry")
     void issueToken_shouldHandleVeryLongExpiry_whenExpiryIsVeryLong() throws ParseException {
         // Act: 10 year expiry
-        String token = service.issueToken(12345L, PrincipalType.SERVICE, Duration.ofDays(3650));
+        String token = service.issueToken("0HZTEST12345", PrincipalType.SERVICE, Duration.ofDays(3650));
 
         // Assert
         JsonWebToken jwt = parseToken(token);
@@ -402,28 +402,28 @@ class TokenServiceTest {
     // ========================================
 
     @Test
-    @DisplayName("issueToken should handle large principal ID")
-    void issueToken_shouldHandleLargePrincipalId_whenIdIsLarge() throws ParseException {
-        // Arrange: Max Long value
-        Long maxPrincipalId = Long.MAX_VALUE;
+    @DisplayName("issueToken should handle various TSID principal IDs")
+    void issueToken_shouldHandleVariousTsidPrincipalIds_whenIdIsValid() throws ParseException {
+        // Arrange: A typical TSID string (13 chars, Crockford Base32)
+        String tsidPrincipalId = "0HZABCDEFGHIJ";
 
         // Act
-        String token = service.issueToken(maxPrincipalId, PrincipalType.USER, Duration.ofHours(8));
+        String token = service.issueToken(tsidPrincipalId, PrincipalType.USER, Duration.ofHours(8));
 
         // Assert
         JsonWebToken jwt = parseToken(token);
-        assertThat(jwt.getSubject()).isEqualTo(String.valueOf(Long.MAX_VALUE));
+        assertThat(jwt.getSubject()).isEqualTo("0HZABCDEFGHIJ");
     }
 
     @Test
     @DisplayName("issueToken should handle zero expiry duration")
     void issueToken_shouldHandleZeroExpiry_whenExpiryIsZero() throws ParseException {
         // Act: Zero duration (token expires immediately)
-        String token = service.issueToken(12345L, PrincipalType.USER, Duration.ZERO);
+        String token = service.issueToken("0HZTEST12345", PrincipalType.USER, Duration.ZERO);
 
         // Assert: Should still generate token (even if expired)
         JsonWebToken jwt = parseToken(token);
-        assertThat(jwt.getSubject()).isEqualTo("12345");
+        assertThat(jwt.getSubject()).isEqualTo("0HZTEST12345");
 
         Instant expiry = Instant.ofEpochSecond(jwt.getExpirationTime());
         Instant issuedAt = Instant.ofEpochSecond(jwt.getIssuedAtTime());

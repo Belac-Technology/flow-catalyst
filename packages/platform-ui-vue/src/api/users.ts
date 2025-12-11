@@ -43,6 +43,19 @@ export interface UpdateUserRequest {
   name: string;
 }
 
+export interface RoleAssignment {
+  id: string;
+  roleName: string;
+  assignmentSource: string;
+  assignedAt: string;
+}
+
+export interface RolesAssignedResponse {
+  roles: RoleAssignment[];
+  added: string[];
+  removed: string[];
+}
+
 export interface EmailDomainCheckResponse {
   domain: string;
   authProvider: string;
@@ -127,5 +140,35 @@ export const usersApi = {
 
   checkEmailDomain(email: string): Promise<EmailDomainCheckResponse> {
     return apiFetch(`/admin/platform/principals/check-email-domain?email=${encodeURIComponent(email)}`);
+  },
+
+  // Role management
+  getRoles(id: string): Promise<{ roles: RoleAssignment[] }> {
+    return apiFetch(`/admin/platform/principals/${id}/roles`);
+  },
+
+  assignRole(id: string, roleName: string): Promise<RoleAssignment> {
+    return apiFetch(`/admin/platform/principals/${id}/roles`, {
+      method: 'POST',
+      body: JSON.stringify({ roleName }),
+    });
+  },
+
+  removeRole(id: string, roleName: string): Promise<void> {
+    return apiFetch(`/admin/platform/principals/${id}/roles/${encodeURIComponent(roleName)}`, {
+      method: 'DELETE',
+    });
+  },
+
+  /**
+   * Batch assign roles to a user.
+   * This is a declarative operation - sets the complete role list.
+   * Roles not in the list will be removed, new roles will be added.
+   */
+  assignRoles(id: string, roles: string[]): Promise<RolesAssignedResponse> {
+    return apiFetch(`/admin/platform/principals/${id}/roles`, {
+      method: 'PUT',
+      body: JSON.stringify({ roles }),
+    });
   },
 };

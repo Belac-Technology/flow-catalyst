@@ -6,7 +6,7 @@ package tech.flowcatalyst.platform.authorization;
  * Permissions follow the structure: {application}:{context}:{aggregate}:{action}
  *
  * Where:
- * - application: The registered application (e.g., "platform", "tms", "inmotion")
+ * - application: The registered application (e.g., "platform", "tms", "operant")
  * - context: Bounded context within the app (e.g., "iam", "admin", "messaging", "dispatch")
  * - aggregate: The entity/resource being accessed (e.g., "user", "role", "order")
  * - action: The operation (e.g., "view", "create", "update", "delete")

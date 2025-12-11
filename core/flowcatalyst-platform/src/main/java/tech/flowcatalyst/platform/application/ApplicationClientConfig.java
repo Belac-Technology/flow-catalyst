@@ -10,7 +10,7 @@ import java.util.Map;
  * Per-client configuration for an application.
  *
  * Allows clients to have:
- * - Custom base URL (e.g., client1.inmotion.com instead of inmotion.com)
+ * - Custom base URL (e.g., client1.operant.com instead of operant.com)
  * - Enabled/disabled status per application
  * - Custom configuration settings
  */
@@ -33,7 +33,7 @@ public class ApplicationClientConfig extends PanacheMongoEntityBase {
     /**
      * Client-specific URL override.
      * If set, this URL is used instead of the application's defaultBaseUrl.
-     * Example: "client1.inmotion.com" instead of "inmotion.com"
+     * Example: "client1.operant.com" instead of "operant.com"
      */
     public String baseUrlOverride;
 

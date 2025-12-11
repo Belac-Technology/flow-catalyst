@@ -74,3 +74,26 @@ flowcatalyst.auth.external-base-url=http://localhost:4200
 Session tokens include a `clients` claim:
 - `["*"]` for ANCHOR users (access all)
 - `["123", "456"]` for specific client IDs
+
+## Database Operations - CRITICAL RULES
+
+### NEVER Drop Collections or Databases Without Permission
+**IMPORTANT**: NEVER drop MongoDB collections or databases without explicit user permission. Dropping data is destructive and irreversible.
+
+### Handling Data Type Mismatches
+When encountering MongoDB decode errors (e.g., "expected 'DATE_TIME' BsonType but got 'STRING'"), the proper fix is to **migrate the data**, not drop it:
+
+```javascript
+// Example: Fix Instant fields stored as STRING instead of DATE_TIME
+db.collection.find({ createdAt: { $type: "string" } }).forEach(function(doc) {
+  db.collection.updateOne(
+    { _id: doc._id },
+    { $set: { createdAt: new Date(doc.createdAt) } }
+  );
+});
+```
+
+### Migration vs Dropping
+- **Preferred**: Write a migration script to convert incorrect field types
+- **Alternative**: Ask user if they want to drop the affected collection
+- **Never**: Silently drop collections/databases as a "quick fix"

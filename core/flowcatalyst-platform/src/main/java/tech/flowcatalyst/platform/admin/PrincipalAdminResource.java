@@ -41,6 +41,7 @@ import tech.flowcatalyst.platform.principal.operations.deleteuser.DeleteUserComm
 import tech.flowcatalyst.platform.principal.operations.grantclientaccess.GrantClientAccessCommand;
 import tech.flowcatalyst.platform.principal.operations.revokeclientaccess.RevokeClientAccessCommand;
 import tech.flowcatalyst.platform.principal.operations.updateuser.UpdateUserCommand;
+import tech.flowcatalyst.platform.principal.operations.assignroles.AssignRolesCommand;
 
 import java.time.Instant;
 import java.util.List;
@@ -234,7 +235,7 @@ public class PrincipalAdminResource {
         return switch (result) {
             case Result.Success<UserCreated> s -> {
                 Principal principal = userOperations.findById(s.value().userId()).orElseThrow();
-                LOG.infof("User created: %s by principal %d", request.email(), adminPrincipalId);
+                LOG.infof("User created: %s by principal %s", request.email(), adminPrincipalId);
                 yield Response.status(Response.Status.CREATED)
                     .entity(toDto(principal))
                     .location(uriInfo.getBaseUriBuilder()
@@ -280,7 +281,7 @@ public class PrincipalAdminResource {
         return switch (result) {
             case Result.Success<UserUpdated> s -> {
                 Principal principal = userOperations.findById(s.value().userId()).orElseThrow();
-                LOG.infof("Principal %d updated by principal %d", id, adminPrincipalId);
+                LOG.infof("Principal %s updated by principal %s", id, adminPrincipalId);
                 yield Response.ok(toDto(principal)).build();
             }
             case Result.Failure<UserUpdated> f -> mapErrorToResponse(f.error());
@@ -320,7 +321,7 @@ public class PrincipalAdminResource {
 
         return switch (result) {
             case Result.Success<UserActivated> s -> {
-                LOG.infof("Principal %d activated by principal %d", id, adminPrincipalId);
+                LOG.infof("Principal %s activated by principal %s", id, adminPrincipalId);
                 yield Response.ok(new StatusResponse("Principal activated")).build();
             }
             case Result.Failure<UserActivated> f -> mapErrorToResponse(f.error());
@@ -358,7 +359,7 @@ public class PrincipalAdminResource {
 
         return switch (result) {
             case Result.Success<UserDeactivated> s -> {
-                LOG.infof("Principal %d deactivated by principal %d", id, adminPrincipalId);
+                LOG.infof("Principal %s deactivated by principal %s", id, adminPrincipalId);
                 yield Response.ok(new StatusResponse("Principal deactivated")).build();
             }
             case Result.Failure<UserDeactivated> f -> mapErrorToResponse(f.error());
@@ -394,7 +395,7 @@ public class PrincipalAdminResource {
 
         try {
             userService.resetPassword(id, request.newPassword());
-            LOG.infof("Password reset for principal %d by principal %d", id, adminPrincipalId);
+            LOG.infof("Password reset for principal %s by principal %s", id, adminPrincipalId);
             return Response.ok(new StatusResponse("Password reset successfully")).build();
         } catch (NotFoundException e) {
             return Response.status(Response.Status.NOT_FOUND)
@@ -440,7 +441,7 @@ public class PrincipalAdminResource {
 
         List<PrincipalRole> assignments = roleService.findAssignmentsByPrincipal(id);
         List<RoleAssignmentDto> dtos = assignments.stream()
-            .map(pr -> new RoleAssignmentDto(pr.id, pr.roleName, pr.assignmentSource, pr.assignedAt))
+            .map(pr -> new RoleAssignmentDto(pr.roleName, pr.assignmentSource, pr.assignedAt))
             .toList();
 
         return Response.ok(new RoleListResponse(dtos)).build();
@@ -473,12 +474,11 @@ public class PrincipalAdminResource {
 
         try {
             PrincipalRole assignment = roleService.assignRole(id, request.roleName(), "MANUAL");
-            LOG.infof("Role %s assigned to principal %d by principal %d",
+            LOG.infof("Role %s assigned to principal %s by principal %s",
                 request.roleName(), id, adminPrincipalId);
 
             return Response.status(Response.Status.CREATED)
                 .entity(new RoleAssignmentDto(
-                    assignment.id,
                     assignment.roleName,
                     assignment.assignmentSource,
                     assignment.assignedAt
@@ -521,7 +521,7 @@ public class PrincipalAdminResource {
 
         try {
             roleService.removeRole(id, roleName);
-            LOG.infof("Role %s removed from principal %d by principal %d",
+            LOG.infof("Role %s removed from principal %s by principal %s",
                 roleName, id, adminPrincipalId);
             return Response.noContent().build();
         } catch (NotFoundException e) {
@@ -529,6 +529,65 @@ public class PrincipalAdminResource {
                 .entity(new ErrorResponse("Role assignment not found"))
                 .build();
         }
+    }
+
+    /**
+     * Batch assign roles to a principal.
+     *
+     * <p>This is a declarative operation - the provided list represents the complete
+     * set of roles the user should have. Roles not in the list will be removed,
+     * new roles will be added.
+     */
+    @PUT
+    @Path("/{id}/roles")
+    @Operation(summary = "Batch assign roles to principal",
+        description = "Sets the complete list of roles for a principal. Roles not in the list will be removed.")
+    @APIResponses({
+        @APIResponse(responseCode = "200", description = "Roles assigned"),
+        @APIResponse(responseCode = "400", description = "Invalid role names"),
+        @APIResponse(responseCode = "404", description = "Principal not found")
+    })
+    public Response assignRoles(
+            @PathParam("id") String id,
+            @Valid AssignRolesRequest request,
+            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @HeaderParam("Authorization") String authHeader) {
+
+        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
+        if (principalIdOpt.isEmpty()) {
+            return Response.status(Response.Status.UNAUTHORIZED)
+                .entity(new ErrorResponse("Not authenticated"))
+                .build();
+        }
+        String adminPrincipalId = principalIdOpt.get();
+
+        auditContext.setPrincipalId(adminPrincipalId);
+        ExecutionContext context = ExecutionContext.from(tracingContext, adminPrincipalId);
+
+        // Build command
+        AssignRolesCommand command = new AssignRolesCommand(id, request.roles());
+
+        // Execute use case
+        Result<RolesAssigned> result = userOperations.assignRoles(command, context);
+
+        return switch (result) {
+            case Result.Success<RolesAssigned> s -> {
+                LOG.infof("Roles assigned to principal %s by principal %s: added=%s, removed=%s",
+                    id, adminPrincipalId, s.value().added(), s.value().removed());
+
+                // Return updated role assignments
+                List<RoleAssignmentDto> assignments = roleService.findAssignmentsByPrincipal(id).stream()
+                    .map(pr -> new RoleAssignmentDto(pr.roleName, pr.assignmentSource, pr.assignedAt))
+                    .toList();
+
+                yield Response.ok(new RolesAssignedResponse(
+                    assignments,
+                    s.value().added(),
+                    s.value().removed()
+                )).build();
+            }
+            case Result.Failure<RolesAssigned> f -> mapErrorToResponse(f.error());
+        };
     }
 
     // ==================== Client Access Grants ====================
@@ -603,7 +662,7 @@ public class PrincipalAdminResource {
 
         return switch (result) {
             case Result.Success<ClientAccessGranted> s -> {
-                LOG.infof("Client access to %d granted to principal %d by principal %d",
+                LOG.infof("Client access to %s granted to principal %s by principal %s",
                     request.clientId(), id, adminPrincipalId);
                 yield Response.status(Response.Status.CREATED)
                     .entity(new ClientAccessGrantDto(
@@ -650,7 +709,7 @@ public class PrincipalAdminResource {
 
         return switch (result) {
             case Result.Success<ClientAccessRevoked> s -> {
-                LOG.infof("Client access to %d revoked from principal %d by principal %d",
+                LOG.infof("Client access to %s revoked from principal %s by principal %s",
                     clientId, id, adminPrincipalId);
                 yield Response.noContent().build();
             }
@@ -876,7 +935,7 @@ public class PrincipalAdminResource {
 
         // Password is optional - only required for INTERNAL auth users
         // OIDC users will authenticate via their identity provider
-        @Size(min = 8, message = "Password must be at least 8 characters")
+        @Size(min = 12, message = "Password must be at least 12 characters")
         String password,
 
         @NotBlank(message = "Name is required")
@@ -892,7 +951,7 @@ public class PrincipalAdminResource {
 
     public record ResetPasswordRequest(
         @NotBlank(message = "New password is required")
-        @Size(min = 8, message = "Password must be at least 8 characters")
+        @Size(min = 12, message = "Password must be at least 12 characters")
         String newPassword
     ) {}
 
@@ -907,7 +966,6 @@ public class PrincipalAdminResource {
     ) {}
 
     public record RoleAssignmentDto(
-        String id,
         String roleName,
         String assignmentSource,
         Instant assignedAt
@@ -915,6 +973,17 @@ public class PrincipalAdminResource {
 
     public record RoleListResponse(
         List<RoleAssignmentDto> roles
+    ) {}
+
+    public record AssignRolesRequest(
+        @NotNull(message = "Roles list is required")
+        List<String> roles
+    ) {}
+
+    public record RolesAssignedResponse(
+        List<RoleAssignmentDto> roles,
+        List<String> added,
+        List<String> removed
     ) {}
 
     public record ClientAccessGrantDto(

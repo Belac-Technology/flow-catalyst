@@ -35,7 +35,7 @@ public class Event extends PanacheMongoEntityBase {
     public String specVersion;
 
     /**
-     * The string identifier from the event type (e.g., "inmotion:execution:trip:started")
+     * The string identifier from the event type (e.g., "operant:execution:trip:started")
      */
     public String type;
 
@@ -45,7 +45,7 @@ public class Event extends PanacheMongoEntityBase {
     public String source;
 
     /**
-     * Qualified aggregate ID (e.g., "inmotion.execution.trip.1234")
+     * Qualified aggregate ID (e.g., "operant.execution.trip.1234")
      */
     public String subject;
 

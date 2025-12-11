@@ -6,10 +6,13 @@ import com.mongodb.client.ClientSession;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
+import com.mongodb.client.model.Filters;
 import com.mongodb.client.model.ReplaceOptions;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.bson.Document;
+import org.bson.codecs.configuration.CodecRegistry;
+import org.bson.codecs.pojo.PojoCodecProvider;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import tech.flowcatalyst.event.ContextData;
 import tech.flowcatalyst.event.Event;
@@ -18,10 +21,12 @@ import tech.flowcatalyst.platform.common.errors.UseCaseError;
 import tech.flowcatalyst.platform.shared.TsidGenerator;
 
 import java.lang.reflect.Field;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+
+import static org.bson.codecs.configuration.CodecRegistries.fromProviders;
+import static org.bson.codecs.configuration.CodecRegistries.fromRegistries;
 
 /**
  * MongoDB implementation of {@link UnitOfWork} using multi-document transactions.
@@ -40,7 +45,7 @@ import java.util.Map;
  * <ul>
  *   <li>MongoDB 4.0+ (for multi-document transactions)</li>
  *   <li>Replica set deployment (transactions require replica set)</li>
- *   <li>Aggregates must have a public {@code Long id} field</li>
+ *   <li>Aggregates must have a public {@code String id} field (TSID)</li>
  *   <li>Aggregates must have a {@code @MongoEntity} annotation or follow naming convention</li>
  * </ul>
  */
@@ -130,20 +135,22 @@ public class MongoTransactionalUnitOfWork implements UnitOfWork {
     // Aggregate Operations
     // ========================================================================
 
-    private void persistAggregate(ClientSession session, MongoDatabase db, Object aggregate)
-            throws JsonProcessingException {
+    @SuppressWarnings("unchecked")
+    private <T> void persistAggregate(ClientSession session, MongoDatabase db, T aggregate) {
         String collectionName = getCollectionName(aggregate.getClass());
-        MongoCollection<Document> collection = db.getCollection(collectionName);
+        Class<T> clazz = (Class<T>) aggregate.getClass();
 
-        Long id = extractId(aggregate);
-        Document doc = documentFromObject(aggregate);
-        doc.put("_id", id);
+        // Get typed collection with POJO codec support
+        MongoCollection<T> collection = db.getCollection(collectionName, clazz)
+            .withCodecRegistry(getPojoCodecRegistry(db));
 
-        // Upsert the document
+        String id = extractId(aggregate);
+
+        // Upsert the document using typed collection
         collection.replaceOne(
             session,
-            new Document("_id", id),
-            doc,
+            Filters.eq("_id", id),
+            aggregate,
             new ReplaceOptions().upsert(true)
         );
     }
@@ -152,18 +159,22 @@ public class MongoTransactionalUnitOfWork implements UnitOfWork {
         String collectionName = getCollectionName(aggregate.getClass());
         MongoCollection<Document> collection = db.getCollection(collectionName);
 
-        Long id = extractId(aggregate);
-        collection.deleteOne(session, new Document("_id", id));
+        String id = extractId(aggregate);
+        collection.deleteOne(session, Filters.eq("_id", id));
+    }
+
+    private CodecRegistry getPojoCodecRegistry(MongoDatabase db) {
+        return fromRegistries(
+            db.getCodecRegistry(),
+            fromProviders(PojoCodecProvider.builder().automatic(true).build())
+        );
     }
 
     // ========================================================================
     // Event Operations
     // ========================================================================
 
-    private void createEvent(ClientSession session, MongoDatabase db, DomainEvent event)
-            throws JsonProcessingException {
-        MongoCollection<Document> collection = db.getCollection("events");
-
+    private void createEvent(ClientSession session, MongoDatabase db, DomainEvent event) {
         // Build context data for searchability
         List<ContextData> contextData = new ArrayList<>();
         contextData.add(new ContextData("principalId", String.valueOf(event.principalId())));
@@ -184,9 +195,9 @@ public class MongoTransactionalUnitOfWork implements UnitOfWork {
             contextData
         );
 
-        Document doc = documentFromObject(mongoEvent);
-        doc.put("_id", mongoEvent.id);
-        collection.insertOne(session, doc);
+        MongoCollection<Event> collection = db.getCollection("events", Event.class)
+            .withCodecRegistry(getPojoCodecRegistry(db));
+        collection.insertOne(session, mongoEvent);
     }
 
     // ========================================================================
@@ -195,8 +206,6 @@ public class MongoTransactionalUnitOfWork implements UnitOfWork {
 
     private void createAuditLog(ClientSession session, MongoDatabase db, DomainEvent event, Object command)
             throws JsonProcessingException {
-        MongoCollection<Document> collection = db.getCollection("audit_logs");
-
         AuditLog log = new AuditLog();
         log.id = TsidGenerator.generate();
         log.entityType = extractAggregateType(event.subject());
@@ -206,19 +215,14 @@ public class MongoTransactionalUnitOfWork implements UnitOfWork {
         log.principalId = event.principalId();
         log.performedAt = event.time();
 
-        Document doc = documentFromObject(log);
-        doc.put("_id", log.id);
-        collection.insertOne(session, doc);
+        MongoCollection<AuditLog> collection = db.getCollection("audit_logs", AuditLog.class)
+            .withCodecRegistry(getPojoCodecRegistry(db));
+        collection.insertOne(session, log);
     }
 
     // ========================================================================
     // Helper Methods
     // ========================================================================
-
-    private Document documentFromObject(Object obj) throws JsonProcessingException {
-        String json = objectMapper.writeValueAsString(obj);
-        return Document.parse(json);
-    }
 
     /**
      * Get the MongoDB collection name for an aggregate class.
@@ -251,21 +255,21 @@ public class MongoTransactionalUnitOfWork implements UnitOfWork {
      *
      * <p>Supports both:
      * <ul>
-     *   <li>Classes with a public {@code Long id} field</li>
+     *   <li>Classes with a public {@code String id} field (TSID)</li>
      *   <li>Records with an {@code id()} accessor method</li>
      * </ul>
      */
-    private Long extractId(Object aggregate) {
+    private String extractId(Object aggregate) {
         Class<?> clazz = aggregate.getClass();
 
         // First try: record accessor method id()
         if (clazz.isRecord()) {
             try {
                 var method = clazz.getMethod("id");
-                return (Long) method.invoke(aggregate);
+                return (String) method.invoke(aggregate);
             } catch (Exception e) {
                 throw new IllegalArgumentException(
-                    "Record must have an id() accessor returning Long: " + clazz.getName(),
+                    "Record must have an id() accessor returning String: " + clazz.getName(),
                     e
                 );
             }
@@ -274,10 +278,10 @@ public class MongoTransactionalUnitOfWork implements UnitOfWork {
         // Second try: public field for traditional classes
         try {
             Field field = clazz.getField("id");
-            return (Long) field.get(aggregate);
+            return (String) field.get(aggregate);
         } catch (NoSuchFieldException | IllegalAccessException e) {
             throw new IllegalArgumentException(
-                "Aggregate must have a public Long id field: " + clazz.getName(),
+                "Aggregate must have a public String id field: " + clazz.getName(),
                 e
             );
         }

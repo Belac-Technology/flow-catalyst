@@ -13,7 +13,7 @@ import Dropdown from 'primevue/dropdown';
 import Checkbox from 'primevue/checkbox';
 import AutoComplete from 'primevue/autocomplete';
 import { useToast } from 'primevue/usetoast';
-import { authConfigsApi, type AuthConfig, type AuthProvider } from '@/api/auth-configs';
+import { authConfigsApi, type AuthConfig, type AuthProvider, type AuthConfigType } from '@/api/auth-configs';
 import { clientsApi, type Client } from '@/api/clients';
 import SecretRefInput from '@/components/SecretRefInput.vue';
 
@@ -29,6 +29,7 @@ const searchQuery = ref('');
 const showCreateDialog = ref(false);
 const createForm = ref({
   emailDomain: '',
+  configType: 'CLIENT' as AuthConfigType,
   authProvider: 'INTERNAL' as AuthProvider,
   selectedClient: null as Client | null,
   oidcIssuerUrl: '',
@@ -49,6 +50,12 @@ const deleteLoading = ref(false);
 const authProviderOptions = [
   { label: 'Internal (Password)', value: 'INTERNAL' },
   { label: 'OIDC (External IDP)', value: 'OIDC' },
+];
+
+const configTypeOptions = [
+  { label: 'Client', value: 'CLIENT', description: 'Users bound to a specific client' },
+  { label: 'Partner', value: 'PARTNER', description: 'Partner IDP with granted client access' },
+  { label: 'Anchor', value: 'ANCHOR', description: 'Platform-wide access to all clients' },
 ];
 
 const filteredConfigs = computed(() => {
@@ -104,6 +111,7 @@ async function loadConfigs() {
 function openCreateDialog() {
   createForm.value = {
     emailDomain: '',
+    configType: 'CLIENT',
     authProvider: 'INTERNAL',
     selectedClient: null,
     oidcIssuerUrl: '',
@@ -122,13 +130,18 @@ async function createConfig() {
     return;
   }
 
+  // Validate CLIENT type requires a client
+  if (createForm.value.configType === 'CLIENT' && !createForm.value.selectedClient) {
+    createError.value = 'CLIENT type requires a primary client';
+    return;
+  }
+
   createLoading.value = true;
   createError.value = null;
 
-  // Extract client ID if a client is selected
-  const clientId = createForm.value.selectedClient
-    ? Number(createForm.value.selectedClient.id)
-    : undefined;
+  // Extract client ID if a client is selected (TSID string, not number)
+  const primaryClientId = createForm.value.selectedClient?.id || undefined;
+  const configType = createForm.value.configType;
 
   try {
     let created: AuthConfig;
@@ -136,7 +149,8 @@ async function createConfig() {
     if (createForm.value.authProvider === 'INTERNAL') {
       created = await authConfigsApi.createInternal({
         emailDomain: createForm.value.emailDomain.trim(),
-        clientId,
+        configType,
+        primaryClientId,
       });
     } else {
       if (!createForm.value.oidcIssuerUrl.trim()) {
@@ -152,7 +166,8 @@ async function createConfig() {
 
       created = await authConfigsApi.createOidc({
         emailDomain: createForm.value.emailDomain.trim(),
-        clientId,
+        configType,
+        primaryClientId,
         oidcIssuerUrl: createForm.value.oidcIssuerUrl.trim(),
         oidcClientId: createForm.value.oidcClientId.trim(),
         oidcClientSecretRef: createForm.value.oidcClientSecretRef.trim() || undefined,
@@ -245,6 +260,24 @@ function getProviderLabel(provider: AuthProvider) {
   return provider === 'OIDC' ? 'OIDC' : 'Internal';
 }
 
+function getConfigTypeSeverity(configType: AuthConfigType) {
+  switch (configType) {
+    case 'ANCHOR': return 'warn';
+    case 'PARTNER': return 'info';
+    case 'CLIENT': return 'success';
+    default: return 'secondary';
+  }
+}
+
+function getConfigTypeLabel(configType: AuthConfigType) {
+  switch (configType) {
+    case 'ANCHOR': return 'Anchor';
+    case 'PARTNER': return 'Partner';
+    case 'CLIENT': return 'Client';
+    default: return configType;
+  }
+}
+
 function formatDate(dateString: string) {
   return new Date(dateString).toLocaleDateString();
 }
@@ -299,12 +332,20 @@ function formatDate(dateString: string) {
             />
           </template>
         </Column>
-        <Column field="clientId" header="Client Binding" sortable>
+        <Column field="configType" header="Type" sortable>
           <template #body="{ data }">
-            <span v-if="data.clientId" class="client-name">
-              {{ getClientName(data.clientId) || data.clientId }}
+            <Tag
+              :value="getConfigTypeLabel(data.configType)"
+              :severity="getConfigTypeSeverity(data.configType)"
+            />
+          </template>
+        </Column>
+        <Column field="primaryClientId" header="Primary Client" sortable>
+          <template #body="{ data }">
+            <span v-if="data.primaryClientId" class="client-name">
+              {{ getClientName(data.primaryClientId) || data.primaryClientId }}
             </span>
-            <Tag v-else value="Platform/Anchor" severity="warn" />
+            <span v-else class="text-muted">-</span>
           </template>
         </Column>
         <Column header="OIDC Issuer" sortable>
@@ -376,6 +417,36 @@ function formatDate(dateString: string) {
         </div>
 
         <div class="field">
+          <label for="configType">Configuration Type</label>
+          <Dropdown
+            id="configType"
+            v-model="createForm.configType"
+            :options="configTypeOptions"
+            optionLabel="label"
+            optionValue="value"
+            class="w-full"
+          >
+            <template #option="slotProps">
+              <div class="config-type-option">
+                <span class="type-label">{{ slotProps.option.label }}</span>
+                <span class="type-description">{{ slotProps.option.description }}</span>
+              </div>
+            </template>
+          </Dropdown>
+          <small class="field-help">
+            <template v-if="createForm.configType === 'ANCHOR'">
+              Users will have platform-wide access to all clients
+            </template>
+            <template v-else-if="createForm.configType === 'PARTNER'">
+              Partner users with access to specific granted clients
+            </template>
+            <template v-else>
+              Users will be bound to a specific primary client
+            </template>
+          </small>
+        </div>
+
+        <div class="field">
           <label for="authProvider">Authentication Method</label>
           <Dropdown
             id="authProvider"
@@ -387,15 +458,15 @@ function formatDate(dateString: string) {
           />
         </div>
 
-        <div class="field">
-          <label for="clientBinding">Client Binding (Optional)</label>
+        <div v-if="createForm.configType === 'CLIENT'" class="field">
+          <label for="clientBinding">Primary Client</label>
           <AutoComplete
             id="clientBinding"
             v-model="createForm.selectedClient"
             :suggestions="filteredClients"
             @complete="searchClients"
             optionLabel="name"
-            placeholder="Search for a client or leave empty for platform-wide"
+            placeholder="Search for a client"
             class="w-full"
             dropdown
           >
@@ -407,8 +478,7 @@ function formatDate(dateString: string) {
             </template>
           </AutoComplete>
           <small class="field-help">
-            If set, users from this domain will be bound to this client.
-            Leave empty for platform/anchor domain users.
+            Users from this domain will be bound to this client
           </small>
         </div>
 
@@ -596,6 +666,23 @@ function formatDate(dateString: string) {
   font-size: 12px;
   color: #64748b;
   font-family: monospace;
+}
+
+.config-type-option {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 0;
+}
+
+.config-type-option .type-label {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.config-type-option .type-description {
+  font-size: 12px;
+  color: #64748b;
 }
 
 .dialog-content {

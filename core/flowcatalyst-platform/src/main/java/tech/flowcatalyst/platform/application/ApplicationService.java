@@ -5,8 +5,6 @@ import jakarta.inject.Inject;
 import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.NotFoundException;
 import tech.flowcatalyst.platform.authorization.PermissionRegistry;
-import tech.flowcatalyst.platform.authorization.PrincipalRoleRepository;
-import tech.flowcatalyst.platform.authorization.PrincipalRole;
 import tech.flowcatalyst.platform.principal.Principal;
 import tech.flowcatalyst.platform.principal.PrincipalRepository;
 import tech.flowcatalyst.platform.shared.TsidGenerator;
@@ -37,9 +35,6 @@ public class ApplicationService {
 
     @Inject
     PrincipalRepository principalRepo;
-
-    @Inject
-    PrincipalRoleRepository roleRepo;
 
     @Inject
     ClientRepository clientRepo;
@@ -222,11 +217,10 @@ public class ApplicationService {
      * @return List of accessible applications
      */
     public List<Application> getAccessibleApplications(String principalId) {
-        // Get all roles for the principal
-        List<PrincipalRole> principalRoles = roleRepo.findByPrincipalId(principalId);
-        Set<String> roleStrings = principalRoles.stream()
-            .map(pr -> pr.roleName)
-            .collect(Collectors.toSet());
+        // Get all roles from embedded Principal.roles
+        Set<String> roleStrings = principalRepo.findByIdOptional(principalId)
+            .map(Principal::getRoleNames)
+            .orElse(Set.of());
 
         // Extract application codes from roles
         Set<String> appCodes = PermissionRegistry.extractApplicationCodes(roleStrings);
@@ -247,10 +241,9 @@ public class ApplicationService {
      * @return Set of role strings for that application
      */
     public Set<String> getRolesForApplication(String principalId, String applicationCode) {
-        List<PrincipalRole> principalRoles = roleRepo.findByPrincipalId(principalId);
-        Set<String> roleStrings = principalRoles.stream()
-            .map(pr -> pr.roleName)
-            .collect(Collectors.toSet());
+        Set<String> roleStrings = principalRepo.findByIdOptional(principalId)
+            .map(Principal::getRoleNames)
+            .orElse(Set.of());
 
         return PermissionRegistry.filterRolesForApplication(roleStrings, applicationCode);
     }

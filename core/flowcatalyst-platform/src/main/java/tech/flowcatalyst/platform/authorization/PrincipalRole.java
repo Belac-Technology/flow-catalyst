@@ -1,22 +1,14 @@
 package tech.flowcatalyst.platform.authorization;
 
-import io.quarkus.mongodb.panache.common.MongoEntity;
-import io.quarkus.mongodb.panache.PanacheMongoEntityBase;
-import org.bson.codecs.pojo.annotations.BsonId;
 import java.time.Instant;
 
 /**
- * Junction table for many-to-many relationship between principals and roles.
- * IDP roles apply globally to all accessible tenants.
+ * DTO for role assignment information.
+ * Used for API responses and internal compatibility.
  *
- * Uses string-based role names (e.g., "platform:tenant-admin") instead of role IDs.
- * Role definitions are code-first and stored in PermissionRegistry.
+ * Actual role storage is embedded in Principal.roles (MongoDB denormalized pattern).
  */
-@MongoEntity(collection = "principal_roles")
-public class PrincipalRole extends PanacheMongoEntityBase {
-
-    @BsonId
-    public String id;
+public class PrincipalRole {
 
     public String principalId;
 
@@ -31,8 +23,20 @@ public class PrincipalRole extends PanacheMongoEntityBase {
      */
     public String assignmentSource;
 
-    public Instant assignedAt = Instant.now();
+    public Instant assignedAt;
 
     public PrincipalRole() {
+    }
+
+    /**
+     * Create from Principal.RoleAssignment for API responses.
+     */
+    public static PrincipalRole from(String principalId, tech.flowcatalyst.platform.principal.Principal.RoleAssignment assignment) {
+        PrincipalRole pr = new PrincipalRole();
+        pr.principalId = principalId;
+        pr.roleName = assignment.roleName;
+        pr.assignmentSource = assignment.assignmentSource;
+        pr.assignedAt = assignment.assignedAt;
+        return pr;
     }
 }

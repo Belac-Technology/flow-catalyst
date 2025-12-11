@@ -16,6 +16,7 @@ import tech.flowcatalyst.platform.principal.UserService;
 import tech.flowcatalyst.platform.client.Client;
 import tech.flowcatalyst.platform.client.ClientService;
 
+import java.util.List;
 import java.util.Set;
 
 import static io.restassured.RestAssured.given;
@@ -59,7 +60,7 @@ class ApplicationAdminResourceTest {
             null
         );
 
-        adminToken = jwtKeyService.issueSessionToken(adminUser.id, adminUser.userIdentity.email, Set.of("platform:admin"));
+        adminToken = jwtKeyService.issueSessionToken(adminUser.id, adminUser.userIdentity.email, Set.of("platform:admin"), List.of("*"));
     }
 
     // ==================== List Applications ====================

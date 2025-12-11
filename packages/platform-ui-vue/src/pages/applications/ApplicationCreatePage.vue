@@ -84,7 +84,7 @@ async function onSubmit() {
             <label>Code <span class="required">*</span></label>
             <InputText
               v-model="code"
-              placeholder="e.g., inmotion"
+              placeholder="e.g., operant"
               class="full-width"
               :invalid="code && !isCodeValid"
             />

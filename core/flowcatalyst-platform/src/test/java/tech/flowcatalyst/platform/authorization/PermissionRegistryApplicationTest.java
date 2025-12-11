@@ -16,7 +16,7 @@ class PermissionRegistryApplicationTest {
     @Test
     @DisplayName("extractApplicationCode should return first segment")
     void extractApplicationCode_shouldReturnFirstSegment() {
-        assertEquals("inmotion", PermissionRegistry.extractApplicationCode("inmotion:dispatch:admin"));
+        assertEquals("operant", PermissionRegistry.extractApplicationCode("operant:dispatch:admin"));
         assertEquals("platform", PermissionRegistry.extractApplicationCode("platform:admin"));
         assertEquals("analytics", PermissionRegistry.extractApplicationCode("analytics:viewer"));
     }
@@ -33,7 +33,7 @@ class PermissionRegistryApplicationTest {
     @Test
     @DisplayName("getDisplayName should return everything after first colon")
     void getDisplayName_shouldReturnAfterFirstColon() {
-        assertEquals("dispatch:admin", PermissionRegistry.getDisplayName("inmotion:dispatch:admin"));
+        assertEquals("dispatch:admin", PermissionRegistry.getDisplayName("operant:dispatch:admin"));
         assertEquals("admin", PermissionRegistry.getDisplayName("platform:admin"));
         assertEquals("tenant:user:create", PermissionRegistry.getDisplayName("platform:tenant:user:create"));
     }
@@ -51,8 +51,8 @@ class PermissionRegistryApplicationTest {
     @DisplayName("extractApplicationCodes should return unique codes from roles")
     void extractApplicationCodes_shouldReturnUniqueCodes() {
         Set<String> roles = Set.of(
-            "inmotion:dispatch:admin",
-            "inmotion:dispatch:viewer",
+            "operant:dispatch:admin",
+            "operant:dispatch:viewer",
             "platform:admin",
             "analytics:viewer"
         );
@@ -60,7 +60,7 @@ class PermissionRegistryApplicationTest {
         Set<String> appCodes = PermissionRegistry.extractApplicationCodes(roles);
 
         assertEquals(3, appCodes.size());
-        assertTrue(appCodes.contains("inmotion"));
+        assertTrue(appCodes.contains("operant"));
         assertTrue(appCodes.contains("platform"));
         assertTrue(appCodes.contains("analytics"));
     }
@@ -77,23 +77,23 @@ class PermissionRegistryApplicationTest {
     @DisplayName("filterRolesForApplication should return only matching roles")
     void filterRolesForApplication_shouldReturnMatchingRoles() {
         Set<String> roles = Set.of(
-            "inmotion:dispatch:admin",
-            "inmotion:dispatch:viewer",
+            "operant:dispatch:admin",
+            "operant:dispatch:viewer",
             "platform:admin",
             "analytics:viewer"
         );
 
-        Set<String> inmotionRoles = PermissionRegistry.filterRolesForApplication(roles, "inmotion");
+        Set<String> operantRoles = PermissionRegistry.filterRolesForApplication(roles, "operant");
 
-        assertEquals(2, inmotionRoles.size());
-        assertTrue(inmotionRoles.contains("inmotion:dispatch:admin"));
-        assertTrue(inmotionRoles.contains("inmotion:dispatch:viewer"));
+        assertEquals(2, operantRoles.size());
+        assertTrue(operantRoles.contains("operant:dispatch:admin"));
+        assertTrue(operantRoles.contains("operant:dispatch:viewer"));
     }
 
     @Test
     @DisplayName("filterRolesForApplication should return empty for no matches")
     void filterRolesForApplication_shouldReturnEmptyForNoMatches() {
-        Set<String> roles = Set.of("inmotion:admin", "platform:admin");
+        Set<String> roles = Set.of("operant:admin", "platform:admin");
 
         Set<String> result = PermissionRegistry.filterRolesForApplication(roles, "unknown");
 

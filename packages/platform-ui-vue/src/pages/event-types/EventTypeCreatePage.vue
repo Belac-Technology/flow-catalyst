@@ -126,7 +126,7 @@ async function onSubmit() {
                 v-model="application"
                 :suggestions="filteredAppCodes"
                 @complete="searchAppCodes"
-                placeholder="e.g., inmotion"
+                placeholder="e.g., operant"
                 :invalid="application && !isValidSegment(application)"
                 dropdown
               />

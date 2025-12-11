@@ -5,7 +5,7 @@ package tech.flowcatalyst.platform.principal.operations.updateuser;
  *
  * @param userId   User's ID
  * @param name     User's display name (null to keep existing)
- * @param clientId Home client ID (null to keep existing, use Long.MIN_VALUE to clear)
+ * @param clientId Home client ID (null to keep existing, empty string to clear)
  */
 public record UpdateUserCommand(
     String userId,

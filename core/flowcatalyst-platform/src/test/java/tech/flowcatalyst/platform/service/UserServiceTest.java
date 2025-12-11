@@ -5,7 +5,6 @@ import jakarta.ws.rs.NotFoundException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -52,7 +51,7 @@ class UserServiceTest {
         String email = "john@acme.com";
         String password = "SecurePass123!";
         String name = "John Doe";
-        Long clientId = 100L;
+        String clientId = "0HZTEST00100";
 
         when(principalRepo.findByEmail(email)).thenReturn(Optional.empty());
         when(passwordService.validateAndHashPassword(password)).thenReturn("$2a$10$hashed...");
@@ -80,7 +79,7 @@ class UserServiceTest {
     @Test
     @DisplayName("createInternalUser should throw exception when email is null")
     void createInternalUser_shouldThrowException_whenEmailIsNull() {
-        assertThatThrownBy(() -> service.createInternalUser(null, "Password123!", "John", 100L))
+        assertThatThrownBy(() -> service.createInternalUser(null, "Password123!", "John", "0HZTEST00100"))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("Email cannot be null or empty");
     }
@@ -88,7 +87,7 @@ class UserServiceTest {
     @Test
     @DisplayName("createInternalUser should throw exception when email is blank")
     void createInternalUser_shouldThrowException_whenEmailIsBlank() {
-        assertThatThrownBy(() -> service.createInternalUser("  ", "Password123!", "John", 100L))
+        assertThatThrownBy(() -> service.createInternalUser("  ", "Password123!", "John", "0HZTEST00100"))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("Email cannot be null or empty");
     }
@@ -98,12 +97,12 @@ class UserServiceTest {
     void createInternalUser_shouldThrowException_whenEmailAlreadyExists() {
         // Arrange
         String email = "existing@acme.com";
-        Principal existingPrincipal = createInternalUserPrincipal(1L, email, 100L);
+        Principal existingPrincipal = createInternalUserPrincipal("0HZTEST00001", email, "0HZTEST00100");
 
         when(principalRepo.findByEmail(email)).thenReturn(Optional.of(existingPrincipal));
 
         // Act & Assert
-        assertThatThrownBy(() -> service.createInternalUser(email, "Password123!", "John", 100L))
+        assertThatThrownBy(() -> service.createInternalUser(email, "Password123!", "John", "0HZTEST00100"))
             .isInstanceOf(BadRequestException.class)
             .hasMessageContaining("Email already exists");
 
@@ -123,7 +122,7 @@ class UserServiceTest {
             .thenThrow(new IllegalArgumentException("Password must be at least 12 characters long"));
 
         // Act & Assert
-        assertThatThrownBy(() -> service.createInternalUser(email, weakPassword, "John", 100L))
+        assertThatThrownBy(() -> service.createInternalUser(email, weakPassword, "John", "0HZTEST00100"))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("Password must be at least 12 characters long");
 
@@ -154,7 +153,7 @@ class UserServiceTest {
         when(passwordService.validateAndHashPassword(anyString())).thenReturn("$2a$10$hashed...");
 
         // Act
-        Principal result = service.createInternalUser("USER@ACME.COM", "SecurePass123!", "User", 100L);
+        Principal result = service.createInternalUser("USER@ACME.COM", "SecurePass123!", "User", "0HZTEST00100");
 
         // Assert: Domain should be lowercase
         assertThat(result.userIdentity.emailDomain).isEqualTo("acme.com");
@@ -171,13 +170,13 @@ class UserServiceTest {
         String email = "alice@customer.com";
         String name = "Alice Smith";
         String externalIdpId = "google-oauth2|123456789";
-        Long clientId = 200L;
+        String clientId = "0HZTEST00200";
 
         when(principalRepo.findByEmail(email)).thenReturn(Optional.empty());
 
         // Act
         Instant beforeCall = Instant.now();
-        Principal result = service.createOrUpdateOidcUser(email, name, externalIdpId, clientId);
+        Principal result = service.createOrUpdateOidcUser(email, name, externalIdpId, clientId, null);
         Instant afterCall = Instant.now();
 
         // Assert
@@ -209,18 +208,18 @@ class UserServiceTest {
         String oldExternalId = "old-id-123";
         String newExternalId = "new-id-456";
 
-        Principal existingUser = createOidcUserPrincipal(1L, email, 200L, oldExternalId);
+        Principal existingUser = createOidcUserPrincipal("0HZTEST00001", email, "0HZTEST00200", oldExternalId);
         existingUser.name = oldName;
 
         when(principalRepo.findByEmail(email)).thenReturn(Optional.of(existingUser));
 
         // Act
         Instant beforeCall = Instant.now();
-        Principal result = service.createOrUpdateOidcUser(email, newName, newExternalId, 200L);
+        Principal result = service.createOrUpdateOidcUser(email, newName, newExternalId, "0HZTEST00200", null);
         Instant afterCall = Instant.now();
 
         // Assert
-        assertThat(result.id).isEqualTo(1L); // Same ID
+        assertThat(result.id).isEqualTo("0HZTEST00001"); // Same ID
         assertThat(result.name).isEqualTo(newName); // Updated name
         assertThat(result.userIdentity.externalIdpId).isEqualTo(newExternalId); // Updated external ID
         assertThat(result.userIdentity.lastLoginAt).isBetween(beforeCall, afterCall);
@@ -235,7 +234,7 @@ class UserServiceTest {
         when(principalRepo.findByEmail(anyString())).thenReturn(Optional.empty());
 
         // Act
-        Principal result = service.createOrUpdateOidcUser("admin@mycompany.com", "Admin", "idp-123", null);
+        Principal result = service.createOrUpdateOidcUser("admin@mycompany.com", "Admin", "idp-123", null, null);
 
         // Assert
         assertThat(result.clientId).isNull();
@@ -249,8 +248,8 @@ class UserServiceTest {
     @DisplayName("updateUser should update name when user exists")
     void updateUser_shouldUpdateName_whenUserExists() {
         // Arrange
-        Long principalId = 123L;
-        Principal user = createInternalUserPrincipal(principalId, "john@acme.com", 100L);
+        String principalId = "0HZTEST00123";
+        Principal user = createInternalUserPrincipal(principalId, "john@acme.com", "0HZTEST00100");
         user.name = "Old Name";
 
         when(principalRepo.findByIdOptional(principalId)).thenReturn(Optional.of(user));
@@ -266,10 +265,10 @@ class UserServiceTest {
     @DisplayName("updateUser should throw NotFoundException when user does not exist")
     void updateUser_shouldThrowNotFoundException_whenUserDoesNotExist() {
         // Arrange
-        when(principalRepo.findByIdOptional(999L)).thenReturn(Optional.empty());
+        when(principalRepo.findByIdOptional("0HZTEST00999")).thenReturn(Optional.empty());
 
         // Act & Assert
-        assertThatThrownBy(() -> service.updateUser(999L, "New Name"))
+        assertThatThrownBy(() -> service.updateUser("0HZTEST00999", "New Name"))
             .isInstanceOf(NotFoundException.class)
             .hasMessageContaining("User not found");
     }
@@ -279,13 +278,13 @@ class UserServiceTest {
     void updateUser_shouldThrowException_whenPrincipalIsNotUser() {
         // Arrange
         Principal serviceAccount = new Principal();
-        serviceAccount.id = 123L;
+        serviceAccount.id = "0HZTEST00123";
         serviceAccount.type = PrincipalType.SERVICE;
 
-        when(principalRepo.findByIdOptional(123L)).thenReturn(Optional.of(serviceAccount));
+        when(principalRepo.findByIdOptional("0HZTEST00123")).thenReturn(Optional.of(serviceAccount));
 
         // Act & Assert
-        assertThatThrownBy(() -> service.updateUser(123L, "New Name"))
+        assertThatThrownBy(() -> service.updateUser("0HZTEST00123", "New Name"))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("Principal is not a user");
     }
@@ -298,13 +297,13 @@ class UserServiceTest {
     @DisplayName("deactivateUser should set active to false when user exists")
     void deactivateUser_shouldSetActiveFalse_whenUserExists() {
         // Arrange
-        Principal user = createInternalUserPrincipal(123L, "john@acme.com", 100L);
+        Principal user = createInternalUserPrincipal("0HZTEST00123", "john@acme.com", "0HZTEST00100");
         user.active = true;
 
-        when(principalRepo.findByIdOptional(123L)).thenReturn(Optional.of(user));
+        when(principalRepo.findByIdOptional("0HZTEST00123")).thenReturn(Optional.of(user));
 
         // Act
-        service.deactivateUser(123L);
+        service.deactivateUser("0HZTEST00123");
 
         // Assert
         assertThat(user.active).isFalse();
@@ -314,10 +313,10 @@ class UserServiceTest {
     @DisplayName("deactivateUser should throw NotFoundException when user does not exist")
     void deactivateUser_shouldThrowNotFoundException_whenUserDoesNotExist() {
         // Arrange
-        when(principalRepo.findByIdOptional(999L)).thenReturn(Optional.empty());
+        when(principalRepo.findByIdOptional("0HZTEST00999")).thenReturn(Optional.empty());
 
         // Act & Assert
-        assertThatThrownBy(() -> service.deactivateUser(999L))
+        assertThatThrownBy(() -> service.deactivateUser("0HZTEST00999"))
             .isInstanceOf(NotFoundException.class)
             .hasMessageContaining("User not found");
     }
@@ -327,13 +326,13 @@ class UserServiceTest {
     void deactivateUser_shouldThrowException_whenPrincipalIsServiceAccount() {
         // Arrange
         Principal serviceAccount = new Principal();
-        serviceAccount.id = 123L;
+        serviceAccount.id = "0HZTEST00123";
         serviceAccount.type = PrincipalType.SERVICE;
 
-        when(principalRepo.findByIdOptional(123L)).thenReturn(Optional.of(serviceAccount));
+        when(principalRepo.findByIdOptional("0HZTEST00123")).thenReturn(Optional.of(serviceAccount));
 
         // Act & Assert
-        assertThatThrownBy(() -> service.deactivateUser(123L))
+        assertThatThrownBy(() -> service.deactivateUser("0HZTEST00123"))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("Principal is not a user");
     }
@@ -346,13 +345,13 @@ class UserServiceTest {
     @DisplayName("activateUser should set active to true when user exists")
     void activateUser_shouldSetActiveTrue_whenUserExists() {
         // Arrange
-        Principal user = createInternalUserPrincipal(123L, "john@acme.com", 100L);
+        Principal user = createInternalUserPrincipal("0HZTEST00123", "john@acme.com", "0HZTEST00100");
         user.active = false;
 
-        when(principalRepo.findByIdOptional(123L)).thenReturn(Optional.of(user));
+        when(principalRepo.findByIdOptional("0HZTEST00123")).thenReturn(Optional.of(user));
 
         // Act
-        service.activateUser(123L);
+        service.activateUser("0HZTEST00123");
 
         // Assert
         assertThat(user.active).isTrue();
@@ -362,10 +361,10 @@ class UserServiceTest {
     @DisplayName("activateUser should throw NotFoundException when user does not exist")
     void activateUser_shouldThrowNotFoundException_whenUserDoesNotExist() {
         // Arrange
-        when(principalRepo.findByIdOptional(999L)).thenReturn(Optional.empty());
+        when(principalRepo.findByIdOptional("0HZTEST00999")).thenReturn(Optional.empty());
 
         // Act & Assert
-        assertThatThrownBy(() -> service.activateUser(999L))
+        assertThatThrownBy(() -> service.activateUser("0HZTEST00999"))
             .isInstanceOf(NotFoundException.class)
             .hasMessageContaining("User not found");
     }
@@ -378,15 +377,15 @@ class UserServiceTest {
     @DisplayName("resetPassword should update password hash when user is INTERNAL")
     void resetPassword_shouldUpdatePasswordHash_whenUserIsInternal() {
         // Arrange
-        Principal user = createInternalUserPrincipal(123L, "john@acme.com", 100L);
+        Principal user = createInternalUserPrincipal("0HZTEST00123", "john@acme.com", "0HZTEST00100");
         user.userIdentity.passwordHash = "$2a$10$oldHash";
 
-        when(principalRepo.findByIdOptional(123L)).thenReturn(Optional.of(user));
+        when(principalRepo.findByIdOptional("0HZTEST00123")).thenReturn(Optional.of(user));
         when(passwordService.validateAndHashPassword("NewSecurePass123!"))
             .thenReturn("$2a$10$newHash");
 
         // Act
-        service.resetPassword(123L, "NewSecurePass123!");
+        service.resetPassword("0HZTEST00123", "NewSecurePass123!");
 
         // Assert
         assertThat(user.userIdentity.passwordHash).isEqualTo("$2a$10$newHash");
@@ -396,12 +395,12 @@ class UserServiceTest {
     @DisplayName("resetPassword should throw exception when user is OIDC")
     void resetPassword_shouldThrowException_whenUserIsOidc() {
         // Arrange
-        Principal oidcUser = createOidcUserPrincipal(123L, "alice@customer.com", 200L, "idp-123");
+        Principal oidcUser = createOidcUserPrincipal("0HZTEST00123", "alice@customer.com", "0HZTEST00200", "idp-123");
 
-        when(principalRepo.findByIdOptional(123L)).thenReturn(Optional.of(oidcUser));
+        when(principalRepo.findByIdOptional("0HZTEST00123")).thenReturn(Optional.of(oidcUser));
 
         // Act & Assert
-        assertThatThrownBy(() -> service.resetPassword(123L, "NewSecurePass123!"))
+        assertThatThrownBy(() -> service.resetPassword("0HZTEST00123", "NewSecurePass123!"))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("Cannot reset password for OIDC users");
 
@@ -412,10 +411,10 @@ class UserServiceTest {
     @DisplayName("resetPassword should throw NotFoundException when user does not exist")
     void resetPassword_shouldThrowNotFoundException_whenUserDoesNotExist() {
         // Arrange
-        when(principalRepo.findByIdOptional(999L)).thenReturn(Optional.empty());
+        when(principalRepo.findByIdOptional("0HZTEST00999")).thenReturn(Optional.empty());
 
         // Act & Assert
-        assertThatThrownBy(() -> service.resetPassword(999L, "NewSecurePass123!"))
+        assertThatThrownBy(() -> service.resetPassword("0HZTEST00999", "NewSecurePass123!"))
             .isInstanceOf(NotFoundException.class)
             .hasMessageContaining("User not found");
     }
@@ -424,13 +423,13 @@ class UserServiceTest {
     @DisplayName("resetPassword should validate password complexity")
     void resetPassword_shouldValidatePasswordComplexity_whenResettingPassword() {
         // Arrange
-        Principal user = createInternalUserPrincipal(123L, "john@acme.com", 100L);
-        when(principalRepo.findByIdOptional(123L)).thenReturn(Optional.of(user));
+        Principal user = createInternalUserPrincipal("0HZTEST00123", "john@acme.com", "0HZTEST00100");
+        when(principalRepo.findByIdOptional("0HZTEST00123")).thenReturn(Optional.of(user));
         when(passwordService.validateAndHashPassword("weak"))
             .thenThrow(new IllegalArgumentException("Password must be at least 12 characters long"));
 
         // Act & Assert
-        assertThatThrownBy(() -> service.resetPassword(123L, "weak"))
+        assertThatThrownBy(() -> service.resetPassword("0HZTEST00123", "weak"))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("Password must be at least 12 characters long");
     }
@@ -443,16 +442,16 @@ class UserServiceTest {
     @DisplayName("changePassword should update password when old password correct")
     void changePassword_shouldUpdatePassword_whenOldPasswordCorrect() {
         // Arrange
-        Principal user = createInternalUserPrincipal(123L, "john@acme.com", 100L);
+        Principal user = createInternalUserPrincipal("0HZTEST00123", "john@acme.com", "0HZTEST00100");
         user.userIdentity.passwordHash = "$2a$10$oldHash";
 
-        when(principalRepo.findByIdOptional(123L)).thenReturn(Optional.of(user));
+        when(principalRepo.findByIdOptional("0HZTEST00123")).thenReturn(Optional.of(user));
         when(passwordService.verifyPassword("OldSecurePass123!", "$2a$10$oldHash")).thenReturn(true);
         when(passwordService.validateAndHashPassword("NewSecurePass123!"))
             .thenReturn("$2a$10$newHash");
 
         // Act
-        service.changePassword(123L, "OldSecurePass123!", "NewSecurePass123!");
+        service.changePassword("0HZTEST00123", "OldSecurePass123!", "NewSecurePass123!");
 
         // Assert
         assertThat(user.userIdentity.passwordHash).isEqualTo("$2a$10$newHash");
@@ -462,14 +461,14 @@ class UserServiceTest {
     @DisplayName("changePassword should throw exception when old password incorrect")
     void changePassword_shouldThrowException_whenOldPasswordIncorrect() {
         // Arrange
-        Principal user = createInternalUserPrincipal(123L, "john@acme.com", 100L);
+        Principal user = createInternalUserPrincipal("0HZTEST00123", "john@acme.com", "0HZTEST00100");
         user.userIdentity.passwordHash = "$2a$10$oldHash";
 
-        when(principalRepo.findByIdOptional(123L)).thenReturn(Optional.of(user));
+        when(principalRepo.findByIdOptional("0HZTEST00123")).thenReturn(Optional.of(user));
         when(passwordService.verifyPassword("WrongOldPass!", "$2a$10$oldHash")).thenReturn(false);
 
         // Act & Assert
-        assertThatThrownBy(() -> service.changePassword(123L, "WrongOldPass!", "NewSecurePass123!"))
+        assertThatThrownBy(() -> service.changePassword("0HZTEST00123", "WrongOldPass!", "NewSecurePass123!"))
             .isInstanceOf(BadRequestException.class)
             .hasMessageContaining("Current password is incorrect");
 
@@ -482,12 +481,12 @@ class UserServiceTest {
     @DisplayName("changePassword should throw exception when user is OIDC")
     void changePassword_shouldThrowException_whenUserIsOidc() {
         // Arrange
-        Principal oidcUser = createOidcUserPrincipal(123L, "alice@customer.com", 200L, "idp-123");
+        Principal oidcUser = createOidcUserPrincipal("0HZTEST00123", "alice@customer.com", "0HZTEST00200", "idp-123");
 
-        when(principalRepo.findByIdOptional(123L)).thenReturn(Optional.of(oidcUser));
+        when(principalRepo.findByIdOptional("0HZTEST00123")).thenReturn(Optional.of(oidcUser));
 
         // Act & Assert
-        assertThatThrownBy(() -> service.changePassword(123L, "OldPass123!", "NewPass123!"))
+        assertThatThrownBy(() -> service.changePassword("0HZTEST00123", "OldPass123!", "NewPass123!"))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("Cannot change password for OIDC users");
     }
@@ -496,16 +495,16 @@ class UserServiceTest {
     @DisplayName("changePassword should validate new password complexity")
     void changePassword_shouldValidateNewPasswordComplexity_whenChangingPassword() {
         // Arrange
-        Principal user = createInternalUserPrincipal(123L, "john@acme.com", 100L);
+        Principal user = createInternalUserPrincipal("0HZTEST00123", "john@acme.com", "0HZTEST00100");
         user.userIdentity.passwordHash = "$2a$10$oldHash";
 
-        when(principalRepo.findByIdOptional(123L)).thenReturn(Optional.of(user));
+        when(principalRepo.findByIdOptional("0HZTEST00123")).thenReturn(Optional.of(user));
         when(passwordService.verifyPassword("OldSecurePass123!", "$2a$10$oldHash")).thenReturn(true);
         when(passwordService.validateAndHashPassword("weak"))
             .thenThrow(new IllegalArgumentException("Password must be at least 12 characters long"));
 
         // Act & Assert
-        assertThatThrownBy(() -> service.changePassword(123L, "OldSecurePass123!", "weak"))
+        assertThatThrownBy(() -> service.changePassword("0HZTEST00123", "OldSecurePass123!", "weak"))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("Password must be at least 12 characters long");
     }
@@ -518,7 +517,7 @@ class UserServiceTest {
     @DisplayName("findByEmail should return user when email exists")
     void findByEmail_shouldReturnUser_whenEmailExists() {
         // Arrange
-        Principal user = createInternalUserPrincipal(123L, "john@acme.com", 100L);
+        Principal user = createInternalUserPrincipal("0HZTEST00123", "john@acme.com", "0HZTEST00100");
         when(principalRepo.findByEmail("john@acme.com")).thenReturn(Optional.of(user));
 
         // Act
@@ -526,7 +525,7 @@ class UserServiceTest {
 
         // Assert
         assertThat(result).isPresent();
-        assertThat(result.get().id).isEqualTo(123L);
+        assertThat(result.get().id).isEqualTo("0HZTEST00123");
         assertThat(result.get().userIdentity.email).isEqualTo("john@acme.com");
     }
 
@@ -551,25 +550,25 @@ class UserServiceTest {
     @DisplayName("findById should return user when ID exists")
     void findById_shouldReturnUser_whenIdExists() {
         // Arrange
-        Principal user = createInternalUserPrincipal(123L, "john@acme.com", 100L);
-        when(principalRepo.findByIdOptional(123L)).thenReturn(Optional.of(user));
+        Principal user = createInternalUserPrincipal("0HZTEST00123", "john@acme.com", "0HZTEST00100");
+        when(principalRepo.findByIdOptional("0HZTEST00123")).thenReturn(Optional.of(user));
 
         // Act
-        Optional<Principal> result = service.findById(123L);
+        Optional<Principal> result = service.findById("0HZTEST00123");
 
         // Assert
         assertThat(result).isPresent();
-        assertThat(result.get().id).isEqualTo(123L);
+        assertThat(result.get().id).isEqualTo("0HZTEST00123");
     }
 
     @Test
     @DisplayName("findById should return empty when ID does not exist")
     void findById_shouldReturnEmpty_whenIdDoesNotExist() {
         // Arrange
-        when(principalRepo.findByIdOptional(999L)).thenReturn(Optional.empty());
+        when(principalRepo.findByIdOptional("0HZTEST00999")).thenReturn(Optional.empty());
 
         // Act
-        Optional<Principal> result = service.findById(999L);
+        Optional<Principal> result = service.findById("0HZTEST00999");
 
         // Assert
         assertThat(result).isEmpty();
@@ -583,17 +582,17 @@ class UserServiceTest {
     @DisplayName("findByClient should return all users for client including inactive")
     void findByClient_shouldReturnAllUsers_whenClientHasUsers() {
         // Arrange
-        Principal user1 = createInternalUserPrincipal(1L, "john@acme.com", 100L);
+        Principal user1 = createInternalUserPrincipal("0HZTEST00001", "john@acme.com", "0HZTEST00100");
         user1.active = true;
-        Principal user2 = createInternalUserPrincipal(2L, "jane@acme.com", 100L);
+        Principal user2 = createInternalUserPrincipal("0HZTEST00002", "jane@acme.com", "0HZTEST00100");
         user2.active = false; // Inactive user
 
         io.quarkus.mongodb.panache.PanacheQuery<Principal> mockQuery = mockPanacheQuery(List.of(user1, user2));
-        when(principalRepo.find("clientId = ?1 and type = ?2", 100L, PrincipalType.USER))
+        when(principalRepo.find("clientId = ?1 and type = ?2", "0HZTEST00100", PrincipalType.USER))
             .thenReturn(mockQuery);
 
         // Act
-        List<Principal> result = service.findByClient(100L);
+        List<Principal> result = service.findByClient("0HZTEST00100");
 
         // Assert
         assertThat(result).hasSize(2);
@@ -605,11 +604,11 @@ class UserServiceTest {
     void findByClient_shouldReturnEmpty_whenClientHasNoUsers() {
         // Arrange
         io.quarkus.mongodb.panache.PanacheQuery<Principal> mockQuery = mockPanacheQuery(List.of());
-        when(principalRepo.find("clientId = ?1 and type = ?2", 999L, PrincipalType.USER))
+        when(principalRepo.find("clientId = ?1 and type = ?2", "0HZTEST00999", PrincipalType.USER))
             .thenReturn(mockQuery);
 
         // Act
-        List<Principal> result = service.findByClient(999L);
+        List<Principal> result = service.findByClient("0HZTEST00999");
 
         // Assert
         assertThat(result).isEmpty();
@@ -623,15 +622,15 @@ class UserServiceTest {
     @DisplayName("findActiveByClient should return only active users")
     void findActiveByClient_shouldReturnOnlyActiveUsers_whenClientHasUsers() {
         // Arrange
-        Principal user1 = createInternalUserPrincipal(1L, "john@acme.com", 100L);
+        Principal user1 = createInternalUserPrincipal("0HZTEST00001", "john@acme.com", "0HZTEST00100");
         user1.active = true;
 
         io.quarkus.mongodb.panache.PanacheQuery<Principal> mockQuery = mockPanacheQuery(List.of(user1));
-        when(principalRepo.find("clientId = ?1 and type = ?2 and active = true", 100L, PrincipalType.USER))
+        when(principalRepo.find("clientId = ?1 and type = ?2 and active = true", "0HZTEST00100", PrincipalType.USER))
             .thenReturn(mockQuery);
 
         // Act
-        List<Principal> result = service.findActiveByClient(100L);
+        List<Principal> result = service.findActiveByClient("0HZTEST00100");
 
         // Assert
         assertThat(result).hasSize(1);
@@ -646,14 +645,14 @@ class UserServiceTest {
     @DisplayName("updateLastLogin should update timestamp when user exists")
     void updateLastLogin_shouldUpdateTimestamp_whenUserExists() {
         // Arrange
-        Principal user = createInternalUserPrincipal(123L, "john@acme.com", 100L);
+        Principal user = createInternalUserPrincipal("0HZTEST00123", "john@acme.com", "0HZTEST00100");
         user.userIdentity.lastLoginAt = null;
 
-        when(principalRepo.findByIdOptional(123L)).thenReturn(Optional.of(user));
+        when(principalRepo.findByIdOptional("0HZTEST00123")).thenReturn(Optional.of(user));
 
         // Act
         Instant beforeCall = Instant.now();
-        service.updateLastLogin(123L);
+        service.updateLastLogin("0HZTEST00123");
         Instant afterCall = Instant.now();
 
         // Assert
@@ -665,10 +664,10 @@ class UserServiceTest {
     @DisplayName("updateLastLogin should not crash when user does not exist")
     void updateLastLogin_shouldNotCrash_whenUserDoesNotExist() {
         // Arrange
-        when(principalRepo.findByIdOptional(999L)).thenReturn(Optional.empty());
+        when(principalRepo.findByIdOptional("0HZTEST00999")).thenReturn(Optional.empty());
 
         // Act & Assert: Should not throw
-        assertThatCode(() -> service.updateLastLogin(999L))
+        assertThatCode(() -> service.updateLastLogin("0HZTEST00999"))
             .doesNotThrowAnyException();
     }
 
@@ -677,14 +676,14 @@ class UserServiceTest {
     void updateLastLogin_shouldHandleNullUserIdentity_whenUserIdentityIsNull() {
         // Arrange
         Principal serviceAccount = new Principal();
-        serviceAccount.id = 123L;
+        serviceAccount.id = "0HZTEST00123";
         serviceAccount.type = PrincipalType.SERVICE;
         serviceAccount.userIdentity = null;
 
-        when(principalRepo.findByIdOptional(123L)).thenReturn(Optional.of(serviceAccount));
+        when(principalRepo.findByIdOptional("0HZTEST00123")).thenReturn(Optional.of(serviceAccount));
 
         // Act & Assert: Should not throw
-        assertThatCode(() -> service.updateLastLogin(123L))
+        assertThatCode(() -> service.updateLastLogin("0HZTEST00123"))
             .doesNotThrowAnyException();
     }
 
@@ -692,7 +691,7 @@ class UserServiceTest {
     // HELPER METHODS
     // ========================================
 
-    private Principal createInternalUserPrincipal(Long id, String email, Long clientId) {
+    private Principal createInternalUserPrincipal(String id, String email, String clientId) {
         Principal p = new Principal();
         p.id = id;
         p.type = PrincipalType.USER;
@@ -710,7 +709,7 @@ class UserServiceTest {
         return p;
     }
 
-    private Principal createOidcUserPrincipal(Long id, String email, Long clientId, String externalIdpId) {
+    private Principal createOidcUserPrincipal(String id, String email, String clientId, String externalIdpId) {
         Principal p = new Principal();
         p.id = id;
         p.type = PrincipalType.USER;

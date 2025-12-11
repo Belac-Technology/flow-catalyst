@@ -10,8 +10,6 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 import org.jboss.logging.Logger;
-import tech.flowcatalyst.platform.authorization.PrincipalRole;
-import tech.flowcatalyst.platform.authorization.PrincipalRoleRepository;
 import tech.flowcatalyst.platform.principal.PasswordService;
 import tech.flowcatalyst.platform.principal.Principal;
 import tech.flowcatalyst.platform.principal.PrincipalRepository;
@@ -21,7 +19,6 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 /**
  * Authentication endpoints for human users.
@@ -42,9 +39,6 @@ public class AuthResource {
 
     @Inject
     PrincipalRepository principalRepository;
-
-    @Inject
-    PrincipalRoleRepository principalRoleRepository;
 
     @Inject
     PasswordService passwordService;
@@ -116,11 +110,8 @@ public class AuthResource {
                     .build();
         }
 
-        // Load roles
-        List<PrincipalRole> principalRoles = principalRoleRepository.findByPrincipalId(principal.id);
-        Set<String> roles = principalRoles.stream()
-                .map(pr -> pr.roleName)
-                .collect(Collectors.toSet());
+        // Load roles from embedded Principal.roles
+        Set<String> roles = principal.getRoleNames();
 
         // Determine accessible clients
         List<String> clients = determineAccessibleClients(principal, roles);
@@ -207,10 +198,7 @@ public class AuthResource {
             }
 
             Principal principal = principalOpt.get();
-            List<PrincipalRole> principalRoles = principalRoleRepository.findByPrincipalId(principal.id);
-            Set<String> roles = principalRoles.stream()
-                    .map(pr -> pr.roleName)
-                    .collect(Collectors.toSet());
+            Set<String> roles = principal.getRoleNames();
 
             return Response.ok(new LoginResponse(
                     principal.id,

@@ -52,8 +52,8 @@ public class UpdateUserUseCase {
         }
 
         if (command.clientId() != null) {
-            if (command.clientId().equals(Long.MIN_VALUE)) {
-                // Clear client ID
+            if (command.clientId().isEmpty()) {
+                // Clear client ID (empty string signals clearing)
                 principal.clientId = null;
             } else {
                 principal.clientId = command.clientId();

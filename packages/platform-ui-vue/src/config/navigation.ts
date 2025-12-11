@@ -80,6 +80,11 @@ export const NAVIGATION_CONFIG: NavGroup[] = [
         icon: 'pi pi-building',
         route: '/clients',
       },
+      {
+        label: 'Audit Log',
+        icon: 'pi pi-history',
+        route: '/platform/audit-log',
+      },
     ],
   },
   {

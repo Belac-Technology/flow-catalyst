@@ -220,7 +220,7 @@ public class OAuthClientAdminResource {
 
         clientRepo.persist(client);
 
-        LOG.infof("OAuth client created: %s (%s) by principal %d",
+        LOG.infof("OAuth client created: %s (%s) by principal %s",
             client.clientName, client.clientId, adminPrincipalId);
 
         // Return the client with the plain secret (only time it's visible)
@@ -289,7 +289,7 @@ public class OAuthClientAdminResource {
         }
 
         clientRepo.update(client);
-        LOG.infof("OAuth client updated: %s by principal %d", client.clientId, adminPrincipalId);
+        LOG.infof("OAuth client updated: %s by principal %s", client.clientId, adminPrincipalId);
 
         return Response.ok(toDto(client)).build();
     }
@@ -340,7 +340,7 @@ public class OAuthClientAdminResource {
         client.clientSecretHash = passwordService.hashPassword(newSecret);
         clientRepo.update(client);
 
-        LOG.infof("OAuth client secret rotated: %s by principal %d", client.clientId, adminPrincipalId);
+        LOG.infof("OAuth client secret rotated: %s by principal %s", client.clientId, adminPrincipalId);
 
         return Response.ok(new RotateSecretResponse(client.clientId, newSecret)).build();
     }
@@ -377,7 +377,7 @@ public class OAuthClientAdminResource {
 
         client.active = true;
         clientRepo.update(client);
-        LOG.infof("OAuth client activated: %s by principal %d", client.clientId, adminPrincipalId);
+        LOG.infof("OAuth client activated: %s by principal %s", client.clientId, adminPrincipalId);
 
         return Response.ok(new StatusResponse("Client activated")).build();
     }
@@ -414,7 +414,7 @@ public class OAuthClientAdminResource {
 
         client.active = false;
         clientRepo.update(client);
-        LOG.infof("OAuth client deactivated: %s by principal %d", client.clientId, adminPrincipalId);
+        LOG.infof("OAuth client deactivated: %s by principal %s", client.clientId, adminPrincipalId);
 
         return Response.ok(new StatusResponse("Client deactivated")).build();
     }

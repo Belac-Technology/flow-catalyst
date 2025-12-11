@@ -91,5 +91,14 @@ public class PlatformIamPermissions {
         "Delete service accounts"
     );
 
+    // ========================================================================
+    // Identity Provider (IDP) Management
+    // ========================================================================
+
+    public static final PermissionDefinition IDP_MANAGE = PermissionDefinition.make(
+        "platform", "iam", "idp", "manage",
+        "Manage identity provider configurations (create, update, delete domain IDPs)"
+    );
+
     private PlatformIamPermissions() {}
 }

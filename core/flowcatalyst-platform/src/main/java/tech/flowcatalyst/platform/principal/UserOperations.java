@@ -7,6 +7,7 @@ import tech.flowcatalyst.platform.client.ClientAccessGrantRepository;
 import tech.flowcatalyst.platform.client.ClientAccessService;
 import tech.flowcatalyst.platform.common.ExecutionContext;
 import tech.flowcatalyst.platform.common.Result;
+import tech.flowcatalyst.platform.principal.events.RolesAssigned;
 import tech.flowcatalyst.platform.principal.events.*;
 import tech.flowcatalyst.platform.principal.operations.activateuser.ActivateUserCommand;
 import tech.flowcatalyst.platform.principal.operations.activateuser.ActivateUserUseCase;
@@ -22,6 +23,8 @@ import tech.flowcatalyst.platform.principal.operations.revokeclientaccess.Revoke
 import tech.flowcatalyst.platform.principal.operations.revokeclientaccess.RevokeClientAccessUseCase;
 import tech.flowcatalyst.platform.principal.operations.updateuser.UpdateUserCommand;
 import tech.flowcatalyst.platform.principal.operations.updateuser.UpdateUserUseCase;
+import tech.flowcatalyst.platform.principal.operations.assignroles.AssignRolesCommand;
+import tech.flowcatalyst.platform.principal.operations.assignroles.AssignRolesUseCase;
 
 import java.util.List;
 import java.util.Optional;
@@ -75,6 +78,9 @@ public class UserOperations {
 
     @Inject
     RevokeClientAccessUseCase revokeClientAccessUseCase;
+
+    @Inject
+    AssignRolesUseCase assignRolesUseCase;
 
     /**
      * Create a new User.
@@ -151,6 +157,20 @@ public class UserOperations {
      */
     public Result<ClientAccessRevoked> revokeClientAccess(RevokeClientAccessCommand command, ExecutionContext context) {
         return revokeClientAccessUseCase.execute(command, context);
+    }
+
+    /**
+     * Assign roles to a user.
+     *
+     * <p>This is a batch operation that sets the complete role set.
+     * Roles not in the list will be removed, new roles will be added.
+     *
+     * @param command The command containing user ID and desired roles
+     * @param context The execution context
+     * @return Success with RolesAssigned, or Failure with error
+     */
+    public Result<RolesAssigned> assignRoles(AssignRolesCommand command, ExecutionContext context) {
+        return assignRolesUseCase.execute(command, context);
     }
 
     // ========================================================================

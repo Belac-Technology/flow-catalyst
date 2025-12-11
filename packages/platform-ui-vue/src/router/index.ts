@@ -160,6 +160,12 @@ const router = createRouter({
           name: 'dispatch-jobs',
           component: () => import('@/pages/dispatch-jobs/DispatchJobListPage.vue'),
         },
+        // Platform - Audit Log
+        {
+          path: 'platform/audit-log',
+          name: 'audit-log',
+          component: () => import('@/pages/platform/AuditLogListPage.vue'),
+        },
         // Profile
         {
           path: 'profile',

@@ -14,11 +14,11 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.eclipse.microprofile.jwt.JsonWebToken;
 import org.jboss.logging.Logger;
-import tech.flowcatalyst.platform.authorization.PrincipalRole;
-import tech.flowcatalyst.platform.authorization.PrincipalRoleRepository;
+import tech.flowcatalyst.platform.principal.Principal;
+import tech.flowcatalyst.platform.principal.PrincipalRepository;
 
 import java.util.HashSet;
-import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -38,7 +38,7 @@ public class InternalIdentityProvider implements IdentityProvider<TokenAuthentic
     JwtKeyService jwtKeyService;
 
     @Inject
-    PrincipalRoleRepository principalRoleRepository;
+    PrincipalRepository principalRepository;
 
     @Override
     public Class<TokenAuthenticationRequest> getRequestType() {
@@ -65,11 +65,11 @@ public class InternalIdentityProvider implements IdentityProvider<TokenAuthentic
                 String principalId = jwt.getSubject();
                 Set<String> roles = new HashSet<>(jwt.getGroups());
 
-                // If no roles in token, load from database
+                // If no roles in token, load from embedded Principal.roles
                 if (roles.isEmpty()) {
-                    List<PrincipalRole> principalRoles = principalRoleRepository.findByPrincipalId(principalId);
-                    for (PrincipalRole pr : principalRoles) {
-                        roles.add(pr.roleName);
+                    Optional<Principal> principalOpt = principalRepository.findByIdOptional(principalId);
+                    if (principalOpt.isPresent()) {
+                        roles.addAll(principalOpt.get().getRoleNames());
                     }
                 }
 

@@ -25,9 +25,11 @@ public class PlatformAdminRole {
             PlatformAdminPermissions.APPLICATION_UPDATE,
             PlatformAdminPermissions.APPLICATION_DELETE,
             PlatformAdminPermissions.CONFIG_VIEW,
-            PlatformAdminPermissions.CONFIG_UPDATE
+            PlatformAdminPermissions.CONFIG_UPDATE,
+            // IDP management - configure authentication for domains
+            PlatformIamPermissions.IDP_MANAGE
         ),
-        "Platform administrator - manages clients and applications"
+        "Platform administrator - manages clients, applications, and identity providers"
     );
 
     private PlatformAdminRole() {}

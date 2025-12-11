@@ -13,7 +13,7 @@ import java.util.List;
  * schema versions for backwards compatibility.
  *
  * Code format: {APPLICATION}:{SUBDOMAIN}:{AGGREGATE}:{EVENT}
- * Example: inmotion:execution:trip:started
+ * Example: operant:execution:trip:started
  */
 @MongoEntity(collection = "event_types")
 public record EventType(

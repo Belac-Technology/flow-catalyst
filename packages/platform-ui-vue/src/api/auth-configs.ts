@@ -2,9 +2,16 @@ import { apiFetch } from './client';
 
 export type AuthProvider = 'INTERNAL' | 'OIDC';
 
+export type AuthConfigType = 'ANCHOR' | 'PARTNER' | 'CLIENT';
+
 export interface AuthConfig {
   id: string;
   emailDomain: string;
+  configType: AuthConfigType;
+  primaryClientId: string | null;
+  additionalClientIds: string[];
+  grantedClientIds: string[];
+  /** @deprecated Use primaryClientId instead */
   clientId: string | null;
   authProvider: AuthProvider;
   oidcIssuerUrl: string | null;
@@ -23,12 +30,18 @@ export interface AuthConfigListResponse {
 
 export interface CreateInternalConfigRequest {
   emailDomain: string;
-  clientId?: number | null;
+  configType: AuthConfigType;
+  primaryClientId?: string | null;
+  /** @deprecated Use configType and primaryClientId instead */
+  clientId?: string | null;
 }
 
 export interface CreateOidcConfigRequest {
   emailDomain: string;
-  clientId?: number | null;
+  configType: AuthConfigType;
+  primaryClientId?: string | null;
+  /** @deprecated Use configType and primaryClientId instead */
+  clientId?: string | null;
   oidcIssuerUrl: string;
   oidcClientId: string;
   oidcClientSecretRef?: string;
@@ -44,6 +57,23 @@ export interface UpdateOidcConfigRequest {
   oidcIssuerPattern?: string;
 }
 
+export interface UpdateClientBindingRequest {
+  clientId: string | null;
+}
+
+export interface UpdateConfigTypeRequest {
+  configType: AuthConfigType;
+  primaryClientId?: string | null;
+}
+
+export interface UpdateAdditionalClientsRequest {
+  additionalClientIds: string[];
+}
+
+export interface UpdateGrantedClientsRequest {
+  grantedClientIds: string[];
+}
+
 export interface ValidateSecretRequest {
   secretRef: string;
 }
@@ -54,7 +84,7 @@ export interface SecretValidationResponse {
 }
 
 export const authConfigsApi = {
-  list(clientId?: number): Promise<AuthConfigListResponse> {
+  list(clientId?: string): Promise<AuthConfigListResponse> {
     const params = clientId ? `?clientId=${clientId}` : '';
     return apiFetch(`/admin/platform/auth-configs${params}`);
   },
@@ -85,6 +115,34 @@ export const authConfigsApi = {
     return apiFetch(`/admin/platform/auth-configs/${id}/oidc`, {
       method: 'PUT',
       body: JSON.stringify(data),
+    });
+  },
+
+  updateClientBinding(id: string, clientId: string | null): Promise<AuthConfig> {
+    return apiFetch(`/admin/platform/auth-configs/${id}/client-binding`, {
+      method: 'PUT',
+      body: JSON.stringify({ clientId }),
+    });
+  },
+
+  updateConfigType(id: string, data: UpdateConfigTypeRequest): Promise<AuthConfig> {
+    return apiFetch(`/admin/platform/auth-configs/${id}/config-type`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  updateAdditionalClients(id: string, additionalClientIds: string[]): Promise<AuthConfig> {
+    return apiFetch(`/admin/platform/auth-configs/${id}/additional-clients`, {
+      method: 'PUT',
+      body: JSON.stringify({ additionalClientIds }),
+    });
+  },
+
+  updateGrantedClients(id: string, grantedClientIds: string[]): Promise<AuthConfig> {
+    return apiFetch(`/admin/platform/auth-configs/${id}/granted-clients`, {
+      method: 'PUT',
+      body: JSON.stringify({ grantedClientIds }),
     });
   },
 

@@ -10,8 +10,9 @@ import Column from 'primevue/column';
 import AutoComplete from 'primevue/autocomplete';
 import Dialog from 'primevue/dialog';
 import ProgressSpinner from 'primevue/progressspinner';
-import {usersApi, type User, type ClientAccessGrant} from '@/api/users';
+import {usersApi, type User, type ClientAccessGrant, type RoleAssignment, type RolesAssignedResponse} from '@/api/users';
 import {clientsApi, type Client} from '@/api/clients';
+import {rolesApi, type Role} from '@/api/roles';
 
 const router = useRouter();
 const route = useRoute();
@@ -34,6 +35,14 @@ const showAddClientDialog = ref(false);
 const clientSearchQuery = ref('');
 const selectedClient = ref<Client | null>(null);
 const filteredClients = ref<Client[]>([]);
+
+// Role management
+const roleAssignments = ref<RoleAssignment[]>([]);
+const availableRoles = ref<Role[]>([]);
+const showRolePickerDialog = ref(false);
+const roleSearchQuery = ref('');
+const selectedRoleNames = ref<Set<string>>(new Set());
+const savingRoles = ref(false);
 
 const isAnchorUser = computed(() => user.value?.isAnchorUser ?? false);
 
@@ -87,10 +96,29 @@ const availableClients = computed(() => {
   return clients.value.filter(c => !existingIds.has(c.id));
 });
 
+// Roles filtered by search query for the picker
+const filteredAvailableRoles = computed(() => {
+  const query = roleSearchQuery.value.toLowerCase();
+  return availableRoles.value.filter(r =>
+      r.name.toLowerCase().includes(query) ||
+      r.displayName?.toLowerCase().includes(query)
+  );
+});
+
+// Check if there are unsaved changes in the role picker
+const hasRoleChanges = computed(() => {
+  const currentRoles = new Set(roleAssignments.value.map(r => r.roleName));
+  if (currentRoles.size !== selectedRoleNames.value.size) return true;
+  for (const role of currentRoles) {
+    if (!selectedRoleNames.value.has(role)) return true;
+  }
+  return false;
+});
+
 onMounted(async () => {
-  await Promise.all([loadUser(), loadClients()]);
+  await Promise.all([loadUser(), loadClients(), loadAvailableRoles()]);
   if (user.value) {
-    await loadClientGrants();
+    await Promise.all([loadClientGrants(), loadRoleAssignments()]);
   }
   loading.value = false;
 });
@@ -126,6 +154,24 @@ async function loadClientGrants() {
     clientGrants.value = response.grants;
   } catch (error) {
     console.error('Failed to fetch client grants:', error);
+  }
+}
+
+async function loadAvailableRoles() {
+  try {
+    const response = await rolesApi.list();
+    availableRoles.value = response.items;
+  } catch (error) {
+    console.error('Failed to fetch available roles:', error);
+  }
+}
+
+async function loadRoleAssignments() {
+  try {
+    const response = await usersApi.getRoles(userId);
+    roleAssignments.value = response.roles;
+  } catch (error) {
+    console.error('Failed to fetch role assignments:', error);
   }
 }
 
@@ -266,6 +312,86 @@ async function revokeClientAccess(clientId: string) {
   } finally {
     saving.value = false;
   }
+}
+
+function openRolePicker() {
+  // Initialize selected roles from current assignments
+  selectedRoleNames.value = new Set(roleAssignments.value.map(r => r.roleName));
+  roleSearchQuery.value = '';
+  showRolePickerDialog.value = true;
+}
+
+function toggleRole(roleName: string) {
+  if (selectedRoleNames.value.has(roleName)) {
+    selectedRoleNames.value.delete(roleName);
+  } else {
+    selectedRoleNames.value.add(roleName);
+  }
+  // Force reactivity update
+  selectedRoleNames.value = new Set(selectedRoleNames.value);
+}
+
+function removeSelectedRole(roleName: string) {
+  selectedRoleNames.value.delete(roleName);
+  selectedRoleNames.value = new Set(selectedRoleNames.value);
+}
+
+function cancelRolePicker() {
+  showRolePickerDialog.value = false;
+}
+
+async function saveRoles() {
+  savingRoles.value = true;
+  try {
+    const roles = Array.from(selectedRoleNames.value);
+    const response: RolesAssignedResponse = await usersApi.assignRoles(userId, roles);
+
+    // Update role assignments from response
+    roleAssignments.value = response.roles;
+
+    // Update user.roles for display
+    if (user.value) {
+      user.value.roles = roles;
+    }
+
+    showRolePickerDialog.value = false;
+
+    const added = response.added.length;
+    const removed = response.removed.length;
+    let detail = 'Roles updated';
+    if (added > 0 && removed > 0) {
+      detail = `Added ${added} role(s), removed ${removed} role(s)`;
+    } else if (added > 0) {
+      detail = `Added ${added} role(s)`;
+    } else if (removed > 0) {
+      detail = `Removed ${removed} role(s)`;
+    }
+
+    toast.add({
+      severity: 'success',
+      summary: 'Success',
+      detail,
+      life: 3000
+    });
+  } catch (error: any) {
+    toast.add({
+      severity: 'error',
+      summary: 'Error',
+      detail: error?.message || 'Failed to save roles',
+      life: 5000
+    });
+  } finally {
+    savingRoles.value = false;
+  }
+}
+
+// Get role display info from available roles
+function getRoleDisplay(roleName: string) {
+  const role = availableRoles.value.find(r => r.name === roleName);
+  return {
+    displayName: role?.displayName || roleName.split(':').pop() || roleName,
+    fullName: roleName
+  };
 }
 
 function formatDate(dateStr: string | null | undefined) {
@@ -445,22 +571,47 @@ function goBack() {
       <div class="fc-card">
         <div class="card-header">
           <h2 class="card-title">Roles</h2>
-        </div>
-
-        <div v-if="!user.roles || user.roles.length === 0" class="no-roles-notice">
-          <p>No roles assigned to this user.</p>
-        </div>
-
-        <div v-else class="roles-grid">
-          <Tag
-              v-for="role in user.roles"
-              :key="role"
-              :value="role.split(':').pop()"
-              severity="secondary"
-              class="role-tag"
-              v-tooltip.top="role"
+          <Button
+              label="Manage Roles"
+              icon="pi pi-pencil"
+              text
+              @click="openRolePicker"
           />
         </div>
+
+        <div v-if="roleAssignments.length === 0" class="no-roles-notice">
+          <p>No roles assigned to this user.</p>
+          <Button
+              label="Assign Roles"
+              icon="pi pi-plus"
+              text
+              @click="openRolePicker"
+          />
+        </div>
+
+        <DataTable v-else :value="roleAssignments" class="p-datatable-sm">
+          <Column field="roleName" header="Role">
+            <template #body="{ data }">
+              <div class="role-cell">
+                <span class="role-name">{{ data.roleName.split(':').pop() }}</span>
+                <span class="role-full-name">{{ data.roleName }}</span>
+              </div>
+            </template>
+          </Column>
+          <Column field="assignmentSource" header="Source">
+            <template #body="{ data }">
+              <Tag
+                  :value="data.assignmentSource"
+                  :severity="data.assignmentSource === 'MANUAL' ? 'info' : 'secondary'"
+              />
+            </template>
+          </Column>
+          <Column field="assignedAt" header="Assigned">
+            <template #body="{ data }">
+              {{ formatDate(data.assignedAt) }}
+            </template>
+          </Column>
+        </DataTable>
       </div>
     </template>
 
@@ -499,6 +650,89 @@ function goBack() {
             :disabled="!selectedClient"
             :loading="saving"
             @click="grantClientAccess"
+        />
+      </template>
+    </Dialog>
+
+    <!-- Role Picker Dialog (Dual-Pane) -->
+    <Dialog
+        v-model:visible="showRolePickerDialog"
+        header="Manage Roles"
+        :style="{width: '700px'}"
+        :modal="true"
+        :closable="!savingRoles"
+    >
+      <div class="role-picker">
+        <!-- Left Pane: Available Roles -->
+        <div class="role-pane available-roles">
+          <div class="pane-header">
+            <h4>Available Roles</h4>
+            <InputText
+                v-model="roleSearchQuery"
+                placeholder="Filter roles..."
+                class="role-filter"
+            />
+          </div>
+          <div class="role-list">
+            <div
+                v-for="role in filteredAvailableRoles"
+                :key="role.name"
+                class="role-item"
+                :class="{ selected: selectedRoleNames.has(role.name) }"
+                @click="toggleRole(role.name)"
+            >
+              <div class="role-item-content">
+                <span class="role-display-name">{{ role.displayName || role.name }}</span>
+                <span class="role-name-code">{{ role.name }}</span>
+              </div>
+              <i v-if="selectedRoleNames.has(role.name)" class="pi pi-check check-icon"></i>
+            </div>
+            <div v-if="filteredAvailableRoles.length === 0" class="no-results">
+              No roles found
+            </div>
+          </div>
+        </div>
+
+        <!-- Right Pane: Selected Roles -->
+        <div class="role-pane selected-roles">
+          <div class="pane-header">
+            <h4>Selected Roles ({{ selectedRoleNames.size }})</h4>
+          </div>
+          <div class="role-list">
+            <div
+                v-for="roleName in selectedRoleNames"
+                :key="roleName"
+                class="role-item selected-item"
+            >
+              <div class="role-item-content">
+                <span class="role-display-name">{{ getRoleDisplay(roleName).displayName }}</span>
+                <span class="role-name-code">{{ roleName }}</span>
+              </div>
+              <Button
+                  icon="pi pi-times"
+                  text
+                  rounded
+                  severity="danger"
+                  size="small"
+                  @click="removeSelectedRole(roleName)"
+                  v-tooltip.top="'Remove'"
+              />
+            </div>
+            <div v-if="selectedRoleNames.size === 0" class="no-results">
+              No roles selected
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <template #footer>
+        <Button label="Cancel" text @click="cancelRolePicker" :disabled="savingRoles"/>
+        <Button
+            label="Save Roles"
+            icon="pi pi-check"
+            :disabled="!hasRoleChanges"
+            :loading="savingRoles"
+            @click="saveRoles"
         />
       </template>
     </Dialog>
@@ -686,13 +920,166 @@ function goBack() {
   padding: 4px 0;
 }
 
+.role-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.role-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: #1e293b;
+}
+
+.role-full-name {
+  font-size: 12px;
+  color: #64748b;
+  font-family: monospace;
+}
+
+.role-option {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 0;
+}
+
+.role-display-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: #1e293b;
+}
+
+.role-name-code {
+  font-size: 12px;
+  color: #64748b;
+  font-family: monospace;
+}
+
 .w-full {
   width: 100%;
+}
+
+/* Dual-pane role picker styles */
+.role-picker {
+  display: flex;
+  gap: 16px;
+  min-height: 350px;
+}
+
+.role-pane {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.pane-header {
+  padding: 12px;
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.pane-header h4 {
+  margin: 0 0 8px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.selected-roles .pane-header h4 {
+  margin-bottom: 0;
+}
+
+.role-filter {
+  width: 100%;
+}
+
+.role-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.role-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.role-item:hover {
+  background: #f1f5f9;
+}
+
+.role-item.selected {
+  background: #eff6ff;
+}
+
+.role-item.selected-item {
+  background: #f8fafc;
+  cursor: default;
+}
+
+.role-item.selected-item:hover {
+  background: #f1f5f9;
+}
+
+.role-item-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.role-item-content .role-display-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: #1e293b;
+}
+
+.role-item-content .role-name-code {
+  font-size: 11px;
+  color: #64748b;
+  font-family: monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.check-icon {
+  color: #3b82f6;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.no-results {
+  padding: 20px;
+  text-align: center;
+  color: #94a3b8;
+  font-size: 13px;
 }
 
 @media (max-width: 768px) {
   .info-grid {
     grid-template-columns: 1fr;
+  }
+
+  .role-picker {
+    flex-direction: column;
+    min-height: 500px;
+  }
+
+  .role-pane {
+    min-height: 200px;
   }
 }
 </style>

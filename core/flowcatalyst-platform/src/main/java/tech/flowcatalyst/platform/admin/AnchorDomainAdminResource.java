@@ -195,7 +195,7 @@ public class AnchorDomainAdminResource {
 
         anchorDomainRepo.persist(domain);
 
-        LOG.infof("Created anchor domain: %s by principal %d", normalizedDomain, principalId);
+        LOG.infof("Created anchor domain: %s by principal %s", normalizedDomain, principalId);
 
         // Count affected users
         long affectedUsers = principalRepo.find("userIdentity.emailDomain", normalizedDomain).count();

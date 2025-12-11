@@ -8,7 +8,6 @@ import org.eclipse.microprofile.openapi.annotations.parameters.Parameter;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 import org.jboss.logging.Logger;
 import tech.flowcatalyst.platform.authentication.*;
-import tech.flowcatalyst.platform.authorization.PrincipalRoleRepository;
 import tech.flowcatalyst.platform.principal.PasswordService;
 import tech.flowcatalyst.platform.principal.Principal;
 import tech.flowcatalyst.platform.principal.PrincipalRepository;
@@ -56,9 +55,6 @@ public class AuthorizationResource {
 
     @Inject
     PrincipalRepository principalRepo;
-
-    @Inject
-    PrincipalRoleRepository roleRepo;
 
     @Inject
     JwtKeyService jwtKeyService;
@@ -217,7 +213,7 @@ public class AuthorizationResource {
             callback.append("&state=").append(urlEncode(state));
         }
 
-        LOG.infof("Authorization code issued for client %s, principal %d", clientId, principalId);
+        LOG.infof("Authorization code issued for client %s, principal %s", clientId, principalId);
         return Response.seeOther(URI.create(callback.toString())).build();
     }
 
@@ -398,7 +394,7 @@ public class AuthorizationResource {
         storeRefreshToken(refreshTokenValue, principal.id, clientId, authCode.contextClientId,
             authCode.scope, tokenFamily);
 
-        LOG.infof("Tokens issued for principal %d via authorization_code grant", principal.id);
+        LOG.infof("Tokens issued for principal %s via authorization_code grant", principal.id);
 
         return Response.ok(new TokenResponse(
             accessToken,
@@ -480,7 +476,7 @@ public class AuthorizationResource {
         storeRefreshToken(newRefreshToken, principal.id, token.clientId,
             token.contextClientId, token.scope, token.tokenFamily);
 
-        LOG.infof("Tokens refreshed for principal %d", principal.id);
+        LOG.infof("Tokens refreshed for principal %s", principal.id);
 
         return Response.ok(new TokenResponse(
             accessToken,
@@ -670,9 +666,9 @@ public class AuthorizationResource {
     }
 
     private Set<String> loadRoles(String principalId) {
-        return roleRepo.findByPrincipalId(principalId).stream()
-            .map(pr -> pr.roleName)
-            .collect(Collectors.toSet());
+        return principalRepo.findByIdOptional(principalId)
+            .map(Principal::getRoleNames)
+            .orElse(Set.of());
     }
 
     private String[] parseBasicAuth(String authHeader) {

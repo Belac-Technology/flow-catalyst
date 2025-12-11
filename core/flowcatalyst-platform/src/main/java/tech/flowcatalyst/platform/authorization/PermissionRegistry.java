@@ -70,6 +70,7 @@ public class PermissionRegistry {
         registerPermission(PlatformIamPermissions.SERVICE_ACCOUNT_CREATE);
         registerPermission(PlatformIamPermissions.SERVICE_ACCOUNT_UPDATE);
         registerPermission(PlatformIamPermissions.SERVICE_ACCOUNT_DELETE);
+        registerPermission(PlatformIamPermissions.IDP_MANAGE);
 
         // ====================================================================
         // Platform Admin Permissions
@@ -294,7 +295,7 @@ public class PermissionRegistry {
      * Role format: {application}:{subdomain}:{role-name} or {application}:{role-name}
      *
      * Examples:
-     * - "inmotion:dispatch:admin" → "inmotion"
+     * - "operant:dispatch:admin" → "operant"
      * - "platform:admin" → "platform"
      *
      * @param roleString The full role string
@@ -313,7 +314,7 @@ public class PermissionRegistry {
      * Role format: {application}:{display-name}
      *
      * Examples:
-     * - "inmotion:dispatch:admin" → "dispatch:admin"
+     * - "operant:dispatch:admin" → "dispatch:admin"
      * - "platform:admin" → "admin"
      *
      * @param roleString The full role string

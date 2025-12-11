@@ -4,8 +4,8 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.ForbiddenException;
 import tech.flowcatalyst.platform.principal.Principal;
+import tech.flowcatalyst.platform.principal.PrincipalRepository;
 
-import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -26,7 +26,7 @@ import java.util.stream.Collectors;
 public class AuthorizationService {
 
     @Inject
-    PrincipalRoleRepository principalRoleRepo;
+    PrincipalRepository principalRepo;
 
     @Inject
     PermissionRegistry permissionRegistry;
@@ -125,6 +125,7 @@ public class AuthorizationService {
 
     /**
      * Get all role names assigned to a principal.
+     * Reads from the embedded roles array on Principal.
      *
      * Role string format: {subdomain}:{role-name}
      * Example: "platform:tenant-admin"
@@ -133,11 +134,9 @@ public class AuthorizationService {
      * @return Set of role name strings
      */
     public Set<String> getRoleNames(String principalId) {
-        List<PrincipalRole> principalRoles = principalRoleRepo.findByPrincipalId(principalId);
-
-        return principalRoles.stream()
-            .map(pr -> pr.roleName)
-            .collect(Collectors.toSet());
+        return principalRepo.findByIdOptional(principalId)
+            .map(Principal::getRoleNames)
+            .orElse(Set.of());
     }
 
     /**

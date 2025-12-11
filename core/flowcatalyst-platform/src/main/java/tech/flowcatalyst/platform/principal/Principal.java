@@ -100,5 +100,11 @@ public class Principal extends PanacheMongoEntityBase {
             this.assignmentSource = assignmentSource;
             this.assignedAt = Instant.now();
         }
+
+        public RoleAssignment(String roleName, String assignmentSource, Instant assignedAt) {
+            this.roleName = roleName;
+            this.assignmentSource = assignmentSource;
+            this.assignedAt = assignedAt;
+        }
     }
 }
