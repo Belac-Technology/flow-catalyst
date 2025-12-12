@@ -76,9 +76,25 @@ import type {
   GetApiAdminPlatformClientsByIdResponse,
   PutApiAdminPlatformClientsByIdData,
   PostApiAdminPlatformClientsByIdActivateData,
+  GetApiAdminPlatformClientsByIdApplicationsData,
+  GetApiAdminPlatformClientsByIdApplicationsResponse,
+  PutApiAdminPlatformClientsByIdApplicationsData,
+  PostApiAdminPlatformClientsByIdApplicationsByApplicationIdDisableData,
+  PostApiAdminPlatformClientsByIdApplicationsByApplicationIdEnableData,
   PostApiAdminPlatformClientsByIdDeactivateData,
   PostApiAdminPlatformClientsByIdNotesData,
   PostApiAdminPlatformClientsByIdSuspendData,
+  GetApiAdminPlatformDispatchPoolsData,
+  GetApiAdminPlatformDispatchPoolsResponse,
+  PostApiAdminPlatformDispatchPoolsData,
+  PostApiAdminPlatformDispatchPoolsResponse,
+  DeleteApiAdminPlatformDispatchPoolsByIdData,
+  GetApiAdminPlatformDispatchPoolsByIdData,
+  GetApiAdminPlatformDispatchPoolsByIdResponse,
+  PutApiAdminPlatformDispatchPoolsByIdData,
+  PutApiAdminPlatformDispatchPoolsByIdResponse,
+  PostApiAdminPlatformDispatchPoolsByIdActivateData,
+  PostApiAdminPlatformDispatchPoolsByIdSuspendData,
   GetApiAdminPlatformOauthClientsData,
   GetApiAdminPlatformOauthClientsResponse,
   PostApiAdminPlatformOauthClientsData,
@@ -1092,6 +1108,90 @@ export const postApiAdminPlatformClientsByIdActivate = <
 };
 
 /**
+ * Get applications for client
+ * Returns all applications with their enabled/disabled status for this client
+ */
+export const getApiAdminPlatformClientsByIdApplications = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<
+    GetApiAdminPlatformClientsByIdApplicationsData,
+    ThrowOnError
+  >,
+) => {
+  return (options.client ?? _heyApiClient).get<
+    GetApiAdminPlatformClientsByIdApplicationsResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/clients/{id}/applications",
+    ...options,
+  });
+};
+
+/**
+ * Update applications for client
+ * Sets which applications are enabled for this client
+ */
+export const putApiAdminPlatformClientsByIdApplications = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<
+    PutApiAdminPlatformClientsByIdApplicationsData,
+    ThrowOnError
+  >,
+) => {
+  return (options.client ?? _heyApiClient).put<unknown, unknown, ThrowOnError>({
+    url: "/api/admin/platform/clients/{id}/applications",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options?.headers,
+    },
+  });
+};
+
+/**
+ * Disable application for client
+ */
+export const postApiAdminPlatformClientsByIdApplicationsByApplicationIdDisable =
+  <ThrowOnError extends boolean = false>(
+    options: Options<
+      PostApiAdminPlatformClientsByIdApplicationsByApplicationIdDisableData,
+      ThrowOnError
+    >,
+  ) => {
+    return (options.client ?? _heyApiClient).post<
+      unknown,
+      unknown,
+      ThrowOnError
+    >({
+      url: "/api/admin/platform/clients/{id}/applications/{applicationId}/disable",
+      ...options,
+    });
+  };
+
+/**
+ * Enable application for client
+ */
+export const postApiAdminPlatformClientsByIdApplicationsByApplicationIdEnable =
+  <ThrowOnError extends boolean = false>(
+    options: Options<
+      PostApiAdminPlatformClientsByIdApplicationsByApplicationIdEnableData,
+      ThrowOnError
+    >,
+  ) => {
+    return (options.client ?? _heyApiClient).post<
+      unknown,
+      unknown,
+      ThrowOnError
+    >({
+      url: "/api/admin/platform/clients/{id}/applications/{applicationId}/enable",
+      ...options,
+    });
+  };
+
+/**
  * Deactivate a client
  */
 export const postApiAdminPlatformClientsByIdDeactivate = <
@@ -1147,6 +1247,146 @@ export const postApiAdminPlatformClientsByIdSuspend = <
         "Content-Type": "application/json",
         ...options?.headers,
       },
+    },
+  );
+};
+
+/**
+ * List dispatch pools
+ * Returns dispatch pools with optional filtering
+ */
+export const getApiAdminPlatformDispatchPools = <
+  ThrowOnError extends boolean = false,
+>(
+  options?: Options<GetApiAdminPlatformDispatchPoolsData, ThrowOnError>,
+) => {
+  return (options?.client ?? _heyApiClient).get<
+    GetApiAdminPlatformDispatchPoolsResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/dispatch-pools",
+    ...options,
+  });
+};
+
+/**
+ * Create a new dispatch pool
+ */
+export const postApiAdminPlatformDispatchPools = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<PostApiAdminPlatformDispatchPoolsData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).post<
+    PostApiAdminPlatformDispatchPoolsResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/dispatch-pools",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options?.headers,
+    },
+  });
+};
+
+/**
+ * Delete dispatch pool
+ * Archives the pool (soft delete)
+ */
+export const deleteApiAdminPlatformDispatchPoolsById = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<DeleteApiAdminPlatformDispatchPoolsByIdData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).delete<
+    unknown,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/dispatch-pools/{id}",
+    ...options,
+  });
+};
+
+/**
+ * Get dispatch pool by ID
+ */
+export const getApiAdminPlatformDispatchPoolsById = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<GetApiAdminPlatformDispatchPoolsByIdData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).get<
+    GetApiAdminPlatformDispatchPoolsByIdResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/dispatch-pools/{id}",
+    ...options,
+  });
+};
+
+/**
+ * Update dispatch pool
+ */
+export const putApiAdminPlatformDispatchPoolsById = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<PutApiAdminPlatformDispatchPoolsByIdData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).put<
+    PutApiAdminPlatformDispatchPoolsByIdResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/dispatch-pools/{id}",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options?.headers,
+    },
+  });
+};
+
+/**
+ * Activate dispatch pool
+ * Re-enable a suspended pool
+ */
+export const postApiAdminPlatformDispatchPoolsByIdActivate = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<
+    PostApiAdminPlatformDispatchPoolsByIdActivateData,
+    ThrowOnError
+  >,
+) => {
+  return (options.client ?? _heyApiClient).post<unknown, unknown, ThrowOnError>(
+    {
+      url: "/api/admin/platform/dispatch-pools/{id}/activate",
+      ...options,
+    },
+  );
+};
+
+/**
+ * Suspend dispatch pool
+ * Temporarily disable the pool
+ */
+export const postApiAdminPlatformDispatchPoolsByIdSuspend = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<
+    PostApiAdminPlatformDispatchPoolsByIdSuspendData,
+    ThrowOnError
+  >,
+) => {
+  return (options.client ?? _heyApiClient).post<unknown, unknown, ThrowOnError>(
+    {
+      url: "/api/admin/platform/dispatch-pools/{id}/suspend",
+      ...options,
     },
   );
 };

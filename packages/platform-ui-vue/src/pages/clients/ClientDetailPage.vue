@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useConfirm } from 'primevue/useconfirm';
 import { useToast } from 'primevue/usetoast';
@@ -8,7 +8,8 @@ import Tag from 'primevue/tag';
 import InputText from 'primevue/inputtext';
 import ProgressSpinner from 'primevue/progressspinner';
 import Message from 'primevue/message';
-import { clientsApi, type Client } from '@/api/clients';
+import PickList from 'primevue/picklist';
+import { clientsApi, type Client, type ClientApplication } from '@/api/clients';
 
 const route = useRoute();
 const router = useRouter();
@@ -23,10 +24,18 @@ const saving = ref(false);
 // Edit form
 const editName = ref('');
 
+// Applications
+const applications = ref<[ClientApplication[], ClientApplication[]]>([[], []]);
+const loadingApps = ref(false);
+const savingApps = ref(false);
+
+const availableApps = computed(() => applications.value[0]);
+const enabledApps = computed(() => applications.value[1]);
+
 onMounted(async () => {
   const id = route.params.id as string;
   if (id) {
-    await loadClient(id);
+    await Promise.all([loadClient(id), loadApplications(id)]);
   }
 });
 
@@ -38,6 +47,60 @@ async function loadClient(id: string) {
     client.value = null;
   } finally {
     loading.value = false;
+  }
+}
+
+async function loadApplications(clientId: string) {
+  loadingApps.value = true;
+  try {
+    const response = await clientsApi.getApplications(clientId);
+    const available: ClientApplication[] = [];
+    const enabled: ClientApplication[] = [];
+
+    for (const app of response.applications) {
+      if (app.enabledForClient) {
+        enabled.push(app);
+      } else {
+        available.push(app);
+      }
+    }
+
+    applications.value = [available, enabled];
+  } catch (error) {
+    console.error('Failed to load applications:', error);
+    toast.add({
+      severity: 'error',
+      summary: 'Error',
+      detail: 'Failed to load applications',
+      life: 3000,
+    });
+  } finally {
+    loadingApps.value = false;
+  }
+}
+
+async function saveApplications() {
+  if (!client.value) return;
+
+  savingApps.value = true;
+  try {
+    const enabledIds = applications.value[1].map(app => app.id);
+    await clientsApi.updateApplications(client.value.id, enabledIds);
+    toast.add({
+      severity: 'success',
+      summary: 'Success',
+      detail: 'Applications updated',
+      life: 3000,
+    });
+  } catch (error) {
+    toast.add({
+      severity: 'error',
+      summary: 'Error',
+      detail: 'Failed to update applications',
+      life: 3000,
+    });
+  } finally {
+    savingApps.value = false;
   }
 }
 
@@ -231,6 +294,58 @@ function formatDate(dateString: string) {
         </div>
       </div>
 
+      <!-- Applications Card -->
+      <div class="section-card">
+        <div class="card-header">
+          <h3>Applications</h3>
+          <Button
+            label="Save"
+            icon="pi pi-save"
+            :loading="savingApps"
+            :disabled="savingApps"
+            @click="saveApplications"
+          />
+        </div>
+        <div class="card-content">
+          <div v-if="loadingApps" class="loading-apps">
+            <ProgressSpinner strokeWidth="3" style="width: 30px; height: 30px" />
+            <span>Loading applications...</span>
+          </div>
+          <PickList
+            v-else
+            v-model="applications"
+            dataKey="id"
+            :pt="{
+              list: { style: { height: '300px' } }
+            }"
+          >
+            <template #sourceheader>
+              <span class="picklist-header">Available ({{ availableApps.length }})</span>
+            </template>
+            <template #targetheader>
+              <span class="picklist-header">Enabled ({{ enabledApps.length }})</span>
+            </template>
+            <template #item="{ item }">
+              <div class="app-item">
+                <div class="app-info">
+                  <span class="app-name">{{ item.name }}</span>
+                  <span class="app-code">{{ item.code }}</span>
+                </div>
+                <Tag
+                  v-if="!item.active"
+                  value="Inactive"
+                  severity="secondary"
+                  class="app-status"
+                />
+              </div>
+            </template>
+          </PickList>
+          <p class="help-text">
+            Move applications between lists to enable or disable them for this client. Click Save to apply changes.
+          </p>
+        </div>
+      </div>
+
       <!-- Actions Card -->
       <div class="section-card">
         <div class="card-header">
@@ -410,6 +525,54 @@ function formatDate(dateString: string) {
 
 .action-info p {
   margin: 0;
+  font-size: 13px;
+  color: #64748b;
+}
+
+.loading-apps {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 40px;
+  color: #64748b;
+}
+
+.picklist-header {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.app-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+}
+
+.app-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.app-name {
+  font-weight: 500;
+}
+
+.app-code {
+  font-size: 12px;
+  color: #64748b;
+  font-family: monospace;
+}
+
+.app-status {
+  font-size: 11px;
+}
+
+.help-text {
+  margin-top: 12px;
   font-size: 13px;
   color: #64748b;
 }

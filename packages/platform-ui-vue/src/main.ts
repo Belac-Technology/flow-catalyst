@@ -9,6 +9,7 @@ import Tooltip from 'primevue/tooltip';
 import App from './App.vue';
 import router from './router';
 import { client } from './api/generated/client.gen';
+import { setupApiInterceptors } from './api/interceptors';
 
 import 'primeicons/primeicons.css';
 import './styles/main.css';
@@ -18,6 +19,9 @@ client.setConfig({
   baseUrl: '',
   credentials: 'include',
 });
+
+// Setup global error handling and retry logic
+setupApiInterceptors();
 
 const app = createApp(App);
 

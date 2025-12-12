@@ -111,7 +111,7 @@ function viewUser(user: User) {
 }
 
 function editUser(user: User) {
-  router.push(`/users/${user.id}/edit`);
+  router.push(`/users/${user.id}?edit=true`);
 }
 
 function getClientName(clientId: string | null): string {

@@ -25,6 +25,21 @@ export interface UpdateClientRequest {
   name: string;
 }
 
+export interface ClientApplication {
+  id: string;
+  code: string;
+  name: string;
+  description?: string;
+  iconUrl?: string;
+  active: boolean;
+  enabledForClient: boolean;
+}
+
+export interface ClientApplicationsResponse {
+  applications: ClientApplication[];
+  total: number;
+}
+
 export const clientsApi = {
   list(status?: string): Promise<ClientListResponse> {
     const params = status ? `?status=${status}` : '';
@@ -77,6 +92,30 @@ export const clientsApi = {
     return apiFetch(`/admin/platform/clients/${id}/notes`, {
       method: 'POST',
       body: JSON.stringify({ category, text }),
+    });
+  },
+
+  // Application management
+  getApplications(clientId: string): Promise<ClientApplicationsResponse> {
+    return apiFetch(`/admin/platform/clients/${clientId}/applications`);
+  },
+
+  enableApplication(clientId: string, applicationId: string): Promise<{ message: string }> {
+    return apiFetch(`/admin/platform/clients/${clientId}/applications/${applicationId}/enable`, {
+      method: 'POST',
+    });
+  },
+
+  disableApplication(clientId: string, applicationId: string): Promise<{ message: string }> {
+    return apiFetch(`/admin/platform/clients/${clientId}/applications/${applicationId}/disable`, {
+      method: 'POST',
+    });
+  },
+
+  updateApplications(clientId: string, enabledApplicationIds: string[]): Promise<{ message: string }> {
+    return apiFetch(`/admin/platform/clients/${clientId}/applications`, {
+      method: 'PUT',
+      body: JSON.stringify({ enabledApplicationIds }),
     });
   },
 };

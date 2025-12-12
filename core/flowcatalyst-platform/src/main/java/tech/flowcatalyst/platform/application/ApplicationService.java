@@ -4,12 +4,19 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.NotFoundException;
+import tech.flowcatalyst.platform.application.events.ApplicationDisabledForClient;
+import tech.flowcatalyst.platform.application.events.ApplicationEnabledForClient;
+import tech.flowcatalyst.platform.application.operations.DisableApplicationForClientCommand;
+import tech.flowcatalyst.platform.application.operations.EnableApplicationForClientCommand;
 import tech.flowcatalyst.platform.authorization.PermissionRegistry;
+import tech.flowcatalyst.platform.client.Client;
+import tech.flowcatalyst.platform.client.ClientRepository;
+import tech.flowcatalyst.platform.common.ExecutionContext;
+import tech.flowcatalyst.platform.common.Result;
+import tech.flowcatalyst.platform.common.UnitOfWork;
 import tech.flowcatalyst.platform.principal.Principal;
 import tech.flowcatalyst.platform.principal.PrincipalRepository;
 import tech.flowcatalyst.platform.shared.TsidGenerator;
-import tech.flowcatalyst.platform.client.Client;
-import tech.flowcatalyst.platform.client.ClientRepository;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -38,6 +45,9 @@ public class ApplicationService {
 
     @Inject
     ClientRepository clientRepo;
+
+    @Inject
+    UnitOfWork unitOfWork;
 
     // ========================================================================
     // Application CRUD
@@ -168,15 +178,121 @@ public class ApplicationService {
     }
 
     /**
-     * Enable an application for a client.
+     * Enable an application for a client with event sourcing.
+     *
+     * @param ctx Execution context for tracing
+     * @param cmd The enable command
+     * @return Result containing the event or error
      */
+    public Result<ApplicationEnabledForClient> enableForClient(ExecutionContext ctx, EnableApplicationForClientCommand cmd) {
+        Application app = applicationRepo.findByIdOptional(cmd.applicationId())
+            .orElseThrow(() -> new NotFoundException("Application not found"));
+
+        Client client = clientRepo.findByIdOptional(cmd.clientId())
+            .orElseThrow(() -> new NotFoundException("Client not found"));
+
+        ApplicationClientConfig config = configRepo
+            .findByApplicationAndClient(cmd.applicationId(), cmd.clientId())
+            .orElseGet(() -> {
+                ApplicationClientConfig newConfig = new ApplicationClientConfig();
+                newConfig.id = TsidGenerator.generate();
+                newConfig.applicationId = app.id;
+                newConfig.clientId = client.id;
+                return newConfig;
+            });
+
+        config.enabled = true;
+        if (cmd.baseUrlOverride() != null) {
+            config.baseUrlOverride = cmd.baseUrlOverride();
+        }
+
+        ApplicationEnabledForClient event = ApplicationEnabledForClient.builder()
+            .from(ctx)
+            .configId(config.id)
+            .applicationId(app.id)
+            .applicationCode(app.code)
+            .applicationName(app.name)
+            .clientId(client.id)
+            .clientIdentifier(client.identifier)
+            .clientName(client.name)
+            .baseUrlOverride(config.baseUrlOverride)
+            .build();
+
+        return unitOfWork.commit(config, event, cmd);
+    }
+
+    /**
+     * Disable an application for a client with event sourcing.
+     *
+     * @param ctx Execution context for tracing
+     * @param cmd The disable command
+     * @return Result containing the event or error
+     */
+    public Result<ApplicationDisabledForClient> disableForClient(ExecutionContext ctx, DisableApplicationForClientCommand cmd) {
+        Application app = applicationRepo.findByIdOptional(cmd.applicationId())
+            .orElseThrow(() -> new NotFoundException("Application not found"));
+
+        Client client = clientRepo.findByIdOptional(cmd.clientId())
+            .orElseThrow(() -> new NotFoundException("Client not found"));
+
+        Optional<ApplicationClientConfig> existingConfig = configRepo.findByApplicationAndClient(cmd.applicationId(), cmd.clientId());
+
+        if (existingConfig.isEmpty() || !existingConfig.get().enabled) {
+            // Already disabled or never enabled - no-op but still emit event for idempotency
+            ApplicationClientConfig config = existingConfig.orElseGet(() -> {
+                ApplicationClientConfig newConfig = new ApplicationClientConfig();
+                newConfig.id = TsidGenerator.generate();
+                newConfig.applicationId = app.id;
+                newConfig.clientId = client.id;
+                newConfig.enabled = false;
+                return newConfig;
+            });
+
+            ApplicationDisabledForClient event = ApplicationDisabledForClient.builder()
+                .from(ctx)
+                .configId(config.id)
+                .applicationId(app.id)
+                .applicationCode(app.code)
+                .applicationName(app.name)
+                .clientId(client.id)
+                .clientIdentifier(client.identifier)
+                .clientName(client.name)
+                .build();
+
+            return unitOfWork.commit(config, event, cmd);
+        }
+
+        ApplicationClientConfig config = existingConfig.get();
+        config.enabled = false;
+
+        ApplicationDisabledForClient event = ApplicationDisabledForClient.builder()
+            .from(ctx)
+            .configId(config.id)
+            .applicationId(app.id)
+            .applicationCode(app.code)
+            .applicationName(app.name)
+            .clientId(client.id)
+            .clientIdentifier(client.identifier)
+            .clientName(client.name)
+            .build();
+
+        return unitOfWork.commit(config, event, cmd);
+    }
+
+    /**
+     * Enable an application for a client (simple version without events).
+     * @deprecated Use {@link #enableForClient(ExecutionContext, EnableApplicationForClientCommand)} instead.
+     */
+    @Deprecated
     public void enableForClient(String applicationId, String clientId) {
         configureForClient(applicationId, clientId, true, null, null);
     }
 
     /**
-     * Disable an application for a client.
+     * Disable an application for a client (simple version without events).
+     * @deprecated Use {@link #disableForClient(ExecutionContext, DisableApplicationForClientCommand)} instead.
      */
+    @Deprecated
     public void disableForClient(String applicationId, String clientId) {
         Optional<ApplicationClientConfig> config = configRepo.findByApplicationAndClient(applicationId, clientId);
         if (config.isPresent()) {

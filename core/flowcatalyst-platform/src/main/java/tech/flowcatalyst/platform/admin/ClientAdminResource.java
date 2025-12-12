@@ -14,14 +14,27 @@ import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponses;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 import org.jboss.logging.Logger;
+import tech.flowcatalyst.platform.application.Application;
+import tech.flowcatalyst.platform.application.ApplicationClientConfig;
+import tech.flowcatalyst.platform.application.ApplicationService;
+import tech.flowcatalyst.platform.application.events.ApplicationDisabledForClient;
+import tech.flowcatalyst.platform.application.events.ApplicationEnabledForClient;
+import tech.flowcatalyst.platform.application.operations.DisableApplicationForClientCommand;
+import tech.flowcatalyst.platform.application.operations.EnableApplicationForClientCommand;
+import tech.flowcatalyst.platform.audit.AuditContext;
+import tech.flowcatalyst.platform.authorization.AuthorizationService;
+import tech.flowcatalyst.platform.authorization.platform.PlatformAdminPermissions;
+import tech.flowcatalyst.platform.common.Result;
 import tech.flowcatalyst.platform.authentication.EmbeddedModeOnly;
-import tech.flowcatalyst.platform.authentication.JwtKeyService;
 import tech.flowcatalyst.platform.client.Client;
 import tech.flowcatalyst.platform.client.ClientService;
 import tech.flowcatalyst.platform.client.ClientStatus;
+import tech.flowcatalyst.platform.common.ExecutionContext;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Admin API for client management.
@@ -46,7 +59,13 @@ public class ClientAdminResource {
     ClientService clientService;
 
     @Inject
-    JwtKeyService jwtKeyService;
+    ApplicationService applicationService;
+
+    @Inject
+    AuditContext auditContext;
+
+    @Inject
+    AuthorizationService authorizationService;
 
     // ==================== CRUD Operations ====================
 
@@ -62,17 +81,13 @@ public class ClientAdminResource {
         @APIResponse(responseCode = "403", description = "Insufficient permissions")
     })
     public Response listClients(
-            @QueryParam("status") @Parameter(description = "Filter by status") ClientStatus status,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+            @QueryParam("status") @Parameter(description = "Filter by status") ClientStatus status) {
 
-        // TODO: Add permission check for platform:client:view
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
+        // Authentication: AuditContext is populated by AuditContextFilter
+        String principalId = auditContext.requirePrincipalId();
+
+        // Authorization: Check permission
+        authorizationService.requirePermission(principalId, PlatformAdminPermissions.CLIENT_VIEW);
 
         List<Client> clients;
         if (status != null) {
@@ -100,19 +115,13 @@ public class ClientAdminResource {
         @APIResponse(responseCode = "200", description = "Client details",
             content = @Content(schema = @Schema(implementation = ClientDto.class))),
         @APIResponse(responseCode = "404", description = "Client not found"),
-        @APIResponse(responseCode = "401", description = "Not authenticated")
+        @APIResponse(responseCode = "401", description = "Not authenticated"),
+        @APIResponse(responseCode = "403", description = "Insufficient permissions")
     })
-    public Response getClient(
-            @PathParam("id") String id,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+    public Response getClient(@PathParam("id") String id) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
+        String principalId = auditContext.requirePrincipalId();
+        authorizationService.requirePermission(principalId, PlatformAdminPermissions.CLIENT_VIEW);
 
         return clientService.findById(id)
             .map(client -> Response.ok(toDto(client)).build())
@@ -129,19 +138,14 @@ public class ClientAdminResource {
     @Operation(summary = "Get client by identifier")
     @APIResponses({
         @APIResponse(responseCode = "200", description = "Client details"),
-        @APIResponse(responseCode = "404", description = "Client not found")
+        @APIResponse(responseCode = "404", description = "Client not found"),
+        @APIResponse(responseCode = "401", description = "Not authenticated"),
+        @APIResponse(responseCode = "403", description = "Insufficient permissions")
     })
-    public Response getClientByIdentifier(
-            @PathParam("identifier") String identifier,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+    public Response getClientByIdentifier(@PathParam("identifier") String identifier) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
+        String principalId = auditContext.requirePrincipalId();
+        authorizationService.requirePermission(principalId, PlatformAdminPermissions.CLIENT_VIEW);
 
         return clientService.findByIdentifier(identifier)
             .map(client -> Response.ok(toDto(client)).build())
@@ -159,21 +163,13 @@ public class ClientAdminResource {
         @APIResponse(responseCode = "201", description = "Client created",
             content = @Content(schema = @Schema(implementation = ClientDto.class))),
         @APIResponse(responseCode = "400", description = "Invalid request or identifier already exists"),
-        @APIResponse(responseCode = "401", description = "Not authenticated")
+        @APIResponse(responseCode = "401", description = "Not authenticated"),
+        @APIResponse(responseCode = "403", description = "Insufficient permissions")
     })
-    public Response createClient(
-            @Valid CreateClientRequest request,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
-            @HeaderParam("Authorization") String authHeader,
-            @Context UriInfo uriInfo) {
+    public Response createClient(@Valid CreateClientRequest request, @Context UriInfo uriInfo) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
-        String principalId = principalIdOpt.get();
+        String principalId = auditContext.requirePrincipalId();
+        authorizationService.requirePermission(principalId, PlatformAdminPermissions.CLIENT_CREATE);
 
         try {
             Client client = clientService.createClient(request.name(), request.identifier());
@@ -200,21 +196,14 @@ public class ClientAdminResource {
     @APIResponses({
         @APIResponse(responseCode = "200", description = "Client updated"),
         @APIResponse(responseCode = "404", description = "Client not found"),
-        @APIResponse(responseCode = "400", description = "Invalid request")
+        @APIResponse(responseCode = "400", description = "Invalid request"),
+        @APIResponse(responseCode = "401", description = "Not authenticated"),
+        @APIResponse(responseCode = "403", description = "Insufficient permissions")
     })
-    public Response updateClient(
-            @PathParam("id") String id,
-            @Valid UpdateClientRequest request,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+    public Response updateClient(@PathParam("id") String id, @Valid UpdateClientRequest request) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
-        String principalId = principalIdOpt.get();
+        String principalId = auditContext.requirePrincipalId();
+        authorizationService.requirePermission(principalId, PlatformAdminPermissions.CLIENT_UPDATE);
 
         try {
             Client client = clientService.updateClient(id, request.name());
@@ -237,20 +226,14 @@ public class ClientAdminResource {
     @Operation(summary = "Activate a client")
     @APIResponses({
         @APIResponse(responseCode = "200", description = "Client activated"),
-        @APIResponse(responseCode = "404", description = "Client not found")
+        @APIResponse(responseCode = "404", description = "Client not found"),
+        @APIResponse(responseCode = "401", description = "Not authenticated"),
+        @APIResponse(responseCode = "403", description = "Insufficient permissions")
     })
-    public Response activateClient(
-            @PathParam("id") String id,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+    public Response activateClient(@PathParam("id") String id) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
-        String principalId = principalIdOpt.get();
+        String principalId = auditContext.requirePrincipalId();
+        authorizationService.requirePermission(principalId, PlatformAdminPermissions.CLIENT_UPDATE);
 
         try {
             clientService.activateClient(id, principalId);
@@ -271,21 +254,14 @@ public class ClientAdminResource {
     @Operation(summary = "Suspend a client")
     @APIResponses({
         @APIResponse(responseCode = "200", description = "Client suspended"),
-        @APIResponse(responseCode = "404", description = "Client not found")
+        @APIResponse(responseCode = "404", description = "Client not found"),
+        @APIResponse(responseCode = "401", description = "Not authenticated"),
+        @APIResponse(responseCode = "403", description = "Insufficient permissions")
     })
-    public Response suspendClient(
-            @PathParam("id") String id,
-            @Valid StatusChangeRequest request,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+    public Response suspendClient(@PathParam("id") String id, @Valid StatusChangeRequest request) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
-        String principalId = principalIdOpt.get();
+        String principalId = auditContext.requirePrincipalId();
+        authorizationService.requirePermission(principalId, PlatformAdminPermissions.CLIENT_UPDATE);
 
         try {
             clientService.suspendClient(id, request.reason(), principalId);
@@ -306,21 +282,14 @@ public class ClientAdminResource {
     @Operation(summary = "Deactivate a client")
     @APIResponses({
         @APIResponse(responseCode = "200", description = "Client deactivated"),
-        @APIResponse(responseCode = "404", description = "Client not found")
+        @APIResponse(responseCode = "404", description = "Client not found"),
+        @APIResponse(responseCode = "401", description = "Not authenticated"),
+        @APIResponse(responseCode = "403", description = "Insufficient permissions")
     })
-    public Response deactivateClient(
-            @PathParam("id") String id,
-            @Valid StatusChangeRequest request,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+    public Response deactivateClient(@PathParam("id") String id, @Valid StatusChangeRequest request) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
-        String principalId = principalIdOpt.get();
+        String principalId = auditContext.requirePrincipalId();
+        authorizationService.requirePermission(principalId, PlatformAdminPermissions.CLIENT_DELETE);
 
         try {
             clientService.deactivateClient(id, request.reason(), principalId);
@@ -343,21 +312,14 @@ public class ClientAdminResource {
     @Operation(summary = "Add audit note to client")
     @APIResponses({
         @APIResponse(responseCode = "201", description = "Note added"),
-        @APIResponse(responseCode = "404", description = "Client not found")
+        @APIResponse(responseCode = "404", description = "Client not found"),
+        @APIResponse(responseCode = "401", description = "Not authenticated"),
+        @APIResponse(responseCode = "403", description = "Insufficient permissions")
     })
-    public Response addNote(
-            @PathParam("id") String id,
-            @Valid AddNoteRequest request,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+    public Response addNote(@PathParam("id") String id, @Valid AddNoteRequest request) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
-        String principalId = principalIdOpt.get();
+        String principalId = auditContext.requirePrincipalId();
+        authorizationService.requirePermission(principalId, PlatformAdminPermissions.CLIENT_UPDATE);
 
         try {
             clientService.addNote(id, request.category(), request.text(), principalId);
@@ -369,6 +331,204 @@ public class ClientAdminResource {
                 .entity(new ErrorResponse("Client not found"))
                 .build();
         }
+    }
+
+    // ==================== Application Management ====================
+
+    /**
+     * Get applications for a client.
+     * Returns all applications with their enabled status for this client.
+     */
+    @GET
+    @Path("/{id}/applications")
+    @Operation(summary = "Get applications for client", description = "Returns all applications with their enabled/disabled status for this client")
+    @APIResponses({
+        @APIResponse(responseCode = "200", description = "List of applications with status",
+            content = @Content(schema = @Schema(implementation = ClientApplicationsResponse.class))),
+        @APIResponse(responseCode = "404", description = "Client not found"),
+        @APIResponse(responseCode = "401", description = "Not authenticated"),
+        @APIResponse(responseCode = "403", description = "Insufficient permissions")
+    })
+    public Response getClientApplications(@PathParam("id") String clientId) {
+
+        String principalId = auditContext.requirePrincipalId();
+        // Viewing client applications requires both client view and application view permissions
+        authorizationService.requirePermission(principalId, PlatformAdminPermissions.CLIENT_VIEW);
+        authorizationService.requirePermission(principalId, PlatformAdminPermissions.APPLICATION_VIEW);
+
+        // Verify client exists
+        var clientOpt = clientService.findById(clientId);
+        if (clientOpt.isEmpty()) {
+            return Response.status(Response.Status.NOT_FOUND)
+                .entity(new ErrorResponse("Client not found"))
+                .build();
+        }
+
+        // Get all applications
+        List<Application> allApps = applicationService.findAll();
+
+        // Get configs for this client
+        List<ApplicationClientConfig> configs = applicationService.getConfigsForClient(clientId);
+        Set<String> enabledAppIds = configs.stream()
+            .filter(c -> c.enabled)
+            .map(c -> c.applicationId)
+            .collect(Collectors.toSet());
+
+        // Build response with enabled status
+        List<ClientApplicationDto> appDtos = allApps.stream()
+            .map(app -> new ClientApplicationDto(
+                app.id,
+                app.code,
+                app.name,
+                app.description,
+                app.iconUrl,
+                app.active,
+                enabledAppIds.contains(app.id)
+            ))
+            .toList();
+
+        return Response.ok(new ClientApplicationsResponse(appDtos, appDtos.size())).build();
+    }
+
+    /**
+     * Enable an application for a client.
+     */
+    @POST
+    @Path("/{id}/applications/{applicationId}/enable")
+    @Operation(summary = "Enable application for client")
+    @APIResponses({
+        @APIResponse(responseCode = "200", description = "Application enabled"),
+        @APIResponse(responseCode = "404", description = "Client or application not found"),
+        @APIResponse(responseCode = "401", description = "Not authenticated"),
+        @APIResponse(responseCode = "403", description = "Insufficient permissions")
+    })
+    public Response enableApplicationForClient(
+            @PathParam("id") String clientId,
+            @PathParam("applicationId") String applicationId) {
+
+        String principalId = auditContext.requirePrincipalId();
+        // Enabling application for client requires both client update and application update
+        authorizationService.requirePermission(principalId, PlatformAdminPermissions.CLIENT_UPDATE);
+        authorizationService.requirePermission(principalId, PlatformAdminPermissions.APPLICATION_UPDATE);
+
+        try {
+            ExecutionContext ctx = ExecutionContext.create(principalId);
+            var cmd = new EnableApplicationForClientCommand(applicationId, clientId, null);
+            var result = applicationService.enableForClient(ctx, cmd);
+
+            if (result instanceof Result.Failure<ApplicationEnabledForClient> f) {
+                return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(new ErrorResponse(f.error().message()))
+                    .build();
+            }
+
+            LOG.infof("Application %s enabled for client %s by principal %s",
+                applicationId, clientId, principalId);
+            return Response.ok(new StatusChangeResponse("Application enabled for client")).build();
+        } catch (NotFoundException e) {
+            return Response.status(Response.Status.NOT_FOUND)
+                .entity(new ErrorResponse(e.getMessage()))
+                .build();
+        }
+    }
+
+    /**
+     * Disable an application for a client.
+     */
+    @POST
+    @Path("/{id}/applications/{applicationId}/disable")
+    @Operation(summary = "Disable application for client")
+    @APIResponses({
+        @APIResponse(responseCode = "200", description = "Application disabled"),
+        @APIResponse(responseCode = "404", description = "Client or application not found"),
+        @APIResponse(responseCode = "401", description = "Not authenticated"),
+        @APIResponse(responseCode = "403", description = "Insufficient permissions")
+    })
+    public Response disableApplicationForClient(
+            @PathParam("id") String clientId,
+            @PathParam("applicationId") String applicationId) {
+
+        String principalId = auditContext.requirePrincipalId();
+        // Disabling application for client requires both client update and application update
+        authorizationService.requirePermission(principalId, PlatformAdminPermissions.CLIENT_UPDATE);
+        authorizationService.requirePermission(principalId, PlatformAdminPermissions.APPLICATION_UPDATE);
+
+        try {
+            ExecutionContext ctx = ExecutionContext.create(principalId);
+            var cmd = new DisableApplicationForClientCommand(applicationId, clientId);
+            var result = applicationService.disableForClient(ctx, cmd);
+
+            if (result instanceof Result.Failure<ApplicationDisabledForClient> f) {
+                return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(new ErrorResponse(f.error().message()))
+                    .build();
+            }
+
+            LOG.infof("Application %s disabled for client %s by principal %s",
+                applicationId, clientId, principalId);
+            return Response.ok(new StatusChangeResponse("Application disabled for client")).build();
+        } catch (NotFoundException e) {
+            return Response.status(Response.Status.NOT_FOUND)
+                .entity(new ErrorResponse(e.getMessage()))
+                .build();
+        }
+    }
+
+    /**
+     * Update applications for a client (bulk enable/disable).
+     * Enables the specified applications and disables all others.
+     */
+    @PUT
+    @Path("/{id}/applications")
+    @Operation(summary = "Update applications for client", description = "Sets which applications are enabled for this client")
+    @APIResponses({
+        @APIResponse(responseCode = "200", description = "Applications updated"),
+        @APIResponse(responseCode = "404", description = "Client not found"),
+        @APIResponse(responseCode = "401", description = "Not authenticated"),
+        @APIResponse(responseCode = "403", description = "Insufficient permissions")
+    })
+    public Response updateClientApplications(
+            @PathParam("id") String clientId,
+            @Valid UpdateClientApplicationsRequest request) {
+
+        String principalId = auditContext.requirePrincipalId();
+        // Bulk update requires both client update and application update
+        authorizationService.requirePermission(principalId, PlatformAdminPermissions.CLIENT_UPDATE);
+        authorizationService.requirePermission(principalId, PlatformAdminPermissions.APPLICATION_UPDATE);
+
+        // Verify client exists
+        var clientOpt = clientService.findById(clientId);
+        if (clientOpt.isEmpty()) {
+            return Response.status(Response.Status.NOT_FOUND)
+                .entity(new ErrorResponse("Client not found"))
+                .build();
+        }
+
+        Set<String> enabledAppIds = Set.copyOf(request.enabledApplicationIds());
+
+        // Get all applications
+        List<Application> allApps = applicationService.findAll();
+
+        // Enable/disable each application
+        for (Application app : allApps) {
+            try {
+                ExecutionContext ctx = ExecutionContext.create(principalId);
+                if (enabledAppIds.contains(app.id)) {
+                    var cmd = new EnableApplicationForClientCommand(app.id, clientId, null);
+                    applicationService.enableForClient(ctx, cmd);
+                } else {
+                    var cmd = new DisableApplicationForClientCommand(app.id, clientId);
+                    applicationService.disableForClient(ctx, cmd);
+                }
+            } catch (Exception e) {
+                LOG.warnf("Failed to update application %s for client %s: %s",
+                    app.id, clientId, e.getMessage());
+            }
+        }
+
+        LOG.infof("Updated applications for client %s by principal %s: %d enabled",
+            clientId, principalId, enabledAppIds.size());
+        return Response.ok(new StatusChangeResponse("Applications updated")).build();
     }
 
     // ==================== Helper Methods ====================
@@ -439,5 +599,24 @@ public class ClientAdminResource {
 
     public record ErrorResponse(
         String error
+    ) {}
+
+    public record ClientApplicationDto(
+        String id,
+        String code,
+        String name,
+        String description,
+        String iconUrl,
+        boolean active,
+        boolean enabledForClient
+    ) {}
+
+    public record ClientApplicationsResponse(
+        List<ClientApplicationDto> applications,
+        int total
+    ) {}
+
+    public record UpdateClientApplicationsRequest(
+        List<String> enabledApplicationIds
     ) {}
 }

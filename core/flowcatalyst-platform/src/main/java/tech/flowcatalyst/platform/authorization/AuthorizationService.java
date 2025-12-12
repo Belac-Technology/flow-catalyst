@@ -97,6 +97,18 @@ public class AuthorizationService {
 
     /**
      * Require that a principal has a specific permission.
+     * Throws ForbiddenException if permission is not granted.
+     *
+     * @param principalId The principal ID
+     * @param permission The permission definition
+     * @throws ForbiddenException if permission denied
+     */
+    public void requirePermission(String principalId, PermissionDefinition permission) {
+        requirePermission(principalId, permission.toPermissionString());
+    }
+
+    /**
+     * Require that a principal has a specific permission.
      * Convenience method that works with Principal object.
      *
      * @param principal The principal

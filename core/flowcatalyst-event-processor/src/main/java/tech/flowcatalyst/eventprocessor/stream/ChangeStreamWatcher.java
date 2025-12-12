@@ -144,7 +144,14 @@ public class ChangeStreamWatcher {
                 .getCollection(config.sourceCollection());
 
         // Resume from checkpoint if available
-        BsonDocument resumeToken = checkpointStore.getCheckpoint();
+        BsonDocument resumeToken;
+        try {
+            resumeToken = checkpointStore.getCheckpoint().orElse(null);
+        } catch (CheckpointStore.CheckpointUnavailableException e) {
+            LOG.severe("Cannot start change stream - checkpoint store unavailable: " + e.getMessage());
+            handleFatalError(e);
+            return;
+        }
 
         // Pipeline to filter only insert operations
         List<Bson> pipeline = List.of(

@@ -154,6 +154,22 @@ const router = createRouter({
           name: 'subscriptions',
           component: () => import('@/pages/subscriptions/SubscriptionListPage.vue'),
         },
+        // Dispatch Pools
+        {
+          path: 'dispatch-pools',
+          name: 'dispatch-pools',
+          component: () => import('@/pages/dispatch-pools/DispatchPoolListPage.vue'),
+        },
+        {
+          path: 'dispatch-pools/new',
+          name: 'dispatch-pool-create',
+          component: () => import('@/pages/dispatch-pools/DispatchPoolCreatePage.vue'),
+        },
+        {
+          path: 'dispatch-pools/:id',
+          name: 'dispatch-pool-detail',
+          component: () => import('@/pages/dispatch-pools/DispatchPoolDetailPage.vue'),
+        },
         // Dispatch Jobs
         {
           path: 'dispatch-jobs',

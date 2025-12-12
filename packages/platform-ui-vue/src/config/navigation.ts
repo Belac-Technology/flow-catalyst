@@ -29,17 +29,7 @@ export const NAVIGATION_CONFIG: NavGroup[] = [
         label: 'User Management',
         icon: 'pi pi-users',
         route: '/users',
-        children: [
-          { label: 'All Users', icon: 'pi pi-list', route: '/users' },
-          { label: 'Application Assignments', icon: 'pi pi-sitemap', route: '/users/applications' },
-          { label: 'Client Assignments', icon: 'pi pi-building', route: '/users/clients' },
-        ],
       },
-    ],
-  },
-  {
-    label: 'Authentication',
-    items: [
       {
         label: 'Domain IDPs',
         icon: 'pi pi-id-card',
@@ -50,11 +40,6 @@ export const NAVIGATION_CONFIG: NavGroup[] = [
         icon: 'pi pi-globe',
         route: '/authentication/anchor-domains',
       },
-    ],
-  },
-  {
-    label: 'Authorization',
-    items: [
       {
         label: 'Roles',
         icon: 'pi pi-shield',
@@ -99,6 +84,11 @@ export const NAVIGATION_CONFIG: NavGroup[] = [
         label: 'Subscriptions',
         icon: 'pi pi-bell',
         route: '/subscriptions',
+      },
+      {
+        label: 'Dispatch Pools',
+        icon: 'pi pi-database',
+        route: '/dispatch-pools',
       },
       {
         label: 'Dispatch Jobs',

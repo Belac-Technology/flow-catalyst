@@ -12,6 +12,8 @@ import org.jboss.logging.Logger;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import tech.flowcatalyst.platform.authorization.PermissionRegistry;
+
 import java.security.*;
 import java.security.interfaces.RSAPrivateKey;
 import java.security.interfaces.RSAPublicKey;
@@ -186,11 +188,15 @@ public class JwtKeyService {
      * @param clients List of client IDs the user can access, or ["*"] for all
      */
     public String issueSessionToken(String principalId, String email, Set<String> roles, List<String> clients) {
+        // Extract application codes from roles
+        Set<String> applications = PermissionRegistry.extractApplicationCodes(roles);
+
         return Jwt.issuer(issuer)
                 .subject(String.valueOf(principalId))
                 .claim("email", email)
                 .claim("type", "USER")
                 .claim("clients", clients)
+                .claim("applications", applications)
                 .groups(roles)
                 .issuedAt(Instant.now())
                 .expiresAt(Instant.now().plus(sessionTokenExpiry))
@@ -243,6 +249,7 @@ public class JwtKeyService {
      * - client_id: The selected client context
      * - roles: User's role strings
      * - permissions: Resolved permissions from roles
+     * - applications: Application codes extracted from roles
      *
      * @param principalId The principal ID
      * @param email The user's email
@@ -253,10 +260,14 @@ public class JwtKeyService {
      */
     public String issueSessionTokenWithClient(String principalId, String email,
             Set<String> roles, Set<String> permissions, String clientId) {
+        // Extract application codes from roles
+        Set<String> applications = PermissionRegistry.extractApplicationCodes(roles);
+
         var jwtBuilder = Jwt.issuer(issuer)
                 .subject(String.valueOf(principalId))
                 .claim("email", email)
                 .claim("type", "USER")
+                .claim("applications", applications)
                 .groups(roles);
 
         // Add client context
@@ -494,6 +505,36 @@ public class JwtKeyService {
             return Set.of();
         } catch (Exception e) {
             LOG.debugf("Failed to extract permissions from token: %s", e.getMessage());
+            return Set.of();
+        }
+    }
+
+    /**
+     * Extract applications from a token.
+     * Returns empty set if token is invalid or has no applications claim.
+     */
+    @SuppressWarnings("unchecked")
+    public Set<String> extractApplications(String token) {
+        if (token == null) {
+            return Set.of();
+        }
+        try {
+            io.smallrye.jwt.auth.principal.JWTParser parser = new io.smallrye.jwt.auth.principal.DefaultJWTParser();
+            org.eclipse.microprofile.jwt.JsonWebToken jwt = parser.verify(token, publicKey);
+
+            Object applicationsClaim = jwt.getClaim("applications");
+            if (applicationsClaim == null) {
+                return Set.of();
+            }
+            if (applicationsClaim instanceof Set) {
+                return (Set<String>) applicationsClaim;
+            }
+            if (applicationsClaim instanceof java.util.Collection) {
+                return new java.util.HashSet<>((java.util.Collection<String>) applicationsClaim);
+            }
+            return Set.of();
+        } catch (Exception e) {
+            LOG.debugf("Failed to extract applications from token: %s", e.getMessage());
             return Set.of();
         }
     }

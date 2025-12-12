@@ -13,9 +13,9 @@ const dashboardCards = [
     iconColor: 'text-indigo',
   },
   {
-    title: 'Tenants',
-    description: 'Manage customer tenants and their configurations',
-    route: '/tenants',
+    title: 'Clients',
+    description: 'Manage clients and their configurations',
+    route: '/clients',
     icon: 'pi pi-building',
     bgColor: 'bg-blue',
     iconColor: 'text-blue',
@@ -89,7 +89,7 @@ const dashboardCards = [
       <h2 class="section-title">Platform Overview</h2>
       <div class="stats-grid">
         <div class="stat-card">
-          <p class="stat-label">Total Tenants</p>
+          <p class="stat-label">Total Clients</p>
           <p class="stat-value">--</p>
         </div>
         <div class="stat-card">

@@ -72,5 +72,29 @@ public class PlatformMessagingPermissions {
         "Retry failed dispatch jobs"
     );
 
+    // ========================================================================
+    // Dispatch Pool Management
+    // ========================================================================
+
+    public static final PermissionDefinition DISPATCH_POOL_VIEW = PermissionDefinition.make(
+        "platform", "messaging", "dispatch-pool", "view",
+        "View dispatch pools and configuration"
+    );
+
+    public static final PermissionDefinition DISPATCH_POOL_CREATE = PermissionDefinition.make(
+        "platform", "messaging", "dispatch-pool", "create",
+        "Create new dispatch pools"
+    );
+
+    public static final PermissionDefinition DISPATCH_POOL_UPDATE = PermissionDefinition.make(
+        "platform", "messaging", "dispatch-pool", "update",
+        "Update dispatch pool configuration"
+    );
+
+    public static final PermissionDefinition DISPATCH_POOL_DELETE = PermissionDefinition.make(
+        "platform", "messaging", "dispatch-pool", "delete",
+        "Delete dispatch pools"
+    );
+
     private PlatformMessagingPermissions() {}
 }

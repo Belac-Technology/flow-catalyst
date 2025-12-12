@@ -119,6 +119,10 @@ onMounted(async () => {
   await Promise.all([loadUser(), loadClients(), loadAvailableRoles()]);
   if (user.value) {
     await Promise.all([loadClientGrants(), loadRoleAssignments()]);
+    // Check if we should start in edit mode
+    if (route.query.edit === 'true') {
+      startEdit();
+    }
   }
   loading.value = false;
 });

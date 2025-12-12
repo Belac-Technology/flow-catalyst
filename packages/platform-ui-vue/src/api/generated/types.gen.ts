@@ -108,6 +108,21 @@ export type AuthConfigType = "ANCHOR" | "PARTNER" | "CLIENT";
 
 export type AuthProvider = "INTERNAL" | "OIDC";
 
+export type ClientApplicationDto = {
+  id?: string;
+  code?: string;
+  name?: string;
+  description?: string;
+  iconUrl?: string;
+  active?: boolean;
+  enabledForClient?: boolean;
+};
+
+export type ClientApplicationsResponse = {
+  applications?: Array<ClientApplicationDto>;
+  total?: number;
+};
+
 export type ClientConfigRequest = {
   enabled?: boolean;
   baseUrlOverride?: string;
@@ -240,6 +255,16 @@ export type CreateDispatchJobRequest = {
   idempotencyKey?: string;
   externalId?: string;
   queueUrl: string;
+};
+
+export type CreateDispatchPoolRequest = {
+  code: string;
+  name: string;
+  description?: string;
+  rateLimit?: number;
+  concurrency?: number;
+  applicationId: string;
+  clientId?: string;
 };
 
 export type CreateEventRequest = {
@@ -388,6 +413,29 @@ export type DispatchJobResponse = {
   createdAt?: Instant;
   updatedAt?: Instant;
 };
+
+export type DispatchPoolDto = {
+  id?: string;
+  code?: string;
+  name?: string;
+  description?: string;
+  rateLimit?: number;
+  concurrency?: number;
+  applicationId?: string;
+  applicationCode?: string;
+  clientId?: string;
+  clientIdentifier?: string;
+  status?: DispatchPoolStatus;
+  createdAt?: Instant;
+  updatedAt?: Instant;
+};
+
+export type DispatchPoolListResponse = {
+  pools?: Array<DispatchPoolDto>;
+  total?: number;
+};
+
+export type DispatchPoolStatus = "ACTIVE" | "SUSPENDED" | "ARCHIVED";
 
 export type DispatchProtocol =
   | "HTTP_WEBHOOK"
@@ -690,6 +738,10 @@ export type UpdateApplicationRequest1 = {
   iconUrl?: string;
 };
 
+export type UpdateClientApplicationsRequest = {
+  enabledApplicationIds?: Array<string>;
+};
+
 export type UpdateClientBindingRequest = {
   clientId?: string;
 };
@@ -709,6 +761,14 @@ export type UpdateClientRequest1 = {
 export type UpdateConfigTypeRequest = {
   configType: AuthConfigType;
   primaryClientId?: string;
+};
+
+export type UpdateDispatchPoolRequest = {
+  name?: string;
+  description?: string;
+  rateLimit?: number;
+  concurrency?: number;
+  status?: DispatchPoolStatus;
 };
 
 export type UpdateEventTypeRequest = {
@@ -1777,6 +1837,10 @@ export type PostApiAdminPlatformClientsErrors = {
    * Not authenticated
    */
   401: unknown;
+  /**
+   * Insufficient permissions
+   */
+  403: unknown;
 };
 
 export type PostApiAdminPlatformClientsResponses = {
@@ -1799,6 +1863,14 @@ export type GetApiAdminPlatformClientsByIdentifierByIdentifierData = {
 };
 
 export type GetApiAdminPlatformClientsByIdentifierByIdentifierErrors = {
+  /**
+   * Not authenticated
+   */
+  401: unknown;
+  /**
+   * Insufficient permissions
+   */
+  403: unknown;
   /**
    * Client not found
    */
@@ -1826,6 +1898,10 @@ export type GetApiAdminPlatformClientsByIdErrors = {
    * Not authenticated
    */
   401: unknown;
+  /**
+   * Insufficient permissions
+   */
+  403: unknown;
   /**
    * Client not found
    */
@@ -1857,6 +1933,14 @@ export type PutApiAdminPlatformClientsByIdErrors = {
    */
   400: unknown;
   /**
+   * Not authenticated
+   */
+  401: unknown;
+  /**
+   * Insufficient permissions
+   */
+  403: unknown;
+  /**
    * Client not found
    */
   404: unknown;
@@ -1880,6 +1964,14 @@ export type PostApiAdminPlatformClientsByIdActivateData = {
 
 export type PostApiAdminPlatformClientsByIdActivateErrors = {
   /**
+   * Not authenticated
+   */
+  401: unknown;
+  /**
+   * Insufficient permissions
+   */
+  403: unknown;
+  /**
    * Client not found
    */
   404: unknown;
@@ -1891,6 +1983,145 @@ export type PostApiAdminPlatformClientsByIdActivateResponses = {
    */
   200: unknown;
 };
+
+export type GetApiAdminPlatformClientsByIdApplicationsData = {
+  body?: never;
+  path: {
+    id: string;
+  };
+  query?: never;
+  url: "/api/admin/platform/clients/{id}/applications";
+};
+
+export type GetApiAdminPlatformClientsByIdApplicationsErrors = {
+  /**
+   * Not authenticated
+   */
+  401: unknown;
+  /**
+   * Insufficient permissions
+   */
+  403: unknown;
+  /**
+   * Client not found
+   */
+  404: unknown;
+};
+
+export type GetApiAdminPlatformClientsByIdApplicationsResponses = {
+  /**
+   * List of applications with status
+   */
+  200: ClientApplicationsResponse;
+};
+
+export type GetApiAdminPlatformClientsByIdApplicationsResponse =
+  GetApiAdminPlatformClientsByIdApplicationsResponses[keyof GetApiAdminPlatformClientsByIdApplicationsResponses];
+
+export type PutApiAdminPlatformClientsByIdApplicationsData = {
+  body: UpdateClientApplicationsRequest;
+  path: {
+    id: string;
+  };
+  query?: never;
+  url: "/api/admin/platform/clients/{id}/applications";
+};
+
+export type PutApiAdminPlatformClientsByIdApplicationsErrors = {
+  /**
+   * Bad Request
+   */
+  400: unknown;
+  /**
+   * Not authenticated
+   */
+  401: unknown;
+  /**
+   * Insufficient permissions
+   */
+  403: unknown;
+  /**
+   * Client not found
+   */
+  404: unknown;
+};
+
+export type PutApiAdminPlatformClientsByIdApplicationsResponses = {
+  /**
+   * Applications updated
+   */
+  200: unknown;
+};
+
+export type PostApiAdminPlatformClientsByIdApplicationsByApplicationIdDisableData =
+  {
+    body?: never;
+    path: {
+      applicationId: string;
+      id: string;
+    };
+    query?: never;
+    url: "/api/admin/platform/clients/{id}/applications/{applicationId}/disable";
+  };
+
+export type PostApiAdminPlatformClientsByIdApplicationsByApplicationIdDisableErrors =
+  {
+    /**
+     * Not authenticated
+     */
+    401: unknown;
+    /**
+     * Insufficient permissions
+     */
+    403: unknown;
+    /**
+     * Client or application not found
+     */
+    404: unknown;
+  };
+
+export type PostApiAdminPlatformClientsByIdApplicationsByApplicationIdDisableResponses =
+  {
+    /**
+     * Application disabled
+     */
+    200: unknown;
+  };
+
+export type PostApiAdminPlatformClientsByIdApplicationsByApplicationIdEnableData =
+  {
+    body?: never;
+    path: {
+      applicationId: string;
+      id: string;
+    };
+    query?: never;
+    url: "/api/admin/platform/clients/{id}/applications/{applicationId}/enable";
+  };
+
+export type PostApiAdminPlatformClientsByIdApplicationsByApplicationIdEnableErrors =
+  {
+    /**
+     * Not authenticated
+     */
+    401: unknown;
+    /**
+     * Insufficient permissions
+     */
+    403: unknown;
+    /**
+     * Client or application not found
+     */
+    404: unknown;
+  };
+
+export type PostApiAdminPlatformClientsByIdApplicationsByApplicationIdEnableResponses =
+  {
+    /**
+     * Application enabled
+     */
+    200: unknown;
+  };
 
 export type PostApiAdminPlatformClientsByIdDeactivateData = {
   body: StatusChangeRequest;
@@ -1906,6 +2137,14 @@ export type PostApiAdminPlatformClientsByIdDeactivateErrors = {
    * Bad Request
    */
   400: unknown;
+  /**
+   * Not authenticated
+   */
+  401: unknown;
+  /**
+   * Insufficient permissions
+   */
+  403: unknown;
   /**
    * Client not found
    */
@@ -1934,6 +2173,14 @@ export type PostApiAdminPlatformClientsByIdNotesErrors = {
    */
   400: unknown;
   /**
+   * Not authenticated
+   */
+  401: unknown;
+  /**
+   * Insufficient permissions
+   */
+  403: unknown;
+  /**
    * Client not found
    */
   404: unknown;
@@ -1961,6 +2208,14 @@ export type PostApiAdminPlatformClientsByIdSuspendErrors = {
    */
   400: unknown;
   /**
+   * Not authenticated
+   */
+  401: unknown;
+  /**
+   * Insufficient permissions
+   */
+  403: unknown;
+  /**
    * Client not found
    */
   404: unknown;
@@ -1969,6 +2224,252 @@ export type PostApiAdminPlatformClientsByIdSuspendErrors = {
 export type PostApiAdminPlatformClientsByIdSuspendResponses = {
   /**
    * Client suspended
+   */
+  200: unknown;
+};
+
+export type GetApiAdminPlatformDispatchPoolsData = {
+  body?: never;
+  path?: never;
+  query?: {
+    /**
+     * If true, return only anchor-level pools (clientId is null)
+     */
+    anchorLevel?: boolean;
+    /**
+     * Filter by application ID
+     */
+    applicationId?: string;
+    /**
+     * Filter by client ID
+     */
+    clientId?: string;
+    /**
+     * Filter by status
+     */
+    status?: DispatchPoolStatus;
+  };
+  url: "/api/admin/platform/dispatch-pools";
+};
+
+export type GetApiAdminPlatformDispatchPoolsErrors = {
+  /**
+   * Not authenticated
+   */
+  401: unknown;
+  /**
+   * Insufficient permissions
+   */
+  403: unknown;
+};
+
+export type GetApiAdminPlatformDispatchPoolsResponses = {
+  /**
+   * List of dispatch pools
+   */
+  200: DispatchPoolListResponse;
+};
+
+export type GetApiAdminPlatformDispatchPoolsResponse =
+  GetApiAdminPlatformDispatchPoolsResponses[keyof GetApiAdminPlatformDispatchPoolsResponses];
+
+export type PostApiAdminPlatformDispatchPoolsData = {
+  body: CreateDispatchPoolRequest;
+  path?: never;
+  query?: never;
+  url: "/api/admin/platform/dispatch-pools";
+};
+
+export type PostApiAdminPlatformDispatchPoolsErrors = {
+  /**
+   * Invalid request or code already exists
+   */
+  400: unknown;
+  /**
+   * Not authenticated
+   */
+  401: unknown;
+  /**
+   * Insufficient permissions
+   */
+  403: unknown;
+};
+
+export type PostApiAdminPlatformDispatchPoolsResponses = {
+  /**
+   * Dispatch pool created
+   */
+  201: DispatchPoolDto;
+};
+
+export type PostApiAdminPlatformDispatchPoolsResponse =
+  PostApiAdminPlatformDispatchPoolsResponses[keyof PostApiAdminPlatformDispatchPoolsResponses];
+
+export type DeleteApiAdminPlatformDispatchPoolsByIdData = {
+  body?: never;
+  path: {
+    id: string;
+  };
+  query?: never;
+  url: "/api/admin/platform/dispatch-pools/{id}";
+};
+
+export type DeleteApiAdminPlatformDispatchPoolsByIdErrors = {
+  /**
+   * Cannot delete pool with active subscriptions
+   */
+  400: unknown;
+  /**
+   * Not authenticated
+   */
+  401: unknown;
+  /**
+   * Insufficient permissions
+   */
+  403: unknown;
+  /**
+   * Pool not found
+   */
+  404: unknown;
+};
+
+export type DeleteApiAdminPlatformDispatchPoolsByIdResponses = {
+  /**
+   * Dispatch pool deleted
+   */
+  200: unknown;
+};
+
+export type GetApiAdminPlatformDispatchPoolsByIdData = {
+  body?: never;
+  path: {
+    id: string;
+  };
+  query?: never;
+  url: "/api/admin/platform/dispatch-pools/{id}";
+};
+
+export type GetApiAdminPlatformDispatchPoolsByIdErrors = {
+  /**
+   * Not authenticated
+   */
+  401: unknown;
+  /**
+   * Insufficient permissions
+   */
+  403: unknown;
+  /**
+   * Pool not found
+   */
+  404: unknown;
+};
+
+export type GetApiAdminPlatformDispatchPoolsByIdResponses = {
+  /**
+   * Dispatch pool details
+   */
+  200: DispatchPoolDto;
+};
+
+export type GetApiAdminPlatformDispatchPoolsByIdResponse =
+  GetApiAdminPlatformDispatchPoolsByIdResponses[keyof GetApiAdminPlatformDispatchPoolsByIdResponses];
+
+export type PutApiAdminPlatformDispatchPoolsByIdData = {
+  body: UpdateDispatchPoolRequest;
+  path: {
+    id: string;
+  };
+  query?: never;
+  url: "/api/admin/platform/dispatch-pools/{id}";
+};
+
+export type PutApiAdminPlatformDispatchPoolsByIdErrors = {
+  /**
+   * Invalid request
+   */
+  400: unknown;
+  /**
+   * Not authenticated
+   */
+  401: unknown;
+  /**
+   * Insufficient permissions
+   */
+  403: unknown;
+  /**
+   * Pool not found
+   */
+  404: unknown;
+};
+
+export type PutApiAdminPlatformDispatchPoolsByIdResponses = {
+  /**
+   * Dispatch pool updated
+   */
+  200: DispatchPoolDto;
+};
+
+export type PutApiAdminPlatformDispatchPoolsByIdResponse =
+  PutApiAdminPlatformDispatchPoolsByIdResponses[keyof PutApiAdminPlatformDispatchPoolsByIdResponses];
+
+export type PostApiAdminPlatformDispatchPoolsByIdActivateData = {
+  body?: never;
+  path: {
+    id: string;
+  };
+  query?: never;
+  url: "/api/admin/platform/dispatch-pools/{id}/activate";
+};
+
+export type PostApiAdminPlatformDispatchPoolsByIdActivateErrors = {
+  /**
+   * Not authenticated
+   */
+  401: unknown;
+  /**
+   * Insufficient permissions
+   */
+  403: unknown;
+  /**
+   * Pool not found
+   */
+  404: unknown;
+};
+
+export type PostApiAdminPlatformDispatchPoolsByIdActivateResponses = {
+  /**
+   * Pool activated
+   */
+  200: unknown;
+};
+
+export type PostApiAdminPlatformDispatchPoolsByIdSuspendData = {
+  body?: never;
+  path: {
+    id: string;
+  };
+  query?: never;
+  url: "/api/admin/platform/dispatch-pools/{id}/suspend";
+};
+
+export type PostApiAdminPlatformDispatchPoolsByIdSuspendErrors = {
+  /**
+   * Not authenticated
+   */
+  401: unknown;
+  /**
+   * Insufficient permissions
+   */
+  403: unknown;
+  /**
+   * Pool not found
+   */
+  404: unknown;
+};
+
+export type PostApiAdminPlatformDispatchPoolsByIdSuspendResponses = {
+  /**
+   * Pool suspended
    */
   200: unknown;
 };

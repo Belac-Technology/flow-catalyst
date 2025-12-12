@@ -4,6 +4,7 @@ import io.quarkus.arc.DefaultBean;
 import jakarta.enterprise.context.ApplicationScoped;
 import org.bson.BsonDocument;
 
+import java.util.Optional;
 import java.util.logging.Logger;
 
 /**
@@ -25,13 +26,13 @@ public class InMemoryCheckpointStore implements CheckpointStore {
     private volatile BsonDocument checkpoint = null;
 
     @Override
-    public BsonDocument getCheckpoint() {
+    public Optional<BsonDocument> getCheckpoint() {
         if (checkpoint == null) {
             LOG.info("No checkpoint in memory - starting change stream from beginning");
-        } else {
-            LOG.info("Loaded checkpoint from memory");
+            return Optional.empty();
         }
-        return checkpoint;
+        LOG.info("Loaded checkpoint from memory");
+        return Optional.of(checkpoint);
     }
 
     @Override
