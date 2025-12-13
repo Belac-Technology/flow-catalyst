@@ -1,11 +1,11 @@
 package tech.flowcatalyst.subscription.operations.createsubscription;
 
+import tech.flowcatalyst.subscription.ConfigEntry;
 import tech.flowcatalyst.subscription.EventTypeBinding;
 import tech.flowcatalyst.subscription.SubscriptionMode;
 import tech.flowcatalyst.subscription.SubscriptionSource;
 
 import java.util.List;
-import java.util.Map;
 
 /**
  * Command to create a new subscription.
@@ -34,7 +34,7 @@ public record CreateSubscriptionCommand(
     List<EventTypeBinding> eventTypes,
     String target,
     String queue,
-    Map<String, Object> customConfig,
+    List<ConfigEntry> customConfig,
     SubscriptionSource source,
     Integer maxAgeSeconds,
     String dispatchPoolId,

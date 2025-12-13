@@ -35,7 +35,7 @@ async function loadApplications() {
   error.value = null;
   try {
     const response = await applicationsApi.list();
-    applications.value = response.items;
+    applications.value = response.applications;
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Failed to load applications';
   } finally {

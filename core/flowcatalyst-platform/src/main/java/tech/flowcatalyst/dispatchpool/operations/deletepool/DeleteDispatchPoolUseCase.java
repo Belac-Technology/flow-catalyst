@@ -75,8 +75,6 @@ public class DeleteDispatchPoolUseCase {
             existing.description(),
             existing.rateLimit(),
             existing.concurrency(),
-            existing.applicationId(),
-            existing.applicationCode(),
             existing.clientId(),
             existing.clientIdentifier(),
             DispatchPoolStatus.ARCHIVED,
@@ -89,8 +87,6 @@ public class DeleteDispatchPoolUseCase {
             .from(context)
             .poolId(archived.id())
             .code(archived.code())
-            .applicationId(archived.applicationId())
-            .applicationCode(archived.applicationCode())
             .clientId(archived.clientId())
             .clientIdentifier(archived.clientIdentifier())
             .build();

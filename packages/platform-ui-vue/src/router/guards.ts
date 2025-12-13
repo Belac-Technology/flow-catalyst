@@ -1,5 +1,6 @@
 import type { NavigationGuardNext, RouteLocationNormalized } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
+import { usePermissionsStore, getRoutePermission } from '@/stores/permissions';
 import { checkSession } from '@/api/auth';
 
 /**
@@ -89,6 +90,7 @@ export function permissionGuard(requiredPermission: string) {
     next: NavigationGuardNext
   ): void => {
     const authStore = useAuthStore();
+    const permissionsStore = usePermissionsStore();
     const permissions = authStore.user?.permissions || [];
 
     if (permissions.includes(requiredPermission)) {
@@ -96,6 +98,77 @@ export function permissionGuard(requiredPermission: string) {
       return;
     }
 
-    next('/dashboard');
+    // Show permission denied modal
+    permissionsStore.showPermissionDenied({
+      type: 'route',
+      message: 'You do not have permission to access this page.',
+      requiredPermission,
+      path: to.fullPath,
+    });
+
+    // Stay on current page or go to dashboard if no history
+    if (from.name) {
+      next(false);
+    } else {
+      next('/dashboard');
+    }
+  };
+}
+
+/**
+ * Global navigation guard that checks route permissions.
+ * This should be registered as a global beforeEach guard.
+ */
+export function createRoutePermissionGuard() {
+  return (
+    to: RouteLocationNormalized,
+    from: RouteLocationNormalized,
+    next: NavigationGuardNext
+  ): void => {
+    const authStore = useAuthStore();
+    const permissionsStore = usePermissionsStore();
+
+    // Skip for unauthenticated users (authGuard will handle)
+    if (!authStore.isAuthenticated) {
+      next();
+      return;
+    }
+
+    // Skip for routes without permission requirements
+    const requiredPermission = getRoutePermission(to.path);
+    if (!requiredPermission) {
+      next();
+      return;
+    }
+
+    const permissions = authStore.user?.permissions || [];
+    const roles = authStore.user?.roles || [];
+
+    // Super admin bypasses all permission checks
+    if (roles.includes('platform:super-admin')) {
+      next();
+      return;
+    }
+
+    // Check if user has the required permission
+    if (permissions.includes(requiredPermission) || permissions.includes('*')) {
+      next();
+      return;
+    }
+
+    // Show permission denied modal
+    permissionsStore.showPermissionDenied({
+      type: 'route',
+      message: 'You do not have permission to access this page.',
+      requiredPermission,
+      path: to.fullPath,
+    });
+
+    // Stay on current page or go to dashboard if no history
+    if (from.name) {
+      next(false);
+    } else {
+      next('/dashboard');
+    }
   };
 }

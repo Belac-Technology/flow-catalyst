@@ -10,11 +10,11 @@ interface LoginCredentials {
 }
 
 interface LoginResponse {
-  principalId: number;
+  principalId: string;
   name: string;
   email: string;
   roles: string[];
-  tenantId: number | null;
+  clientId: string | null;
 }
 
 export interface DomainCheckResponse {
@@ -25,12 +25,12 @@ export interface DomainCheckResponse {
 
 function mapLoginResponseToUser(response: LoginResponse): User {
   return {
-    id: String(response.principalId),
+    id: response.principalId,
     email: response.email,
     name: response.name,
-    tenantId: response.tenantId ? String(response.tenantId) : null,
+    clientId: response.clientId,
     roles: response.roles,
-    permissions: [],
+    permissions: [],  // Permissions are loaded separately or derived from roles
   };
 }
 
@@ -118,21 +118,21 @@ export async function logout(): Promise<void> {
   await router.replace('/auth/login');
 }
 
-export async function switchTenant(tenantId: string): Promise<void> {
+export async function switchClient(clientId: string): Promise<void> {
   const authStore = useAuthStore();
 
   try {
-    const response = await fetch(`${AUTH_URL}/tenant/${tenantId}`, {
+    const response = await fetch(`${AUTH_URL}/client/${clientId}`, {
       method: 'POST',
       credentials: 'include',
     });
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.message || 'Failed to switch tenant');
+      throw new Error(errorData.message || 'Failed to switch client');
     }
 
-    authStore.selectTenant(tenantId);
+    authStore.selectClient(clientId);
   } catch (error: any) {
     authStore.setError(error.message);
     throw error;

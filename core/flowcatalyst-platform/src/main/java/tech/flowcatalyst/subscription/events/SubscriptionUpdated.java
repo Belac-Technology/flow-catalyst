@@ -12,7 +12,6 @@ import tech.flowcatalyst.subscription.*;
 
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 
 /**
  * Event emitted when a subscription is updated.
@@ -38,7 +37,7 @@ public record SubscriptionUpdated(
     List<EventTypeBinding> eventTypes,
     String target,
     String queue,
-    Map<String, Object> customConfig,
+    List<ConfigEntry> customConfig,
     SubscriptionStatus status,
     int maxAgeSeconds,
     String dispatchPoolId,
@@ -113,7 +112,7 @@ public record SubscriptionUpdated(
         List<EventTypeBinding> eventTypes,
         String target,
         String queue,
-        Map<String, Object> customConfig,
+        List<ConfigEntry> customConfig,
         SubscriptionStatus status,
         int maxAgeSeconds,
         String dispatchPoolId,
@@ -144,7 +143,7 @@ public record SubscriptionUpdated(
         private List<EventTypeBinding> eventTypes;
         private String target;
         private String queue;
-        private Map<String, Object> customConfig;
+        private List<ConfigEntry> customConfig;
         private SubscriptionStatus status;
         private int maxAgeSeconds;
         private String dispatchPoolId;
@@ -209,7 +208,7 @@ public record SubscriptionUpdated(
             return this;
         }
 
-        public Builder customConfig(Map<String, Object> customConfig) {
+        public Builder customConfig(List<ConfigEntry> customConfig) {
             this.customConfig = customConfig;
             return this;
         }

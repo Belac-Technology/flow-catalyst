@@ -180,7 +180,7 @@ public class CreateSubscriptionUseCase {
             .target(subscription.target())
             .queue(subscription.queue())
             .customConfig(subscription.customConfig())
-            .source(subscription.source())
+            .subscriptionSource(subscription.source())
             .status(subscription.status())
             .maxAgeSeconds(subscription.maxAgeSeconds())
             .dispatchPoolId(subscription.dispatchPoolId())

@@ -255,10 +255,6 @@ function getScopeLabel(p: DispatchPool) {
                 <span>{{ pool.concurrency }}</span>
               </div>
               <div class="detail-item">
-                <label>Application</label>
-                <span>{{ pool.applicationCode }}</span>
-              </div>
-              <div class="detail-item">
                 <label>Client Scope</label>
                 <span>{{ getScopeLabel(pool) }}</span>
               </div>

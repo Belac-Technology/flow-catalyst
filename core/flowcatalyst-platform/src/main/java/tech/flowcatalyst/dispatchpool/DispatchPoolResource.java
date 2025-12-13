@@ -74,7 +74,6 @@ public class DispatchPoolResource {
     })
     public Response listPools(
             @QueryParam("clientId") @Parameter(description = "Filter by client ID") String clientId,
-            @QueryParam("applicationId") @Parameter(description = "Filter by application ID") String applicationId,
             @QueryParam("status") @Parameter(description = "Filter by status") DispatchPoolStatus status,
             @QueryParam("anchorLevel") @Parameter(description = "If true, return only anchor-level pools (clientId is null)") Boolean anchorLevel) {
 
@@ -87,11 +86,8 @@ public class DispatchPoolResource {
             if (status != null) {
                 pools = pools.stream().filter(p -> p.status() == status).toList();
             }
-            if (applicationId != null) {
-                pools = pools.stream().filter(p -> applicationId.equals(p.applicationId())).toList();
-            }
         } else {
-            pools = poolOperations.findWithFilters(clientId, applicationId, status);
+            pools = poolOperations.findWithFilters(clientId, status);
         }
 
         List<DispatchPoolDto> dtos = pools.stream()
@@ -151,7 +147,6 @@ public class DispatchPoolResource {
             request.description(),
             request.rateLimit(),
             request.concurrency(),
-            request.applicationId(),
             request.clientId()
         );
 
@@ -368,8 +363,6 @@ public class DispatchPoolResource {
             pool.description(),
             pool.rateLimit(),
             pool.concurrency(),
-            pool.applicationId(),
-            pool.applicationCode(),
             pool.clientId(),
             pool.clientIdentifier(),
             pool.status(),
@@ -387,8 +380,6 @@ public class DispatchPoolResource {
         String description,
         int rateLimit,
         int concurrency,
-        String applicationId,
-        String applicationCode,
         String clientId,
         String clientIdentifier,
         DispatchPoolStatus status,
@@ -417,9 +408,6 @@ public class DispatchPoolResource {
 
         @Min(value = 1, message = "Concurrency must be at least 1")
         int concurrency,
-
-        @NotBlank(message = "Application ID is required")
-        String applicationId,
 
         String clientId
     ) {}

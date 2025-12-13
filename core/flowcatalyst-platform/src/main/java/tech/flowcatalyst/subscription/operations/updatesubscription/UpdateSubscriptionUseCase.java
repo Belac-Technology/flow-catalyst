@@ -85,7 +85,7 @@ public class UpdateSubscriptionUseCase {
         List<EventTypeBinding> newEventTypes = command.eventTypes() != null ? command.eventTypes() : existing.eventTypes();
         String newTarget = command.target() != null ? command.target() : existing.target();
         String newQueue = command.queue() != null ? command.queue() : existing.queue();
-        Map<String, Object> newCustomConfig = command.customConfig() != null ? command.customConfig() : existing.customConfig();
+        List<ConfigEntry> newCustomConfig = command.customConfig() != null ? command.customConfig() : existing.customConfig();
         SubscriptionStatus newStatus = command.status() != null ? command.status() : existing.status();
         int newMaxAgeSeconds = command.maxAgeSeconds() != null ? command.maxAgeSeconds() : existing.maxAgeSeconds();
         int newDelaySeconds = command.delaySeconds() != null ? command.delaySeconds() : existing.delaySeconds();

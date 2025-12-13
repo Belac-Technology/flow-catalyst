@@ -6,8 +6,6 @@ import tech.flowcatalyst.dispatchpool.DispatchPool;
 import tech.flowcatalyst.dispatchpool.DispatchPoolRepository;
 import tech.flowcatalyst.dispatchpool.DispatchPoolStatus;
 import tech.flowcatalyst.dispatchpool.events.DispatchPoolCreated;
-import tech.flowcatalyst.platform.application.Application;
-import tech.flowcatalyst.platform.application.ApplicationRepository;
 import tech.flowcatalyst.platform.client.Client;
 import tech.flowcatalyst.platform.client.ClientRepository;
 import tech.flowcatalyst.platform.common.ExecutionContext;
@@ -28,9 +26,6 @@ public class CreateDispatchPoolUseCase {
 
     @Inject
     DispatchPoolRepository poolRepo;
-
-    @Inject
-    ApplicationRepository applicationRepo;
 
     @Inject
     ClientRepository clientRepo;
@@ -66,25 +61,6 @@ public class CreateDispatchPoolUseCase {
             ));
         }
 
-        // Validate application
-        if (command.applicationId() == null || command.applicationId().isBlank()) {
-            return Result.failure(new UseCaseError.ValidationError(
-                "APPLICATION_ID_REQUIRED",
-                "Application ID is required",
-                Map.of()
-            ));
-        }
-
-        Optional<Application> applicationOpt = applicationRepo.findByIdOptional(command.applicationId());
-        if (applicationOpt.isEmpty()) {
-            return Result.failure(new UseCaseError.NotFoundError(
-                "APPLICATION_NOT_FOUND",
-                "Application not found",
-                Map.of("applicationId", command.applicationId())
-            ));
-        }
-        Application application = applicationOpt.get();
-
         // Validate client (if provided)
         String clientIdentifier = null;
         if (command.clientId() != null && !command.clientId().isBlank()) {
@@ -117,12 +93,12 @@ public class CreateDispatchPoolUseCase {
             ));
         }
 
-        // Check code uniqueness within scope
-        if (poolRepo.existsByCodeAndScope(command.code(), command.clientId(), command.applicationId())) {
+        // Check code uniqueness within scope (code + clientId)
+        if (poolRepo.existsByCodeAndClientId(command.code(), command.clientId())) {
             return Result.failure(new UseCaseError.BusinessRuleViolation(
                 "CODE_EXISTS",
                 "A pool with this code already exists in this scope",
-                Map.of("code", command.code(), "applicationId", command.applicationId())
+                Map.of("code", command.code())
             ));
         }
 
@@ -135,8 +111,6 @@ public class CreateDispatchPoolUseCase {
             command.description(),
             command.rateLimit(),
             command.concurrency(),
-            application.id,
-            application.code,
             command.clientId(),
             clientIdentifier,
             DispatchPoolStatus.ACTIVE,
@@ -153,8 +127,6 @@ public class CreateDispatchPoolUseCase {
             .description(pool.description())
             .rateLimit(pool.rateLimit())
             .concurrency(pool.concurrency())
-            .applicationId(pool.applicationId())
-            .applicationCode(pool.applicationCode())
             .clientId(pool.clientId())
             .clientIdentifier(pool.clientIdentifier())
             .status(pool.status())

@@ -177,6 +177,11 @@ export type ClientStatus = "ACTIVE" | "INACTIVE" | "SUSPENDED";
 
 export type ClientType = "PUBLIC" | "CONFIDENTIAL";
 
+export type ConfigEntry = {
+  key?: string;
+  value?: string;
+};
+
 export type ContextData = {
   key?: string;
   value?: string;
@@ -263,7 +268,6 @@ export type CreateDispatchPoolRequest = {
   description?: string;
   rateLimit?: number;
   concurrency?: number;
-  applicationId: string;
   clientId?: string;
 };
 
@@ -344,6 +348,24 @@ export type CreateRoleRequest2 = {
   clientManaged?: boolean;
 };
 
+export type CreateSubscriptionRequest = {
+  code: string;
+  name: string;
+  description?: string;
+  clientId?: string;
+  eventTypes: Array<EventTypeBinding>;
+  target: string;
+  queue: string;
+  customConfig?: Array<ConfigEntry>;
+  source?: SubscriptionSource;
+  maxAgeSeconds?: number;
+  dispatchPoolId: string;
+  delaySeconds?: number;
+  sequence?: number;
+  mode?: SubscriptionMode;
+  timeoutSeconds?: number;
+};
+
 export type CreateUserRequest = {
   email: string;
   password?: string;
@@ -421,8 +443,6 @@ export type DispatchPoolDto = {
   description?: string;
   rateLimit?: number;
   concurrency?: number;
-  applicationId?: string;
-  applicationCode?: string;
   clientId?: string;
   clientIdentifier?: string;
   status?: DispatchPoolStatus;
@@ -496,6 +516,12 @@ export type EventResponse = {
   deduplicationId?: string;
   messageGroup?: string;
   contextData?: Array<ContextDataResponse>;
+};
+
+export type EventTypeBinding = {
+  eventTypeId?: string;
+  eventTypeCode?: string;
+  specVersion?: string;
 };
 
 export type EventTypeListResponse = {
@@ -688,6 +714,41 @@ export type StatusChangeRequest = {
   reason: string;
 };
 
+export type SubscriptionDto = {
+  id?: string;
+  code?: string;
+  name?: string;
+  description?: string;
+  clientId?: string;
+  clientIdentifier?: string;
+  eventTypes?: Array<EventTypeBinding>;
+  target?: string;
+  queue?: string;
+  customConfig?: Array<ConfigEntry>;
+  source?: SubscriptionSource;
+  status?: SubscriptionStatus;
+  maxAgeSeconds?: number;
+  dispatchPoolId?: string;
+  dispatchPoolCode?: string;
+  delaySeconds?: number;
+  sequence?: number;
+  mode?: SubscriptionMode;
+  timeoutSeconds?: number;
+  createdAt?: Instant;
+  updatedAt?: Instant;
+};
+
+export type SubscriptionListResponse = {
+  subscriptions?: Array<SubscriptionDto>;
+  total?: number;
+};
+
+export type SubscriptionMode = "IMMEDIATE" | "NEXT_ON_ERROR" | "BLOCK_ON_ERROR";
+
+export type SubscriptionSource = "API" | "UI";
+
+export type SubscriptionStatus = "ACTIVE" | "PAUSED";
+
 export type SuccessResponse = {
   message?: string;
 };
@@ -809,6 +870,22 @@ export type UpdateRoleRequest1 = {
   description?: string;
   permissions?: Array<string>;
   clientManaged?: boolean;
+};
+
+export type UpdateSubscriptionRequest = {
+  name?: string;
+  description?: string;
+  eventTypes?: Array<EventTypeBinding>;
+  target?: string;
+  queue?: string;
+  customConfig?: Array<ConfigEntry>;
+  status?: SubscriptionStatus;
+  maxAgeSeconds?: number;
+  dispatchPoolId?: string;
+  delaySeconds?: number;
+  sequence?: number;
+  mode?: SubscriptionMode;
+  timeoutSeconds?: number;
 };
 
 export type UserScope = "ANCHOR" | "PARTNER" | "CLIENT";
@@ -1884,6 +1961,47 @@ export type GetApiAdminPlatformClientsByIdentifierByIdentifierResponses = {
   200: unknown;
 };
 
+export type GetApiAdminPlatformClientsSearchData = {
+  body?: never;
+  path?: never;
+  query?: {
+    /**
+     * Max results to return
+     */
+    limit?: number;
+    /**
+     * Search query (name or identifier)
+     */
+    q?: string;
+    /**
+     * Filter by status
+     */
+    status?: ClientStatus;
+  };
+  url: "/api/admin/platform/clients/search";
+};
+
+export type GetApiAdminPlatformClientsSearchErrors = {
+  /**
+   * Not authenticated
+   */
+  401: unknown;
+  /**
+   * Insufficient permissions
+   */
+  403: unknown;
+};
+
+export type GetApiAdminPlatformClientsSearchResponses = {
+  /**
+   * Matching clients
+   */
+  200: ClientListResponse;
+};
+
+export type GetApiAdminPlatformClientsSearchResponse =
+  GetApiAdminPlatformClientsSearchResponses[keyof GetApiAdminPlatformClientsSearchResponses];
+
 export type GetApiAdminPlatformClientsByIdData = {
   body?: never;
   path: {
@@ -2236,10 +2354,6 @@ export type GetApiAdminPlatformDispatchPoolsData = {
      * If true, return only anchor-level pools (clientId is null)
      */
     anchorLevel?: boolean;
-    /**
-     * Filter by application ID
-     */
-    applicationId?: string;
     /**
      * Filter by client ID
      */
@@ -3272,6 +3386,252 @@ export type PutApiAdminPlatformRolesByRoleNameResponses = {
 
 export type PutApiAdminPlatformRolesByRoleNameResponse =
   PutApiAdminPlatformRolesByRoleNameResponses[keyof PutApiAdminPlatformRolesByRoleNameResponses];
+
+export type GetApiAdminPlatformSubscriptionsData = {
+  body?: never;
+  path?: never;
+  query?: {
+    /**
+     * If true, return only anchor-level subscriptions
+     */
+    anchorLevel?: boolean;
+    /**
+     * Filter by client ID
+     */
+    clientId?: string;
+    /**
+     * Filter by dispatch pool
+     */
+    dispatchPoolId?: string;
+    /**
+     * Filter by source
+     */
+    source?: SubscriptionSource;
+    /**
+     * Filter by status
+     */
+    status?: SubscriptionStatus;
+  };
+  url: "/api/admin/platform/subscriptions";
+};
+
+export type GetApiAdminPlatformSubscriptionsErrors = {
+  /**
+   * Not authenticated
+   */
+  401: unknown;
+  /**
+   * Insufficient permissions
+   */
+  403: unknown;
+};
+
+export type GetApiAdminPlatformSubscriptionsResponses = {
+  /**
+   * List of subscriptions
+   */
+  200: SubscriptionListResponse;
+};
+
+export type GetApiAdminPlatformSubscriptionsResponse =
+  GetApiAdminPlatformSubscriptionsResponses[keyof GetApiAdminPlatformSubscriptionsResponses];
+
+export type PostApiAdminPlatformSubscriptionsData = {
+  body: CreateSubscriptionRequest;
+  path?: never;
+  query?: never;
+  url: "/api/admin/platform/subscriptions";
+};
+
+export type PostApiAdminPlatformSubscriptionsErrors = {
+  /**
+   * Invalid request or code already exists
+   */
+  400: unknown;
+  /**
+   * Not authenticated
+   */
+  401: unknown;
+  /**
+   * Insufficient permissions
+   */
+  403: unknown;
+};
+
+export type PostApiAdminPlatformSubscriptionsResponses = {
+  /**
+   * Subscription created
+   */
+  201: SubscriptionDto;
+};
+
+export type PostApiAdminPlatformSubscriptionsResponse =
+  PostApiAdminPlatformSubscriptionsResponses[keyof PostApiAdminPlatformSubscriptionsResponses];
+
+export type DeleteApiAdminPlatformSubscriptionsByIdData = {
+  body?: never;
+  path: {
+    id: string;
+  };
+  query?: never;
+  url: "/api/admin/platform/subscriptions/{id}";
+};
+
+export type DeleteApiAdminPlatformSubscriptionsByIdErrors = {
+  /**
+   * Not authenticated
+   */
+  401: unknown;
+  /**
+   * Insufficient permissions
+   */
+  403: unknown;
+  /**
+   * Subscription not found
+   */
+  404: unknown;
+};
+
+export type DeleteApiAdminPlatformSubscriptionsByIdResponses = {
+  /**
+   * Subscription deleted
+   */
+  200: unknown;
+};
+
+export type GetApiAdminPlatformSubscriptionsByIdData = {
+  body?: never;
+  path: {
+    id: string;
+  };
+  query?: never;
+  url: "/api/admin/platform/subscriptions/{id}";
+};
+
+export type GetApiAdminPlatformSubscriptionsByIdErrors = {
+  /**
+   * Not authenticated
+   */
+  401: unknown;
+  /**
+   * Insufficient permissions
+   */
+  403: unknown;
+  /**
+   * Subscription not found
+   */
+  404: unknown;
+};
+
+export type GetApiAdminPlatformSubscriptionsByIdResponses = {
+  /**
+   * Subscription details
+   */
+  200: SubscriptionDto;
+};
+
+export type GetApiAdminPlatformSubscriptionsByIdResponse =
+  GetApiAdminPlatformSubscriptionsByIdResponses[keyof GetApiAdminPlatformSubscriptionsByIdResponses];
+
+export type PutApiAdminPlatformSubscriptionsByIdData = {
+  body: UpdateSubscriptionRequest;
+  path: {
+    id: string;
+  };
+  query?: never;
+  url: "/api/admin/platform/subscriptions/{id}";
+};
+
+export type PutApiAdminPlatformSubscriptionsByIdErrors = {
+  /**
+   * Invalid request
+   */
+  400: unknown;
+  /**
+   * Not authenticated
+   */
+  401: unknown;
+  /**
+   * Insufficient permissions
+   */
+  403: unknown;
+  /**
+   * Subscription not found
+   */
+  404: unknown;
+};
+
+export type PutApiAdminPlatformSubscriptionsByIdResponses = {
+  /**
+   * Subscription updated
+   */
+  200: SubscriptionDto;
+};
+
+export type PutApiAdminPlatformSubscriptionsByIdResponse =
+  PutApiAdminPlatformSubscriptionsByIdResponses[keyof PutApiAdminPlatformSubscriptionsByIdResponses];
+
+export type PostApiAdminPlatformSubscriptionsByIdPauseData = {
+  body?: never;
+  path: {
+    id: string;
+  };
+  query?: never;
+  url: "/api/admin/platform/subscriptions/{id}/pause";
+};
+
+export type PostApiAdminPlatformSubscriptionsByIdPauseErrors = {
+  /**
+   * Not authenticated
+   */
+  401: unknown;
+  /**
+   * Insufficient permissions
+   */
+  403: unknown;
+  /**
+   * Subscription not found
+   */
+  404: unknown;
+};
+
+export type PostApiAdminPlatformSubscriptionsByIdPauseResponses = {
+  /**
+   * Subscription paused
+   */
+  200: unknown;
+};
+
+export type PostApiAdminPlatformSubscriptionsByIdResumeData = {
+  body?: never;
+  path: {
+    id: string;
+  };
+  query?: never;
+  url: "/api/admin/platform/subscriptions/{id}/resume";
+};
+
+export type PostApiAdminPlatformSubscriptionsByIdResumeErrors = {
+  /**
+   * Not authenticated
+   */
+  401: unknown;
+  /**
+   * Insufficient permissions
+   */
+  403: unknown;
+  /**
+   * Subscription not found
+   */
+  404: unknown;
+};
+
+export type PostApiAdminPlatformSubscriptionsByIdResumeResponses = {
+  /**
+   * Subscription resumed
+   */
+  200: unknown;
+};
 
 export type GetApiApplicationsData = {
   body?: never;

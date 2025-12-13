@@ -12,7 +12,6 @@ import tech.flowcatalyst.subscription.*;
 
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 
 /**
  * Event emitted when a subscription is created.
@@ -38,8 +37,8 @@ public record SubscriptionCreated(
     List<EventTypeBinding> eventTypes,
     String target,
     String queue,
-    Map<String, Object> customConfig,
-    SubscriptionSource source,
+    List<ConfigEntry> customConfig,
+    SubscriptionSource subscriptionSource,
     SubscriptionStatus status,
     int maxAgeSeconds,
     String dispatchPoolId,
@@ -96,7 +95,7 @@ public record SubscriptionCreated(
         try {
             return MAPPER.writeValueAsString(new Data(
                 subscriptionId, code, name, description, clientId, clientIdentifier,
-                eventTypes, target, queue, customConfig, source, status,
+                eventTypes, target, queue, customConfig, subscriptionSource, status,
                 maxAgeSeconds, dispatchPoolId, dispatchPoolCode,
                 delaySeconds, sequence, mode, timeoutSeconds
             ));
@@ -115,8 +114,8 @@ public record SubscriptionCreated(
         List<EventTypeBinding> eventTypes,
         String target,
         String queue,
-        Map<String, Object> customConfig,
-        SubscriptionSource source,
+        List<ConfigEntry> customConfig,
+        SubscriptionSource subscriptionSource,
         SubscriptionStatus status,
         int maxAgeSeconds,
         String dispatchPoolId,
@@ -147,8 +146,8 @@ public record SubscriptionCreated(
         private List<EventTypeBinding> eventTypes;
         private String target;
         private String queue;
-        private Map<String, Object> customConfig;
-        private SubscriptionSource source;
+        private List<ConfigEntry> customConfig;
+        private SubscriptionSource subscriptionSource;
         private SubscriptionStatus status;
         private int maxAgeSeconds;
         private String dispatchPoolId;
@@ -213,13 +212,13 @@ public record SubscriptionCreated(
             return this;
         }
 
-        public Builder customConfig(Map<String, Object> customConfig) {
+        public Builder customConfig(List<ConfigEntry> customConfig) {
             this.customConfig = customConfig;
             return this;
         }
 
-        public Builder source(SubscriptionSource source) {
-            this.source = source;
+        public Builder subscriptionSource(SubscriptionSource subscriptionSource) {
+            this.subscriptionSource = subscriptionSource;
             return this;
         }
 
@@ -267,7 +266,7 @@ public record SubscriptionCreated(
             return new SubscriptionCreated(
                 eventId, time, executionId, correlationId, causationId, principalId,
                 subscriptionId, code, name, description, clientId, clientIdentifier,
-                eventTypes, target, queue, customConfig, source, status,
+                eventTypes, target, queue, customConfig, subscriptionSource, status,
                 maxAgeSeconds, dispatchPoolId, dispatchPoolCode,
                 delaySeconds, sequence, mode, timeoutSeconds
             );

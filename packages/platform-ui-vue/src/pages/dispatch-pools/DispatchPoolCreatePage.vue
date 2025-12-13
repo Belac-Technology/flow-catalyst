@@ -1,17 +1,15 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed } from 'vue';
 import { useRouter } from 'vue-router';
 import { useToast } from 'primevue/usetoast';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
 import InputNumber from 'primevue/inputnumber';
 import Textarea from 'primevue/textarea';
-import Dropdown from 'primevue/dropdown';
 import Checkbox from 'primevue/checkbox';
 import Message from 'primevue/message';
+import ClientSelect from '@/components/ClientSelect.vue';
 import { dispatchPoolsApi } from '@/api/dispatch-pools';
-import { applicationsApi, type Application } from '@/api/applications';
-import { clientsApi, type Client } from '@/api/clients';
 
 const router = useRouter();
 const toast = useToast();
@@ -21,14 +19,9 @@ const name = ref('');
 const description = ref('');
 const rateLimit = ref<number>(100);
 const concurrency = ref<number>(10);
-const applicationId = ref<string | null>(null);
 const clientId = ref<string | null>(null);
 const isAnchorLevel = ref(false);
 
-const applications = ref<Application[]>([]);
-const clients = ref<Client[]>([]);
-const loadingApps = ref(true);
-const loadingClients = ref(true);
 const submitting = ref(false);
 const errorMessage = ref<string | null>(null);
 
@@ -46,38 +39,9 @@ const isFormValid = computed(() => {
     name.value.trim().length > 0 &&
     name.value.length <= 255 &&
     rateLimit.value >= 1 &&
-    concurrency.value >= 1 &&
-    applicationId.value !== null
+    concurrency.value >= 1
   );
 });
-
-onMounted(async () => {
-  await Promise.all([loadApplications(), loadClients()]);
-});
-
-async function loadApplications() {
-  loadingApps.value = true;
-  try {
-    const response = await applicationsApi.list(true);
-    applications.value = response.items;
-  } catch (e) {
-    console.error('Failed to load applications:', e);
-  } finally {
-    loadingApps.value = false;
-  }
-}
-
-async function loadClients() {
-  loadingClients.value = true;
-  try {
-    const response = await clientsApi.list('ACTIVE');
-    clients.value = response.clients;
-  } catch (e) {
-    console.error('Failed to load clients:', e);
-  } finally {
-    loadingClients.value = false;
-  }
-}
 
 async function onSubmit() {
   if (!isFormValid.value) return;
@@ -92,7 +56,6 @@ async function onSubmit() {
       description: description.value || undefined,
       rateLimit: rateLimit.value,
       concurrency: concurrency.value,
-      applicationId: applicationId.value!,
       clientId: isAnchorLevel.value ? undefined : clientId.value || undefined,
     });
     toast.add({ severity: 'success', summary: 'Success', detail: 'Dispatch pool created', life: 3000 });
@@ -187,27 +150,6 @@ async function onSubmit() {
           <h3>Scope</h3>
 
           <div class="form-field">
-            <label>Application <span class="required">*</span></label>
-            <Dropdown
-              v-model="applicationId"
-              :options="applications"
-              optionLabel="name"
-              optionValue="id"
-              placeholder="Select an application"
-              class="full-width"
-              :loading="loadingApps"
-              :disabled="loadingApps"
-            >
-              <template #option="{ option }">
-                <div class="dropdown-option">
-                  <span class="option-name">{{ option.name }}</span>
-                  <span class="option-code">{{ option.code }}</span>
-                </div>
-              </template>
-            </Dropdown>
-          </div>
-
-          <div class="form-field">
             <div class="checkbox-field">
               <Checkbox v-model="isAnchorLevel" :binary="true" inputId="anchorLevel" />
               <label for="anchorLevel">Anchor-level pool (not client-scoped)</label>
@@ -219,24 +161,10 @@ async function onSubmit() {
 
           <div class="form-field" v-if="!isAnchorLevel">
             <label>Client</label>
-            <Dropdown
+            <ClientSelect
               v-model="clientId"
-              :options="clients"
-              optionLabel="name"
-              optionValue="id"
-              placeholder="Select a client (optional)"
-              class="full-width"
-              :loading="loadingClients"
-              :disabled="loadingClients"
-              showClear
-            >
-              <template #option="{ option }">
-                <div class="dropdown-option">
-                  <span class="option-name">{{ option.name }}</span>
-                  <span class="option-code">{{ option.identifier }}</span>
-                </div>
-              </template>
-            </Dropdown>
+              placeholder="Search for a client (optional)"
+            />
             <small class="hint">
               If specified, this pool will only be used for jobs scoped to this client.
             </small>
@@ -341,22 +269,6 @@ async function onSubmit() {
 .checkbox-field label {
   margin: 0;
   cursor: pointer;
-}
-
-.dropdown-option {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.option-name {
-  font-weight: 500;
-}
-
-.option-code {
-  font-size: 12px;
-  color: #64748b;
-  font-family: monospace;
 }
 
 .error-message {

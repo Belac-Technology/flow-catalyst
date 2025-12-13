@@ -110,14 +110,13 @@ public class DispatchPoolOperations {
     }
 
     /**
-     * Find a DispatchPool by code within a scope.
+     * Find a DispatchPool by code within a client scope.
      *
      * @param code The pool code
      * @param clientId The client ID (null for anchor-level pools)
-     * @param applicationId The application ID
      */
-    public Optional<DispatchPool> findByCodeAndScope(String code, String clientId, String applicationId) {
-        return repo.findByCodeAndScope(code, clientId, applicationId);
+    public Optional<DispatchPool> findByCodeAndClientId(String code, String clientId) {
+        return repo.findByCodeAndClientId(code, clientId);
     }
 
     /**
@@ -149,20 +148,12 @@ public class DispatchPoolOperations {
     }
 
     /**
-     * Find DispatchPools for a specific application.
-     */
-    public List<DispatchPool> findByApplicationId(String applicationId) {
-        return repo.findByApplicationId(applicationId);
-    }
-
-    /**
      * Find DispatchPools with filters.
      *
-     * @param clientId Filter by client (null matches anchor-level)
-     * @param applicationId Filter by application
+     * @param clientId Filter by client (null to skip)
      * @param status Filter by status
      */
-    public List<DispatchPool> findWithFilters(String clientId, String applicationId, DispatchPoolStatus status) {
-        return repo.findWithFilters(clientId, applicationId, status, false);
+    public List<DispatchPool> findWithFilters(String clientId, DispatchPoolStatus status) {
+        return repo.findWithFilters(clientId, status, false);
     }
 }

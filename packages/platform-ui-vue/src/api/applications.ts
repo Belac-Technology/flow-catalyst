@@ -13,7 +13,8 @@ export interface Application {
 }
 
 export interface ApplicationListResponse {
-  items: Application[];
+  applications: Application[];
+  total: number;
 }
 
 export interface CreateApplicationRequest {
@@ -34,40 +35,40 @@ export interface UpdateApplicationRequest {
 export const applicationsApi = {
   list(activeOnly = false): Promise<ApplicationListResponse> {
     const params = activeOnly ? '?activeOnly=true' : '';
-    return apiFetch(`/applications${params}`);
+    return apiFetch(`/admin/platform/applications${params}`);
   },
 
   get(id: string): Promise<Application> {
-    return apiFetch(`/applications/${id}`);
+    return apiFetch(`/admin/platform/applications/${id}`);
   },
 
   getByCode(code: string): Promise<Application> {
-    return apiFetch(`/applications/code/${code}`);
+    return apiFetch(`/admin/platform/applications/by-code/${code}`);
   },
 
   create(data: CreateApplicationRequest): Promise<Application> {
-    return apiFetch('/applications', {
+    return apiFetch('/admin/platform/applications', {
       method: 'POST',
       body: JSON.stringify(data),
     });
   },
 
   update(id: string, data: UpdateApplicationRequest): Promise<Application> {
-    return apiFetch(`/applications/${id}`, {
+    return apiFetch(`/admin/platform/applications/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),
     });
   },
 
   activate(id: string): Promise<Application> {
-    return apiFetch(`/applications/${id}/activate`, { method: 'POST' });
+    return apiFetch(`/admin/platform/applications/${id}/activate`, { method: 'POST' });
   },
 
   deactivate(id: string): Promise<Application> {
-    return apiFetch(`/applications/${id}/deactivate`, { method: 'POST' });
+    return apiFetch(`/admin/platform/applications/${id}/deactivate`, { method: 'POST' });
   },
 
   delete(id: string): Promise<void> {
-    return apiFetch(`/applications/${id}`, { method: 'DELETE' });
+    return apiFetch(`/admin/platform/applications/${id}`, { method: 'DELETE' });
   },
 };

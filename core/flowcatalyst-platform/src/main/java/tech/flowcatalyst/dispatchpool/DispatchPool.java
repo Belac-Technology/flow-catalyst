@@ -9,11 +9,11 @@ import java.time.Instant;
  * A dispatch pool controls the rate at which dispatch jobs can be processed.
  *
  * Pools define rate limits (per minute) and concurrency limits for message dispatching.
- * Each pool belongs to an application and optionally to a client:
+ * Pools can optionally be scoped to a client:
  * - Client-specific pools: clientId is set, pool is scoped to that client
  * - Anchor-level pools: clientId is null, pool is for non-client-scoped dispatch jobs
  *
- * Code uniqueness is enforced per clientId + applicationId combination.
+ * Code uniqueness is enforced per clientId combination.
  */
 @MongoEntity(collection = "dispatch_pools")
 public record DispatchPool(
@@ -29,12 +29,6 @@ public record DispatchPool(
 
     /** Maximum concurrent dispatches (must be >= 1) */
     int concurrency,
-
-    /** Application this pool belongs to (required) */
-    String applicationId,
-
-    /** Denormalized application code for queries */
-    String applicationCode,
 
     /** Client this pool belongs to (nullable - null means anchor-level pool) */
     String clientId,
@@ -53,32 +47,27 @@ public record DispatchPool(
 
     public DispatchPool withName(String name) {
         return new DispatchPool(id, code, name, description, rateLimit, concurrency,
-            applicationId, applicationCode, clientId, clientIdentifier,
-            status, createdAt, Instant.now());
+            clientId, clientIdentifier, status, createdAt, Instant.now());
     }
 
     public DispatchPool withDescription(String description) {
         return new DispatchPool(id, code, name, description, rateLimit, concurrency,
-            applicationId, applicationCode, clientId, clientIdentifier,
-            status, createdAt, Instant.now());
+            clientId, clientIdentifier, status, createdAt, Instant.now());
     }
 
     public DispatchPool withRateLimit(int rateLimit) {
         return new DispatchPool(id, code, name, description, rateLimit, concurrency,
-            applicationId, applicationCode, clientId, clientIdentifier,
-            status, createdAt, Instant.now());
+            clientId, clientIdentifier, status, createdAt, Instant.now());
     }
 
     public DispatchPool withConcurrency(int concurrency) {
         return new DispatchPool(id, code, name, description, rateLimit, concurrency,
-            applicationId, applicationCode, clientId, clientIdentifier,
-            status, createdAt, Instant.now());
+            clientId, clientIdentifier, status, createdAt, Instant.now());
     }
 
     public DispatchPool withStatus(DispatchPoolStatus status) {
         return new DispatchPool(id, code, name, description, rateLimit, concurrency,
-            applicationId, applicationCode, clientId, clientIdentifier,
-            status, createdAt, Instant.now());
+            clientId, clientIdentifier, status, createdAt, Instant.now());
     }
 
     // ========================================================================

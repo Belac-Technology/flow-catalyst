@@ -91,8 +91,6 @@ public class UpdateDispatchPoolUseCase {
             newDescription,
             newRateLimit,
             newConcurrency,
-            existing.applicationId(),
-            existing.applicationCode(),
             existing.clientId(),
             existing.clientIdentifier(),
             newStatus,
@@ -109,8 +107,6 @@ public class UpdateDispatchPoolUseCase {
             .description(updated.description())
             .rateLimit(updated.rateLimit())
             .concurrency(updated.concurrency())
-            .applicationId(updated.applicationId())
-            .applicationCode(updated.applicationCode())
             .clientId(updated.clientId())
             .clientIdentifier(updated.clientIdentifier())
             .status(updated.status())

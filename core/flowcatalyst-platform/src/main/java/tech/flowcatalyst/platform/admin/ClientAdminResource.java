@@ -106,6 +106,52 @@ public class ClientAdminResource {
     }
 
     /**
+     * Search clients with text filter.
+     * Returns clients matching the search query (name or identifier).
+     */
+    @GET
+    @Path("/search")
+    @Operation(summary = "Search clients", description = "Search clients by name or identifier")
+    @APIResponses({
+        @APIResponse(responseCode = "200", description = "Matching clients",
+            content = @Content(schema = @Schema(implementation = ClientListResponse.class))),
+        @APIResponse(responseCode = "401", description = "Not authenticated"),
+        @APIResponse(responseCode = "403", description = "Insufficient permissions")
+    })
+    public Response searchClients(
+            @QueryParam("q") @Parameter(description = "Search query (name or identifier)") String query,
+            @QueryParam("status") @Parameter(description = "Filter by status") ClientStatus status,
+            @QueryParam("limit") @Parameter(description = "Max results to return") @DefaultValue("20") int limit) {
+
+        String principalId = auditContext.requirePrincipalId();
+        authorizationService.requirePermission(principalId, PlatformAdminPermissions.CLIENT_VIEW);
+
+        List<Client> clients = clientService.findAll();
+
+        // Apply filters
+        var stream = clients.stream();
+
+        if (status != null) {
+            stream = stream.filter(c -> c.status == status);
+        }
+
+        if (query != null && !query.isBlank()) {
+            String lowerQuery = query.toLowerCase();
+            stream = stream.filter(c ->
+                (c.name != null && c.name.toLowerCase().contains(lowerQuery)) ||
+                (c.identifier != null && c.identifier.toLowerCase().contains(lowerQuery))
+            );
+        }
+
+        List<ClientDto> dtos = stream
+            .limit(limit)
+            .map(this::toDto)
+            .toList();
+
+        return Response.ok(new ClientListResponse(dtos, dtos.size())).build();
+    }
+
+    /**
      * Get a specific client by ID.
      */
     @GET

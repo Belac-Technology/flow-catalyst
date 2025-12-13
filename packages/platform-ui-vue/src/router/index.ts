@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router';
-import { authGuard, guestGuard } from './guards';
+import { authGuard, guestGuard, createRoutePermissionGuard } from './guards';
 
 const router = createRouter({
   history: createWebHistory(),
@@ -154,6 +154,16 @@ const router = createRouter({
           name: 'subscriptions',
           component: () => import('@/pages/subscriptions/SubscriptionListPage.vue'),
         },
+        {
+          path: 'subscriptions/new',
+          name: 'subscription-create',
+          component: () => import('@/pages/subscriptions/SubscriptionCreatePage.vue'),
+        },
+        {
+          path: 'subscriptions/:id',
+          name: 'subscription-detail',
+          component: () => import('@/pages/subscriptions/SubscriptionDetailPage.vue'),
+        },
         // Dispatch Pools
         {
           path: 'dispatch-pools',
@@ -197,5 +207,8 @@ const router = createRouter({
     },
   ],
 });
+
+// Register global permission guard
+router.beforeEach(createRoutePermissionGuard());
 
 export default router;

@@ -7,6 +7,40 @@ export const API_BASE_URL = '/api';
 export const BFF_BASE_URL = '/bff';
 
 /**
+ * Custom error class for API errors that includes status code
+ */
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public status: number,
+    public code?: string
+  ) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
+/**
+ * Event emitter for API errors (401/403)
+ */
+type ApiErrorListener = (status: number, message: string) => void;
+const errorListeners: ApiErrorListener[] = [];
+
+export function onApiError(listener: ApiErrorListener): () => void {
+  errorListeners.push(listener);
+  return () => {
+    const index = errorListeners.indexOf(listener);
+    if (index > -1) {
+      errorListeners.splice(index, 1);
+    }
+  };
+}
+
+function emitApiError(status: number, message: string) {
+  errorListeners.forEach(listener => listener(status, message));
+}
+
+/**
  * Fetch from the main API endpoints.
  */
 export async function apiFetch<T>(
@@ -42,7 +76,14 @@ async function baseFetch<T>(
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: 'Request failed' }));
-    throw new Error(error.error || error.message || 'Request failed');
+    const message = error.error || error.message || 'Request failed';
+
+    // Emit error event for 401/403
+    if (response.status === 401 || response.status === 403) {
+      emitApiError(response.status, message);
+    }
+
+    throw new ApiError(message, response.status, error.code);
   }
 
   // Handle 204 No Content

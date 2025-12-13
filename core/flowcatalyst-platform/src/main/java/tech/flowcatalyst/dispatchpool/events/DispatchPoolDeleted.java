@@ -28,8 +28,6 @@ public record DispatchPoolDeleted(
     // Event-specific payload
     String poolId,
     String code,
-    String applicationId,
-    String applicationCode,
     String clientId,
     String clientIdentifier
 ) implements DomainEvent {
@@ -70,7 +68,7 @@ public record DispatchPoolDeleted(
     @Override
     @JsonIgnore
     public String messageGroup() {
-        return "platform:dispatch-pool:" + applicationId;
+        return "platform:dispatch-pool:" + poolId;
     }
 
     @Override
@@ -78,7 +76,7 @@ public record DispatchPoolDeleted(
     public String toDataJson() {
         try {
             return MAPPER.writeValueAsString(new Data(
-                poolId, code, applicationId, applicationCode, clientId, clientIdentifier
+                poolId, code, clientId, clientIdentifier
             ));
         } catch (JsonProcessingException e) {
             throw new RuntimeException("Failed to serialize event data", e);
@@ -88,8 +86,6 @@ public record DispatchPoolDeleted(
     public record Data(
         String poolId,
         String code,
-        String applicationId,
-        String applicationCode,
         String clientId,
         String clientIdentifier
     ) {}
@@ -107,8 +103,6 @@ public record DispatchPoolDeleted(
         private String principalId;
         private String poolId;
         private String code;
-        private String applicationId;
-        private String applicationCode;
         private String clientId;
         private String clientIdentifier;
 
@@ -132,16 +126,6 @@ public record DispatchPoolDeleted(
             return this;
         }
 
-        public Builder applicationId(String applicationId) {
-            this.applicationId = applicationId;
-            return this;
-        }
-
-        public Builder applicationCode(String applicationCode) {
-            this.applicationCode = applicationCode;
-            return this;
-        }
-
         public Builder clientId(String clientId) {
             this.clientId = clientId;
             return this;
@@ -155,7 +139,7 @@ public record DispatchPoolDeleted(
         public DispatchPoolDeleted build() {
             return new DispatchPoolDeleted(
                 eventId, time, executionId, correlationId, causationId, principalId,
-                poolId, code, applicationId, applicationCode, clientId, clientIdentifier
+                poolId, code, clientId, clientIdentifier
             );
         }
     }

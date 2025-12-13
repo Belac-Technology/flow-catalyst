@@ -5,7 +5,6 @@ import org.bson.codecs.pojo.annotations.BsonId;
 
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 
 /**
  * A subscription defines how events are dispatched to a target endpoint.
@@ -44,8 +43,8 @@ public record Subscription(
     /** Queue name for message routing */
     String queue,
 
-    /** Custom configuration JSON for additional instructions */
-    Map<String, Object> customConfig,
+    /** Custom configuration entries for additional instructions */
+    List<ConfigEntry> customConfig,
 
     /** How this subscription was created (API or UI) */
     SubscriptionSource source,

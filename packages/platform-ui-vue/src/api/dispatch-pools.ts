@@ -9,8 +9,6 @@ export interface DispatchPool {
   description?: string;
   rateLimit: number;
   concurrency: number;
-  applicationId: string;
-  applicationCode: string;
   clientId?: string;
   clientIdentifier?: string;
   status: DispatchPoolStatus;
@@ -29,7 +27,6 @@ export interface CreateDispatchPoolRequest {
   description?: string;
   rateLimit: number;
   concurrency: number;
-  applicationId: string;
   clientId?: string;
 }
 
@@ -43,7 +40,6 @@ export interface UpdateDispatchPoolRequest {
 
 export interface DispatchPoolFilters {
   clientId?: string;
-  applicationId?: string;
   status?: DispatchPoolStatus;
   anchorLevel?: boolean;
 }
@@ -57,7 +53,6 @@ export const dispatchPoolsApi = {
   list(filters: DispatchPoolFilters = {}): Promise<DispatchPoolListResponse> {
     const params = new URLSearchParams();
     if (filters.clientId) params.set('clientId', filters.clientId);
-    if (filters.applicationId) params.set('applicationId', filters.applicationId);
     if (filters.status) params.set('status', filters.status);
     if (filters.anchorLevel !== undefined) params.set('anchorLevel', String(filters.anchorLevel));
 

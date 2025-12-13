@@ -40,10 +40,25 @@ export interface ClientApplicationsResponse {
   total: number;
 }
 
+export interface ClientSearchParams {
+  q?: string;
+  status?: string;
+  limit?: number;
+}
+
 export const clientsApi = {
   list(status?: string): Promise<ClientListResponse> {
     const params = status ? `?status=${status}` : '';
     return apiFetch(`/admin/platform/clients${params}`);
+  },
+
+  search(params: ClientSearchParams = {}): Promise<ClientListResponse> {
+    const searchParams = new URLSearchParams();
+    if (params.q) searchParams.set('q', params.q);
+    if (params.status) searchParams.set('status', params.status);
+    if (params.limit) searchParams.set('limit', String(params.limit));
+    const queryString = searchParams.toString();
+    return apiFetch(`/admin/platform/clients/search${queryString ? `?${queryString}` : ''}`);
   },
 
   get(id: string): Promise<Client> {

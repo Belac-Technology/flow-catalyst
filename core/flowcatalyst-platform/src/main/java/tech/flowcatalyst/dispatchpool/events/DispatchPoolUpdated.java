@@ -33,8 +33,6 @@ public record DispatchPoolUpdated(
     String description,
     int rateLimit,
     int concurrency,
-    String applicationId,
-    String applicationCode,
     String clientId,
     String clientIdentifier,
     DispatchPoolStatus status
@@ -76,7 +74,7 @@ public record DispatchPoolUpdated(
     @Override
     @JsonIgnore
     public String messageGroup() {
-        return "platform:dispatch-pool:" + applicationId;
+        return "platform:dispatch-pool:" + poolId;
     }
 
     @Override
@@ -85,7 +83,7 @@ public record DispatchPoolUpdated(
         try {
             return MAPPER.writeValueAsString(new Data(
                 poolId, code, name, description, rateLimit, concurrency,
-                applicationId, applicationCode, clientId, clientIdentifier, status
+                clientId, clientIdentifier, status
             ));
         } catch (JsonProcessingException e) {
             throw new RuntimeException("Failed to serialize event data", e);
@@ -99,8 +97,6 @@ public record DispatchPoolUpdated(
         String description,
         int rateLimit,
         int concurrency,
-        String applicationId,
-        String applicationCode,
         String clientId,
         String clientIdentifier,
         DispatchPoolStatus status
@@ -123,8 +119,6 @@ public record DispatchPoolUpdated(
         private String description;
         private int rateLimit;
         private int concurrency;
-        private String applicationId;
-        private String applicationCode;
         private String clientId;
         private String clientIdentifier;
         private DispatchPoolStatus status;
@@ -169,16 +163,6 @@ public record DispatchPoolUpdated(
             return this;
         }
 
-        public Builder applicationId(String applicationId) {
-            this.applicationId = applicationId;
-            return this;
-        }
-
-        public Builder applicationCode(String applicationCode) {
-            this.applicationCode = applicationCode;
-            return this;
-        }
-
         public Builder clientId(String clientId) {
             this.clientId = clientId;
             return this;
@@ -198,7 +182,7 @@ public record DispatchPoolUpdated(
             return new DispatchPoolUpdated(
                 eventId, time, executionId, correlationId, causationId, principalId,
                 poolId, code, name, description, rateLimit, concurrency,
-                applicationId, applicationCode, clientId, clientIdentifier, status
+                clientId, clientIdentifier, status
             );
         }
     }

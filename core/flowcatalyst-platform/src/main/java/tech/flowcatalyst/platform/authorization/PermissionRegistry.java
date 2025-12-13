@@ -99,6 +99,10 @@ public class PermissionRegistry {
         registerPermission(PlatformMessagingPermissions.SUBSCRIPTION_DELETE);
         registerPermission(PlatformMessagingPermissions.DISPATCH_JOB_VIEW);
         registerPermission(PlatformMessagingPermissions.DISPATCH_JOB_RETRY);
+        registerPermission(PlatformMessagingPermissions.DISPATCH_POOL_VIEW);
+        registerPermission(PlatformMessagingPermissions.DISPATCH_POOL_CREATE);
+        registerPermission(PlatformMessagingPermissions.DISPATCH_POOL_UPDATE);
+        registerPermission(PlatformMessagingPermissions.DISPATCH_POOL_DELETE);
 
         // ====================================================================
         // Platform Roles (must be after permissions)

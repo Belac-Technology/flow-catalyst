@@ -1,11 +1,11 @@
 package tech.flowcatalyst.subscription.operations.updatesubscription;
 
+import tech.flowcatalyst.subscription.ConfigEntry;
 import tech.flowcatalyst.subscription.EventTypeBinding;
 import tech.flowcatalyst.subscription.SubscriptionMode;
 import tech.flowcatalyst.subscription.SubscriptionStatus;
 
 import java.util.List;
-import java.util.Map;
 
 /**
  * Command to update an existing subscription.
@@ -32,7 +32,7 @@ public record UpdateSubscriptionCommand(
     List<EventTypeBinding> eventTypes,
     String target,
     String queue,
-    Map<String, Object> customConfig,
+    List<ConfigEntry> customConfig,
     SubscriptionStatus status,
     Integer maxAgeSeconds,
     String dispatchPoolId,

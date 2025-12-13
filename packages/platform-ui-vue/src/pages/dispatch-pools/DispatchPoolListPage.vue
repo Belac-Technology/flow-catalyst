@@ -37,7 +37,6 @@ const filteredPools = computed(() => {
     result = result.filter(pool =>
       pool.code.toLowerCase().includes(query) ||
       pool.name.toLowerCase().includes(query) ||
-      pool.applicationCode?.toLowerCase().includes(query) ||
       pool.clientIdentifier?.toLowerCase().includes(query)
     );
   }
@@ -130,12 +129,9 @@ function getScopeLabel(pool: DispatchPool) {
           </template>
         </Column>
         <Column field="name" header="Name" sortable />
-        <Column header="Scope" sortable>
+        <Column header="Client Scope" sortable>
           <template #body="{ data }">
-            <div class="scope-info">
-              <span class="app-code">{{ data.applicationCode }}</span>
-              <span class="client-scope">{{ getScopeLabel(data) }}</span>
-            </div>
+            <span class="client-scope">{{ getScopeLabel(data) }}</span>
           </template>
         </Column>
         <Column field="rateLimit" header="Rate Limit" sortable>
@@ -223,19 +219,8 @@ function getScopeLabel(pool: DispatchPool) {
   font-size: 13px;
 }
 
-.scope-info {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.app-code {
-  font-weight: 500;
-  font-size: 13px;
-}
-
 .client-scope {
-  font-size: 12px;
-  color: #64748b;
+  font-size: 13px;
+  color: #475569;
 }
 </style>

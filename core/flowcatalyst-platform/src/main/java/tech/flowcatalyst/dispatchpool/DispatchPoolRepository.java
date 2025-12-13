@@ -14,20 +14,17 @@ import java.util.Optional;
 public class DispatchPoolRepository implements PanacheMongoRepositoryBase<DispatchPool, String> {
 
     /**
-     * Find a pool by its code within a specific client and application scope.
+     * Find a pool by its code within a specific client scope.
      *
      * @param code The pool code
      * @param clientId The client ID (null for anchor-level pools)
-     * @param applicationId The application ID
      * @return The pool if found
      */
-    public Optional<DispatchPool> findByCodeAndScope(String code, String clientId, String applicationId) {
+    public Optional<DispatchPool> findByCodeAndClientId(String code, String clientId) {
         if (clientId == null) {
-            return find("code = ?1 and clientId = null and applicationId = ?2", code, applicationId)
-                .firstResultOptional();
+            return find("code = ?1 and clientId = null", code).firstResultOptional();
         }
-        return find("code = ?1 and clientId = ?2 and applicationId = ?3", code, clientId, applicationId)
-            .firstResultOptional();
+        return find("code = ?1 and clientId = ?2", code, clientId).firstResultOptional();
     }
 
     /**
@@ -35,14 +32,13 @@ public class DispatchPoolRepository implements PanacheMongoRepositoryBase<Dispat
      *
      * @param code The pool code
      * @param clientId The client ID (null for anchor-level pools)
-     * @param applicationId The application ID
      * @return true if a pool exists with this code in the scope
      */
-    public boolean existsByCodeAndScope(String code, String clientId, String applicationId) {
+    public boolean existsByCodeAndClientId(String code, String clientId) {
         if (clientId == null) {
-            return count("code = ?1 and clientId = null and applicationId = ?2", code, applicationId) > 0;
+            return count("code = ?1 and clientId = null", code) > 0;
         }
-        return count("code = ?1 and clientId = ?2 and applicationId = ?3", code, clientId, applicationId) > 0;
+        return count("code = ?1 and clientId = ?2", code, clientId) > 0;
     }
 
     /**
@@ -65,16 +61,6 @@ public class DispatchPoolRepository implements PanacheMongoRepositoryBase<Dispat
     }
 
     /**
-     * Find all pools for a specific application.
-     *
-     * @param applicationId The application ID
-     * @return List of pools for the application
-     */
-    public List<DispatchPool> findByApplicationId(String applicationId) {
-        return list("applicationId", Sort.by("code"), applicationId);
-    }
-
-    /**
      * Find all pools with a specific status.
      *
      * @param status The status to filter by
@@ -94,20 +80,6 @@ public class DispatchPoolRepository implements PanacheMongoRepositoryBase<Dispat
     }
 
     /**
-     * Find pools by client and application.
-     *
-     * @param clientId The client ID (null for anchor-level)
-     * @param applicationId The application ID
-     * @return List of pools matching the criteria
-     */
-    public List<DispatchPool> findByClientAndApplication(String clientId, String applicationId) {
-        if (clientId == null) {
-            return list("clientId = null and applicationId = ?1", Sort.by("code"), applicationId);
-        }
-        return list("clientId = ?1 and applicationId = ?2", Sort.by("code"), clientId, applicationId);
-    }
-
-    /**
      * Find all non-archived pools.
      *
      * @return List of non-archived pools
@@ -120,13 +92,11 @@ public class DispatchPoolRepository implements PanacheMongoRepositoryBase<Dispat
      * Find all pools with optional filters.
      *
      * @param clientId Filter by client ID (null to skip)
-     * @param applicationId Filter by application ID (null to skip)
      * @param status Filter by status (null to skip)
      * @param includeArchived Whether to include archived pools
      * @return List of pools matching the filters
      */
-    public List<DispatchPool> findWithFilters(String clientId, String applicationId,
-                                               DispatchPoolStatus status, boolean includeArchived) {
+    public List<DispatchPool> findWithFilters(String clientId, DispatchPoolStatus status, boolean includeArchived) {
         StringBuilder query = new StringBuilder();
         java.util.List<Object> params = new java.util.ArrayList<>();
         int paramIndex = 1;
@@ -134,12 +104,6 @@ public class DispatchPoolRepository implements PanacheMongoRepositoryBase<Dispat
         if (clientId != null) {
             query.append("clientId = ?").append(paramIndex++);
             params.add(clientId);
-        }
-
-        if (applicationId != null) {
-            if (!query.isEmpty()) query.append(" and ");
-            query.append("applicationId = ?").append(paramIndex++);
-            params.add(applicationId);
         }
 
         if (status != null) {

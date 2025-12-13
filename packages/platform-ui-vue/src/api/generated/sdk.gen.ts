@@ -72,6 +72,8 @@ import type {
   PostApiAdminPlatformClientsData,
   PostApiAdminPlatformClientsResponse,
   GetApiAdminPlatformClientsByIdentifierByIdentifierData,
+  GetApiAdminPlatformClientsSearchData,
+  GetApiAdminPlatformClientsSearchResponse,
   GetApiAdminPlatformClientsByIdData,
   GetApiAdminPlatformClientsByIdResponse,
   PutApiAdminPlatformClientsByIdData,
@@ -141,6 +143,17 @@ import type {
   GetApiAdminPlatformRolesByRoleNameResponse,
   PutApiAdminPlatformRolesByRoleNameData,
   PutApiAdminPlatformRolesByRoleNameResponse,
+  GetApiAdminPlatformSubscriptionsData,
+  GetApiAdminPlatformSubscriptionsResponse,
+  PostApiAdminPlatformSubscriptionsData,
+  PostApiAdminPlatformSubscriptionsResponse,
+  DeleteApiAdminPlatformSubscriptionsByIdData,
+  GetApiAdminPlatformSubscriptionsByIdData,
+  GetApiAdminPlatformSubscriptionsByIdResponse,
+  PutApiAdminPlatformSubscriptionsByIdData,
+  PutApiAdminPlatformSubscriptionsByIdResponse,
+  PostApiAdminPlatformSubscriptionsByIdPauseData,
+  PostApiAdminPlatformSubscriptionsByIdResumeData,
   GetApiApplicationsData,
   GetApiApplicationsResponse,
   PostApiApplicationsData,
@@ -1051,6 +1064,25 @@ export const getApiAdminPlatformClientsByIdentifierByIdentifier = <
 ) => {
   return (options.client ?? _heyApiClient).get<unknown, unknown, ThrowOnError>({
     url: "/api/admin/platform/clients/by-identifier/{identifier}",
+    ...options,
+  });
+};
+
+/**
+ * Search clients
+ * Search clients by name or identifier
+ */
+export const getApiAdminPlatformClientsSearch = <
+  ThrowOnError extends boolean = false,
+>(
+  options?: Options<GetApiAdminPlatformClientsSearchData, ThrowOnError>,
+) => {
+  return (options?.client ?? _heyApiClient).get<
+    GetApiAdminPlatformClientsSearchResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/clients/search",
     ...options,
   });
 };
@@ -1972,6 +2004,145 @@ export const putApiAdminPlatformRolesByRoleName = <
       ...options?.headers,
     },
   });
+};
+
+/**
+ * List subscriptions
+ * Returns subscriptions with optional filtering
+ */
+export const getApiAdminPlatformSubscriptions = <
+  ThrowOnError extends boolean = false,
+>(
+  options?: Options<GetApiAdminPlatformSubscriptionsData, ThrowOnError>,
+) => {
+  return (options?.client ?? _heyApiClient).get<
+    GetApiAdminPlatformSubscriptionsResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/subscriptions",
+    ...options,
+  });
+};
+
+/**
+ * Create a new subscription
+ */
+export const postApiAdminPlatformSubscriptions = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<PostApiAdminPlatformSubscriptionsData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).post<
+    PostApiAdminPlatformSubscriptionsResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/subscriptions",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options?.headers,
+    },
+  });
+};
+
+/**
+ * Delete subscription
+ */
+export const deleteApiAdminPlatformSubscriptionsById = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<DeleteApiAdminPlatformSubscriptionsByIdData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).delete<
+    unknown,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/subscriptions/{id}",
+    ...options,
+  });
+};
+
+/**
+ * Get subscription by ID
+ */
+export const getApiAdminPlatformSubscriptionsById = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<GetApiAdminPlatformSubscriptionsByIdData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).get<
+    GetApiAdminPlatformSubscriptionsByIdResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/subscriptions/{id}",
+    ...options,
+  });
+};
+
+/**
+ * Update subscription
+ */
+export const putApiAdminPlatformSubscriptionsById = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<PutApiAdminPlatformSubscriptionsByIdData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).put<
+    PutApiAdminPlatformSubscriptionsByIdResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/subscriptions/{id}",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options?.headers,
+    },
+  });
+};
+
+/**
+ * Pause subscription
+ * Stop creating dispatch jobs for this subscription
+ */
+export const postApiAdminPlatformSubscriptionsByIdPause = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<
+    PostApiAdminPlatformSubscriptionsByIdPauseData,
+    ThrowOnError
+  >,
+) => {
+  return (options.client ?? _heyApiClient).post<unknown, unknown, ThrowOnError>(
+    {
+      url: "/api/admin/platform/subscriptions/{id}/pause",
+      ...options,
+    },
+  );
+};
+
+/**
+ * Resume subscription
+ * Re-enable dispatch job creation
+ */
+export const postApiAdminPlatformSubscriptionsByIdResume = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<
+    PostApiAdminPlatformSubscriptionsByIdResumeData,
+    ThrowOnError
+  >,
+) => {
+  return (options.client ?? _heyApiClient).post<unknown, unknown, ThrowOnError>(
+    {
+      url: "/api/admin/platform/subscriptions/{id}/resume",
+      ...options,
+    },
+  );
 };
 
 /**

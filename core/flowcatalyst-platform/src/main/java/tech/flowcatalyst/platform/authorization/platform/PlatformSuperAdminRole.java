@@ -48,6 +48,10 @@ public class PlatformSuperAdminRole {
             PlatformMessagingPermissions.SUBSCRIPTION_DELETE,
             PlatformMessagingPermissions.DISPATCH_JOB_VIEW,
             PlatformMessagingPermissions.DISPATCH_JOB_RETRY,
+            PlatformMessagingPermissions.DISPATCH_POOL_VIEW,
+            PlatformMessagingPermissions.DISPATCH_POOL_CREATE,
+            PlatformMessagingPermissions.DISPATCH_POOL_UPDATE,
+            PlatformMessagingPermissions.DISPATCH_POOL_DELETE,
             PlatformIamPermissions.IDP_MANAGE
         ),
         "Platform super administrator - full access to everything"
