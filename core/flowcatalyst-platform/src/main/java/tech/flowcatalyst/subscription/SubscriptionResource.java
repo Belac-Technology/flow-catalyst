@@ -16,6 +16,7 @@ import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponses;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 import org.jboss.logging.Logger;
+import tech.flowcatalyst.dispatch.DispatchMode;
 import tech.flowcatalyst.platform.audit.AuditContext;
 import tech.flowcatalyst.platform.authentication.EmbeddedModeOnly;
 import tech.flowcatalyst.platform.authorization.AuthorizationService;
@@ -427,7 +428,7 @@ public class SubscriptionResource {
         String dispatchPoolCode,
         int delaySeconds,
         int sequence,
-        SubscriptionMode mode,
+        DispatchMode mode,
         int timeoutSeconds,
         Instant createdAt,
         Instant updatedAt
@@ -476,7 +477,7 @@ public class SubscriptionResource {
         @Min(value = 1, message = "Sequence must be at least 1")
         Integer sequence,
 
-        SubscriptionMode mode,
+        DispatchMode mode,
 
         @Min(value = 1, message = "Timeout must be at least 1 second")
         Integer timeoutSeconds
@@ -509,7 +510,7 @@ public class SubscriptionResource {
         @Min(value = 1, message = "Sequence must be at least 1")
         Integer sequence,
 
-        SubscriptionMode mode,
+        DispatchMode mode,
 
         @Min(value = 1, message = "Timeout must be at least 1 second")
         Integer timeoutSeconds

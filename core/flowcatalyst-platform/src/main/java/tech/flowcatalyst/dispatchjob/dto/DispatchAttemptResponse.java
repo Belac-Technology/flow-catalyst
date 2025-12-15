@@ -3,6 +3,7 @@ package tech.flowcatalyst.dispatchjob.dto;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import tech.flowcatalyst.dispatchjob.entity.DispatchAttempt;
 import tech.flowcatalyst.dispatchjob.model.DispatchAttemptStatus;
+import tech.flowcatalyst.dispatchjob.model.ErrorType;
 
 import java.time.Instant;
 
@@ -16,6 +17,7 @@ public record DispatchAttemptResponse(
     @JsonProperty("responseCode") Integer responseCode,
     @JsonProperty("responseBody") String responseBody,
     @JsonProperty("errorMessage") String errorMessage,
+    @JsonProperty("errorType") ErrorType errorType,
     @JsonProperty("createdAt") Instant createdAt
 ) {
     public static DispatchAttemptResponse from(DispatchAttempt attempt) {
@@ -29,6 +31,7 @@ public record DispatchAttemptResponse(
             attempt.responseCode,
             attempt.responseBody,
             attempt.errorMessage,
+            attempt.errorType,
             attempt.createdAt
         );
     }

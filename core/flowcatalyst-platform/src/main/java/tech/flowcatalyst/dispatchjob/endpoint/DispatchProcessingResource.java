@@ -54,33 +54,49 @@ public class DispatchProcessingResource {
 
             return Response
                 .status(result.httpStatusCode())
-                .entity(new ProcessResponse(result.success(), result.message()))
+                .entity(new ProcessResponse(result.ack(), result.message(), result.details()))
                 .build();
 
         } catch (IllegalArgumentException e) {
             LOG.errorf("Invalid dispatch job ID: %s", request.messageId());
             return Response
                 .status(400)
-                .entity(new ProcessResponse(false, "Invalid job ID"))
+                .entity(new ProcessResponse(false, "Invalid job ID", e.getMessage()))
                 .build();
 
         } catch (Exception e) {
             LOG.errorf(e, "Error processing dispatch job: %s", request.messageId());
             return Response
                 .status(500)
-                .entity(new ProcessResponse(false, "Internal error: " + e.getMessage()))
+                .entity(new ProcessResponse(false, "Internal error", e.getMessage()))
                 .build();
         }
     }
 
+    /**
+     * Request from message router to process a dispatch job.
+     */
     public record ProcessRequest(
         @JsonProperty("messageId") String messageId
     ) {
     }
 
+    /**
+     * Response to message router indicating processing result.
+     *
+     * <p>Aligns with MediationResponse contract:
+     * <ul>
+     *   <li><b>ack: true</b> - Processing complete, ACK the message</li>
+     *   <li><b>ack: false</b> - Processing failed/not ready, NACK for retry</li>
+     * </ul>
+     */
     public record ProcessResponse(
-        @JsonProperty("success") boolean success,
-        @JsonProperty("message") String message
+        @JsonProperty("ack") boolean ack,
+        @JsonProperty("message") String message,
+        @JsonProperty("details") String details
     ) {
+        public ProcessResponse(boolean ack, String message) {
+            this(ack, message, null);
+        }
     }
 }

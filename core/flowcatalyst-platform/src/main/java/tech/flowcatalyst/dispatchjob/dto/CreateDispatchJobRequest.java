@@ -3,6 +3,7 @@ package tech.flowcatalyst.dispatchjob.dto;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import tech.flowcatalyst.dispatch.DispatchMode;
 import tech.flowcatalyst.dispatchjob.model.DispatchProtocol;
 
 import java.time.Instant;
@@ -43,6 +44,27 @@ public record CreateDispatchJobRequest(
     @JsonProperty("credentialsId")
     @NotNull(message = "credentialsId is required")
     String credentialsId,
+
+    @JsonProperty("clientId")
+    String clientId,
+
+    @JsonProperty("subscriptionId")
+    String subscriptionId,
+
+    @JsonProperty("mode")
+    DispatchMode mode,
+
+    @JsonProperty("dispatchPoolId")
+    String dispatchPoolId,
+
+    @JsonProperty("sequence")
+    Integer sequence,
+
+    @JsonProperty("timeoutSeconds")
+    Integer timeoutSeconds,
+
+    @JsonProperty("schemaId")
+    String schemaId,
 
     @JsonProperty("maxRetries")
     Integer maxRetries,

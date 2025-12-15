@@ -67,6 +67,11 @@ public class PlatformMessagingPermissions {
         "View dispatch jobs and delivery status"
     );
 
+    public static final PermissionDefinition DISPATCH_JOB_CREATE = PermissionDefinition.make(
+        "platform", "messaging", "dispatch-job", "create",
+        "Create new dispatch jobs"
+    );
+
     public static final PermissionDefinition DISPATCH_JOB_RETRY = PermissionDefinition.make(
         "platform", "messaging", "dispatch-job", "retry",
         "Retry failed dispatch jobs"

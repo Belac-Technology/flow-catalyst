@@ -1,6 +1,7 @@
 package tech.flowcatalyst.dispatchjob.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import tech.flowcatalyst.dispatch.DispatchMode;
 import tech.flowcatalyst.dispatchjob.entity.DispatchJob;
 import tech.flowcatalyst.dispatchjob.model.DispatchProtocol;
 import tech.flowcatalyst.dispatchjob.model.DispatchStatus;
@@ -20,6 +21,13 @@ public record DispatchJobResponse(
     @JsonProperty("headers") Map<String, String> headers,
     @JsonProperty("payloadContentType") String payloadContentType,
     @JsonProperty("credentialsId") String credentialsId,
+    @JsonProperty("clientId") String clientId,
+    @JsonProperty("subscriptionId") String subscriptionId,
+    @JsonProperty("mode") DispatchMode mode,
+    @JsonProperty("dispatchPoolId") String dispatchPoolId,
+    @JsonProperty("sequence") int sequence,
+    @JsonProperty("timeoutSeconds") int timeoutSeconds,
+    @JsonProperty("schemaId") String schemaId,
     @JsonProperty("status") DispatchStatus status,
     @JsonProperty("maxRetries") Integer maxRetries,
     @JsonProperty("retryStrategy") String retryStrategy,
@@ -53,6 +61,13 @@ public record DispatchJobResponse(
             job.headers,
             job.payloadContentType,
             job.credentialsId,
+            job.clientId,
+            job.subscriptionId,
+            job.mode,
+            job.dispatchPoolId,
+            job.sequence,
+            job.timeoutSeconds,
+            job.schemaId,
             job.status,
             job.maxRetries,
             job.retryStrategy,

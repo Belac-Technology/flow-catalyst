@@ -3,6 +3,7 @@ package tech.flowcatalyst.dispatchjob.entity;
 import io.quarkus.mongodb.panache.common.MongoEntity;
 import io.quarkus.mongodb.panache.PanacheMongoEntityBase;
 import org.bson.codecs.pojo.annotations.BsonId;
+import tech.flowcatalyst.dispatch.DispatchMode;
 import tech.flowcatalyst.dispatchjob.model.DispatchProtocol;
 import tech.flowcatalyst.dispatchjob.model.DispatchStatus;
 import java.time.Instant;
@@ -53,6 +54,30 @@ public class DispatchJob extends PanacheMongoEntityBase {
 
     // Credentials Reference (ID only, not embedded)
     public String credentialsId;
+
+    // Context - Client and Subscription
+    /** Client this job belongs to (nullable - null means anchor-level) */
+    public String clientId;
+
+    /** Subscription that created this job (nullable - jobs can be created directly) */
+    public String subscriptionId;
+
+    // Dispatch Behavior
+    /** Processing mode (IMMEDIATE, NEXT_ON_ERROR, BLOCK_ON_ERROR) */
+    public DispatchMode mode = DispatchMode.IMMEDIATE;
+
+    /** Dispatch pool for rate limiting */
+    public String dispatchPoolId;
+
+    /** Sequence number for ordering within message group (default 99) */
+    public int sequence = 99;
+
+    /** Timeout in seconds for target to respond */
+    public int timeoutSeconds = 30;
+
+    // Schema Reference
+    /** Optional schema ID for payload validation (not tied to eventType) */
+    public String schemaId;
 
     // Execution Control
     public DispatchStatus status = DispatchStatus.PENDING;

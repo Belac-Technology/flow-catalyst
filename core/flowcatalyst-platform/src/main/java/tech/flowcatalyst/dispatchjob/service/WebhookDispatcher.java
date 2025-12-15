@@ -7,6 +7,7 @@ import tech.flowcatalyst.dispatchjob.entity.DispatchAttempt;
 import tech.flowcatalyst.dispatchjob.entity.DispatchCredentials;
 import tech.flowcatalyst.dispatchjob.entity.DispatchJob;
 import tech.flowcatalyst.dispatchjob.model.DispatchAttemptStatus;
+import tech.flowcatalyst.dispatchjob.model.ErrorType;
 import tech.flowcatalyst.dispatchjob.security.WebhookSigner;
 
 import java.io.PrintWriter;
@@ -98,21 +99,56 @@ public class WebhookDispatcher {
             attempt.status = DispatchAttemptStatus.FAILURE;
             attempt.errorMessage = error.getMessage();
             attempt.errorStackTrace = getStackTrace(error);
+            // Network/connection errors are typically transient
+            attempt.errorType = classifyException(error);
         } else {
             attempt.responseCode = response.statusCode();
             attempt.responseBody = truncate(response.body(), MAX_RESPONSE_BODY_LENGTH);
 
             if (response.statusCode() >= 200 && response.statusCode() < 300) {
                 attempt.status = DispatchAttemptStatus.SUCCESS;
+                attempt.errorType = null; // No error on success
                 LOG.debugf("Webhook sent successfully for dispatch job [%s], status: %d", (Object) job.id, response.statusCode());
             } else {
                 attempt.status = DispatchAttemptStatus.FAILURE;
                 attempt.errorMessage = "HTTP " + response.statusCode();
+                attempt.errorType = classifyHttpStatus(response.statusCode());
                 LOG.warnf("Webhook failed for dispatch job [%s], status: %d", (Object) job.id, response.statusCode());
             }
         }
 
         return attempt;
+    }
+
+    /**
+     * Classify HTTP status codes into error types.
+     * - 4xx = NOT_TRANSIENT (client errors, won't succeed without changes)
+     * - 5xx = TRANSIENT (server errors, may succeed on retry)
+     */
+    private ErrorType classifyHttpStatus(int statusCode) {
+        if (statusCode >= 400 && statusCode < 500) {
+            // 4xx client errors are permanent (bad request, unauthorized, forbidden, not found, etc.)
+            return ErrorType.NOT_TRANSIENT;
+        } else if (statusCode >= 500) {
+            // 5xx server errors are transient (may succeed on retry)
+            return ErrorType.TRANSIENT;
+        }
+        return ErrorType.UNKNOWN;
+    }
+
+    /**
+     * Classify exceptions into error types.
+     * Network/timeout errors are typically transient.
+     */
+    private ErrorType classifyException(Throwable error) {
+        if (error instanceof java.net.ConnectException ||
+            error instanceof java.net.SocketTimeoutException ||
+            error instanceof java.net.http.HttpConnectTimeoutException ||
+            error instanceof java.net.http.HttpTimeoutException) {
+            return ErrorType.TRANSIENT;
+        }
+        // Unknown exceptions default to transient (safer to retry)
+        return ErrorType.UNKNOWN;
     }
 
     private String truncate(String str, int maxLength) {

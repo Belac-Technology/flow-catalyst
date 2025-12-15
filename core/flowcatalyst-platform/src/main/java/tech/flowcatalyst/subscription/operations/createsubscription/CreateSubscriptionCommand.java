@@ -1,8 +1,8 @@
 package tech.flowcatalyst.subscription.operations.createsubscription;
 
+import tech.flowcatalyst.dispatch.DispatchMode;
 import tech.flowcatalyst.subscription.ConfigEntry;
 import tech.flowcatalyst.subscription.EventTypeBinding;
-import tech.flowcatalyst.subscription.SubscriptionMode;
 import tech.flowcatalyst.subscription.SubscriptionSource;
 
 import java.util.List;
@@ -40,6 +40,6 @@ public record CreateSubscriptionCommand(
     String dispatchPoolId,
     Integer delaySeconds,
     Integer sequence,
-    SubscriptionMode mode,
+    DispatchMode mode,
     Integer timeoutSeconds
 ) {}

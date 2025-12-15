@@ -7,6 +7,7 @@ import tech.flowcatalyst.dispatchpool.DispatchPoolRepository;
 import tech.flowcatalyst.platform.common.ExecutionContext;
 import tech.flowcatalyst.platform.common.Result;
 import tech.flowcatalyst.platform.common.UnitOfWork;
+import tech.flowcatalyst.dispatch.DispatchMode;
 import tech.flowcatalyst.platform.common.errors.UseCaseError;
 import tech.flowcatalyst.subscription.*;
 import tech.flowcatalyst.subscription.events.SubscriptionUpdated;
@@ -90,7 +91,7 @@ public class UpdateSubscriptionUseCase {
         int newMaxAgeSeconds = command.maxAgeSeconds() != null ? command.maxAgeSeconds() : existing.maxAgeSeconds();
         int newDelaySeconds = command.delaySeconds() != null ? command.delaySeconds() : existing.delaySeconds();
         int newSequence = command.sequence() != null ? command.sequence() : existing.sequence();
-        SubscriptionMode newMode = command.mode() != null ? command.mode() : existing.mode();
+        DispatchMode newMode = command.mode() != null ? command.mode() : existing.mode();
         int newTimeoutSeconds = command.timeoutSeconds() != null ? command.timeoutSeconds() : existing.timeoutSeconds();
 
         // Create updated subscription

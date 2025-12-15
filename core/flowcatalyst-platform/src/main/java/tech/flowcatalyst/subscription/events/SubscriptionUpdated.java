@@ -5,6 +5,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import tech.flowcatalyst.dispatch.DispatchMode;
 import tech.flowcatalyst.platform.common.DomainEvent;
 import tech.flowcatalyst.platform.common.ExecutionContext;
 import tech.flowcatalyst.platform.shared.TsidGenerator;
@@ -44,7 +45,7 @@ public record SubscriptionUpdated(
     String dispatchPoolCode,
     int delaySeconds,
     int sequence,
-    SubscriptionMode mode,
+    DispatchMode mode,
     int timeoutSeconds
 ) implements DomainEvent {
 
@@ -119,7 +120,7 @@ public record SubscriptionUpdated(
         String dispatchPoolCode,
         int delaySeconds,
         int sequence,
-        SubscriptionMode mode,
+        DispatchMode mode,
         int timeoutSeconds
     ) {}
 
@@ -150,7 +151,7 @@ public record SubscriptionUpdated(
         private String dispatchPoolCode;
         private int delaySeconds;
         private int sequence;
-        private SubscriptionMode mode;
+        private DispatchMode mode;
         private int timeoutSeconds;
 
         public Builder from(ExecutionContext ctx) {
@@ -243,7 +244,7 @@ public record SubscriptionUpdated(
             return this;
         }
 
-        public Builder mode(SubscriptionMode mode) {
+        public Builder mode(DispatchMode mode) {
             this.mode = mode;
             return this;
         }

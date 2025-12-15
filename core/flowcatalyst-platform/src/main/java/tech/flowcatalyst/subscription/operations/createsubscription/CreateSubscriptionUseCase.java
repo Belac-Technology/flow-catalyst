@@ -10,6 +10,7 @@ import tech.flowcatalyst.platform.common.ExecutionContext;
 import tech.flowcatalyst.platform.common.Result;
 import tech.flowcatalyst.platform.common.UnitOfWork;
 import tech.flowcatalyst.platform.common.errors.UseCaseError;
+import tech.flowcatalyst.dispatch.DispatchMode;
 import tech.flowcatalyst.platform.shared.TsidGenerator;
 import tech.flowcatalyst.subscription.*;
 import tech.flowcatalyst.subscription.events.SubscriptionCreated;
@@ -138,7 +139,7 @@ public class CreateSubscriptionUseCase {
         int delaySeconds = command.delaySeconds() != null ? command.delaySeconds() : Subscription.DEFAULT_DELAY_SECONDS;
         int sequence = command.sequence() != null ? command.sequence() : Subscription.DEFAULT_SEQUENCE;
         int timeoutSeconds = command.timeoutSeconds() != null ? command.timeoutSeconds() : Subscription.DEFAULT_TIMEOUT_SECONDS;
-        SubscriptionMode mode = command.mode() != null ? command.mode() : SubscriptionMode.IMMEDIATE;
+        DispatchMode mode = command.mode() != null ? command.mode() : DispatchMode.IMMEDIATE;
         SubscriptionSource source = command.source() != null ? command.source() : SubscriptionSource.UI;
 
         // Create subscription

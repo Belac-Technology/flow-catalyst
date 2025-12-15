@@ -3,6 +3,7 @@ package tech.flowcatalyst.dispatchjob.repository;
 import io.quarkus.mongodb.panache.PanacheMongoRepositoryBase;
 import io.quarkus.panache.common.Parameters;
 import jakarta.enterprise.context.ApplicationScoped;
+import tech.flowcatalyst.dispatch.DispatchMode;
 import tech.flowcatalyst.dispatchjob.dto.CreateDispatchJobRequest;
 import tech.flowcatalyst.dispatchjob.dto.DispatchJobFilter;
 import tech.flowcatalyst.dispatchjob.entity.DispatchAttempt;
@@ -41,6 +42,16 @@ public class DispatchJobRepository implements PanacheMongoRepositoryBase<Dispatc
         job.payloadContentType = request.payloadContentType() != null ?
             request.payloadContentType() : job.payloadContentType;
         job.credentialsId = request.credentialsId();
+
+        // New context and dispatch behavior fields
+        job.clientId = request.clientId();
+        job.subscriptionId = request.subscriptionId();
+        job.mode = request.mode() != null ? request.mode() : DispatchMode.IMMEDIATE;
+        job.dispatchPoolId = request.dispatchPoolId();
+        job.sequence = request.sequence() != null ? request.sequence() : 99;
+        job.timeoutSeconds = request.timeoutSeconds() != null ? request.timeoutSeconds() : 30;
+        job.schemaId = request.schemaId();
+
         job.maxRetries = request.maxRetries() != null ? request.maxRetries() : job.maxRetries;
         job.retryStrategy = request.retryStrategy() != null ?
             request.retryStrategy() : job.retryStrategy;
@@ -133,6 +144,18 @@ public class DispatchJobRepository implements PanacheMongoRepositoryBase<Dispatc
             conditions.add("groupId = :groupId");
             params.put("groupId", filter.groupId());
         }
+        if (filter.clientId() != null) {
+            conditions.add("clientId = :clientId");
+            params.put("clientId", filter.clientId());
+        }
+        if (filter.subscriptionId() != null) {
+            conditions.add("subscriptionId = :subscriptionId");
+            params.put("subscriptionId", filter.subscriptionId());
+        }
+        if (filter.dispatchPoolId() != null) {
+            conditions.add("dispatchPoolId = :dispatchPoolId");
+            params.put("dispatchPoolId", filter.dispatchPoolId());
+        }
         if (filter.createdAfter() != null) {
             conditions.add("createdAt >= :createdAfter");
             params.put("createdAfter", filter.createdAfter());
@@ -176,6 +199,18 @@ public class DispatchJobRepository implements PanacheMongoRepositoryBase<Dispatc
         if (filter.groupId() != null) {
             conditions.add("groupId = :groupId");
             params.put("groupId", filter.groupId());
+        }
+        if (filter.clientId() != null) {
+            conditions.add("clientId = :clientId");
+            params.put("clientId", filter.clientId());
+        }
+        if (filter.subscriptionId() != null) {
+            conditions.add("subscriptionId = :subscriptionId");
+            params.put("subscriptionId", filter.subscriptionId());
+        }
+        if (filter.dispatchPoolId() != null) {
+            conditions.add("dispatchPoolId = :dispatchPoolId");
+            params.put("dispatchPoolId", filter.dispatchPoolId());
         }
         if (filter.createdAfter() != null) {
             conditions.add("createdAt >= :createdAfter");

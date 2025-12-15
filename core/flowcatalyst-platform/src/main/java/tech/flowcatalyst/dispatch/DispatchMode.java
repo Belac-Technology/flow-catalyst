@@ -1,11 +1,12 @@
-package tech.flowcatalyst.subscription;
+package tech.flowcatalyst.dispatch;
 
 /**
- * Processing mode for a subscription's dispatch jobs.
+ * Processing mode for dispatch jobs.
  *
  * Controls how message group ordering and error handling work together.
+ * Used by both Subscription (for default behavior) and DispatchJob (for override).
  */
-public enum SubscriptionMode {
+public enum DispatchMode {
     /**
      * No message group ordering guarantees.
      * Jobs are processed as fast as possible, ignoring message groups.

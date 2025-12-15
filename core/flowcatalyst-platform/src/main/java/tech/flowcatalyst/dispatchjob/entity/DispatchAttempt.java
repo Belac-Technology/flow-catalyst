@@ -1,6 +1,7 @@
 package tech.flowcatalyst.dispatchjob.entity;
 
 import tech.flowcatalyst.dispatchjob.model.DispatchAttemptStatus;
+import tech.flowcatalyst.dispatchjob.model.ErrorType;
 
 import java.time.Instant;
 
@@ -20,6 +21,8 @@ public class DispatchAttempt {
     public String responseBody;
     public String errorMessage;
     public String errorStackTrace;
+    /** Classification of error for retry decisions (null if SUCCESS) */
+    public ErrorType errorType;
     public Instant createdAt;
 
     public DispatchAttempt() {

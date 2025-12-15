@@ -16,6 +16,9 @@ import tech.flowcatalyst.dispatchjob.dto.*;
 import tech.flowcatalyst.dispatchjob.entity.DispatchJob;
 import tech.flowcatalyst.dispatchjob.model.DispatchStatus;
 import tech.flowcatalyst.dispatchjob.service.DispatchJobService;
+import tech.flowcatalyst.platform.audit.AuditContext;
+import tech.flowcatalyst.platform.authorization.AuthorizationService;
+import tech.flowcatalyst.platform.authorization.platform.PlatformMessagingPermissions;
 
 import java.time.Instant;
 import java.util.List;
@@ -28,6 +31,12 @@ public class DispatchJobResource {
 
     @Inject
     DispatchJobService dispatchJobService;
+
+    @Inject
+    AuditContext auditContext;
+
+    @Inject
+    AuthorizationService authorizationService;
 
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
@@ -51,10 +60,16 @@ public class DispatchJobResource {
         )
     })
     public Response createDispatchJob(@Valid CreateDispatchJobRequest request) {
-        LOG.infof("Creating dispatch job: type=%s, source=%s", request.type(), request.source());
+        // Authorization - require DISPATCH_JOB_CREATE permission
+        String principalId = auditContext.requirePrincipalId();
+        authorizationService.requirePermission(principalId, PlatformMessagingPermissions.DISPATCH_JOB_CREATE);
+
+        LOG.infof("Creating dispatch job: type=%s, source=%s, principal=%s",
+            request.type(), request.source(), principalId);
 
         try {
             DispatchJob job = dispatchJobService.createDispatchJob(request);
+            // Note: DO NOT create audit log for dispatch job creation (high volume)
             return Response.status(201).entity(DispatchJobResponse.from(job)).build();
 
         } catch (IllegalArgumentException e) {
@@ -84,6 +99,9 @@ public class DispatchJobResource {
         )
     })
     public Response getDispatchJob(@PathParam("id") String id) {
+        String principalId = auditContext.requirePrincipalId();
+        authorizationService.requirePermission(principalId, PlatformMessagingPermissions.DISPATCH_JOB_VIEW);
+
         return dispatchJobService.findById(id)
             .map(job -> Response.ok(DispatchJobResponse.from(job)).build())
             .orElse(Response.status(404).entity(new ErrorResponse("Dispatch job not found")).build());
@@ -104,13 +122,20 @@ public class DispatchJobResource {
         @QueryParam("source") String source,
         @QueryParam("type") String type,
         @QueryParam("groupId") String groupId,
+        @QueryParam("clientId") String clientId,
+        @QueryParam("subscriptionId") String subscriptionId,
+        @QueryParam("dispatchPoolId") String dispatchPoolId,
         @QueryParam("createdAfter") Instant createdAfter,
         @QueryParam("createdBefore") Instant createdBefore,
         @QueryParam("page") @DefaultValue("0") Integer page,
         @QueryParam("size") @DefaultValue("20") Integer size
     ) {
+        String principalId = auditContext.requirePrincipalId();
+        authorizationService.requirePermission(principalId, PlatformMessagingPermissions.DISPATCH_JOB_VIEW);
+
         DispatchJobFilter filter = new DispatchJobFilter(
-            status, source, type, groupId, createdAfter, createdBefore, page, size
+            status, source, type, groupId, clientId, subscriptionId, dispatchPoolId,
+            createdAfter, createdBefore, page, size
         );
 
         List<DispatchJob> jobs = dispatchJobService.findWithFilter(filter);
@@ -146,6 +171,9 @@ public class DispatchJobResource {
         )
     })
     public Response getDispatchJobAttempts(@PathParam("id") String id) {
+        String principalId = auditContext.requirePrincipalId();
+        authorizationService.requirePermission(principalId, PlatformMessagingPermissions.DISPATCH_JOB_VIEW);
+
         return dispatchJobService.findById(id)
             .map(job -> {
                 List<DispatchAttemptResponse> responses = job.attempts.stream()

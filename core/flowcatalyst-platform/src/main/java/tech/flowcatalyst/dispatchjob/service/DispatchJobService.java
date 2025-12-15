@@ -13,9 +13,10 @@ import tech.flowcatalyst.dispatchjob.entity.DispatchCredentials;
 import tech.flowcatalyst.dispatchjob.entity.DispatchJob;
 import tech.flowcatalyst.dispatchjob.model.DispatchAttemptStatus;
 import tech.flowcatalyst.dispatchjob.model.DispatchStatus;
-import tech.flowcatalyst.dispatchjob.repository.DispatchJobRepository;
+import tech.flowcatalyst.dispatchjob.model.ErrorType;
 import tech.flowcatalyst.dispatchjob.model.MediationType;
 import tech.flowcatalyst.dispatchjob.model.MessagePointer;
+import tech.flowcatalyst.dispatchjob.repository.DispatchJobRepository;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -127,28 +128,36 @@ public class DispatchJobService {
                 job.id, DispatchStatus.COMPLETED, completedAt, duration, null);
 
             LOG.infof("Dispatch job [%s] completed successfully", job.id);
-            return new DispatchJobProcessResult(true, "Success", 200);
+            return DispatchJobProcessResult.success("Completed successfully");
 
         } else {
-            // Failure - check if we should retry
-            if (newAttemptCount >= job.maxRetries) {
-                // Max attempts exhausted
+            // Failure - check if we should retry based on error type and retry count
+            boolean isNotTransient = attempt.errorType == ErrorType.NOT_TRANSIENT;
+            boolean retriesExhausted = newAttemptCount >= job.maxRetries;
+
+            if (isNotTransient || retriesExhausted) {
+                // Permanent error - either non-transient or max attempts exhausted
                 Instant completedAt = Instant.now();
                 Long duration = Duration.between(job.createdAt, completedAt).toMillis();
 
                 dispatchJobRepository.updateStatus(
                     job.id, DispatchStatus.ERROR, completedAt, duration, attempt.errorMessage);
 
-                LOG.warnf("Dispatch job [%s] failed after %d attempts, marking as ERROR", job.id, newAttemptCount);
-                return new DispatchJobProcessResult(false, "Max attempts exhausted", 200);
+                if (isNotTransient) {
+                    LOG.warnf("Dispatch job [%s] failed with non-transient error, marking as ERROR", job.id);
+                    return DispatchJobProcessResult.permanentError("Non-transient error", attempt.errorMessage);
+                } else {
+                    LOG.warnf("Dispatch job [%s] failed after %d attempts, marking as ERROR", job.id, newAttemptCount);
+                    return DispatchJobProcessResult.permanentError("Max attempts exhausted", attempt.errorMessage);
+                }
 
             } else {
-                // More attempts available
+                // More attempts available and error is transient - queue for retry
                 dispatchJobRepository.updateStatus(
-                    job.id, DispatchStatus.FAILED, null, null, attempt.errorMessage);
+                    job.id, DispatchStatus.QUEUED, null, null, attempt.errorMessage);
 
-                LOG.warnf("Dispatch job [%s] failed, attempt %d/%d, will retry", job.id, newAttemptCount, job.maxRetries);
-                return new DispatchJobProcessResult(false, "Failed, will retry", 400);
+                LOG.warnf("Dispatch job [%s] failed, attempt %d/%d, re-queued for retry", job.id, newAttemptCount, job.maxRetries);
+                return DispatchJobProcessResult.transientError("Failed, re-queued for retry", attempt.errorMessage);
             }
         }
     }
@@ -165,10 +174,40 @@ public class DispatchJobService {
         return dispatchJobRepository.countWithFilter(filter);
     }
 
+    /**
+     * Result of processing a dispatch job.
+     *
+     * @param ack Whether to acknowledge (true) or nack (false) the message
+     * @param message Human-readable status message
+     * @param details Optional error details (stack trace, response body, etc.)
+     * @param errorType Classification of error for retry decisions (null if ack=true)
+     * @param httpStatusCode HTTP status code to return to message router
+     */
     public record DispatchJobProcessResult(
-        boolean success,
+        boolean ack,
         String message,
+        String details,
+        ErrorType errorType,
         int httpStatusCode
     ) {
+        /** Success result - ack the message */
+        public static DispatchJobProcessResult success(String message) {
+            return new DispatchJobProcessResult(true, message, null, null, 200);
+        }
+
+        /** Transient error - nack for retry */
+        public static DispatchJobProcessResult transientError(String message, String details) {
+            return new DispatchJobProcessResult(false, message, details, ErrorType.TRANSIENT, 400);
+        }
+
+        /** Permanent error - ack to prevent retry, goes to ERROR status */
+        public static DispatchJobProcessResult permanentError(String message, String details) {
+            return new DispatchJobProcessResult(true, message, details, ErrorType.NOT_TRANSIENT, 200);
+        }
+
+        /** Unknown error - nack, treat as transient */
+        public static DispatchJobProcessResult unknownError(String message, String details) {
+            return new DispatchJobProcessResult(false, message, details, ErrorType.UNKNOWN, 500);
+        }
     }
 }

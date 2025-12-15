@@ -2,6 +2,7 @@ package tech.flowcatalyst.subscription;
 
 import io.quarkus.mongodb.panache.common.MongoEntity;
 import org.bson.codecs.pojo.annotations.BsonId;
+import tech.flowcatalyst.dispatch.DispatchMode;
 
 import java.time.Instant;
 import java.util.List;
@@ -68,7 +69,7 @@ public record Subscription(
     int sequence,
 
     /** Processing mode for message group ordering */
-    SubscriptionMode mode,
+    DispatchMode mode,
 
     /** Timeout in seconds for dispatch target to respond */
     int timeoutSeconds,
@@ -114,13 +115,13 @@ public record Subscription(
      * Check if this subscription uses immediate mode (no message group ordering).
      */
     public boolean isImmediateMode() {
-        return mode == SubscriptionMode.IMMEDIATE;
+        return mode == DispatchMode.IMMEDIATE;
     }
 
     /**
      * Check if this subscription blocks on error within message groups.
      */
     public boolean blocksOnError() {
-        return mode == SubscriptionMode.BLOCK_ON_ERROR;
+        return mode == DispatchMode.BLOCK_ON_ERROR;
     }
 }

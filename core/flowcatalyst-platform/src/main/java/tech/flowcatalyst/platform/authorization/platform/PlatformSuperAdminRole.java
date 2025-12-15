@@ -47,6 +47,7 @@ public class PlatformSuperAdminRole {
             PlatformMessagingPermissions.SUBSCRIPTION_UPDATE,
             PlatformMessagingPermissions.SUBSCRIPTION_DELETE,
             PlatformMessagingPermissions.DISPATCH_JOB_VIEW,
+            PlatformMessagingPermissions.DISPATCH_JOB_CREATE,
             PlatformMessagingPermissions.DISPATCH_JOB_RETRY,
             PlatformMessagingPermissions.DISPATCH_POOL_VIEW,
             PlatformMessagingPermissions.DISPATCH_POOL_CREATE,
