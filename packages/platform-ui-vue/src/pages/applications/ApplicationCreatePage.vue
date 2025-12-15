@@ -6,7 +6,9 @@ import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
 import Textarea from 'primevue/textarea';
 import Message from 'primevue/message';
-import { applicationsApi } from '@/api/applications';
+import SelectButton from 'primevue/selectbutton';
+import Dialog from 'primevue/dialog';
+import { applicationsApi, type ApplicationType, type ApplicationWithServiceAccount } from '@/api/applications';
 
 const router = useRouter();
 const toast = useToast();
@@ -17,6 +19,16 @@ const name = ref('');
 const description = ref('');
 const defaultBaseUrl = ref('');
 const iconUrl = ref('');
+const type = ref<ApplicationType>('APPLICATION');
+
+const typeOptions = [
+  { label: 'Application', value: 'APPLICATION' },
+  { label: 'Integration', value: 'INTEGRATION' },
+];
+
+// Service account credentials dialog
+const showCredentialsDialog = ref(false);
+const createdApplication = ref<ApplicationWithServiceAccount | null>(null);
 
 const submitting = ref(false);
 const errorMessage = ref<string | null>(null);
@@ -48,14 +60,36 @@ async function onSubmit() {
       description: description.value || undefined,
       defaultBaseUrl: defaultBaseUrl.value || undefined,
       iconUrl: iconUrl.value || undefined,
+      type: type.value,
     });
-    toast.add({ severity: 'success', summary: 'Success', detail: 'Application created', life: 3000 });
-    router.push(`/applications/${application.id}`);
+
+    createdApplication.value = application;
+
+    // Show credentials dialog if service account was created
+    if (application.serviceAccount) {
+      showCredentialsDialog.value = true;
+    } else {
+      toast.add({ severity: 'success', summary: 'Success', detail: 'Application created', life: 3000 });
+      router.push(`/applications/${application.id}`);
+    }
   } catch (e) {
     errorMessage.value = e instanceof Error ? e.message : 'Failed to create application';
   } finally {
     submitting.value = false;
   }
+}
+
+function onCredentialsDialogClose() {
+  showCredentialsDialog.value = false;
+  toast.add({ severity: 'success', summary: 'Success', detail: 'Application created', life: 3000 });
+  if (createdApplication.value) {
+    router.push(`/applications/${createdApplication.value.id}`);
+  }
+}
+
+function copyToClipboard(text: string) {
+  navigator.clipboard.writeText(text);
+  toast.add({ severity: 'info', summary: 'Copied', detail: 'Copied to clipboard', life: 2000 });
 }
 </script>
 
@@ -79,6 +113,14 @@ async function onSubmit() {
       <div class="form-card">
         <section class="form-section">
           <h3 class="section-title">Application Identity</h3>
+
+          <div class="form-field">
+            <label>Type <span class="required">*</span></label>
+            <SelectButton v-model="type" :options="typeOptions" optionLabel="label" optionValue="value" />
+            <small class="hint">
+              {{ type === 'APPLICATION' ? 'User-facing application that users can log into' : 'Third-party adapter or connector for integrations' }}
+            </small>
+          </div>
 
           <div class="form-field">
             <label>Code <span class="required">*</span></label>
@@ -164,6 +206,58 @@ async function onSubmit() {
         </div>
       </div>
     </form>
+
+    <!-- Service Account Credentials Dialog -->
+    <Dialog
+      v-model:visible="showCredentialsDialog"
+      header="Service Account Created"
+      :style="{ width: '550px' }"
+      :modal="true"
+      :closable="false"
+    >
+      <div class="credentials-dialog-content" v-if="createdApplication?.serviceAccount">
+        <Message severity="warn" class="credentials-warning">
+          Save these credentials now. The client secret will not be shown again.
+        </Message>
+
+        <div class="credential-item">
+          <label>Client ID</label>
+          <div class="credential-value">
+            <code>{{ createdApplication.serviceAccount.oauthClient.clientId }}</code>
+            <Button
+              icon="pi pi-copy"
+              text
+              size="small"
+              @click="copyToClipboard(createdApplication.serviceAccount.oauthClient.clientId)"
+            />
+          </div>
+        </div>
+
+        <div class="credential-item">
+          <label>Client Secret</label>
+          <div class="credential-value">
+            <code>{{ createdApplication.serviceAccount.oauthClient.clientSecret }}</code>
+            <Button
+              icon="pi pi-copy"
+              text
+              size="small"
+              @click="copyToClipboard(createdApplication.serviceAccount.oauthClient.clientSecret)"
+            />
+          </div>
+        </div>
+
+        <div class="credential-item">
+          <label>Service Account</label>
+          <div class="credential-value">
+            <span>{{ createdApplication.serviceAccount.name }}</span>
+          </div>
+        </div>
+      </div>
+
+      <template #footer>
+        <Button label="I've saved the credentials" icon="pi pi-check" @click="onCredentialsDialogClose" />
+      </template>
+    </Dialog>
   </div>
 </template>
 
@@ -239,5 +333,46 @@ async function onSubmit() {
   gap: 12px;
   padding-top: 16px;
   border-top: 1px solid #e2e8f0;
+}
+
+/* Credentials Dialog */
+.credentials-dialog-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.credentials-warning {
+  margin-bottom: 8px;
+}
+
+.credential-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.credential-item > label {
+  font-size: 12px;
+  font-weight: 500;
+  color: #64748b;
+  text-transform: uppercase;
+}
+
+.credential-value {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 8px 12px;
+}
+
+.credential-value code {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  flex: 1;
+  word-break: break-all;
 }
 </style>

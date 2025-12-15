@@ -78,6 +78,7 @@ public class CreateApplicationUseCase {
         // Create the application
         Application app = new Application();
         app.id = TsidGenerator.generate();
+        app.type = command.type() != null ? command.type() : Application.ApplicationType.APPLICATION;
         app.code = command.code().toLowerCase();
         app.name = command.name();
         app.description = command.description();

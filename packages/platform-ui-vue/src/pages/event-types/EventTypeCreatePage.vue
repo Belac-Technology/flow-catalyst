@@ -31,10 +31,11 @@ const submitting = ref(false);
 const errorMessage = ref<string | null>(null);
 
 // Load applications on mount
+// Event types can belong to both applications and integrations
 onMounted(async () => {
   try {
-    const response = await applicationsApi.list(true); // Only active applications
-    applications.value = response.items;
+    const response = await applicationsApi.list({ activeOnly: true }); // Both applications and integrations
+    applications.value = response.applications;
   } catch (e) {
     errorMessage.value = 'Failed to load applications';
   } finally {

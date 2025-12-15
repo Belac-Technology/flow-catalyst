@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
-import Dropdown from 'primevue/dropdown';
+import Select from 'primevue/select';
 import InputText from 'primevue/inputtext';
 import InputGroup from 'primevue/inputgroup';
 import InputGroupAddon from 'primevue/inputgroupaddon';
@@ -128,7 +128,7 @@ function handleValidate() {
     <label v-if="label" class="field-label">{{ label }}</label>
 
     <div class="input-row">
-      <Dropdown
+      <Select
         v-model="selectedProvider"
         :options="secretProviderOptions"
         optionLabel="label"
@@ -142,7 +142,7 @@ function handleValidate() {
             <small class="provider-desc">{{ option.description }}</small>
           </div>
         </template>
-      </Dropdown>
+      </Select>
 
       <InputGroup class="secret-input-group">
         <InputGroupAddon class="prefix-addon">

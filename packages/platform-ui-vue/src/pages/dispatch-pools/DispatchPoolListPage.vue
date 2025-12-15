@@ -6,7 +6,7 @@ import Column from 'primevue/column';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
 import Tag from 'primevue/tag';
-import Dropdown from 'primevue/dropdown';
+import Select from 'primevue/select';
 import ProgressSpinner from 'primevue/progressspinner';
 import Message from 'primevue/message';
 import { dispatchPoolsApi, type DispatchPool, type DispatchPoolStatus } from '@/api/dispatch-pools';
@@ -100,7 +100,7 @@ function getScopeLabel(pool: DispatchPool) {
           <i class="pi pi-search" />
           <InputText v-model="searchQuery" placeholder="Search pools..." />
         </span>
-        <Dropdown
+        <Select
           v-model="statusFilter"
           :options="statusOptions"
           optionLabel="label"

@@ -8,7 +8,7 @@ import Tag from 'primevue/tag';
 import InputText from 'primevue/inputtext';
 import InputNumber from 'primevue/inputnumber';
 import Textarea from 'primevue/textarea';
-import Dropdown from 'primevue/dropdown';
+import Select from 'primevue/select';
 import ProgressSpinner from 'primevue/progressspinner';
 import Message from 'primevue/message';
 import DataTable from 'primevue/datatable';
@@ -278,7 +278,7 @@ function getScopeLabel(sub: Subscription) {
             </div>
             <div class="form-field">
               <label>Mode</label>
-              <Dropdown v-model="editMode" :options="modeOptions" optionLabel="label" optionValue="value" class="full-width" />
+              <Select v-model="editMode" :options="modeOptions" optionLabel="label" optionValue="value" class="full-width" />
             </div>
             <div class="form-actions">
               <Button label="Cancel" severity="secondary" outlined @click="cancelEditing" />

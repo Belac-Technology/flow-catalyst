@@ -12,7 +12,7 @@ import AutoComplete from 'primevue/autocomplete';
 import { useToast } from 'primevue/usetoast';
 import { authConfigsApi, type AuthConfig, type AuthConfigType } from '@/api/auth-configs';
 import MultiSelect from 'primevue/multiselect';
-import Dropdown from 'primevue/dropdown';
+import Select from 'primevue/select';
 import { clientsApi, type Client } from '@/api/clients';
 import SecretRefInput from '@/components/SecretRefInput.vue';
 
@@ -447,7 +447,7 @@ function getProviderLabel(provider: string) {
           <div class="edit-form">
             <div class="field">
               <label for="config-type">Configuration Type</label>
-              <Dropdown
+              <Select
                 id="config-type"
                 v-model="editConfigType"
                 :options="configTypeOptions"
@@ -461,7 +461,7 @@ function getProviderLabel(provider: string) {
                     <span class="type-description">{{ slotProps.option.description }}</span>
                   </div>
                 </template>
-              </Dropdown>
+              </Select>
             </div>
 
             <!-- CLIENT type: Primary Client selector -->

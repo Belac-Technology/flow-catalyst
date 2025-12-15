@@ -3,14 +3,31 @@ package tech.flowcatalyst.platform.authentication.oauth;
 import io.quarkus.mongodb.panache.common.MongoEntity;
 import io.quarkus.mongodb.panache.PanacheMongoEntityBase;
 import org.bson.codecs.pojo.annotations.BsonId;
+import org.bson.codecs.pojo.annotations.BsonIgnore;
+
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
- * OAuth2 client registration for SPAs, mobile apps, and service clients.
+ * OAuth2/OIDC client registration for SPAs, mobile apps, and service clients.
  *
- * Supports two client types:
- * - PUBLIC: For SPAs and mobile apps (no secret, PKCE required)
- * - CONFIDENTIAL: For server-side apps (has secret)
+ * <p>Supports two client types:
+ * <ul>
+ *   <li>PUBLIC: For SPAs and mobile apps (no secret, PKCE required)</li>
+ *   <li>CONFIDENTIAL: For server-side apps (has encrypted secret)</li>
+ * </ul>
+ *
+ * <p>OAuth clients can be associated with one or more applications. During authorization,
+ * the system verifies that the authenticating user has access to at least one of the
+ * associated applications. This enables:
+ * <ul>
+ *   <li>Single SSO client for multiple applications in one deployment</li>
+ *   <li>Separate clients per environment (dev, staging, prod)</li>
+ *   <li>Per-client domains via multiple redirect URIs</li>
+ * </ul>
+ *
+ * @see tech.flowcatalyst.platform.application.Application
  */
 @MongoEntity(collection = "oauth_clients")
 public class OAuthClient extends PanacheMongoEntityBase {
@@ -20,90 +37,161 @@ public class OAuthClient extends PanacheMongoEntityBase {
 
     /**
      * Unique client identifier used in OAuth flows.
-     * Example: "fc_ABCdef123"
+     * Format: "fc_{TSID}" (e.g., "fc_0HZXEQ5Y8JY5Z")
      */
     public String clientId;
 
     /**
      * Human-readable name for this client.
+     * Example: "Production SSO", "Development SPA"
      */
     public String clientName;
 
     /**
      * Client type determines security requirements.
      */
-    public ClientType clientType;
+    public ClientType clientType = ClientType.PUBLIC;
 
     /**
-     * Hashed client secret (null for public clients).
+     * Reference to encrypted client secret (for CONFIDENTIAL clients).
+     * Format: "encrypted:BASE64_CIPHERTEXT"
+     * Use SecretService to encrypt/decrypt.
+     * Null for PUBLIC clients.
      */
-    public String clientSecretHash;
+    public String clientSecretRef;
 
     /**
-     * Allowed redirect URIs (comma-separated).
+     * Allowed redirect URIs.
      * Must match exactly during authorization.
+     * Supports multiple URIs for per-client domains or multiple environments.
      */
-    public String redirectUris;
+    public List<String> redirectUris = new ArrayList<>();
 
     /**
-     * Allowed grant types (comma-separated).
-     * Example: "authorization_code,refresh_token"
+     * Allowed grant types.
+     * Examples: "authorization_code", "refresh_token", "client_credentials"
      */
-    public String grantTypes;
+    public List<String> grantTypes = new ArrayList<>();
 
     /**
      * Default scopes for this client.
+     * Example: "openid profile email"
      */
     public String defaultScopes;
 
     /**
      * Whether PKCE is required for authorization code flow.
-     * Always true for public clients.
+     * Always enforced for PUBLIC clients regardless of this setting.
      */
     public boolean pkceRequired = true;
 
     /**
-     * Optional: restrict OAuth client to specific owning client.
-     * NULL means OAuth client can be used by any client.
+     * Application IDs this OAuth client can authenticate for (user-facing clients only).
+     * Users must have access to at least one of these applications
+     * to authenticate through this client.
+     * Empty list means no application restriction (legacy behavior).
+     * Must be empty if serviceAccountPrincipalId is set.
      */
-    public String ownerClientId;
+    public List<String> applicationIds = new ArrayList<>();
 
+    /**
+     * Service account principal ID this OAuth client belongs to.
+     * When set, this is a service account client that:
+     * - Can only use client_credentials grant
+     * - Cannot have applicationIds (mutual exclusion)
+     * - Authenticates as the linked service account principal
+     * Null for user-facing application OAuth clients.
+     */
+    public String serviceAccountPrincipalId;
+
+    /**
+     * Whether this client is active.
+     */
     public boolean active = true;
 
     public Instant createdAt = Instant.now();
 
     public Instant updatedAt = Instant.now();
 
+    public OAuthClient() {
+    }
+
     /**
      * Check if a redirect URI is allowed for this client.
      */
+    @BsonIgnore
     public boolean isRedirectUriAllowed(String uri) {
         if (redirectUris == null || uri == null) {
             return false;
         }
-        for (String allowed : redirectUris.split(",")) {
-            if (allowed.trim().equals(uri)) {
-                return true;
-            }
-        }
-        return false;
+        return redirectUris.contains(uri);
     }
 
     /**
      * Check if a grant type is allowed for this client.
      */
+    @BsonIgnore
     public boolean isGrantTypeAllowed(String grantType) {
         if (grantTypes == null || grantType == null) {
             return false;
         }
-        for (String allowed : grantTypes.split(",")) {
-            if (allowed.trim().equals(grantType)) {
-                return true;
-            }
-        }
-        return false;
+        return grantTypes.contains(grantType);
     }
 
+    /**
+     * Check if this client is associated with any applications.
+     */
+    @BsonIgnore
+    public boolean hasApplicationRestrictions() {
+        return applicationIds != null && !applicationIds.isEmpty();
+    }
+
+    /**
+     * Check if this client is associated with a specific application.
+     */
+    @BsonIgnore
+    public boolean isAssociatedWithApplication(String applicationId) {
+        if (applicationIds == null || applicationId == null) {
+            return false;
+        }
+        return applicationIds.contains(applicationId);
+    }
+
+    /**
+     * Check if this is a public client (no secret).
+     */
+    @BsonIgnore
+    public boolean isPublic() {
+        return clientType == ClientType.PUBLIC;
+    }
+
+    /**
+     * Check if this is a confidential client (has secret).
+     */
+    @BsonIgnore
+    public boolean isConfidential() {
+        return clientType == ClientType.CONFIDENTIAL;
+    }
+
+    /**
+     * Check if this is a service account client (for machine-to-machine auth).
+     */
+    @BsonIgnore
+    public boolean isServiceAccountClient() {
+        return serviceAccountPrincipalId != null;
+    }
+
+    /**
+     * Check if this is a user-facing application client.
+     */
+    @BsonIgnore
+    public boolean isApplicationClient() {
+        return serviceAccountPrincipalId == null;
+    }
+
+    /**
+     * OAuth client type.
+     */
     public enum ClientType {
         /**
          * Public client (SPA, mobile app).

@@ -131,6 +131,43 @@ public class MongoTransactionalUnitOfWork implements UnitOfWork {
         }
     }
 
+    @Override
+    public <T extends DomainEvent> Result<T> commitAll(
+            List<Object> aggregates,
+            T event,
+            Object command
+    ) {
+        try (ClientSession session = mongoClient.startSession()) {
+            session.startTransaction();
+
+            try {
+                MongoDatabase db = mongoClient.getDatabase(databaseName);
+
+                // 1. Persist/update all aggregates
+                for (Object aggregate : aggregates) {
+                    persistAggregate(session, db, aggregate);
+                }
+
+                // 2. Create domain event
+                createEvent(session, db, event);
+
+                // 3. Create audit log
+                createAuditLog(session, db, event, command);
+
+                session.commitTransaction();
+                return Result.success(event);
+
+            } catch (Exception e) {
+                session.abortTransaction();
+                return Result.failure(new UseCaseError.BusinessRuleViolation(
+                    "COMMIT_FAILED",
+                    "Failed to commit transaction: " + e.getMessage(),
+                    Map.of("exception", e.getClass().getSimpleName())
+                ));
+            }
+        }
+    }
+
     // ========================================================================
     // Aggregate Operations
     // ========================================================================

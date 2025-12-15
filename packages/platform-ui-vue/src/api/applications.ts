@@ -1,15 +1,33 @@
 import { apiFetch } from './client';
 
+export type ApplicationType = 'APPLICATION' | 'INTEGRATION';
+
 export interface Application {
   id: string;
+  type: ApplicationType;
   code: string;
   name: string;
   description?: string;
   defaultBaseUrl?: string;
   iconUrl?: string;
+  serviceAccountPrincipalId?: string;
   active: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ServiceAccountCredentials {
+  principalId: string;
+  name: string;
+  oauthClient: {
+    id: string;
+    clientId: string;
+    clientSecret: string;  // Only available at creation time
+  };
+}
+
+export interface ApplicationWithServiceAccount extends Application {
+  serviceAccount?: ServiceAccountCredentials;
 }
 
 export interface ApplicationListResponse {
@@ -23,6 +41,7 @@ export interface CreateApplicationRequest {
   description?: string;
   defaultBaseUrl?: string;
   iconUrl?: string;
+  type?: ApplicationType;  // Defaults to APPLICATION
 }
 
 export interface UpdateApplicationRequest {
@@ -32,10 +51,33 @@ export interface UpdateApplicationRequest {
   iconUrl?: string;
 }
 
+export interface ListApplicationsOptions {
+  activeOnly?: boolean;
+  type?: ApplicationType;
+}
+
 export const applicationsApi = {
-  list(activeOnly = false): Promise<ApplicationListResponse> {
-    const params = activeOnly ? '?activeOnly=true' : '';
-    return apiFetch(`/admin/platform/applications${params}`);
+  list(options: ListApplicationsOptions = {}): Promise<ApplicationListResponse> {
+    const params = new URLSearchParams();
+    if (options.activeOnly) params.append('activeOnly', 'true');
+    if (options.type) params.append('type', options.type);
+    const queryString = params.toString();
+    return apiFetch(`/admin/platform/applications${queryString ? `?${queryString}` : ''}`);
+  },
+
+  /**
+   * List only user-facing applications (type = APPLICATION).
+   * Use this when populating selectors for assigning apps to clients/users.
+   */
+  listApplicationsOnly(activeOnly = true): Promise<ApplicationListResponse> {
+    return this.list({ activeOnly, type: 'APPLICATION' });
+  },
+
+  /**
+   * List only integrations (type = INTEGRATION).
+   */
+  listIntegrationsOnly(activeOnly = true): Promise<ApplicationListResponse> {
+    return this.list({ activeOnly, type: 'INTEGRATION' });
   },
 
   get(id: string): Promise<Application> {
@@ -46,7 +88,11 @@ export const applicationsApi = {
     return apiFetch(`/admin/platform/applications/by-code/${code}`);
   },
 
-  create(data: CreateApplicationRequest): Promise<Application> {
+  /**
+   * Create a new application or integration.
+   * Returns the application with service account credentials (only available at creation time).
+   */
+  create(data: CreateApplicationRequest): Promise<ApplicationWithServiceAccount> {
     return apiFetch('/admin/platform/applications', {
       method: 'POST',
       body: JSON.stringify(data),
@@ -70,5 +116,18 @@ export const applicationsApi = {
 
   delete(id: string): Promise<void> {
     return apiFetch(`/admin/platform/applications/${id}`, { method: 'DELETE' });
+  },
+
+  /**
+   * Provision a service account for an existing application.
+   * Returns the credentials (only available at provisioning time).
+   */
+  provisionServiceAccount(id: string): Promise<{
+    message: string;
+    serviceAccount: ServiceAccountCredentials;
+  }> {
+    return apiFetch(`/admin/platform/applications/${id}/provision-service-account`, {
+      method: 'POST',
+    });
   },
 };

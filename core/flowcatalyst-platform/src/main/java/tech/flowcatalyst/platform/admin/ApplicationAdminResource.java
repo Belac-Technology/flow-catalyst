@@ -9,11 +9,36 @@ import tech.flowcatalyst.platform.application.Application;
 import tech.flowcatalyst.platform.application.ApplicationRepository;
 import tech.flowcatalyst.platform.application.ApplicationService;
 import tech.flowcatalyst.platform.application.ApplicationClientConfig;
+import tech.flowcatalyst.platform.application.events.ApplicationActivated;
+import tech.flowcatalyst.platform.application.events.ApplicationDeactivated;
+import tech.flowcatalyst.platform.application.events.ApplicationDeleted;
+import tech.flowcatalyst.platform.application.events.ApplicationDisabledForClient;
+import tech.flowcatalyst.platform.application.events.ApplicationEnabledForClient;
+import tech.flowcatalyst.platform.application.events.ApplicationUpdated;
+import tech.flowcatalyst.platform.application.operations.DisableApplicationForClientCommand;
+import tech.flowcatalyst.platform.application.operations.EnableApplicationForClientCommand;
+import tech.flowcatalyst.platform.application.operations.activateapplication.ActivateApplicationCommand;
+import tech.flowcatalyst.platform.application.operations.activateapplication.ActivateApplicationUseCase;
+import tech.flowcatalyst.platform.application.operations.deactivateapplication.DeactivateApplicationCommand;
+import tech.flowcatalyst.platform.application.operations.deactivateapplication.DeactivateApplicationUseCase;
+import tech.flowcatalyst.platform.application.operations.deleteapplication.DeleteApplicationCommand;
+import tech.flowcatalyst.platform.application.operations.deleteapplication.DeleteApplicationUseCase;
+import tech.flowcatalyst.platform.application.operations.createapplication.CreateApplicationCommand;
+import tech.flowcatalyst.platform.application.operations.createapplication.CreateApplicationUseCase;
+import tech.flowcatalyst.platform.application.operations.provisionserviceaccount.ProvisionServiceAccountCommand;
+import tech.flowcatalyst.platform.application.operations.provisionserviceaccount.ProvisionServiceAccountUseCase;
+import tech.flowcatalyst.platform.application.operations.updateapplication.UpdateApplicationCommand;
+import tech.flowcatalyst.platform.application.operations.updateapplication.UpdateApplicationUseCase;
+import tech.flowcatalyst.platform.application.events.ApplicationCreated;
+import tech.flowcatalyst.platform.audit.AuditContext;
 import tech.flowcatalyst.platform.authentication.EmbeddedModeOnly;
 import tech.flowcatalyst.platform.authentication.JwtKeyService;
 import tech.flowcatalyst.platform.authorization.PermissionRegistry;
 import tech.flowcatalyst.platform.client.Client;
 import tech.flowcatalyst.platform.client.ClientRepository;
+import tech.flowcatalyst.platform.common.ExecutionContext;
+import tech.flowcatalyst.platform.common.Result;
+import tech.flowcatalyst.platform.common.errors.UseCaseError;
 
 import java.util.List;
 import java.util.Map;
@@ -43,6 +68,27 @@ public class ApplicationAdminResource {
     @Inject
     JwtKeyService jwtKeyService;
 
+    @Inject
+    AuditContext auditContext;
+
+    @Inject
+    ActivateApplicationUseCase activateApplicationUseCase;
+
+    @Inject
+    DeactivateApplicationUseCase deactivateApplicationUseCase;
+
+    @Inject
+    DeleteApplicationUseCase deleteApplicationUseCase;
+
+    @Inject
+    UpdateApplicationUseCase updateApplicationUseCase;
+
+    @Inject
+    CreateApplicationUseCase createApplicationUseCase;
+
+    @Inject
+    ProvisionServiceAccountUseCase provisionServiceAccountUseCase;
+
     // ========================================================================
     // Application CRUD
     // ========================================================================
@@ -51,6 +97,7 @@ public class ApplicationAdminResource {
     @Operation(summary = "List all applications")
     public Response listApplications(
             @QueryParam("activeOnly") @DefaultValue("false") boolean activeOnly,
+            @QueryParam("type") String type,
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
@@ -60,9 +107,21 @@ public class ApplicationAdminResource {
                 .build();
         }
 
-        List<Application> apps = activeOnly
-            ? applicationService.findAllActive()
-            : applicationService.findAll();
+        List<Application> apps;
+        if (type != null && !type.isBlank()) {
+            try {
+                Application.ApplicationType appType = Application.ApplicationType.valueOf(type.toUpperCase());
+                apps = applicationRepo.findByType(appType, activeOnly);
+            } catch (IllegalArgumentException e) {
+                return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(Map.of("error", "Invalid type. Must be APPLICATION or INTEGRATION"))
+                    .build();
+            }
+        } else {
+            apps = activeOnly
+                ? applicationService.findAllActive()
+                : applicationService.findAll();
+        }
 
         var response = apps.stream().map(this::toApplicationResponse).toList();
 
@@ -97,83 +156,220 @@ public class ApplicationAdminResource {
     @POST
     @Operation(summary = "Create a new application")
     public Response createApplication(CreateApplicationRequest request) {
-        if (request.code == null || request.code.isBlank()) {
-            return Response.status(Response.Status.BAD_REQUEST)
-                .entity(Map.of("error", "Application code is required"))
-                .build();
-        }
-        if (request.name == null || request.name.isBlank()) {
-            return Response.status(Response.Status.BAD_REQUEST)
-                .entity(Map.of("error", "Application name is required"))
-                .build();
-        }
+        String principalId = auditContext.requirePrincipalId();
+        ExecutionContext ctx = ExecutionContext.create(principalId);
 
-        try {
-            Application app = applicationService.createApplication(
-                request.code,
-                request.name,
-                request.description,
-                request.defaultBaseUrl
-            );
-
-            if (request.iconUrl != null) {
-                app.iconUrl = request.iconUrl;
+        // Parse application type
+        Application.ApplicationType appType = Application.ApplicationType.APPLICATION;
+        if (request.type != null && !request.type.isBlank()) {
+            try {
+                appType = Application.ApplicationType.valueOf(request.type.toUpperCase());
+            } catch (IllegalArgumentException e) {
+                return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(Map.of("error", "Invalid type. Must be APPLICATION or INTEGRATION"))
+                    .build();
             }
-
-            return Response.status(Response.Status.CREATED)
-                .entity(toApplicationDetailResponse(app))
-                .build();
-        } catch (BadRequestException e) {
-            return Response.status(Response.Status.BAD_REQUEST)
-                .entity(Map.of("error", e.getMessage()))
-                .build();
         }
+
+        // Create application via UseCase
+        var command = new CreateApplicationCommand(
+            request.code,
+            request.name,
+            request.description,
+            request.defaultBaseUrl,
+            request.iconUrl,
+            appType,
+            true  // provisionServiceAccount
+        );
+        Result<ApplicationCreated> result = createApplicationUseCase.execute(command, ctx);
+
+        return switch (result) {
+            case Result.Success<ApplicationCreated> s -> {
+                // Fetch the created application
+                Application app = applicationRepo.findByIdOptional(s.value().applicationId()).orElse(null);
+
+                // Provision service account using UseCase
+                var provisionCommand = new ProvisionServiceAccountCommand(app.id);
+                var provisionResult = provisionServiceAccountUseCase.execute(provisionCommand, ctx);
+
+                if (provisionResult.isSuccess()) {
+                    // Build response including service account credentials
+                    // Re-fetch app since provisioning updated it
+                    app = applicationRepo.findByIdOptional(s.value().applicationId()).orElse(app);
+                    var response = toApplicationDetailResponse(app);
+                    response.put("serviceAccount", Map.of(
+                        "principalId", provisionResult.principal().id,
+                        "name", provisionResult.principal().name,
+                        "oauthClient", Map.of(
+                            "id", provisionResult.oauthClient().id,
+                            "clientId", provisionResult.oauthClient().clientId,
+                            "clientSecret", provisionResult.clientSecret()  // Only available at creation time!
+                        )
+                    ));
+
+                    yield Response.status(Response.Status.CREATED)
+                        .entity(response)
+                        .build();
+                } else {
+                    // Service account provisioning failed, but app was created
+                    var response = toApplicationDetailResponse(app);
+                    response.put("warning", "Application created but service account provisioning failed: " + provisionResult.error().message());
+                    yield Response.status(Response.Status.CREATED)
+                        .entity(response)
+                        .build();
+                }
+            }
+            case Result.Failure<ApplicationCreated> f -> {
+                yield Response.status(Response.Status.BAD_REQUEST)
+                    .entity(Map.of("error", f.error().message()))
+                    .build();
+            }
+        };
     }
 
     @PUT
     @Path("/{id}")
     @Operation(summary = "Update an application")
     public Response updateApplication(@PathParam("id") String id, UpdateApplicationRequest request) {
-        try {
-            Application app = applicationService.updateApplication(
-                id,
-                request.name,
-                request.description,
-                request.defaultBaseUrl,
-                request.iconUrl
-            );
-            return Response.ok(toApplicationDetailResponse(app)).build();
-        } catch (NotFoundException e) {
-            return Response.status(Response.Status.NOT_FOUND)
-                .entity(Map.of("error", "Application not found"))
-                .build();
-        }
+        String principalId = auditContext.requirePrincipalId();
+        ExecutionContext ctx = ExecutionContext.create(principalId);
+        var command = new UpdateApplicationCommand(
+            id,
+            request.name,
+            request.description,
+            request.defaultBaseUrl,
+            request.iconUrl
+        );
+        Result<ApplicationUpdated> result = updateApplicationUseCase.execute(command, ctx);
+
+        return switch (result) {
+            case Result.Success<ApplicationUpdated> s -> {
+                // Fetch the updated application to return full details
+                Application app = applicationRepo.findByIdOptional(id).orElse(null);
+                yield Response.ok(toApplicationDetailResponse(app)).build();
+            }
+            case Result.Failure<ApplicationUpdated> f -> {
+                if (f.error() instanceof UseCaseError.NotFoundError) {
+                    yield Response.status(Response.Status.NOT_FOUND)
+                        .entity(Map.of("error", f.error().message()))
+                        .build();
+                }
+                yield Response.status(Response.Status.BAD_REQUEST)
+                    .entity(Map.of("error", f.error().message()))
+                    .build();
+            }
+        };
+    }
+
+    @DELETE
+    @Path("/{id}")
+    @Operation(summary = "Delete an application",
+        description = "Permanently deletes an application. The application must be deactivated first.")
+    public Response deleteApplication(@PathParam("id") String id) {
+        String principalId = auditContext.requirePrincipalId();
+        ExecutionContext ctx = ExecutionContext.create(principalId);
+        var command = new DeleteApplicationCommand(id);
+        Result<ApplicationDeleted> result = deleteApplicationUseCase.execute(command, ctx);
+
+        return switch (result) {
+            case Result.Success<ApplicationDeleted> s ->
+                Response.ok(Map.of("message", "Application deleted")).build();
+            case Result.Failure<ApplicationDeleted> f -> {
+                if (f.error() instanceof UseCaseError.NotFoundError) {
+                    yield Response.status(Response.Status.NOT_FOUND)
+                        .entity(Map.of("error", f.error().message()))
+                        .build();
+                }
+                yield Response.status(Response.Status.BAD_REQUEST)
+                    .entity(Map.of("error", f.error().message()))
+                    .build();
+            }
+        };
     }
 
     @POST
     @Path("/{id}/activate")
     @Operation(summary = "Activate an application")
     public Response activateApplication(@PathParam("id") String id) {
-        try {
-            applicationService.activateApplication(id);
-            return Response.ok(Map.of("message", "Application activated")).build();
-        } catch (NotFoundException e) {
-            return Response.status(Response.Status.NOT_FOUND)
-                .entity(Map.of("error", "Application not found"))
-                .build();
-        }
+        String principalId = auditContext.requirePrincipalId();
+        ExecutionContext ctx = ExecutionContext.create(principalId);
+        var command = new ActivateApplicationCommand(id);
+        Result<ApplicationActivated> result = activateApplicationUseCase.execute(command, ctx);
+
+        return switch (result) {
+            case Result.Success<ApplicationActivated> s ->
+                Response.ok(Map.of("message", "Application activated")).build();
+            case Result.Failure<ApplicationActivated> f -> {
+                if (f.error() instanceof UseCaseError.NotFoundError) {
+                    yield Response.status(Response.Status.NOT_FOUND)
+                        .entity(Map.of("error", f.error().message()))
+                        .build();
+                }
+                yield Response.status(Response.Status.BAD_REQUEST)
+                    .entity(Map.of("error", f.error().message()))
+                    .build();
+            }
+        };
     }
 
     @POST
     @Path("/{id}/deactivate")
     @Operation(summary = "Deactivate an application")
     public Response deactivateApplication(@PathParam("id") String id) {
-        try {
-            applicationService.deactivateApplication(id);
-            return Response.ok(Map.of("message", "Application deactivated")).build();
-        } catch (NotFoundException e) {
-            return Response.status(Response.Status.NOT_FOUND)
-                .entity(Map.of("error", "Application not found"))
+        String principalId = auditContext.requirePrincipalId();
+        ExecutionContext ctx = ExecutionContext.create(principalId);
+        var command = new DeactivateApplicationCommand(id);
+        Result<ApplicationDeactivated> result = deactivateApplicationUseCase.execute(command, ctx);
+
+        return switch (result) {
+            case Result.Success<ApplicationDeactivated> s ->
+                Response.ok(Map.of("message", "Application deactivated")).build();
+            case Result.Failure<ApplicationDeactivated> f -> {
+                if (f.error() instanceof UseCaseError.NotFoundError) {
+                    yield Response.status(Response.Status.NOT_FOUND)
+                        .entity(Map.of("error", f.error().message()))
+                        .build();
+                }
+                yield Response.status(Response.Status.BAD_REQUEST)
+                    .entity(Map.of("error", f.error().message()))
+                    .build();
+            }
+        };
+    }
+
+    @POST
+    @Path("/{id}/provision-service-account")
+    @Operation(summary = "Provision a service account for an existing application",
+        description = "Creates a service account and OAuth client for an application that doesn't have one. " +
+            "The client secret is only returned once and cannot be retrieved later.")
+    public Response provisionServiceAccount(@PathParam("id") String id) {
+        String principalId = auditContext.requirePrincipalId();
+        ExecutionContext ctx = ExecutionContext.create(principalId);
+        var command = new ProvisionServiceAccountCommand(id);
+        var provisionResult = provisionServiceAccountUseCase.execute(command, ctx);
+
+        if (provisionResult.isSuccess()) {
+            return Response.ok(Map.of(
+                "message", "Service account provisioned",
+                "serviceAccount", Map.of(
+                    "principalId", provisionResult.principal().id,
+                    "name", provisionResult.principal().name,
+                    "oauthClient", Map.of(
+                        "id", provisionResult.oauthClient().id,
+                        "clientId", provisionResult.oauthClient().clientId,
+                        "clientSecret", provisionResult.clientSecret()  // Only available now!
+                    )
+                )
+            )).build();
+        } else {
+            var error = provisionResult.error();
+            if (error instanceof UseCaseError.NotFoundError) {
+                return Response.status(Response.Status.NOT_FOUND)
+                    .entity(Map.of("error", error.message()))
+                    .build();
+            }
+            return Response.status(Response.Status.BAD_REQUEST)
+                .entity(Map.of("error", error.message()))
                 .build();
         }
     }
@@ -209,19 +405,64 @@ public class ApplicationAdminResource {
             @PathParam("clientId") String clientId,
             ClientConfigRequest request) {
 
-        try {
-            ApplicationClientConfig config = applicationService.configureForClient(
+        String principalId = auditContext.requirePrincipalId();
+        ExecutionContext ctx = ExecutionContext.create(principalId);
+
+        boolean enabled = request.enabled != null ? request.enabled : true;
+
+        if (enabled) {
+            var command = new EnableApplicationForClientCommand(
                 applicationId,
                 clientId,
-                request.enabled != null ? request.enabled : true,
                 request.baseUrlOverride,
                 request.config
             );
-            return Response.ok(toClientConfigResponse(config)).build();
-        } catch (NotFoundException e) {
-            return Response.status(Response.Status.NOT_FOUND)
-                .entity(Map.of("error", e.getMessage()))
-                .build();
+            Result<ApplicationEnabledForClient> result = applicationService.enableForClient(ctx, command);
+
+            return switch (result) {
+                case Result.Success<ApplicationEnabledForClient> s -> {
+                    ApplicationClientConfig config = applicationService.getConfigsForApplication(applicationId)
+                        .stream()
+                        .filter(c -> c.clientId.equals(clientId))
+                        .findFirst()
+                        .orElse(null);
+                    yield Response.ok(toClientConfigResponse(config)).build();
+                }
+                case Result.Failure<ApplicationEnabledForClient> f -> {
+                    if (f.error() instanceof UseCaseError.NotFoundError) {
+                        yield Response.status(Response.Status.NOT_FOUND)
+                            .entity(Map.of("error", f.error().message()))
+                            .build();
+                    }
+                    yield Response.status(Response.Status.BAD_REQUEST)
+                        .entity(Map.of("error", f.error().message()))
+                        .build();
+                }
+            };
+        } else {
+            var command = new DisableApplicationForClientCommand(applicationId, clientId);
+            Result<ApplicationDisabledForClient> result = applicationService.disableForClient(ctx, command);
+
+            return switch (result) {
+                case Result.Success<ApplicationDisabledForClient> s -> {
+                    ApplicationClientConfig config = applicationService.getConfigsForApplication(applicationId)
+                        .stream()
+                        .filter(c -> c.clientId.equals(clientId))
+                        .findFirst()
+                        .orElse(null);
+                    yield Response.ok(toClientConfigResponse(config)).build();
+                }
+                case Result.Failure<ApplicationDisabledForClient> f -> {
+                    if (f.error() instanceof UseCaseError.NotFoundError) {
+                        yield Response.status(Response.Status.NOT_FOUND)
+                            .entity(Map.of("error", f.error().message()))
+                            .build();
+                    }
+                    yield Response.status(Response.Status.BAD_REQUEST)
+                        .entity(Map.of("error", f.error().message()))
+                        .build();
+                }
+            };
         }
     }
 
@@ -232,14 +473,25 @@ public class ApplicationAdminResource {
             @PathParam("id") String applicationId,
             @PathParam("clientId") String clientId) {
 
-        try {
-            applicationService.enableForClient(applicationId, clientId);
-            return Response.ok(Map.of("message", "Application enabled for client")).build();
-        } catch (NotFoundException e) {
-            return Response.status(Response.Status.NOT_FOUND)
-                .entity(Map.of("error", e.getMessage()))
-                .build();
-        }
+        String principalId = auditContext.requirePrincipalId();
+        ExecutionContext ctx = ExecutionContext.create(principalId);
+        var command = new EnableApplicationForClientCommand(applicationId, clientId, null);
+        Result<ApplicationEnabledForClient> result = applicationService.enableForClient(ctx, command);
+
+        return switch (result) {
+            case Result.Success<ApplicationEnabledForClient> s ->
+                Response.ok(Map.of("message", "Application enabled for client")).build();
+            case Result.Failure<ApplicationEnabledForClient> f -> {
+                if (f.error() instanceof UseCaseError.NotFoundError) {
+                    yield Response.status(Response.Status.NOT_FOUND)
+                        .entity(Map.of("error", f.error().message()))
+                        .build();
+                }
+                yield Response.status(Response.Status.BAD_REQUEST)
+                    .entity(Map.of("error", f.error().message()))
+                    .build();
+            }
+        };
     }
 
     @POST
@@ -249,14 +501,25 @@ public class ApplicationAdminResource {
             @PathParam("id") String applicationId,
             @PathParam("clientId") String clientId) {
 
-        try {
-            applicationService.disableForClient(applicationId, clientId);
-            return Response.ok(Map.of("message", "Application disabled for client")).build();
-        } catch (NotFoundException e) {
-            return Response.status(Response.Status.NOT_FOUND)
-                .entity(Map.of("error", e.getMessage()))
-                .build();
-        }
+        String principalId = auditContext.requirePrincipalId();
+        ExecutionContext ctx = ExecutionContext.create(principalId);
+        var command = new DisableApplicationForClientCommand(applicationId, clientId);
+        Result<ApplicationDisabledForClient> result = applicationService.disableForClient(ctx, command);
+
+        return switch (result) {
+            case Result.Success<ApplicationDisabledForClient> s ->
+                Response.ok(Map.of("message", "Application disabled for client")).build();
+            case Result.Failure<ApplicationDisabledForClient> f -> {
+                if (f.error() instanceof UseCaseError.NotFoundError) {
+                    yield Response.status(Response.Status.NOT_FOUND)
+                        .entity(Map.of("error", f.error().message()))
+                        .build();
+                }
+                yield Response.status(Response.Status.BAD_REQUEST)
+                    .entity(Map.of("error", f.error().message()))
+                    .build();
+            }
+        };
     }
 
     // ========================================================================
@@ -292,6 +555,7 @@ public class ApplicationAdminResource {
         public String description;
         public String defaultBaseUrl;
         public String iconUrl;
+        public String type;  // "APPLICATION" or "INTEGRATION", defaults to APPLICATION
     }
 
     public static class UpdateApplicationRequest {
@@ -308,22 +572,31 @@ public class ApplicationAdminResource {
     }
 
     private Map<String, Object> toApplicationResponse(Application app) {
-        return Map.of(
-            "id", app.id,
-            "code", app.code,
-            "name", app.name,
-            "active", app.active
-        );
+        var result = new java.util.HashMap<String, Object>();
+        result.put("id", app.id);
+        result.put("type", app.type != null ? app.type.name() : "APPLICATION");
+        result.put("code", app.code);
+        result.put("name", app.name);
+        result.put("description", app.description);
+        result.put("defaultBaseUrl", app.defaultBaseUrl);
+        result.put("iconUrl", app.iconUrl);
+        result.put("serviceAccountPrincipalId", app.serviceAccountPrincipalId);
+        result.put("active", app.active);
+        result.put("createdAt", app.createdAt);
+        result.put("updatedAt", app.updatedAt);
+        return result;
     }
 
     private Map<String, Object> toApplicationDetailResponse(Application app) {
         var result = new java.util.HashMap<String, Object>();
         result.put("id", app.id);
+        result.put("type", app.type != null ? app.type.name() : "APPLICATION");
         result.put("code", app.code);
         result.put("name", app.name);
         result.put("description", app.description);
         result.put("iconUrl", app.iconUrl);
         result.put("defaultBaseUrl", app.defaultBaseUrl);
+        result.put("serviceAccountPrincipalId", app.serviceAccountPrincipalId);
         result.put("active", app.active);
         result.put("createdAt", app.createdAt);
         result.put("updatedAt", app.updatedAt);

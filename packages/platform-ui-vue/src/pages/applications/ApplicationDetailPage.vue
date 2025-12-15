@@ -9,7 +9,8 @@ import InputText from 'primevue/inputtext';
 import Textarea from 'primevue/textarea';
 import ProgressSpinner from 'primevue/progressspinner';
 import Message from 'primevue/message';
-import { applicationsApi, type Application } from '@/api/applications';
+import Dialog from 'primevue/dialog';
+import { applicationsApi, type Application, type ServiceAccountCredentials } from '@/api/applications';
 
 const route = useRoute();
 const router = useRouter();
@@ -26,6 +27,11 @@ const editName = ref('');
 const editDescription = ref('');
 const editDefaultBaseUrl = ref('');
 const editIconUrl = ref('');
+
+// Service account provisioning
+const provisioning = ref(false);
+const showCredentialsDialog = ref(false);
+const provisionedCredentials = ref<ServiceAccountCredentials | null>(null);
 
 onMounted(async () => {
   const id = route.params.id as string;
@@ -60,11 +66,12 @@ function cancelEditing() {
 }
 
 async function saveChanges() {
-  if (!application.value) return;
+  const id = application.value?.id || (route.params.id as string);
+  if (!id) return;
 
   saving.value = true;
   try {
-    application.value = await applicationsApi.update(application.value.id, {
+    application.value = await applicationsApi.update(id, {
       name: editName.value,
       description: editDescription.value || undefined,
       defaultBaseUrl: editDefaultBaseUrl.value || undefined,
@@ -90,9 +97,10 @@ function confirmActivate() {
 }
 
 async function activateApplication() {
-  if (!application.value) return;
+  const id = application.value?.id || (route.params.id as string);
+  if (!id) return;
   try {
-    application.value = await applicationsApi.activate(application.value.id);
+    application.value = await applicationsApi.activate(id);
     toast.add({ severity: 'success', summary: 'Success', detail: 'Application activated', life: 3000 });
   } catch {
     toast.add({ severity: 'error', summary: 'Error', detail: 'Failed to activate', life: 3000 });
@@ -111,9 +119,10 @@ function confirmDeactivate() {
 }
 
 async function deactivateApplication() {
-  if (!application.value) return;
+  const id = application.value?.id || (route.params.id as string);
+  if (!id) return;
   try {
-    application.value = await applicationsApi.deactivate(application.value.id);
+    application.value = await applicationsApi.deactivate(id);
     toast.add({ severity: 'success', summary: 'Success', detail: 'Application deactivated', life: 3000 });
   } catch {
     toast.add({ severity: 'error', summary: 'Error', detail: 'Failed to deactivate', life: 3000 });
@@ -132,14 +141,55 @@ function confirmDelete() {
 }
 
 async function deleteApplication() {
-  if (!application.value) return;
+  const id = application.value?.id || (route.params.id as string);
+  if (!id) {
+    toast.add({ severity: 'error', summary: 'Error', detail: 'Application ID not found', life: 3000 });
+    return;
+  }
   try {
-    await applicationsApi.delete(application.value.id);
+    await applicationsApi.delete(id);
     toast.add({ severity: 'success', summary: 'Success', detail: 'Application deleted', life: 3000 });
     router.push('/applications');
   } catch {
     toast.add({ severity: 'error', summary: 'Error', detail: 'Failed to delete', life: 3000 });
   }
+}
+
+async function provisionServiceAccount() {
+  const id = application.value?.id || (route.params.id as string);
+  if (!id) {
+    toast.add({ severity: 'error', summary: 'Error', detail: 'Application ID not found', life: 3000 });
+    return;
+  }
+
+  provisioning.value = true;
+  try {
+    const result = await applicationsApi.provisionServiceAccount(id);
+    provisionedCredentials.value = result.serviceAccount;
+    showCredentialsDialog.value = true;
+
+    // Reload application to get updated serviceAccountPrincipalId
+    await loadApplication(id);
+  } catch (e: any) {
+    toast.add({
+      severity: 'error',
+      summary: 'Error',
+      detail: e?.message || 'Failed to provision service account',
+      life: 5000,
+    });
+  } finally {
+    provisioning.value = false;
+  }
+}
+
+function onCredentialsDialogClose() {
+  showCredentialsDialog.value = false;
+  provisionedCredentials.value = null;
+}
+
+function copyToClipboard(text: string) {
+  navigator.clipboard.writeText(text);
+  toast.add({ severity: 'info', summary: 'Copied', detail: 'Copied to clipboard', life: 2000 });
 }
 
 function formatDate(dateString: string) {
@@ -246,6 +296,45 @@ function formatDate(dateString: string) {
         </div>
       </div>
 
+      <!-- Service Account Card -->
+      <div class="section-card">
+        <div class="card-header">
+          <h3>Service Account</h3>
+        </div>
+        <div class="card-content">
+          <template v-if="application.serviceAccountPrincipalId">
+            <div class="detail-grid">
+              <div class="detail-item">
+                <label>Status</label>
+                <Tag value="Provisioned" severity="success" />
+              </div>
+              <div class="detail-item">
+                <label>Principal ID</label>
+                <code>{{ application.serviceAccountPrincipalId }}</code>
+              </div>
+            </div>
+            <Message severity="info" class="service-account-info">
+              Service account credentials are managed in the OAuth Clients section.
+              The client secret can only be viewed at creation time or when rotated.
+            </Message>
+          </template>
+          <template v-else>
+            <div class="action-item">
+              <div class="action-info">
+                <strong>Provision Service Account</strong>
+                <p>Create a service account with OAuth credentials for machine-to-machine authentication.</p>
+              </div>
+              <Button
+                label="Provision"
+                icon="pi pi-plus"
+                :loading="provisioning"
+                @click="provisionServiceAccount"
+              />
+            </div>
+          </template>
+        </div>
+      </div>
+
       <!-- Actions Card -->
       <div class="section-card">
         <div class="card-header">
@@ -308,6 +397,58 @@ function formatDate(dateString: string) {
     </template>
 
     <Message v-else severity="error">Application not found</Message>
+
+    <!-- Service Account Credentials Dialog -->
+    <Dialog
+      v-model:visible="showCredentialsDialog"
+      header="Service Account Provisioned"
+      :style="{ width: '550px' }"
+      :modal="true"
+      :closable="false"
+    >
+      <div class="credentials-dialog-content" v-if="provisionedCredentials">
+        <Message severity="warn" class="credentials-warning">
+          Save these credentials now. The client secret will not be shown again.
+        </Message>
+
+        <div class="credential-item">
+          <label>Client ID</label>
+          <div class="credential-value">
+            <code>{{ provisionedCredentials.oauthClient.clientId }}</code>
+            <Button
+              icon="pi pi-copy"
+              text
+              size="small"
+              @click="copyToClipboard(provisionedCredentials.oauthClient.clientId)"
+            />
+          </div>
+        </div>
+
+        <div class="credential-item">
+          <label>Client Secret</label>
+          <div class="credential-value">
+            <code>{{ provisionedCredentials.oauthClient.clientSecret }}</code>
+            <Button
+              icon="pi pi-copy"
+              text
+              size="small"
+              @click="copyToClipboard(provisionedCredentials.oauthClient.clientSecret)"
+            />
+          </div>
+        </div>
+
+        <div class="credential-item">
+          <label>Service Account</label>
+          <div class="credential-value">
+            <span>{{ provisionedCredentials.name }}</span>
+          </div>
+        </div>
+      </div>
+
+      <template #footer>
+        <Button label="I've saved the credentials" icon="pi pi-check" @click="onCredentialsDialogClose" />
+      </template>
+    </Dialog>
   </div>
 </template>
 
@@ -442,6 +583,51 @@ function formatDate(dateString: string) {
 
 .danger-header h3 {
   color: #dc2626;
+}
+
+.service-account-info {
+  margin-top: 16px;
+}
+
+/* Credentials Dialog */
+.credentials-dialog-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.credentials-warning {
+  margin-bottom: 8px;
+}
+
+.credential-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.credential-item > label {
+  font-size: 12px;
+  font-weight: 500;
+  color: #64748b;
+  text-transform: uppercase;
+}
+
+.credential-value {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 8px 12px;
+}
+
+.credential-value code {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  flex: 1;
+  word-break: break-all;
 }
 
 @media (max-width: 640px) {

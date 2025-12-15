@@ -6,24 +6,56 @@ import Column from 'primevue/column';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
 import Tag from 'primevue/tag';
+import Select from 'primevue/select';
 import ProgressSpinner from 'primevue/progressspinner';
 import Message from 'primevue/message';
-import { applicationsApi, type Application } from '@/api/applications';
+import { applicationsApi, type Application, type ApplicationType } from '@/api/applications';
 
 const router = useRouter();
 const applications = ref<Application[]>([]);
 const loading = ref(true);
 const error = ref<string | null>(null);
 const searchQuery = ref('');
+const typeFilter = ref<ApplicationType | 'ALL'>('ALL');
+const activeFilter = ref<'ALL' | 'ACTIVE' | 'INACTIVE'>('ALL');
+
+const typeOptions = [
+  { label: 'All Types', value: 'ALL' },
+  { label: 'Application', value: 'APPLICATION' },
+  { label: 'Integration', value: 'INTEGRATION' },
+];
+
+const activeOptions = [
+  { label: 'All Status', value: 'ALL' },
+  { label: 'Active', value: 'ACTIVE' },
+  { label: 'Inactive', value: 'INACTIVE' },
+];
 
 const filteredApplications = computed(() => {
-  if (!searchQuery.value) return applications.value;
-  const query = searchQuery.value.toLowerCase();
-  return applications.value.filter(app =>
-    app.code.toLowerCase().includes(query) ||
-    app.name.toLowerCase().includes(query) ||
-    (app.description?.toLowerCase().includes(query) ?? false)
-  );
+  let result = applications.value;
+
+  // Filter by type
+  if (typeFilter.value !== 'ALL') {
+    result = result.filter(app => app.type === typeFilter.value);
+  }
+
+  // Filter by active status
+  if (activeFilter.value !== 'ALL') {
+    const isActive = activeFilter.value === 'ACTIVE';
+    result = result.filter(app => app.active === isActive);
+  }
+
+  // Filter by search query
+  if (searchQuery.value) {
+    const query = searchQuery.value.toLowerCase();
+    result = result.filter(app =>
+      app.code.toLowerCase().includes(query) ||
+      app.name.toLowerCase().includes(query) ||
+      (app.description?.toLowerCase().includes(query) ?? false)
+    );
+  }
+
+  return result;
 });
 
 onMounted(async () => {
@@ -66,6 +98,24 @@ function formatDate(dateString: string) {
           <i class="pi pi-search" />
           <InputText v-model="searchQuery" placeholder="Search applications..." />
         </span>
+        <div class="filter-group">
+          <Select
+            v-model="typeFilter"
+            :options="typeOptions"
+            optionLabel="label"
+            optionValue="value"
+            placeholder="Type"
+            class="filter-select"
+          />
+          <Select
+            v-model="activeFilter"
+            :options="activeOptions"
+            optionLabel="label"
+            optionValue="value"
+            placeholder="Status"
+            class="filter-select"
+          />
+        </div>
       </div>
 
       <div v-if="loading" class="loading-container">
@@ -87,6 +137,14 @@ function formatDate(dateString: string) {
           </template>
         </Column>
         <Column field="name" header="Name" sortable />
+        <Column field="type" header="Type" sortable>
+          <template #body="{ data }">
+            <Tag
+              :value="data.type === 'INTEGRATION' ? 'Integration' : 'Application'"
+              :severity="data.type === 'INTEGRATION' ? 'info' : 'primary'"
+            />
+          </template>
+        </Column>
         <Column field="description" header="Description">
           <template #body="{ data }">
             <span class="description-text">{{ data.description || '—' }}</span>
@@ -127,11 +185,18 @@ function formatDate(dateString: string) {
 
 <style scoped>
 .toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
   margin-bottom: 16px;
+  flex-wrap: wrap;
 }
 
 .search-wrapper {
   position: relative;
+  flex: 1;
+  min-width: 200px;
 }
 
 .search-wrapper .pi-search {
@@ -144,6 +209,16 @@ function formatDate(dateString: string) {
 
 .search-wrapper input {
   padding-left: 36px;
+  width: 100%;
+}
+
+.filter-group {
+  display: flex;
+  gap: 12px;
+}
+
+.filter-select {
+  min-width: 140px;
 }
 
 .loading-container {

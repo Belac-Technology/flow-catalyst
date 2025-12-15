@@ -33,6 +33,7 @@ import type {
   GetApiAdminPlatformApplicationsData,
   PostApiAdminPlatformApplicationsData,
   GetApiAdminPlatformApplicationsByCodeByCodeData,
+  DeleteApiAdminPlatformApplicationsByIdData,
   GetApiAdminPlatformApplicationsByIdData,
   PutApiAdminPlatformApplicationsByIdData,
   PostApiAdminPlatformApplicationsByIdActivateData,
@@ -41,6 +42,7 @@ import type {
   PostApiAdminPlatformApplicationsByIdClientsByClientIdDisableData,
   PostApiAdminPlatformApplicationsByIdClientsByClientIdEnableData,
   PostApiAdminPlatformApplicationsByIdDeactivateData,
+  PostApiAdminPlatformApplicationsByIdProvisionServiceAccountData,
   GetApiAdminPlatformApplicationsByIdRolesData,
   GetApiAdminPlatformAuditLogsData,
   GetApiAdminPlatformAuditLogsResponse,
@@ -102,6 +104,8 @@ import type {
   PostApiAdminPlatformOauthClientsData,
   PostApiAdminPlatformOauthClientsResponse,
   GetApiAdminPlatformOauthClientsByClientIdByClientIdData,
+  DeleteApiAdminPlatformOauthClientsByIdData,
+  DeleteApiAdminPlatformOauthClientsByIdResponse,
   GetApiAdminPlatformOauthClientsByIdData,
   GetApiAdminPlatformOauthClientsByIdResponse,
   PutApiAdminPlatformOauthClientsByIdData,
@@ -512,6 +516,25 @@ export const getApiAdminPlatformApplicationsByCodeByCode = <
 };
 
 /**
+ * Delete an application
+ * Permanently deletes an application. The application must be deactivated first.
+ */
+export const deleteApiAdminPlatformApplicationsById = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<DeleteApiAdminPlatformApplicationsByIdData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).delete<
+    unknown,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/applications/{id}",
+    ...options,
+  });
+};
+
+/**
  * Get application by ID
  */
 export const getApiAdminPlatformApplicationsById = <
@@ -652,6 +675,26 @@ export const postApiAdminPlatformApplicationsByIdDeactivate = <
   return (options.client ?? _heyApiClient).post<unknown, unknown, ThrowOnError>(
     {
       url: "/api/admin/platform/applications/{id}/deactivate",
+      ...options,
+    },
+  );
+};
+
+/**
+ * Provision a service account for an existing application
+ * Creates a service account and OAuth client for an application that doesn't have one. The client secret is only returned once and cannot be retrieved later.
+ */
+export const postApiAdminPlatformApplicationsByIdProvisionServiceAccount = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<
+    PostApiAdminPlatformApplicationsByIdProvisionServiceAccountData,
+    ThrowOnError
+  >,
+) => {
+  return (options.client ?? _heyApiClient).post<unknown, unknown, ThrowOnError>(
+    {
+      url: "/api/admin/platform/applications/{id}/provision-service-account",
       ...options,
     },
   );
@@ -1477,6 +1520,24 @@ export const getApiAdminPlatformOauthClientsByClientIdByClientId = <
 ) => {
   return (options.client ?? _heyApiClient).get<unknown, unknown, ThrowOnError>({
     url: "/api/admin/platform/oauth-clients/by-client-id/{clientId}",
+    ...options,
+  });
+};
+
+/**
+ * Delete OAuth client
+ */
+export const deleteApiAdminPlatformOauthClientsById = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<DeleteApiAdminPlatformOauthClientsByIdData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).delete<
+    DeleteApiAdminPlatformOauthClientsByIdResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/oauth-clients/{id}",
     ...options,
   });
 };

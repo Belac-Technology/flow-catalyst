@@ -6,7 +6,7 @@ import Column from 'primevue/column';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
 import Tag from 'primevue/tag';
-import Dropdown from 'primevue/dropdown';
+import Select from 'primevue/select';
 import ProgressSpinner from 'primevue/progressspinner';
 import Message from 'primevue/message';
 import { subscriptionsApi, type Subscription, type SubscriptionStatus } from '@/api/subscriptions';
@@ -113,7 +113,7 @@ function getEventTypesLabel(sub: Subscription) {
           <i class="pi pi-search" />
           <InputText v-model="searchQuery" placeholder="Search subscriptions..." />
         </span>
-        <Dropdown
+        <Select
           v-model="statusFilter"
           :options="statusOptions"
           optionLabel="label"

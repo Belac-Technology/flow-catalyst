@@ -6,15 +6,18 @@ import tech.flowcatalyst.platform.application.Application;
 import tech.flowcatalyst.platform.application.ApplicationClientConfigRepository;
 import tech.flowcatalyst.platform.application.ApplicationRepository;
 import tech.flowcatalyst.platform.application.events.ApplicationDeleted;
+import tech.flowcatalyst.platform.authentication.oauth.OAuthClientRepository;
 import tech.flowcatalyst.platform.common.ExecutionContext;
 import tech.flowcatalyst.platform.common.Result;
 import tech.flowcatalyst.platform.common.UnitOfWork;
 import tech.flowcatalyst.platform.common.errors.UseCaseError;
+import tech.flowcatalyst.platform.principal.PrincipalRepository;
 
 import java.util.Map;
 
 /**
  * Use case for deleting an Application.
+ * Also cleans up the associated service account and OAuth client if they exist.
  */
 @ApplicationScoped
 public class DeleteApplicationUseCase {
@@ -24,6 +27,12 @@ public class DeleteApplicationUseCase {
 
     @Inject
     ApplicationClientConfigRepository configRepo;
+
+    @Inject
+    PrincipalRepository principalRepo;
+
+    @Inject
+    OAuthClientRepository oauthClientRepo;
 
     @Inject
     UnitOfWork unitOfWork;
@@ -61,6 +70,15 @@ public class DeleteApplicationUseCase {
                 "Cannot delete application with client configurations. Remove all configurations first.",
                 Map.of("applicationId", command.applicationId(), "configCount", configCount)
             ));
+        }
+
+        // Clean up associated service account and OAuth clients before deleting the application
+        if (app.serviceAccountPrincipalId != null) {
+            // Delete OAuth clients linked to this service account
+            oauthClientRepo.delete("serviceAccountPrincipalId", app.serviceAccountPrincipalId);
+
+            // Delete the service account principal
+            principalRepo.deleteById(app.serviceAccountPrincipalId);
         }
 
         // Create domain event (before deletion so we have access to the entity)

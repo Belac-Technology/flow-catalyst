@@ -41,6 +41,11 @@ export const NAVIGATION_CONFIG: NavGroup[] = [
         route: '/authentication/anchor-domains',
       },
       {
+        label: 'OAuth Clients',
+        icon: 'pi pi-key',
+        route: '/authentication/oauth-clients',
+      },
+      {
         label: 'Roles',
         icon: 'pi pi-shield',
         route: '/authorization/roles',

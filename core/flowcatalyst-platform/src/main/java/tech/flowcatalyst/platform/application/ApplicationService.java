@@ -2,7 +2,6 @@ package tech.flowcatalyst.platform.application;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.NotFoundException;
 import tech.flowcatalyst.platform.application.events.ApplicationDisabledForClient;
 import tech.flowcatalyst.platform.application.events.ApplicationEnabledForClient;
@@ -19,7 +18,6 @@ import tech.flowcatalyst.platform.principal.PrincipalRepository;
 import tech.flowcatalyst.platform.shared.TsidGenerator;
 
 import java.util.*;
-import java.util.stream.Collectors;
 
 /**
  * Service for application management and access resolution.
@@ -50,132 +48,8 @@ public class ApplicationService {
     UnitOfWork unitOfWork;
 
     // ========================================================================
-    // Application CRUD
-    // ========================================================================
-
-    /**
-     * Create a new application.
-     *
-     * @param code Unique application code (used in role prefixes)
-     * @param name Display name
-     * @param description Optional description
-     * @param defaultBaseUrl Default URL for the application
-     * @return Created application
-     * @throws BadRequestException if code already exists
-     */
-    public Application createApplication(String code, String name, String description, String defaultBaseUrl) {
-        // Validate code format (lowercase alphanumeric with hyphens)
-        if (!isValidCode(code)) {
-            throw new BadRequestException("Invalid application code. Must be lowercase alphanumeric with hyphens only.");
-        }
-
-        // Check uniqueness
-        if (applicationRepo.existsByCode(code)) {
-            throw new BadRequestException("Application code already exists: " + code);
-        }
-
-        Application app = new Application();
-        app.id = TsidGenerator.generate();
-        app.code = code.toLowerCase();
-        app.name = name;
-        app.description = description;
-        app.defaultBaseUrl = defaultBaseUrl;
-        app.active = true;
-
-        applicationRepo.persist(app);
-        return app;
-    }
-
-    /**
-     * Update an application.
-     *
-     * @param applicationId Application ID
-     * @param name New name (or null to keep existing)
-     * @param description New description (or null to keep existing)
-     * @param defaultBaseUrl New base URL (or null to keep existing)
-     * @param iconUrl New icon URL (or null to keep existing)
-     * @return Updated application
-     * @throws NotFoundException if application not found
-     */
-    public Application updateApplication(String applicationId, String name, String description,
-                                         String defaultBaseUrl, String iconUrl) {
-        Application app = applicationRepo.findByIdOptional(applicationId)
-            .orElseThrow(() -> new NotFoundException("Application not found"));
-
-        if (name != null) app.name = name;
-        if (description != null) app.description = description;
-        if (defaultBaseUrl != null) app.defaultBaseUrl = defaultBaseUrl;
-        if (iconUrl != null) app.iconUrl = iconUrl;
-
-        applicationRepo.update(app);
-        return app;
-    }
-
-    /**
-     * Activate an application.
-     */
-    public void activateApplication(String applicationId) {
-        Application app = applicationRepo.findByIdOptional(applicationId)
-            .orElseThrow(() -> new NotFoundException("Application not found"));
-        app.active = true;
-        applicationRepo.update(app);
-    }
-
-    /**
-     * Deactivate an application.
-     */
-    public void deactivateApplication(String applicationId) {
-        Application app = applicationRepo.findByIdOptional(applicationId)
-            .orElseThrow(() -> new NotFoundException("Application not found"));
-        app.active = false;
-        applicationRepo.update(app);
-    }
-
-    // ========================================================================
     // Client Configuration
     // ========================================================================
-
-    /**
-     * Configure an application for a specific client.
-     *
-     * @param applicationId Application ID
-     * @param clientId Client ID
-     * @param enabled Whether the app is enabled for this client
-     * @param baseUrlOverride Optional URL override (e.g., client1.app.com)
-     * @param config Optional additional configuration
-     * @return Created or updated config
-     */
-    public ApplicationClientConfig configureForClient(String applicationId, String clientId,
-                                                       boolean enabled, String baseUrlOverride,
-                                                       Map<String, Object> config) {
-        Application app = applicationRepo.findByIdOptional(applicationId)
-            .orElseThrow(() -> new NotFoundException("Application not found"));
-
-        Client client = clientRepo.findByIdOptional(clientId)
-            .orElseThrow(() -> new NotFoundException("Client not found"));
-
-        ApplicationClientConfig clientConfig = configRepo
-            .findByApplicationAndClient(applicationId, clientId)
-            .orElseGet(() -> {
-                ApplicationClientConfig newConfig = new ApplicationClientConfig();
-                newConfig.id = TsidGenerator.generate();
-                newConfig.applicationId = app.id;
-                newConfig.clientId = client.id;
-                return newConfig;
-            });
-
-        clientConfig.enabled = enabled;
-        clientConfig.baseUrlOverride = baseUrlOverride;
-        clientConfig.configJson = config;
-
-        if (configRepo.findByIdOptional(clientConfig.id).isPresent()) {
-            configRepo.update(clientConfig);
-        } else {
-            configRepo.persist(clientConfig);
-        }
-
-        return clientConfig;
-    }
 
     /**
      * Enable an application for a client with event sourcing.
@@ -204,6 +78,9 @@ public class ApplicationService {
         config.enabled = true;
         if (cmd.baseUrlOverride() != null) {
             config.baseUrlOverride = cmd.baseUrlOverride();
+        }
+        if (cmd.configJson() != null) {
+            config.configJson = cmd.configJson();
         }
 
         ApplicationEnabledForClient event = ApplicationEnabledForClient.builder()
@@ -277,29 +154,6 @@ public class ApplicationService {
             .build();
 
         return unitOfWork.commit(config, event, cmd);
-    }
-
-    /**
-     * Enable an application for a client (simple version without events).
-     * @deprecated Use {@link #enableForClient(ExecutionContext, EnableApplicationForClientCommand)} instead.
-     */
-    @Deprecated
-    public void enableForClient(String applicationId, String clientId) {
-        configureForClient(applicationId, clientId, true, null, null);
-    }
-
-    /**
-     * Disable an application for a client (simple version without events).
-     * @deprecated Use {@link #disableForClient(ExecutionContext, DisableApplicationForClientCommand)} instead.
-     */
-    @Deprecated
-    public void disableForClient(String applicationId, String clientId) {
-        Optional<ApplicationClientConfig> config = configRepo.findByApplicationAndClient(applicationId, clientId);
-        if (config.isPresent()) {
-            config.get().enabled = false;
-            configRepo.update(config.get());
-        }
-        // If no config exists, the app is not enabled anyway
     }
 
     /**
@@ -436,17 +290,5 @@ public class ApplicationService {
 
     public List<ApplicationClientConfig> getConfigsForClient(String clientId) {
         return configRepo.findByClient(clientId);
-    }
-
-    // ========================================================================
-    // Helpers
-    // ========================================================================
-
-    private boolean isValidCode(String code) {
-        if (code == null || code.isBlank()) {
-            return false;
-        }
-        // Lowercase alphanumeric with hyphens, must start with letter
-        return code.matches("^[a-z][a-z0-9-]*$");
     }
 }

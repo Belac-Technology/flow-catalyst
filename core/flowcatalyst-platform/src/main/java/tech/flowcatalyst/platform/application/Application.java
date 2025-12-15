@@ -3,19 +3,32 @@ package tech.flowcatalyst.platform.application;
 import io.quarkus.mongodb.panache.common.MongoEntity;
 import io.quarkus.mongodb.panache.PanacheMongoEntityBase;
 import org.bson.codecs.pojo.annotations.BsonId;
+import org.bson.codecs.pojo.annotations.BsonIgnore;
+
 import java.time.Instant;
 
 /**
- * Represents an application in the FlowCatalyst platform ecosystem.
+ * Represents an application or integration in the FlowCatalyst platform ecosystem.
  *
- * Applications are the software products that users access. Each application
- * has a unique code that is used as the prefix for roles (e.g., "operant:dispatch:admin").
+ * <p>Two types are supported:
+ * <ul>
+ *   <li>{@link ApplicationType#APPLICATION} - User-facing applications (TMS, WMS, etc.)
+ *       that users log into. Can be assigned to clients and users.</li>
+ *   <li>{@link ApplicationType#INTEGRATION} - Third-party adapters and connectors
+ *       (Salesforce, SAP, etc.). Used for event/subscription scoping but not user access.</li>
+ * </ul>
  *
- * Application access is determined by roles:
- * - If a user has any role prefixed with the application code, they can access that app
- * - Anchor domain users get their roles applied to ALL tenants
- * - Partner users get their roles applied to GRANTED tenants only
- * - Tenant users get their roles applied to their OWN tenant only
+ * <p>Each application/integration has a unique code used as the prefix for:
+ * <ul>
+ *   <li>Roles (e.g., "tms:admin", "sf:sync")</li>
+ *   <li>Event types (e.g., "tms:shipment-created", "sf:contact-updated")</li>
+ *   <li>Permissions</li>
+ * </ul>
+ *
+ * <p>Every application/integration automatically gets a service account that can
+ * manage its own resources (roles, permissions, event types, subscriptions).
+ *
+ * @see ApplicationType
  */
 @MongoEntity(collection = "auth_applications")
 public class Application extends PanacheMongoEntityBase {
@@ -24,8 +37,14 @@ public class Application extends PanacheMongoEntityBase {
     public String id;
 
     /**
+     * Type of this entity.
+     * Defaults to APPLICATION for backwards compatibility.
+     */
+    public ApplicationType type = ApplicationType.APPLICATION;
+
+    /**
      * Unique application code used in role prefixes.
-     * Examples: "execute", "dispatch", "analytics", "platform"
+     * Examples: "tms", "wms", "platform", "sf" (for Salesforce integration)
      */
     public String code;
 
@@ -38,8 +57,16 @@ public class Application extends PanacheMongoEntityBase {
     /**
      * Default base URL for the application.
      * Can be overridden per tenant via ApplicationTenantConfig.
+     * Primarily used for APPLICATION type.
      */
     public String defaultBaseUrl;
+
+    /**
+     * The service account principal ID for this application/integration.
+     * Auto-created when the application is created.
+     * Used for machine-to-machine authentication (client_credentials grant).
+     */
+    public String serviceAccountPrincipalId;
 
     public boolean active = true;
 
@@ -53,5 +80,44 @@ public class Application extends PanacheMongoEntityBase {
     public Application(String code, String name) {
         this.code = code;
         this.name = name;
+    }
+
+    public Application(String code, String name, ApplicationType type) {
+        this.code = code;
+        this.name = name;
+        this.type = type;
+    }
+
+    /**
+     * Check if this is a user-facing application.
+     */
+    @BsonIgnore
+    public boolean isApplication() {
+        return type == ApplicationType.APPLICATION;
+    }
+
+    /**
+     * Check if this is a third-party integration.
+     */
+    @BsonIgnore
+    public boolean isIntegration() {
+        return type == ApplicationType.INTEGRATION;
+    }
+
+    /**
+     * Application or Integration type.
+     */
+    public enum ApplicationType {
+        /**
+         * User-facing application that users log into.
+         * Can be assigned to clients and users.
+         */
+        APPLICATION,
+
+        /**
+         * Third-party adapter or connector.
+         * Used for event/subscription scoping but not user access.
+         */
+        INTEGRATION
     }
 }

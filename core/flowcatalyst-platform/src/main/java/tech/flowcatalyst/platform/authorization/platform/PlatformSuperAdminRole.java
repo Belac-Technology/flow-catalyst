@@ -52,7 +52,22 @@ public class PlatformSuperAdminRole {
             PlatformMessagingPermissions.DISPATCH_POOL_CREATE,
             PlatformMessagingPermissions.DISPATCH_POOL_UPDATE,
             PlatformMessagingPermissions.DISPATCH_POOL_DELETE,
-            PlatformIamPermissions.IDP_MANAGE
+            PlatformIamPermissions.IDP_MANAGE,
+            // Application service permissions (super admin can manage all apps)
+            PlatformApplicationServicePermissions.APP_EVENT_TYPE_VIEW,
+            PlatformApplicationServicePermissions.APP_EVENT_TYPE_CREATE,
+            PlatformApplicationServicePermissions.APP_EVENT_TYPE_UPDATE,
+            PlatformApplicationServicePermissions.APP_EVENT_TYPE_DELETE,
+            PlatformApplicationServicePermissions.APP_SUBSCRIPTION_VIEW,
+            PlatformApplicationServicePermissions.APP_SUBSCRIPTION_CREATE,
+            PlatformApplicationServicePermissions.APP_SUBSCRIPTION_UPDATE,
+            PlatformApplicationServicePermissions.APP_SUBSCRIPTION_DELETE,
+            PlatformApplicationServicePermissions.APP_ROLE_VIEW,
+            PlatformApplicationServicePermissions.APP_ROLE_CREATE,
+            PlatformApplicationServicePermissions.APP_ROLE_UPDATE,
+            PlatformApplicationServicePermissions.APP_ROLE_DELETE,
+            PlatformApplicationServicePermissions.APP_PERMISSION_VIEW,
+            PlatformApplicationServicePermissions.APP_PERMISSION_SYNC
         ),
         "Platform super administrator - full access to everything"
     );

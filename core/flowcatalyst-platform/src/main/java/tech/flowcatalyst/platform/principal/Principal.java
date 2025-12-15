@@ -37,9 +37,17 @@ public class Principal extends PanacheMongoEntityBase {
      * - For CLIENT scope: Required, determines their access
      * - For PARTNER scope: Optional, may have a home client
      * - For ANCHOR scope: Should be null
-     * - For SERVICE type: The client the service account belongs to
+     * - For SERVICE type with client scope: The client the service account belongs to
      */
     public String clientId;
+
+    /**
+     * Application this service account belongs to (for SERVICE type).
+     * When set, this service account was auto-created for the application
+     * and can manage resources prefixed with the application's code.
+     * Null for standalone service accounts or USER type principals.
+     */
+    public String applicationId;
 
     public String name;
 

@@ -41,6 +41,11 @@ export type ApplicationListResponse = {
   items?: Array<ApplicationResponse>;
 };
 
+export type ApplicationRef = {
+  id?: string;
+  name?: string;
+};
+
 export type ApplicationResponse = {
   id?: string;
   code?: string;
@@ -151,7 +156,8 @@ export type ClientDto1 = {
   grantTypes?: Array<string>;
   defaultScopes?: Array<string>;
   pkceRequired?: boolean;
-  ownerClientId?: string;
+  applications?: Array<ApplicationRef>;
+  serviceAccountPrincipalId?: string;
   active?: boolean;
   createdAt?: Instant;
   updatedAt?: Instant;
@@ -202,6 +208,7 @@ export type CreateApplicationRequest = {
   description?: string;
   defaultBaseUrl?: string;
   iconUrl?: string;
+  type?: string;
 };
 
 export type CreateApplicationRequest1 = {
@@ -224,7 +231,7 @@ export type CreateClientRequest1 = {
   grantTypes: Array<string>;
   defaultScopes?: Array<string>;
   pkceRequired?: boolean;
-  ownerClientId?: string;
+  applicationIds?: Array<string>;
 };
 
 export type CreateClientResponse = {
@@ -817,6 +824,7 @@ export type UpdateClientRequest1 = {
   grantTypes?: Array<string>;
   defaultScopes?: Array<string>;
   pkceRequired?: boolean;
+  applicationIds?: Array<string>;
 };
 
 export type UpdateConfigTypeRequest = {
@@ -1173,6 +1181,7 @@ export type GetApiAdminPlatformApplicationsData = {
   path?: never;
   query?: {
     activeOnly?: boolean;
+    type?: string;
   };
   url: "/api/admin/platform/applications";
 };
@@ -1215,6 +1224,22 @@ export type GetApiAdminPlatformApplicationsByCodeByCodeData = {
 };
 
 export type GetApiAdminPlatformApplicationsByCodeByCodeResponses = {
+  /**
+   * OK
+   */
+  200: unknown;
+};
+
+export type DeleteApiAdminPlatformApplicationsByIdData = {
+  body?: never;
+  path: {
+    id: string;
+  };
+  query?: never;
+  url: "/api/admin/platform/applications/{id}";
+};
+
+export type DeleteApiAdminPlatformApplicationsByIdResponses = {
   /**
    * OK
    */
@@ -1367,6 +1392,23 @@ export type PostApiAdminPlatformApplicationsByIdDeactivateResponses = {
    */
   200: unknown;
 };
+
+export type PostApiAdminPlatformApplicationsByIdProvisionServiceAccountData = {
+  body?: never;
+  path: {
+    id: string;
+  };
+  query?: never;
+  url: "/api/admin/platform/applications/{id}/provision-service-account";
+};
+
+export type PostApiAdminPlatformApplicationsByIdProvisionServiceAccountResponses =
+  {
+    /**
+     * OK
+     */
+    200: unknown;
+  };
 
 export type GetApiAdminPlatformApplicationsByIdRolesData = {
   body?: never;
@@ -2597,9 +2639,9 @@ export type GetApiAdminPlatformOauthClientsData = {
      */
     active?: boolean;
     /**
-     * Filter by owner client
+     * Filter by associated application
      */
-    ownerClientId?: number;
+    applicationId?: string;
   };
   url: "/api/admin/platform/oauth-clients";
 };
@@ -2667,6 +2709,32 @@ export type GetApiAdminPlatformOauthClientsByClientIdByClientIdResponses = {
    */
   200: unknown;
 };
+
+export type DeleteApiAdminPlatformOauthClientsByIdData = {
+  body?: never;
+  path: {
+    id: string;
+  };
+  query?: never;
+  url: "/api/admin/platform/oauth-clients/{id}";
+};
+
+export type DeleteApiAdminPlatformOauthClientsByIdErrors = {
+  /**
+   * Client not found
+   */
+  404: unknown;
+};
+
+export type DeleteApiAdminPlatformOauthClientsByIdResponses = {
+  /**
+   * Client deleted
+   */
+  204: void;
+};
+
+export type DeleteApiAdminPlatformOauthClientsByIdResponse =
+  DeleteApiAdminPlatformOauthClientsByIdResponses[keyof DeleteApiAdminPlatformOauthClientsByIdResponses];
 
 export type GetApiAdminPlatformOauthClientsByIdData = {
   body?: never;

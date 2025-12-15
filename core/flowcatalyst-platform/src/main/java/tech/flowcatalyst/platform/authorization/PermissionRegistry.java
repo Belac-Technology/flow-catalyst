@@ -105,12 +105,31 @@ public class PermissionRegistry {
         registerPermission(PlatformMessagingPermissions.DISPATCH_POOL_DELETE);
 
         // ====================================================================
+        // Application Service Permissions
+        // ====================================================================
+        registerPermission(PlatformApplicationServicePermissions.APP_EVENT_TYPE_VIEW);
+        registerPermission(PlatformApplicationServicePermissions.APP_EVENT_TYPE_CREATE);
+        registerPermission(PlatformApplicationServicePermissions.APP_EVENT_TYPE_UPDATE);
+        registerPermission(PlatformApplicationServicePermissions.APP_EVENT_TYPE_DELETE);
+        registerPermission(PlatformApplicationServicePermissions.APP_SUBSCRIPTION_VIEW);
+        registerPermission(PlatformApplicationServicePermissions.APP_SUBSCRIPTION_CREATE);
+        registerPermission(PlatformApplicationServicePermissions.APP_SUBSCRIPTION_UPDATE);
+        registerPermission(PlatformApplicationServicePermissions.APP_SUBSCRIPTION_DELETE);
+        registerPermission(PlatformApplicationServicePermissions.APP_ROLE_VIEW);
+        registerPermission(PlatformApplicationServicePermissions.APP_ROLE_CREATE);
+        registerPermission(PlatformApplicationServicePermissions.APP_ROLE_UPDATE);
+        registerPermission(PlatformApplicationServicePermissions.APP_ROLE_DELETE);
+        registerPermission(PlatformApplicationServicePermissions.APP_PERMISSION_VIEW);
+        registerPermission(PlatformApplicationServicePermissions.APP_PERMISSION_SYNC);
+
+        // ====================================================================
         // Platform Roles (must be after permissions)
         // ====================================================================
         registerRole(PlatformSuperAdminRole.INSTANCE);
         registerRole(PlatformIamAdminRole.INSTANCE);
         registerRole(PlatformAdminRole.INSTANCE);
         registerRole(PlatformMessagingAdminRole.INSTANCE);
+        registerRole(PlatformApplicationServiceRole.INSTANCE);
     }
 
     /**

@@ -15,30 +15,34 @@ import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponses;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 import org.jboss.logging.Logger;
+import tech.flowcatalyst.platform.application.Application;
+import tech.flowcatalyst.platform.application.ApplicationRepository;
 import tech.flowcatalyst.platform.authentication.EmbeddedModeOnly;
 import tech.flowcatalyst.platform.authentication.JwtKeyService;
 import tech.flowcatalyst.platform.authentication.oauth.OAuthClient;
 import tech.flowcatalyst.platform.authentication.oauth.OAuthClient.ClientType;
 import tech.flowcatalyst.platform.authentication.oauth.OAuthClientRepository;
-import tech.flowcatalyst.platform.principal.PasswordService;
+import tech.flowcatalyst.platform.security.secrets.SecretService;
 import tech.flowcatalyst.platform.shared.TsidGenerator;
 
 import java.security.SecureRandom;
 import java.time.Instant;
-import java.util.Base64;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * Admin API for OAuth2 client management.
  *
- * Provides CRUD operations for OAuth clients including:
- * - Create public clients (SPAs, mobile apps)
- * - Create confidential clients (server-side apps)
- * - Manage client secrets
- * - Configure redirect URIs and grant types
+ * <p>Provides CRUD operations for OAuth clients including:
+ * <ul>
+ *   <li>Create public clients (SPAs, mobile apps)</li>
+ *   <li>Create confidential clients (server-side apps)</li>
+ *   <li>Manage client secrets (encrypted at rest)</li>
+ *   <li>Configure redirect URIs and grant types</li>
+ *   <li>Associate clients with applications</li>
+ * </ul>
  *
- * All operations require admin-level permissions.
+ * <p>All operations require admin-level permissions.
  */
 @Path("/api/admin/platform/oauth-clients")
 @Tag(name = "OAuth Client Admin", description = "Administrative operations for OAuth2 client management")
@@ -54,7 +58,10 @@ public class OAuthClientAdminResource {
     OAuthClientRepository clientRepo;
 
     @Inject
-    PasswordService passwordService;
+    ApplicationRepository applicationRepo;
+
+    @Inject
+    SecretService secretService;
 
     @Inject
     JwtKeyService jwtKeyService;
@@ -72,7 +79,7 @@ public class OAuthClientAdminResource {
         @APIResponse(responseCode = "401", description = "Not authenticated")
     })
     public Response listClients(
-            @QueryParam("ownerClientId") @Parameter(description = "Filter by owner client") Long ownerClientId,
+            @QueryParam("applicationId") @Parameter(description = "Filter by associated application") String applicationId,
             @QueryParam("active") @Parameter(description = "Filter by active status") Boolean active,
             @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
@@ -85,18 +92,28 @@ public class OAuthClientAdminResource {
         }
 
         List<OAuthClient> clients;
-        if (ownerClientId != null && active != null) {
-            clients = clientRepo.find("ownerClientId = ?1 AND active = ?2", ownerClientId, active).list();
-        } else if (ownerClientId != null) {
-            clients = clientRepo.find("ownerClientId", ownerClientId).list();
+        if (applicationId != null && active != null) {
+            clients = clientRepo.find("?1 in applicationIds AND active = ?2", applicationId, active).list();
+        } else if (applicationId != null) {
+            clients = clientRepo.find("?1 in applicationIds", applicationId).list();
         } else if (active != null) {
             clients = clientRepo.find("active", active).list();
         } else {
             clients = clientRepo.listAll();
         }
 
+        // Build a map of application IDs to names for the response
+        Set<String> allAppIds = clients.stream()
+            .flatMap(c -> c.applicationIds != null ? c.applicationIds.stream() : java.util.stream.Stream.empty())
+            .collect(Collectors.toSet());
+        Map<String, String> appIdToName = new HashMap<>();
+        if (!allAppIds.isEmpty()) {
+            applicationRepo.find("id in ?1", new ArrayList<>(allAppIds)).list()
+                .forEach(app -> appIdToName.put(app.id, app.name));
+        }
+
         List<ClientDto> dtos = clients.stream()
-            .map(this::toDto)
+            .map(c -> toDto(c, appIdToName))
             .toList();
 
         return Response.ok(new ClientListResponse(dtos, dtos.size())).build();
@@ -126,7 +143,10 @@ public class OAuthClientAdminResource {
         }
 
         return clientRepo.findByIdOptional(id)
-            .map(client -> Response.ok(toDto(client)).build())
+            .map(client -> {
+                Map<String, String> appIdToName = buildAppNameMap(client.applicationIds);
+                return Response.ok(toDto(client, appIdToName)).build();
+            })
             .orElse(Response.status(Response.Status.NOT_FOUND)
                 .entity(new ErrorResponse("Client not found"))
                 .build());
@@ -155,7 +175,10 @@ public class OAuthClientAdminResource {
         }
 
         return clientRepo.findByClientIdIncludingInactive(clientId)
-            .map(client -> Response.ok(toDto(client)).build())
+            .map(client -> {
+                Map<String, String> appIdToName = buildAppNameMap(client.applicationIds);
+                return Response.ok(toDto(client, appIdToName)).build();
+            })
             .orElse(Response.status(Response.Status.NOT_FOUND)
                 .entity(new ErrorResponse("Client not found"))
                 .build());
@@ -164,8 +187,9 @@ public class OAuthClientAdminResource {
     /**
      * Create a new OAuth client.
      *
-     * For PUBLIC clients, no secret is generated.
-     * For CONFIDENTIAL clients, a secret is generated and returned ONCE in the response.
+     * <p>For PUBLIC clients, no secret is generated.
+     * <p>For CONFIDENTIAL clients, a secret is generated and returned ONCE in the response.
+     * The secret is encrypted at rest using the platform's encryption key.
      */
     @POST
     @Operation(summary = "Create a new OAuth client",
@@ -189,6 +213,28 @@ public class OAuthClientAdminResource {
         }
         String adminPrincipalId = principalIdOpt.get();
 
+        // Validate application IDs if provided
+        if (request.applicationIds() != null && !request.applicationIds().isEmpty()) {
+            List<Application> apps = applicationRepo.find("id in ?1", new ArrayList<>(request.applicationIds())).list();
+            if (apps.size() != request.applicationIds().size()) {
+                Set<String> foundIds = apps.stream().map(a -> a.id).collect(Collectors.toSet());
+                Set<String> missingIds = new HashSet<>(request.applicationIds());
+                missingIds.removeAll(foundIds);
+                return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(new ErrorResponse("Invalid application IDs: " + missingIds))
+                    .build();
+            }
+
+            // Application OAuth clients cannot use client_credentials grant
+            // (client_credentials is only for service account clients)
+            if (request.grantTypes() != null && request.grantTypes().contains("client_credentials")) {
+                return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(new ErrorResponse("Application OAuth clients cannot use client_credentials grant. " +
+                        "Use authorization_code or refresh_token instead."))
+                    .build();
+            }
+        }
+
         // Generate unique client_id
         String clientId = generateClientId();
 
@@ -202,10 +248,10 @@ public class OAuthClientAdminResource {
         client.clientId = clientId;
         client.clientName = request.clientName();
         client.clientType = request.clientType();
-        client.redirectUris = String.join(",", request.redirectUris());
-        client.grantTypes = String.join(",", request.grantTypes());
-        client.defaultScopes = request.defaultScopes() != null ? String.join(",", request.defaultScopes()) : null;
-        client.ownerClientId = request.ownerClientId();
+        client.redirectUris = new ArrayList<>(request.redirectUris());
+        client.grantTypes = new ArrayList<>(request.grantTypes());
+        client.defaultScopes = request.defaultScopes() != null ? String.join(" ", request.defaultScopes()) : null;
+        client.applicationIds = request.applicationIds() != null ? new ArrayList<>(request.applicationIds()) : new ArrayList<>();
         client.active = true;
 
         // PKCE is always required for public clients
@@ -213,9 +259,9 @@ public class OAuthClientAdminResource {
 
         String plainSecret = null;
         if (request.clientType() == ClientType.CONFIDENTIAL) {
-            // Generate and hash the secret
+            // Generate secret and encrypt it
             plainSecret = generateClientSecret();
-            client.clientSecretHash = passwordService.hashPassword(plainSecret);
+            client.clientSecretRef = secretService.prepareForStorage("encrypt:" + plainSecret);
         }
 
         clientRepo.persist(client);
@@ -223,15 +269,18 @@ public class OAuthClientAdminResource {
         LOG.infof("OAuth client created: %s (%s) by principal %s",
             client.clientName, client.clientId, adminPrincipalId);
 
+        // Build application name map for response
+        Map<String, String> appIdToName = buildAppNameMap(client.applicationIds);
+
         // Return the client with the plain secret (only time it's visible)
         CreateClientResponse response = new CreateClientResponse(
-            toDto(client),
+            toDto(client, appIdToName),
             plainSecret // Will be null for public clients
         );
 
         return Response.status(Response.Status.CREATED)
             .entity(response)
-            .location(uriInfo.getAbsolutePathBuilder().path(String.valueOf(client.id)).build())
+            .location(uriInfo.getAbsolutePathBuilder().path(client.id).build())
             .build();
     }
 
@@ -270,13 +319,13 @@ public class OAuthClientAdminResource {
             client.clientName = request.clientName();
         }
         if (request.redirectUris() != null) {
-            client.redirectUris = String.join(",", request.redirectUris());
+            client.redirectUris = new ArrayList<>(request.redirectUris());
         }
         if (request.grantTypes() != null) {
-            client.grantTypes = String.join(",", request.grantTypes());
+            client.grantTypes = new ArrayList<>(request.grantTypes());
         }
         if (request.defaultScopes() != null) {
-            client.defaultScopes = String.join(",", request.defaultScopes());
+            client.defaultScopes = String.join(" ", request.defaultScopes());
         }
         if (request.pkceRequired() != null) {
             // Can't disable PKCE for public clients
@@ -287,17 +336,63 @@ public class OAuthClientAdminResource {
             }
             client.pkceRequired = request.pkceRequired();
         }
+        if (request.applicationIds() != null) {
+            // Service account clients cannot have application associations
+            if (client.serviceAccountPrincipalId != null && !request.applicationIds().isEmpty()) {
+                return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(new ErrorResponse("Service account OAuth clients cannot have application associations"))
+                    .build();
+            }
 
+            // Validate application IDs
+            if (!request.applicationIds().isEmpty()) {
+                List<Application> apps = applicationRepo.find("id in ?1", new ArrayList<>(request.applicationIds())).list();
+                if (apps.size() != request.applicationIds().size()) {
+                    Set<String> foundIds = apps.stream().map(a -> a.id).collect(Collectors.toSet());
+                    Set<String> missingIds = new HashSet<>(request.applicationIds());
+                    missingIds.removeAll(foundIds);
+                    return Response.status(Response.Status.BAD_REQUEST)
+                        .entity(new ErrorResponse("Invalid application IDs: " + missingIds))
+                        .build();
+                }
+            }
+            client.applicationIds = new ArrayList<>(request.applicationIds());
+        }
+
+        // Validate grant types
+        List<String> effectiveGrantTypes = request.grantTypes() != null ? request.grantTypes() : client.grantTypes;
+        List<String> effectiveAppIds = request.applicationIds() != null ? request.applicationIds() : client.applicationIds;
+
+        // Service account clients can only use client_credentials
+        if (client.serviceAccountPrincipalId != null) {
+            if (effectiveGrantTypes != null && !effectiveGrantTypes.equals(List.of("client_credentials"))) {
+                return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(new ErrorResponse("Service account OAuth clients can only use client_credentials grant"))
+                    .build();
+            }
+        }
+        // Application clients cannot use client_credentials
+        else if (effectiveAppIds != null && !effectiveAppIds.isEmpty()) {
+            if (effectiveGrantTypes != null && effectiveGrantTypes.contains("client_credentials")) {
+                return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(new ErrorResponse("Application OAuth clients cannot use client_credentials grant"))
+                    .build();
+            }
+        }
+
+        client.updatedAt = Instant.now();
         clientRepo.update(client);
         LOG.infof("OAuth client updated: %s by principal %s", client.clientId, adminPrincipalId);
 
-        return Response.ok(toDto(client)).build();
+        Map<String, String> appIdToName = buildAppNameMap(client.applicationIds);
+        return Response.ok(toDto(client, appIdToName)).build();
     }
 
     /**
      * Rotate client secret (confidential clients only).
      *
-     * Generates a new secret and returns it ONCE in the response.
+     * <p>Generates a new secret and returns it ONCE in the response.
+     * The old secret is immediately invalidated.
      */
     @POST
     @Path("/{id}/rotate-secret")
@@ -335,9 +430,10 @@ public class OAuthClientAdminResource {
                 .build();
         }
 
-        // Generate new secret
+        // Generate new secret and encrypt it
         String newSecret = generateClientSecret();
-        client.clientSecretHash = passwordService.hashPassword(newSecret);
+        client.clientSecretRef = secretService.prepareForStorage("encrypt:" + newSecret);
+        client.updatedAt = Instant.now();
         clientRepo.update(client);
 
         LOG.infof("OAuth client secret rotated: %s by principal %s", client.clientId, adminPrincipalId);
@@ -376,6 +472,7 @@ public class OAuthClientAdminResource {
         }
 
         client.active = true;
+        client.updatedAt = Instant.now();
         clientRepo.update(client);
         LOG.infof("OAuth client activated: %s by principal %s", client.clientId, adminPrincipalId);
 
@@ -413,10 +510,47 @@ public class OAuthClientAdminResource {
         }
 
         client.active = false;
+        client.updatedAt = Instant.now();
         clientRepo.update(client);
         LOG.infof("OAuth client deactivated: %s by principal %s", client.clientId, adminPrincipalId);
 
         return Response.ok(new StatusResponse("Client deactivated")).build();
+    }
+
+    /**
+     * Delete an OAuth client.
+     */
+    @DELETE
+    @Path("/{id}")
+    @Operation(summary = "Delete OAuth client")
+    @APIResponses({
+        @APIResponse(responseCode = "204", description = "Client deleted"),
+        @APIResponse(responseCode = "404", description = "Client not found")
+    })
+    public Response deleteClient(
+            @PathParam("id") String id,
+            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @HeaderParam("Authorization") String authHeader) {
+
+        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
+        if (principalIdOpt.isEmpty()) {
+            return Response.status(Response.Status.UNAUTHORIZED)
+                .entity(new ErrorResponse("Not authenticated"))
+                .build();
+        }
+        String adminPrincipalId = principalIdOpt.get();
+
+        OAuthClient client = clientRepo.findByIdOptional(id).orElse(null);
+        if (client == null) {
+            return Response.status(Response.Status.NOT_FOUND)
+                .entity(new ErrorResponse("Client not found"))
+                .build();
+        }
+
+        clientRepo.delete(client);
+        LOG.infof("OAuth client deleted: %s (%s) by principal %s", client.clientName, client.clientId, adminPrincipalId);
+
+        return Response.noContent().build();
     }
 
     // ==================== Helper Methods ====================
@@ -433,27 +567,36 @@ public class OAuthClientAdminResource {
         return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
     }
 
-    private ClientDto toDto(OAuthClient client) {
-        Set<String> redirectUris = client.redirectUris != null
-            ? Set.of(client.redirectUris.split(","))
-            : Set.of();
-        Set<String> grantTypes = client.grantTypes != null
-            ? Set.of(client.grantTypes.split(","))
-            : Set.of();
-        Set<String> defaultScopes = client.defaultScopes != null
-            ? Set.of(client.defaultScopes.split(","))
-            : Set.of();
+    private Map<String, String> buildAppNameMap(List<String> applicationIds) {
+        if (applicationIds == null || applicationIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, String> appIdToName = new HashMap<>();
+        applicationRepo.find("id in ?1", new ArrayList<>(applicationIds)).list()
+            .forEach(app -> appIdToName.put(app.id, app.name));
+        return appIdToName;
+    }
+
+    private ClientDto toDto(OAuthClient client, Map<String, String> appIdToName) {
+        List<ApplicationRef> applications = new ArrayList<>();
+        if (client.applicationIds != null) {
+            for (String appId : client.applicationIds) {
+                String appName = appIdToName.getOrDefault(appId, "Unknown");
+                applications.add(new ApplicationRef(appId, appName));
+            }
+        }
 
         return new ClientDto(
             client.id,
             client.clientId,
             client.clientName,
             client.clientType,
-            redirectUris,
-            grantTypes,
-            defaultScopes,
+            client.redirectUris != null ? new ArrayList<>(client.redirectUris) : List.of(),
+            client.grantTypes != null ? new ArrayList<>(client.grantTypes) : List.of(),
+            client.defaultScopes != null ? List.of(client.defaultScopes.split(" ")) : List.of(),
             client.pkceRequired,
-            client.ownerClientId,
+            applications,
+            client.serviceAccountPrincipalId,
             client.active,
             client.createdAt,
             client.updatedAt
@@ -462,16 +605,22 @@ public class OAuthClientAdminResource {
 
     // ==================== DTOs ====================
 
+    public record ApplicationRef(
+        String id,
+        String name
+    ) {}
+
     public record ClientDto(
         String id,
         String clientId,
         String clientName,
         ClientType clientType,
-        Set<String> redirectUris,
-        Set<String> grantTypes,
-        Set<String> defaultScopes,
+        List<String> redirectUris,
+        List<String> grantTypes,
+        List<String> defaultScopes,
         boolean pkceRequired,
-        String ownerClientId,
+        List<ApplicationRef> applications,
+        String serviceAccountPrincipalId,  // Set if this is a service account client
         boolean active,
         Instant createdAt,
         Instant updatedAt
@@ -492,25 +641,26 @@ public class OAuthClientAdminResource {
 
         @NotNull(message = "At least one redirect URI is required")
         @Size(min = 1, message = "At least one redirect URI is required")
-        Set<String> redirectUris,
+        List<String> redirectUris,
 
         @NotNull(message = "At least one grant type is required")
         @Size(min = 1, message = "At least one grant type is required")
-        Set<String> grantTypes,
+        List<String> grantTypes,
 
-        Set<String> defaultScopes,
+        List<String> defaultScopes,
 
         boolean pkceRequired,
 
-        String ownerClientId
+        List<String> applicationIds
     ) {}
 
     public record UpdateClientRequest(
         String clientName,
-        Set<String> redirectUris,
-        Set<String> grantTypes,
-        Set<String> defaultScopes,
-        Boolean pkceRequired
+        List<String> redirectUris,
+        List<String> grantTypes,
+        List<String> defaultScopes,
+        Boolean pkceRequired,
+        List<String> applicationIds
     ) {}
 
     public record CreateClientResponse(

@@ -89,4 +89,31 @@ public interface UnitOfWork {
         T event,
         Object command
     );
+
+    /**
+     * Commit multiple entity changes with a domain event atomically.
+     *
+     * <p>Use this for operations that create or update multiple aggregates,
+     * such as provisioning a service account (Principal + OAuthClient + Application).
+     *
+     * <p>Within a single MongoDB transaction:
+     * <ol>
+     *   <li>Persists or updates all aggregate entities</li>
+     *   <li>Creates the domain event in the events collection</li>
+     *   <li>Creates the audit log entry</li>
+     * </ol>
+     *
+     * <p>If any step fails, the entire transaction is rolled back.
+     *
+     * @param aggregates The entities to persist (each must have public String id field)
+     * @param event      The domain event representing what happened
+     * @param command    The command that was executed (for audit log)
+     * @param <T>        The domain event type
+     * @return Success with the event, or Failure if transaction fails
+     */
+    <T extends DomainEvent> Result<T> commitAll(
+        java.util.List<Object> aggregates,
+        T event,
+        Object command
+    );
 }

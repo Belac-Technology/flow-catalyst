@@ -9,7 +9,7 @@ import Tag from 'primevue/tag';
 import ProgressSpinner from 'primevue/progressspinner';
 import Message from 'primevue/message';
 import Dialog from 'primevue/dialog';
-import Dropdown from 'primevue/dropdown';
+import Select from 'primevue/select';
 import Checkbox from 'primevue/checkbox';
 import AutoComplete from 'primevue/autocomplete';
 import { useToast } from 'primevue/usetoast';
@@ -418,7 +418,7 @@ function formatDate(dateString: string) {
 
         <div class="field">
           <label for="configType">Configuration Type</label>
-          <Dropdown
+          <Select
             id="configType"
             v-model="createForm.configType"
             :options="configTypeOptions"
@@ -432,7 +432,7 @@ function formatDate(dateString: string) {
                 <span class="type-description">{{ slotProps.option.description }}</span>
               </div>
             </template>
-          </Dropdown>
+          </Select>
           <small class="field-help">
             <template v-if="createForm.configType === 'ANCHOR'">
               Users will have platform-wide access to all clients
@@ -448,7 +448,7 @@ function formatDate(dateString: string) {
 
         <div class="field">
           <label for="authProvider">Authentication Method</label>
-          <Dropdown
+          <Select
             id="authProvider"
             v-model="createForm.authProvider"
             :options="authProviderOptions"

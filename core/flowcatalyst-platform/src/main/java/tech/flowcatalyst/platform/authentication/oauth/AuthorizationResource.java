@@ -7,11 +7,16 @@ import org.eclipse.microprofile.openapi.annotations.Operation;
 import org.eclipse.microprofile.openapi.annotations.parameters.Parameter;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 import org.jboss.logging.Logger;
+import tech.flowcatalyst.platform.application.Application;
+import tech.flowcatalyst.platform.application.ApplicationClientConfig;
+import tech.flowcatalyst.platform.application.ApplicationClientConfigRepository;
+import tech.flowcatalyst.platform.application.ApplicationRepository;
 import tech.flowcatalyst.platform.authentication.*;
 import tech.flowcatalyst.platform.principal.PasswordService;
 import tech.flowcatalyst.platform.principal.Principal;
 import tech.flowcatalyst.platform.principal.PrincipalRepository;
 import tech.flowcatalyst.platform.principal.PrincipalType;
+import tech.flowcatalyst.platform.security.secrets.SecretService;
 
 import java.net.URI;
 import java.net.URLEncoder;
@@ -64,6 +69,15 @@ public class AuthorizationResource {
 
     @Inject
     PasswordService passwordService;
+
+    @Inject
+    SecretService secretService;
+
+    @Inject
+    ApplicationRepository applicationRepo;
+
+    @Inject
+    ApplicationClientConfigRepository appClientConfigRepo;
 
     @Context
     UriInfo uriInfo;
@@ -185,6 +199,17 @@ public class AuthorizationResource {
         }
 
         Principal principal = principalOpt.get();
+
+        // Check if user has access to at least one application associated with this OAuth client
+        if (client.hasApplicationRestrictions()) {
+            boolean hasAccess = checkUserApplicationAccess(principal, client);
+            if (!hasAccess) {
+                LOG.warnf("User %s denied access to OAuth client %s - no access to associated applications",
+                    principal.id, clientId);
+                return errorRedirect(redirectUri, "access_denied",
+                    "You don't have access to this application", state);
+            }
+        }
 
         // Generate authorization code
         String code = generateAuthorizationCode();
@@ -336,7 +361,10 @@ public class AuthorizationResource {
             if (clientSecret == null || clientSecret.isEmpty()) {
                 return tokenError("invalid_client", "Client authentication required");
             }
-            // TODO: Verify hashed client secret
+            if (!verifyClientSecret(client, clientSecret)) {
+                LOG.warnf("Invalid client secret for OAuth client: %s", clientId);
+                return tokenError("invalid_client", "Invalid client credentials");
+            }
         }
 
         // Validate PKCE
@@ -508,7 +536,75 @@ public class AuthorizationResource {
             return tokenError("invalid_client", "Client credentials required");
         }
 
-        // Find service account by client_id
+        // First, try the new OAuthClient-based lookup
+        Optional<OAuthClient> oauthClientOpt = clientRepo.findByClientId(clientId);
+        if (oauthClientOpt.isPresent()) {
+            OAuthClient oauthClient = oauthClientOpt.get();
+
+            // Must be a service account client
+            if (oauthClient.serviceAccountPrincipalId == null) {
+                LOG.warnf("client_credentials grant for non-service-account OAuth client: %s", clientId);
+                return tokenError("invalid_grant", "This client does not support client_credentials grant");
+            }
+
+            // Verify client_credentials grant is allowed
+            if (!oauthClient.isGrantTypeAllowed("client_credentials")) {
+                LOG.warnf("client_credentials grant not allowed for OAuth client: %s", clientId);
+                return tokenError("unauthorized_client", "client_credentials grant not allowed for this client");
+            }
+
+            // Verify client secret
+            if (!verifyClientSecret(oauthClient, clientSecret)) {
+                LOG.infof("Token request failed: invalid client secret for OAuth client: %s", clientId);
+                return tokenError("invalid_client", "Invalid client credentials");
+            }
+
+            // Load the service account principal
+            Optional<Principal> principalOpt = principalRepo.findByIdOptional(oauthClient.serviceAccountPrincipalId);
+            if (principalOpt.isEmpty()) {
+                LOG.errorf("Service account principal not found for OAuth client: %s -> %s",
+                    clientId, oauthClient.serviceAccountPrincipalId);
+                return tokenError("invalid_client", "Invalid client credentials");
+            }
+
+            Principal principal = principalOpt.get();
+
+            // Verify it's a service account and is active
+            if (principal.type != PrincipalType.SERVICE) {
+                LOG.warnf("Token request for non-service principal via OAuth client: %s", clientId);
+                return tokenError("invalid_client", "Invalid client credentials");
+            }
+
+            if (!principal.active) {
+                LOG.infof("Token request failed: service account is inactive: %s", clientId);
+                return tokenError("invalid_client", "Client is disabled");
+            }
+
+            // Load roles
+            Set<String> roles = loadRoles(principal.id);
+
+            // Issue access token
+            String token = jwtKeyService.issueAccessToken(principal.id, clientId, roles);
+
+            // Update last used on service account
+            if (principal.serviceAccount != null) {
+                principal.serviceAccount.lastUsedAt = Instant.now();
+                principalRepo.update(principal);
+            }
+
+            LOG.infof("Access token issued for service account via OAuthClient: %s (principal: %s)", clientId, principal.id);
+
+            return Response.ok(new TokenResponse(
+                token,
+                "Bearer",
+                jwtKeyService.getAccessTokenExpiry().toSeconds(),
+                null, // No refresh token for client_credentials
+                null,
+                null  // No ID token for client_credentials
+            )).build();
+        }
+
+        // Fall back to legacy service account lookup (for backwards compatibility)
         Optional<Principal> principalOpt = principalRepo.findByServiceAccountClientId(clientId);
         if (principalOpt.isEmpty()) {
             LOG.infof("Token request failed: client_id not found: %s", clientId);
@@ -529,7 +625,7 @@ public class AuthorizationResource {
             return tokenError("invalid_client", "Client is disabled");
         }
 
-        // Verify client secret
+        // Verify client secret (legacy path uses argon2 hash in ServiceAccount)
         if (principal.serviceAccount == null || principal.serviceAccount.clientSecretHash == null) {
             LOG.warnf("Token request failed: no client secret set for: %s", clientId);
             return tokenError("invalid_client", "Invalid client credentials");
@@ -550,7 +646,7 @@ public class AuthorizationResource {
         principal.serviceAccount.lastUsedAt = Instant.now();
         principalRepo.update(principal);
 
-        LOG.infof("Access token issued for service account: %s", clientId);
+        LOG.infof("Access token issued for service account (legacy): %s", clientId);
 
         return Response.ok(new TokenResponse(
             token,
@@ -731,6 +827,96 @@ public class AuthorizationResource {
 
     private String urlEncode(String value) {
         return URLEncoder.encode(value, StandardCharsets.UTF_8);
+    }
+
+    /**
+     * Check if a user has access to at least one application associated with an OAuth client.
+     *
+     * <p>A user has access to an application if:
+     * <ol>
+     *   <li>They have a role prefixed with the application's code (e.g., "platform:admin" for "platform" app)</li>
+     *   <li>AND the application is enabled for their client (via ApplicationClientConfig), or they are ANCHOR scope</li>
+     * </ol>
+     *
+     * @param principal The authenticated user
+     * @param oauthClient The OAuth client being accessed
+     * @return true if the user has access to at least one associated application
+     */
+    private boolean checkUserApplicationAccess(Principal principal, OAuthClient oauthClient) {
+        if (oauthClient.applicationIds == null || oauthClient.applicationIds.isEmpty()) {
+            // No application restrictions - allow access (legacy behavior)
+            return true;
+        }
+
+        // Load user's roles
+        Set<String> roles = loadRoles(principal.id);
+
+        // ANCHOR users have access to everything
+        if (principal.scope == tech.flowcatalyst.platform.principal.UserScope.ANCHOR) {
+            // Still need to check they have a role for at least one app
+            for (String appId : oauthClient.applicationIds) {
+                Application app = applicationRepo.findByIdOptional(appId).orElse(null);
+                if (app != null && app.active) {
+                    // Check if user has any role for this application
+                    String appPrefix = app.code + ":";
+                    if (roles.stream().anyMatch(r -> r.startsWith(appPrefix) || r.equals(app.code))) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        // For CLIENT/PARTNER users, check each application
+        for (String appId : oauthClient.applicationIds) {
+            Application app = applicationRepo.findByIdOptional(appId).orElse(null);
+            if (app == null || !app.active) {
+                continue;
+            }
+
+            // Check if user has any role for this application
+            String appPrefix = app.code + ":";
+            boolean hasRole = roles.stream().anyMatch(r -> r.startsWith(appPrefix) || r.equals(app.code));
+            if (!hasRole) {
+                continue;
+            }
+
+            // Check if the application is enabled for the user's client
+            if (principal.clientId != null) {
+                ApplicationClientConfig config = appClientConfigRepo
+                    .find("applicationId = ?1 and clientId = ?2", appId, principal.clientId)
+                    .firstResult();
+
+                // If no config exists, the app is not enabled for this client
+                // If config exists and is enabled, the user has access
+                if (config != null && config.enabled) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Verify client secret for confidential OAuth clients.
+     *
+     * @param client The OAuth client
+     * @param providedSecret The secret provided by the client
+     * @return true if the secret is valid
+     */
+    private boolean verifyClientSecret(OAuthClient client, String providedSecret) {
+        if (client.clientSecretRef == null || client.clientSecretRef.isEmpty()) {
+            return false;
+        }
+
+        try {
+            String storedSecret = secretService.resolve(client.clientSecretRef);
+            return storedSecret != null && storedSecret.equals(providedSecret);
+        } catch (Exception e) {
+            LOG.warnf("Failed to verify client secret for %s: %s", client.clientId, e.getMessage());
+            return false;
+        }
     }
 
     /**

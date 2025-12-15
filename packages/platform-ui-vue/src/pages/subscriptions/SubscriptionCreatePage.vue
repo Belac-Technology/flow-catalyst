@@ -6,7 +6,7 @@ import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
 import InputNumber from 'primevue/inputnumber';
 import Textarea from 'primevue/textarea';
-import Dropdown from 'primevue/dropdown';
+import Select from 'primevue/select';
 import Checkbox from 'primevue/checkbox';
 import MultiSelect from 'primevue/multiselect';
 import Message from 'primevue/message';
@@ -280,7 +280,7 @@ async function onSubmit() {
 
           <div class="form-field">
             <label>Dispatch Pool <span class="required">*</span></label>
-            <Dropdown
+            <Select
               v-model="dispatchPoolId"
               :options="dispatchPools"
               optionLabel="name"
@@ -296,7 +296,7 @@ async function onSubmit() {
                   <span class="option-code">{{ option.code }} ({{ option.rateLimit }}/min, {{ option.concurrency }} concurrent)</span>
                 </div>
               </template>
-            </Dropdown>
+            </Select>
             <small class="hint">
               Rate-limiting pool for this subscription's dispatch jobs
             </small>
@@ -304,7 +304,7 @@ async function onSubmit() {
 
           <div class="form-field">
             <label>Mode</label>
-            <Dropdown
+            <Select
               v-model="mode"
               :options="modeOptions"
               optionLabel="label"

@@ -122,6 +122,22 @@ const router = createRouter({
           name: 'anchor-domains',
           component: () => import('@/pages/authentication/AnchorDomainListPage.vue'),
         },
+        // Authentication - OAuth Clients
+        {
+          path: 'authentication/oauth-clients',
+          name: 'oauth-clients',
+          component: () => import('@/pages/authentication/OAuthClientListPage.vue'),
+        },
+        {
+          path: 'authentication/oauth-clients/new',
+          name: 'oauth-client-create',
+          component: () => import('@/pages/authentication/OAuthClientCreatePage.vue'),
+        },
+        {
+          path: 'authentication/oauth-clients/:id',
+          name: 'oauth-client-detail',
+          component: () => import('@/pages/authentication/OAuthClientDetailPage.vue'),
+        },
         // Legacy redirect
         {
           path: 'roles',
