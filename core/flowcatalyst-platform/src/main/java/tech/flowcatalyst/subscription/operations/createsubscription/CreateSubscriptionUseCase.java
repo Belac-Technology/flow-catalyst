@@ -141,6 +141,7 @@ public class CreateSubscriptionUseCase {
         int timeoutSeconds = command.timeoutSeconds() != null ? command.timeoutSeconds() : Subscription.DEFAULT_TIMEOUT_SECONDS;
         DispatchMode mode = command.mode() != null ? command.mode() : DispatchMode.IMMEDIATE;
         SubscriptionSource source = command.source() != null ? command.source() : SubscriptionSource.UI;
+        boolean dataOnly = command.dataOnly() != null ? command.dataOnly() : Subscription.DEFAULT_DATA_ONLY;
 
         // Create subscription
         Instant now = Instant.now();
@@ -164,6 +165,7 @@ public class CreateSubscriptionUseCase {
             sequence,
             mode,
             timeoutSeconds,
+            dataOnly,
             now,
             now
         );
@@ -190,6 +192,7 @@ public class CreateSubscriptionUseCase {
             .sequence(subscription.sequence())
             .mode(subscription.mode())
             .timeoutSeconds(subscription.timeoutSeconds())
+            .dataOnly(subscription.dataOnly())
             .build();
 
         // Commit atomically

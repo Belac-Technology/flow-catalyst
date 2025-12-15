@@ -25,6 +25,7 @@ import java.util.List;
  * @param sequence Sequence number for ordering
  * @param mode Processing mode
  * @param timeoutSeconds Timeout for dispatch target
+ * @param dataOnly If true, send raw payload only; if false, wrap in JSON envelope
  */
 public record CreateSubscriptionCommand(
     String code,
@@ -41,5 +42,6 @@ public record CreateSubscriptionCommand(
     Integer delaySeconds,
     Integer sequence,
     DispatchMode mode,
-    Integer timeoutSeconds
+    Integer timeoutSeconds,
+    Boolean dataOnly
 ) {}

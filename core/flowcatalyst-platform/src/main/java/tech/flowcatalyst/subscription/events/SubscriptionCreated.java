@@ -47,7 +47,8 @@ public record SubscriptionCreated(
     int delaySeconds,
     int sequence,
     DispatchMode mode,
-    int timeoutSeconds
+    int timeoutSeconds,
+    boolean dataOnly
 ) implements DomainEvent {
 
     private static final String EVENT_TYPE = "platform:control-plane:subscription:created";
@@ -98,7 +99,7 @@ public record SubscriptionCreated(
                 subscriptionId, code, name, description, clientId, clientIdentifier,
                 eventTypes, target, queue, customConfig, subscriptionSource, status,
                 maxAgeSeconds, dispatchPoolId, dispatchPoolCode,
-                delaySeconds, sequence, mode, timeoutSeconds
+                delaySeconds, sequence, mode, timeoutSeconds, dataOnly
             ));
         } catch (JsonProcessingException e) {
             throw new RuntimeException("Failed to serialize event data", e);
@@ -124,7 +125,8 @@ public record SubscriptionCreated(
         int delaySeconds,
         int sequence,
         DispatchMode mode,
-        int timeoutSeconds
+        int timeoutSeconds,
+        boolean dataOnly
     ) {}
 
     public static Builder builder() {
@@ -157,6 +159,7 @@ public record SubscriptionCreated(
         private int sequence;
         private DispatchMode mode;
         private int timeoutSeconds;
+        private boolean dataOnly;
 
         public Builder from(ExecutionContext ctx) {
             this.eventId = TsidGenerator.generate();
@@ -263,13 +266,18 @@ public record SubscriptionCreated(
             return this;
         }
 
+        public Builder dataOnly(boolean dataOnly) {
+            this.dataOnly = dataOnly;
+            return this;
+        }
+
         public SubscriptionCreated build() {
             return new SubscriptionCreated(
                 eventId, time, executionId, correlationId, causationId, principalId,
                 subscriptionId, code, name, description, clientId, clientIdentifier,
                 eventTypes, target, queue, customConfig, subscriptionSource, status,
                 maxAgeSeconds, dispatchPoolId, dispatchPoolCode,
-                delaySeconds, sequence, mode, timeoutSeconds
+                delaySeconds, sequence, mode, timeoutSeconds, dataOnly
             );
         }
     }

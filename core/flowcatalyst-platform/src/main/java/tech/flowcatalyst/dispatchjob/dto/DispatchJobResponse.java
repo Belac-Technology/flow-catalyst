@@ -3,6 +3,7 @@ package tech.flowcatalyst.dispatchjob.dto;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import tech.flowcatalyst.dispatch.DispatchMode;
 import tech.flowcatalyst.dispatchjob.entity.DispatchJob;
+import tech.flowcatalyst.dispatchjob.model.DispatchKind;
 import tech.flowcatalyst.dispatchjob.model.DispatchProtocol;
 import tech.flowcatalyst.dispatchjob.model.DispatchStatus;
 
@@ -13,13 +14,17 @@ public record DispatchJobResponse(
     @JsonProperty("id") String id,
     @JsonProperty("externalId") String externalId,
     @JsonProperty("source") String source,
-    @JsonProperty("type") String type,
-    @JsonProperty("groupId") String groupId,
+    @JsonProperty("kind") DispatchKind kind,
+    @JsonProperty("code") String code,
+    @JsonProperty("subject") String subject,
+    @JsonProperty("eventId") String eventId,
+    @JsonProperty("correlationId") String correlationId,
     @JsonProperty("metadata") Map<String, String> metadata,
     @JsonProperty("targetUrl") String targetUrl,
     @JsonProperty("protocol") DispatchProtocol protocol,
     @JsonProperty("headers") Map<String, String> headers,
     @JsonProperty("payloadContentType") String payloadContentType,
+    @JsonProperty("dataOnly") boolean dataOnly,
     @JsonProperty("credentialsId") String credentialsId,
     @JsonProperty("clientId") String clientId,
     @JsonProperty("subscriptionId") String subscriptionId,
@@ -54,13 +59,17 @@ public record DispatchJobResponse(
             job.id,
             job.externalId,
             job.source,
-            job.type,
-            job.groupId,
+            job.kind,
+            job.code,
+            job.subject,
+            job.eventId,
+            job.correlationId,
             metadataMap,
             job.targetUrl,
             job.protocol,
             job.headers,
             job.payloadContentType,
+            job.dataOnly,
             job.credentialsId,
             job.clientId,
             job.subscriptionId,

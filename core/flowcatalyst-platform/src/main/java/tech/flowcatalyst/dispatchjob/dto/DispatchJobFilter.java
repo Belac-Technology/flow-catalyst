@@ -1,5 +1,6 @@
 package tech.flowcatalyst.dispatchjob.dto;
 
+import tech.flowcatalyst.dispatchjob.model.DispatchKind;
 import tech.flowcatalyst.dispatchjob.model.DispatchStatus;
 
 import java.time.Instant;
@@ -7,8 +8,8 @@ import java.time.Instant;
 public record DispatchJobFilter(
     DispatchStatus status,
     String source,
-    String type,
-    String groupId,
+    DispatchKind kind,
+    String code,
     String clientId,
     String subscriptionId,
     String dispatchPoolId,

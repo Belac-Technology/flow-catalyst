@@ -319,8 +319,8 @@ class OAuthClientAdminResourceTest {
             client.clientId = "fc_test_" + System.currentTimeMillis();
             client.clientName = "Test Client";
             client.clientType = ClientType.PUBLIC;
-            client.redirectUris = "http://localhost:3000/callback";
-            client.grantTypes = "authorization_code,refresh_token";
+            client.redirectUris = List.of("http://localhost:3000/callback");
+            client.grantTypes = List.of("authorization_code", "refresh_token");
             client.pkceRequired = true;
             client.active = true;
             clientRepo.persist(client);
@@ -335,9 +335,9 @@ class OAuthClientAdminResourceTest {
             client.clientId = "fc_conf_" + System.currentTimeMillis();
             client.clientName = "Test Confidential Client";
             client.clientType = ClientType.CONFIDENTIAL;
-            client.redirectUris = "https://api.example.com/callback";
-            client.grantTypes = "client_credentials,authorization_code";
-            client.clientSecretHash = "dummy_hash"; // In real usage, this would be properly hashed
+            client.redirectUris = List.of("https://api.example.com/callback");
+            client.grantTypes = List.of("client_credentials", "authorization_code");
+            client.clientSecretRef = "encrypted:dummy_secret_ref"; // In real usage, this would be properly encrypted
             client.pkceRequired = false;
             client.active = true;
             clientRepo.persist(client);
@@ -352,8 +352,8 @@ class OAuthClientAdminResourceTest {
             client.clientId = "fc_deactivated_" + System.currentTimeMillis();
             client.clientName = "Deactivated Test Client";
             client.clientType = ClientType.PUBLIC;
-            client.redirectUris = "http://localhost:3000/callback";
-            client.grantTypes = "authorization_code,refresh_token";
+            client.redirectUris = List.of("http://localhost:3000/callback");
+            client.grantTypes = List.of("authorization_code", "refresh_token");
             client.pkceRequired = true;
             client.active = false;
             clientRepo.persist(client);

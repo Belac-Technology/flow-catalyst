@@ -66,6 +66,10 @@ export type AssignRolesRequest = {
   roles: Array<string>;
 };
 
+export type AssignRolesRequest1 = {
+  roles?: Array<string>;
+};
+
 export type AuditLogDto = {
   id?: string;
   entityType?: string;
@@ -112,6 +116,16 @@ export type AuthConfigListResponse = {
 export type AuthConfigType = "ANCHOR" | "PARTNER" | "CLIENT";
 
 export type AuthProvider = "INTERNAL" | "OIDC";
+
+export type BatchDispatchJobResponse = {
+  jobs?: Array<DispatchJobResponse>;
+  count?: number;
+};
+
+export type BatchEventResponse = {
+  events?: Array<EventResponse>;
+  count?: number;
+};
 
 export type ClientApplicationDto = {
   id?: string;
@@ -247,8 +261,11 @@ export type CreateCredentialsRequest = {
 
 export type CreateDispatchJobRequest = {
   source: string;
-  type: string;
-  groupId?: string;
+  kind?: DispatchKind;
+  code: string;
+  subject?: string;
+  eventId?: string;
+  correlationId?: string;
   metadata?: {
     [key: string]: string;
   };
@@ -259,7 +276,16 @@ export type CreateDispatchJobRequest = {
   };
   payload: string;
   payloadContentType?: string;
+  dataOnly?: boolean;
   credentialsId: string;
+  clientId?: string;
+  subscriptionId?: string;
+  mode?: DispatchMode;
+  dispatchPoolId?: string;
+  messageGroup?: string;
+  sequence?: number;
+  timeoutSeconds?: number;
+  schemaId?: string;
   maxRetries?: number;
   retryStrategy?: string;
   scheduledFor?: Instant;
@@ -355,6 +381,20 @@ export type CreateRoleRequest2 = {
   clientManaged?: boolean;
 };
 
+export type CreateServiceAccountRequest = {
+  code: string;
+  name: string;
+  description?: string;
+  clientId?: string;
+  applicationId?: string;
+};
+
+export type CreateServiceAccountResponse = {
+  serviceAccount?: ServiceAccountDto;
+  authToken?: string;
+  signingSecret?: string;
+};
+
 export type CreateSubscriptionRequest = {
   code: string;
   name: string;
@@ -369,8 +409,9 @@ export type CreateSubscriptionRequest = {
   dispatchPoolId: string;
   delaySeconds?: number;
   sequence?: number;
-  mode?: SubscriptionMode;
+  mode?: DispatchMode;
   timeoutSeconds?: number;
+  dataOnly?: boolean;
 };
 
 export type CreateUserRequest = {
@@ -403,6 +444,7 @@ export type DispatchAttemptResponse = {
   responseCode?: number;
   responseBody?: string;
   errorMessage?: string;
+  errorType?: ErrorType;
   createdAt?: Instant;
 };
 
@@ -416,8 +458,11 @@ export type DispatchJobResponse = {
   id?: string;
   externalId?: string;
   source?: string;
-  type?: string;
-  groupId?: string;
+  kind?: DispatchKind;
+  code?: string;
+  subject?: string;
+  eventId?: string;
+  correlationId?: string;
   metadata?: {
     [key: string]: string;
   };
@@ -427,7 +472,16 @@ export type DispatchJobResponse = {
     [key: string]: string;
   };
   payloadContentType?: string;
+  dataOnly?: boolean;
   credentialsId?: string;
+  clientId?: string;
+  subscriptionId?: string;
+  mode?: DispatchMode;
+  dispatchPoolId?: string;
+  messageGroup?: string;
+  sequence?: number;
+  timeoutSeconds?: number;
+  schemaId?: string;
   status?: DispatchStatus;
   maxRetries?: number;
   retryStrategy?: string;
@@ -442,6 +496,10 @@ export type DispatchJobResponse = {
   createdAt?: Instant;
   updatedAt?: Instant;
 };
+
+export type DispatchKind = "EVENT" | "TASK";
+
+export type DispatchMode = "IMMEDIATE" | "NEXT_ON_ERROR" | "BLOCK_ON_ERROR";
 
 export type DispatchPoolDto = {
   id?: string;
@@ -474,9 +532,9 @@ export type DispatchProtocol =
 
 export type DispatchStatus =
   | "PENDING"
+  | "QUEUED"
   | "IN_PROGRESS"
   | "COMPLETED"
-  | "FAILED"
   | "ERROR"
   | "CANCELLED";
 
@@ -509,6 +567,8 @@ export type EmailDomainCheckResponse = {
 export type ErrorResponse = {
   error?: string;
 };
+
+export type ErrorType = "TRANSIENT" | "NOT_TRANSIENT" | "UNKNOWN";
 
 export type EventResponse = {
   id?: string;
@@ -655,7 +715,7 @@ export type ProcessRequest = {
 };
 
 export type ProcessResponse = {
-  success?: boolean;
+  ack?: boolean;
   message?: string;
 };
 
@@ -708,6 +768,26 @@ export type SecretValidationResponse = {
   message?: string;
 };
 
+export type ServiceAccountDto = {
+  id?: string;
+  code?: string;
+  name?: string;
+  description?: string;
+  clientId?: string;
+  applicationId?: string;
+  active?: boolean;
+  authType?: WebhookAuthType;
+  roles?: Array<string>;
+  lastUsedAt?: Instant;
+  createdAt?: Instant;
+  updatedAt?: Instant;
+};
+
+export type ServiceAccountListResponse = {
+  serviceAccounts?: Array<ServiceAccountDto>;
+  total?: number;
+};
+
 export type SignatureAlgorithm = "HMAC_SHA256" | "HMAC_SHA512";
 
 export type SpecVersionResponse = {
@@ -739,8 +819,9 @@ export type SubscriptionDto = {
   dispatchPoolCode?: string;
   delaySeconds?: number;
   sequence?: number;
-  mode?: SubscriptionMode;
+  mode?: DispatchMode;
   timeoutSeconds?: number;
+  dataOnly?: boolean;
   createdAt?: Instant;
   updatedAt?: Instant;
 };
@@ -749,8 +830,6 @@ export type SubscriptionListResponse = {
   subscriptions?: Array<SubscriptionDto>;
   total?: number;
 };
-
-export type SubscriptionMode = "IMMEDIATE" | "NEXT_ON_ERROR" | "BLOCK_ON_ERROR";
 
 export type SubscriptionSource = "API" | "UI";
 
@@ -804,6 +883,10 @@ export type UpdateApplicationRequest1 = {
   description?: string;
   defaultBaseUrl?: string;
   iconUrl?: string;
+};
+
+export type UpdateAuthTokenRequest = {
+  authToken: string;
 };
 
 export type UpdateClientApplicationsRequest = {
@@ -880,6 +963,11 @@ export type UpdateRoleRequest1 = {
   clientManaged?: boolean;
 };
 
+export type UpdateServiceAccountRequest = {
+  name?: string;
+  description?: string;
+};
+
 export type UpdateSubscriptionRequest = {
   name?: string;
   description?: string;
@@ -892,8 +980,9 @@ export type UpdateSubscriptionRequest = {
   dispatchPoolId?: string;
   delaySeconds?: number;
   sequence?: number;
-  mode?: SubscriptionMode;
+  mode?: DispatchMode;
   timeoutSeconds?: number;
+  dataOnly?: boolean;
 };
 
 export type UserScope = "ANCHOR" | "PARTNER" | "CLIENT";
@@ -910,6 +999,8 @@ export type ValueType =
   | "TRUE"
   | "FALSE"
   | "NULL";
+
+export type WebhookAuthType = "BEARER" | "BASIC";
 
 export type GetWellKnownJwksJsonData = {
   body?: never;
@@ -3455,6 +3546,242 @@ export type PutApiAdminPlatformRolesByRoleNameResponses = {
 export type PutApiAdminPlatformRolesByRoleNameResponse =
   PutApiAdminPlatformRolesByRoleNameResponses[keyof PutApiAdminPlatformRolesByRoleNameResponses];
 
+export type GetApiAdminPlatformServiceAccountsData = {
+  body?: never;
+  path?: never;
+  query?: {
+    /**
+     * Filter by active status
+     */
+    active?: boolean;
+    /**
+     * Filter by application ID
+     */
+    applicationId?: string;
+    /**
+     * Filter by client ID
+     */
+    clientId?: string;
+  };
+  url: "/api/admin/platform/service-accounts";
+};
+
+export type GetApiAdminPlatformServiceAccountsErrors = {
+  /**
+   * Not authenticated
+   */
+  401: unknown;
+};
+
+export type GetApiAdminPlatformServiceAccountsResponses = {
+  /**
+   * List of service accounts
+   */
+  200: ServiceAccountListResponse;
+};
+
+export type GetApiAdminPlatformServiceAccountsResponse =
+  GetApiAdminPlatformServiceAccountsResponses[keyof GetApiAdminPlatformServiceAccountsResponses];
+
+export type PostApiAdminPlatformServiceAccountsData = {
+  body: CreateServiceAccountRequest;
+  path?: never;
+  query?: never;
+  url: "/api/admin/platform/service-accounts";
+};
+
+export type PostApiAdminPlatformServiceAccountsErrors = {
+  /**
+   * Invalid request or code already exists
+   */
+  400: unknown;
+};
+
+export type PostApiAdminPlatformServiceAccountsResponses = {
+  /**
+   * Service account created
+   */
+  201: CreateServiceAccountResponse;
+};
+
+export type PostApiAdminPlatformServiceAccountsResponse =
+  PostApiAdminPlatformServiceAccountsResponses[keyof PostApiAdminPlatformServiceAccountsResponses];
+
+export type GetApiAdminPlatformServiceAccountsCodeByCodeData = {
+  body?: never;
+  path: {
+    code: string;
+  };
+  query?: never;
+  url: "/api/admin/platform/service-accounts/code/{code}";
+};
+
+export type GetApiAdminPlatformServiceAccountsCodeByCodeResponses = {
+  /**
+   * OK
+   */
+  200: unknown;
+};
+
+export type DeleteApiAdminPlatformServiceAccountsByIdData = {
+  body?: never;
+  path: {
+    id: string;
+  };
+  query?: never;
+  url: "/api/admin/platform/service-accounts/{id}";
+};
+
+export type DeleteApiAdminPlatformServiceAccountsByIdResponses = {
+  /**
+   * OK
+   */
+  200: unknown;
+};
+
+export type GetApiAdminPlatformServiceAccountsByIdData = {
+  body?: never;
+  path: {
+    id: string;
+  };
+  query?: never;
+  url: "/api/admin/platform/service-accounts/{id}";
+};
+
+export type GetApiAdminPlatformServiceAccountsByIdErrors = {
+  /**
+   * Service account not found
+   */
+  404: unknown;
+};
+
+export type GetApiAdminPlatformServiceAccountsByIdResponses = {
+  /**
+   * Service account details
+   */
+  200: ServiceAccountDto;
+};
+
+export type GetApiAdminPlatformServiceAccountsByIdResponse =
+  GetApiAdminPlatformServiceAccountsByIdResponses[keyof GetApiAdminPlatformServiceAccountsByIdResponses];
+
+export type PutApiAdminPlatformServiceAccountsByIdData = {
+  body: UpdateServiceAccountRequest;
+  path: {
+    id: string;
+  };
+  query?: never;
+  url: "/api/admin/platform/service-accounts/{id}";
+};
+
+export type PutApiAdminPlatformServiceAccountsByIdErrors = {
+  /**
+   * Bad Request
+   */
+  400: unknown;
+};
+
+export type PutApiAdminPlatformServiceAccountsByIdResponses = {
+  /**
+   * OK
+   */
+  200: unknown;
+};
+
+export type PutApiAdminPlatformServiceAccountsByIdAuthTokenData = {
+  body: UpdateAuthTokenRequest;
+  path: {
+    id: string;
+  };
+  query?: never;
+  url: "/api/admin/platform/service-accounts/{id}/auth-token";
+};
+
+export type PutApiAdminPlatformServiceAccountsByIdAuthTokenErrors = {
+  /**
+   * Bad Request
+   */
+  400: unknown;
+};
+
+export type PutApiAdminPlatformServiceAccountsByIdAuthTokenResponses = {
+  /**
+   * OK
+   */
+  200: unknown;
+};
+
+export type PostApiAdminPlatformServiceAccountsByIdRegenerateSecretData = {
+  body?: never;
+  path: {
+    id: string;
+  };
+  query?: never;
+  url: "/api/admin/platform/service-accounts/{id}/regenerate-secret";
+};
+
+export type PostApiAdminPlatformServiceAccountsByIdRegenerateSecretResponses = {
+  /**
+   * OK
+   */
+  200: unknown;
+};
+
+export type PostApiAdminPlatformServiceAccountsByIdRegenerateTokenData = {
+  body?: never;
+  path: {
+    id: string;
+  };
+  query?: never;
+  url: "/api/admin/platform/service-accounts/{id}/regenerate-token";
+};
+
+export type PostApiAdminPlatformServiceAccountsByIdRegenerateTokenResponses = {
+  /**
+   * OK
+   */
+  200: unknown;
+};
+
+export type GetApiAdminPlatformServiceAccountsByIdRolesData = {
+  body?: never;
+  path: {
+    id: string;
+  };
+  query?: never;
+  url: "/api/admin/platform/service-accounts/{id}/roles";
+};
+
+export type GetApiAdminPlatformServiceAccountsByIdRolesResponses = {
+  /**
+   * OK
+   */
+  200: unknown;
+};
+
+export type PutApiAdminPlatformServiceAccountsByIdRolesData = {
+  body: AssignRolesRequest1;
+  path: {
+    id: string;
+  };
+  query?: never;
+  url: "/api/admin/platform/service-accounts/{id}/roles";
+};
+
+export type PutApiAdminPlatformServiceAccountsByIdRolesErrors = {
+  /**
+   * Bad Request
+   */
+  400: unknown;
+};
+
+export type PutApiAdminPlatformServiceAccountsByIdRolesResponses = {
+  /**
+   * OK
+   */
+  200: unknown;
+};
+
 export type GetApiAdminPlatformSubscriptionsData = {
   body?: never;
   path?: never;
@@ -4031,14 +4358,18 @@ export type GetApiDispatchJobsData = {
   body?: never;
   path?: never;
   query?: {
+    clientId?: string;
+    code?: string;
     createdAfter?: Instant;
     createdBefore?: Instant;
-    groupId?: string;
+    dispatchPoolId?: string;
+    kind?: DispatchKind;
+    messageGroup?: string;
     page?: number;
     size?: number;
     source?: string;
     status?: DispatchStatus;
-    type?: string;
+    subscriptionId?: string;
   };
   url: "/api/dispatch/jobs";
 };
@@ -4083,6 +4414,37 @@ export type PostApiDispatchJobsResponses = {
 
 export type PostApiDispatchJobsResponse =
   PostApiDispatchJobsResponses[keyof PostApiDispatchJobsResponses];
+
+export type PostApiDispatchJobsBatchData = {
+  body: Array<CreateDispatchJobRequest>;
+  path?: never;
+  query?: never;
+  url: "/api/dispatch/jobs/batch";
+};
+
+export type PostApiDispatchJobsBatchErrors = {
+  /**
+   * Invalid request or batch size exceeds limit
+   */
+  400: ErrorResponse;
+  /**
+   * Internal server error
+   */
+  500: ErrorResponse;
+};
+
+export type PostApiDispatchJobsBatchError =
+  PostApiDispatchJobsBatchErrors[keyof PostApiDispatchJobsBatchErrors];
+
+export type PostApiDispatchJobsBatchResponses = {
+  /**
+   * Dispatch jobs created successfully
+   */
+  201: BatchDispatchJobResponse;
+};
+
+export type PostApiDispatchJobsBatchResponse =
+  PostApiDispatchJobsBatchResponses[keyof PostApiDispatchJobsBatchResponses];
 
 export type GetApiDispatchJobsByIdData = {
   body?: never;
@@ -4151,9 +4513,13 @@ export type PostApiDispatchProcessData = {
 
 export type PostApiDispatchProcessErrors = {
   /**
-   * Job failed, will retry
+   * Bad Request
    */
-  400: ProcessResponse;
+  400: unknown;
+  /**
+   * Invalid or missing authentication token
+   */
+  401: ProcessResponse;
   /**
    * Internal error during processing
    */
@@ -4165,7 +4531,7 @@ export type PostApiDispatchProcessError =
 
 export type PostApiDispatchProcessResponses = {
   /**
-   * Job processed successfully or max attempts exhausted
+   * Job processed (check ack field for success/failure)
    */
   200: ProcessResponse;
 };
@@ -4489,6 +4855,30 @@ export type PostApiEventsResponses = {
 export type PostApiEventsResponse =
   PostApiEventsResponses[keyof PostApiEventsResponses];
 
+export type PostApiEventsBatchData = {
+  body: Array<CreateEventRequest>;
+  path?: never;
+  query?: never;
+  url: "/api/events/batch";
+};
+
+export type PostApiEventsBatchErrors = {
+  /**
+   * Invalid request or batch size exceeds limit
+   */
+  400: unknown;
+};
+
+export type PostApiEventsBatchResponses = {
+  /**
+   * Events created successfully
+   */
+  201: BatchEventResponse;
+};
+
+export type PostApiEventsBatchResponse =
+  PostApiEventsBatchResponses[keyof PostApiEventsBatchResponses];
+
 export type GetApiEventsByIdData = {
   body?: never;
   path: {
@@ -4528,6 +4918,81 @@ export type GetApiHealthResponses = {
 
 export type GetApiHealthResponse =
   GetApiHealthResponses[keyof GetApiHealthResponses];
+
+export type PostApiSampleWebhookData = {
+  body: string;
+  headers?: {
+    "X-FlowCatalyst-Causation-ID"?: string;
+    "X-FlowCatalyst-Code"?: string;
+    "X-FlowCatalyst-Correlation-ID"?: string;
+    "X-FlowCatalyst-ID"?: string;
+    "X-FlowCatalyst-Kind"?: string;
+    "X-FlowCatalyst-Signature"?: string;
+    "X-FlowCatalyst-Subject"?: string;
+    "X-FlowCatalyst-Timestamp"?: string;
+  };
+  path?: never;
+  query?: never;
+  url: "/api/sample/webhook";
+};
+
+export type PostApiSampleWebhookResponses = {
+  /**
+   * OK
+   */
+  200: unknown;
+};
+
+export type PostApiSampleWebhookFailPermanentData = {
+  body: string;
+  headers?: {
+    "X-FlowCatalyst-ID"?: string;
+  };
+  path?: never;
+  query?: never;
+  url: "/api/sample/webhook/fail-permanent";
+};
+
+export type PostApiSampleWebhookFailPermanentResponses = {
+  /**
+   * OK
+   */
+  200: unknown;
+};
+
+export type PostApiSampleWebhookFailTransientData = {
+  body: string;
+  headers?: {
+    "X-FlowCatalyst-ID"?: string;
+  };
+  path?: never;
+  query?: never;
+  url: "/api/sample/webhook/fail-transient";
+};
+
+export type PostApiSampleWebhookFailTransientResponses = {
+  /**
+   * OK
+   */
+  200: unknown;
+};
+
+export type PostApiSampleWebhookSlowData = {
+  body: string;
+  headers?: {
+    "X-FlowCatalyst-ID"?: string;
+  };
+  path?: never;
+  query?: never;
+  url: "/api/sample/webhook/slow";
+};
+
+export type PostApiSampleWebhookSlowResponses = {
+  /**
+   * OK
+   */
+  200: unknown;
+};
 
 export type GetApiStatsData = {
   body?: never;

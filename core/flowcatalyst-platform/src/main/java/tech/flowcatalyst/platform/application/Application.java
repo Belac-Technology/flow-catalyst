@@ -62,10 +62,19 @@ public class Application extends PanacheMongoEntityBase {
     public String defaultBaseUrl;
 
     /**
+     * The service account ID for this application/integration.
+     * References the standalone ServiceAccount entity in service_accounts collection.
+     * Contains webhook credentials (auth token, signing secret) for dispatching.
+     */
+    public String serviceAccountId;
+
+    /**
+     * @deprecated Use {@link #serviceAccountId} instead.
      * The service account principal ID for this application/integration.
      * Auto-created when the application is created.
      * Used for machine-to-machine authentication (client_credentials grant).
      */
+    @Deprecated
     public String serviceAccountPrincipalId;
 
     public boolean active = true;

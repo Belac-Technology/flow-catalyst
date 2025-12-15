@@ -74,6 +74,25 @@ public record Subscription(
     /** Timeout in seconds for dispatch target to respond */
     int timeoutSeconds,
 
+    /**
+     * Controls payload delivery format for dispatch jobs created by this subscription.
+     *
+     * <p>When {@code dataOnly = true} (default):</p>
+     * <ul>
+     *   <li>Only the raw event payload is sent to the target</li>
+     *   <li>Standard FlowCatalyst headers are included (X-FlowCatalyst-ID, etc.)</li>
+     *   <li>No JSON envelope wrapping</li>
+     * </ul>
+     *
+     * <p>When {@code dataOnly = false}:</p>
+     * <ul>
+     *   <li>Event data is wrapped in a JSON envelope with metadata</li>
+     *   <li>Envelope includes: id, kind, code, subject, eventId, timestamp, data</li>
+     *   <li>Useful when the target needs access to dispatch metadata in the body</li>
+     * </ul>
+     */
+    boolean dataOnly,
+
     Instant createdAt,
     Instant updatedAt
 ) {
@@ -85,6 +104,7 @@ public record Subscription(
     public static final int DEFAULT_DELAY_SECONDS = 0;
     public static final int DEFAULT_SEQUENCE = 99;
     public static final int DEFAULT_TIMEOUT_SECONDS = 30;
+    public static final boolean DEFAULT_DATA_ONLY = true;
 
     // ========================================================================
     // Domain logic

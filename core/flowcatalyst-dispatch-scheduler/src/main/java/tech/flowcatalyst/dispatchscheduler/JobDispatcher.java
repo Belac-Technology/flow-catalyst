@@ -11,6 +11,7 @@ import tech.flowcatalyst.dispatchjob.model.DispatchStatus;
 import tech.flowcatalyst.dispatchjob.model.MediationType;
 import tech.flowcatalyst.dispatchjob.model.MessagePointer;
 import tech.flowcatalyst.dispatchjob.repository.DispatchJobRepository;
+import tech.flowcatalyst.dispatchjob.security.DispatchAuthService;
 import tech.flowcatalyst.queue.*;
 
 /**
@@ -30,6 +31,9 @@ public class JobDispatcher {
 
     @Inject
     DispatchJobRepository dispatchJobRepository;
+
+    @Inject
+    DispatchAuthService dispatchAuthService;
 
     @Inject
     ObjectMapper objectMapper;
@@ -75,11 +79,14 @@ public class JobDispatcher {
         }
 
         try {
+            // Generate HMAC auth token for this dispatch job
+            String authToken = dispatchAuthService.generateAuthToken(job.id);
+
             // Create MessagePointer for the dispatch job
             MessagePointer pointer = new MessagePointer(
                 job.id,
                 job.dispatchPoolId != null ? job.dispatchPoolId : config.defaultDispatchPoolCode(),
-                "dispatch-auth-token",  // Auth token for internal processing endpoint
+                authToken,
                 MediationType.HTTP,
                 config.processingEndpoint(),
                 job.messageGroup,

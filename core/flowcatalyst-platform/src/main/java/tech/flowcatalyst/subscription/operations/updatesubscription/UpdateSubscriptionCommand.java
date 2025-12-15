@@ -24,6 +24,7 @@ import java.util.List;
  * @param sequence New sequence (null to keep existing)
  * @param mode New mode (null to keep existing)
  * @param timeoutSeconds New timeout (null to keep existing)
+ * @param dataOnly New dataOnly flag (null to keep existing)
  */
 public record UpdateSubscriptionCommand(
     String subscriptionId,
@@ -39,5 +40,6 @@ public record UpdateSubscriptionCommand(
     Integer delaySeconds,
     Integer sequence,
     DispatchMode mode,
-    Integer timeoutSeconds
+    Integer timeoutSeconds,
+    Boolean dataOnly
 ) {}

@@ -10,6 +10,7 @@ import tech.flowcatalyst.dispatchjob.dto.DispatchJobFilter;
 import tech.flowcatalyst.dispatchjob.entity.DispatchAttempt;
 import tech.flowcatalyst.dispatchjob.entity.DispatchJob;
 import tech.flowcatalyst.dispatchjob.entity.DispatchJobMetadata;
+import tech.flowcatalyst.dispatchjob.model.DispatchKind;
 import tech.flowcatalyst.dispatchjob.model.DispatchStatus;
 import tech.flowcatalyst.platform.shared.TsidGenerator;
 
@@ -33,8 +34,13 @@ public class DispatchJobRepository implements PanacheMongoRepositoryBase<Dispatc
         job.id = TsidGenerator.generate();
         job.externalId = request.externalId();
         job.source = request.source();
-        job.type = request.type();
-        job.groupId = request.groupId();
+        // Classification fields
+        job.kind = request.kind() != null ? request.kind() : DispatchKind.EVENT;
+        job.code = request.code();
+        job.subject = request.subject();
+        job.eventId = request.eventId();
+        job.correlationId = request.correlationId();
+        // Target information
         job.targetUrl = request.targetUrl();
         job.protocol = request.protocol() != null ?
             request.protocol() : job.protocol;
@@ -43,6 +49,7 @@ public class DispatchJobRepository implements PanacheMongoRepositoryBase<Dispatc
         job.payload = request.payload();
         job.payloadContentType = request.payloadContentType() != null ?
             request.payloadContentType() : job.payloadContentType;
+        job.dataOnly = request.dataOnly() != null ? request.dataOnly() : true;
         job.credentialsId = request.credentialsId();
 
         // New context and dispatch behavior fields
@@ -139,13 +146,13 @@ public class DispatchJobRepository implements PanacheMongoRepositoryBase<Dispatc
             conditions.add("source = :source");
             params.put("source", filter.source());
         }
-        if (filter.type() != null) {
-            conditions.add("type = :type");
-            params.put("type", filter.type());
+        if (filter.kind() != null) {
+            conditions.add("kind = :kind");
+            params.put("kind", filter.kind());
         }
-        if (filter.groupId() != null) {
-            conditions.add("groupId = :groupId");
-            params.put("groupId", filter.groupId());
+        if (filter.code() != null) {
+            conditions.add("code = :code");
+            params.put("code", filter.code());
         }
         if (filter.clientId() != null) {
             conditions.add("clientId = :clientId");
@@ -199,13 +206,13 @@ public class DispatchJobRepository implements PanacheMongoRepositoryBase<Dispatc
             conditions.add("source = :source");
             params.put("source", filter.source());
         }
-        if (filter.type() != null) {
-            conditions.add("type = :type");
-            params.put("type", filter.type());
+        if (filter.kind() != null) {
+            conditions.add("kind = :kind");
+            params.put("kind", filter.kind());
         }
-        if (filter.groupId() != null) {
-            conditions.add("groupId = :groupId");
-            params.put("groupId", filter.groupId());
+        if (filter.code() != null) {
+            conditions.add("code = :code");
+            params.put("code", filter.code());
         }
         if (filter.clientId() != null) {
             conditions.add("clientId = :clientId");

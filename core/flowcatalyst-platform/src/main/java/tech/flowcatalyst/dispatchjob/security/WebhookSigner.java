@@ -17,7 +17,26 @@ public class WebhookSigner {
     public static final String TIMESTAMP_HEADER = "X-FLOWCATALYST-TIMESTAMP";
     private static final String ALGORITHM = "HmacSHA256";
 
+    /**
+     * Sign a webhook payload using DispatchCredentials.
+     *
+     * @deprecated Use {@link #sign(String, String, String)} instead.
+     * This method is kept for backward compatibility.
+     */
+    @Deprecated
     public SignedWebhookRequest sign(String payload, DispatchCredentials credentials) {
+        return sign(payload, credentials.bearerToken, credentials.signingSecret);
+    }
+
+    /**
+     * Sign a webhook payload with the provided credentials.
+     *
+     * @param payload       The request body to sign
+     * @param authToken     The bearer token for Authorization header
+     * @param signingSecret The secret key for HMAC-SHA256 signing
+     * @return A signed webhook request with signature, timestamp, and bearer token
+     */
+    public SignedWebhookRequest sign(String payload, String authToken, String signingSecret) {
         // Generate ISO8601 timestamp with millisecond precision
         String timestamp = Instant.now()
             .truncatedTo(ChronoUnit.MILLIS)
@@ -27,13 +46,13 @@ public class WebhookSigner {
         String signaturePayload = timestamp + payload;
 
         // Generate HMAC SHA-256 signature
-        String signature = generateHmacSha256(signaturePayload, credentials.signingSecret);
+        String signature = generateHmacSha256(signaturePayload, signingSecret);
 
         return new SignedWebhookRequest(
             payload,
             signature,
             timestamp,
-            credentials.bearerToken
+            authToken
         );
     }
 

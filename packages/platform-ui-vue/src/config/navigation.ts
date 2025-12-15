@@ -31,6 +31,11 @@ export const NAVIGATION_CONFIG: NavGroup[] = [
         route: '/users',
       },
       {
+        label: 'Service Accounts',
+        icon: 'pi pi-server',
+        route: '/identity/service-accounts',
+      },
+      {
         label: 'Domain IDPs',
         icon: 'pi pi-id-card',
         route: '/authentication/domain-idps',

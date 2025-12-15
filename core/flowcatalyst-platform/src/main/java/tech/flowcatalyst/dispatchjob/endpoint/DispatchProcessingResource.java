@@ -12,6 +12,7 @@ import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponses;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 import org.jboss.logging.Logger;
+import tech.flowcatalyst.dispatchjob.security.DispatchAuthService;
 import tech.flowcatalyst.dispatchjob.service.DispatchJobService;
 
 @Path("/api/dispatch/process")
@@ -23,19 +24,24 @@ public class DispatchProcessingResource {
     @Inject
     DispatchJobService dispatchJobService;
 
+    @Inject
+    DispatchAuthService dispatchAuthService;
+
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
-    @Operation(summary = "Process a dispatch job (internal endpoint called by message router)", description = "Internal endpoint that executes webhook dispatch and records attempts")
+    @Operation(summary = "Process a dispatch job (internal endpoint called by message router)",
+        description = "Internal endpoint that executes webhook dispatch and records attempts. " +
+            "Requires HMAC-SHA256 authentication via Bearer token.")
     @APIResponses({
         @APIResponse(
             responseCode = "200",
-            description = "Job processed successfully or max attempts exhausted",
+            description = "Job processed (check ack field for success/failure)",
             content = @Content(mediaType = MediaType.APPLICATION_JSON, schema = @Schema(implementation = ProcessResponse.class))
         ),
         @APIResponse(
-            responseCode = "400",
-            description = "Job failed, will retry",
+            responseCode = "401",
+            description = "Invalid or missing authentication token",
             content = @Content(mediaType = MediaType.APPLICATION_JSON, schema = @Schema(implementation = ProcessResponse.class))
         ),
         @APIResponse(
@@ -44,33 +50,62 @@ public class DispatchProcessingResource {
             content = @Content(mediaType = MediaType.APPLICATION_JSON, schema = @Schema(implementation = ProcessResponse.class))
         )
     })
-    public Response processDispatchJob(ProcessRequest request) {
+    public Response processDispatchJob(
+            ProcessRequest request,
+            @HeaderParam("Authorization") String authHeader) {
+
         LOG.infof("Received dispatch job processing request: %s", request.messageId());
 
+        // 1. Extract and validate auth token
+        String token = extractBearerToken(authHeader);
+        if (token == null) {
+            LOG.warnf("Dispatch process request missing Authorization header for message [%s]", request.messageId());
+            return Response.status(401)
+                .entity(ProcessResponse.nack("Missing Authorization header"))
+                .build();
+        }
+
+        if (!dispatchAuthService.validateAuthToken(request.messageId(), token)) {
+            LOG.warnf("Dispatch process auth failed for message [%s]", request.messageId());
+            return Response.status(401)
+                .entity(ProcessResponse.nack("Invalid auth token"))
+                .build();
+        }
+
+        // 2. Process the dispatch job
         try {
             String dispatchJobId = request.messageId();
 
             DispatchJobService.DispatchJobProcessResult result = dispatchJobService.processDispatchJob(dispatchJobId);
 
-            return Response
-                .status(result.httpStatusCode())
-                .entity(new ProcessResponse(result.ack(), result.message(), result.details()))
+            return Response.status(200)
+                .entity(new ProcessResponse(result.ack(), result.message()))
                 .build();
 
         } catch (IllegalArgumentException e) {
-            LOG.errorf("Invalid dispatch job ID: %s", request.messageId());
-            return Response
-                .status(400)
-                .entity(new ProcessResponse(false, "Invalid job ID", e.getMessage()))
+            // Job not found - ACK it since we can't process (similar to Laravel behavior)
+            LOG.warnf("Dispatch job not found: %s", request.messageId());
+            return Response.status(200)
+                .entity(ProcessResponse.ack("Cannot find record."))
                 .build();
 
         } catch (Exception e) {
+            // Infrastructure error - return 500, message router will retry via visibility timeout
             LOG.errorf(e, "Error processing dispatch job: %s", request.messageId());
-            return Response
-                .status(500)
-                .entity(new ProcessResponse(false, "Internal error", e.getMessage()))
+            return Response.status(500)
+                .entity(new ProcessResponse(false, e.getMessage()))
                 .build();
         }
+    }
+
+    /**
+     * Extract Bearer token from Authorization header.
+     */
+    private String extractBearerToken(String authHeader) {
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            return authHeader.substring(7).trim();
+        }
+        return null;
     }
 
     /**
@@ -86,17 +121,26 @@ public class DispatchProcessingResource {
      *
      * <p>Aligns with MediationResponse contract:
      * <ul>
-     *   <li><b>ack: true</b> - Processing complete, ACK the message</li>
-     *   <li><b>ack: false</b> - Processing failed/not ready, NACK for retry</li>
+     *   <li><b>ack: true</b> - Remove from queue (success OR permanent error like max retries reached)</li>
+     *   <li><b>ack: false</b> - Keep on queue, retry later (transient errors, not ready yet)</li>
      * </ul>
      */
     public record ProcessResponse(
         @JsonProperty("ack") boolean ack,
-        @JsonProperty("message") String message,
-        @JsonProperty("details") String details
+        @JsonProperty("message") String message
     ) {
-        public ProcessResponse(boolean ack, String message) {
-            this(ack, message, null);
+        /**
+         * Create a response that acknowledges (removes from queue).
+         */
+        public static ProcessResponse ack(String message) {
+            return new ProcessResponse(true, message);
+        }
+
+        /**
+         * Create a response that does not acknowledge (keeps on queue for retry).
+         */
+        public static ProcessResponse nack(String message) {
+            return new ProcessResponse(false, message);
         }
     }
 }

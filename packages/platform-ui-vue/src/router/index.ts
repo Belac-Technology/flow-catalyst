@@ -83,6 +83,22 @@ const router = createRouter({
           name: 'user-detail',
           component: () => import('@/pages/users/UserDetailPage.vue'),
         },
+        // Service Accounts
+        {
+          path: 'identity/service-accounts',
+          name: 'service-accounts',
+          component: () => import('@/pages/service-accounts/ServiceAccountListPage.vue'),
+        },
+        {
+          path: 'identity/service-accounts/new',
+          name: 'service-account-create',
+          component: () => import('@/pages/service-accounts/ServiceAccountCreatePage.vue'),
+        },
+        {
+          path: 'identity/service-accounts/:id',
+          name: 'service-account-detail',
+          component: () => import('@/pages/service-accounts/ServiceAccountDetailPage.vue'),
+        },
         // Authorization - Roles
         {
           path: 'authorization/roles',

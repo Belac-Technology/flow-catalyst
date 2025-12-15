@@ -147,6 +147,20 @@ import type {
   GetApiAdminPlatformRolesByRoleNameResponse,
   PutApiAdminPlatformRolesByRoleNameData,
   PutApiAdminPlatformRolesByRoleNameResponse,
+  GetApiAdminPlatformServiceAccountsData,
+  GetApiAdminPlatformServiceAccountsResponse,
+  PostApiAdminPlatformServiceAccountsData,
+  PostApiAdminPlatformServiceAccountsResponse,
+  GetApiAdminPlatformServiceAccountsCodeByCodeData,
+  DeleteApiAdminPlatformServiceAccountsByIdData,
+  GetApiAdminPlatformServiceAccountsByIdData,
+  GetApiAdminPlatformServiceAccountsByIdResponse,
+  PutApiAdminPlatformServiceAccountsByIdData,
+  PutApiAdminPlatformServiceAccountsByIdAuthTokenData,
+  PostApiAdminPlatformServiceAccountsByIdRegenerateSecretData,
+  PostApiAdminPlatformServiceAccountsByIdRegenerateTokenData,
+  GetApiAdminPlatformServiceAccountsByIdRolesData,
+  PutApiAdminPlatformServiceAccountsByIdRolesData,
   GetApiAdminPlatformSubscriptionsData,
   GetApiAdminPlatformSubscriptionsResponse,
   PostApiAdminPlatformSubscriptionsData,
@@ -181,6 +195,9 @@ import type {
   PostApiDispatchJobsData,
   PostApiDispatchJobsResponse,
   PostApiDispatchJobsError,
+  PostApiDispatchJobsBatchData,
+  PostApiDispatchJobsBatchResponse,
+  PostApiDispatchJobsBatchError,
   GetApiDispatchJobsByIdData,
   GetApiDispatchJobsByIdResponse,
   GetApiDispatchJobsByIdError,
@@ -206,9 +223,15 @@ import type {
   PostApiEventTypesByIdSchemasByVersionFinaliseData,
   PostApiEventsData,
   PostApiEventsResponse,
+  PostApiEventsBatchData,
+  PostApiEventsBatchResponse,
   GetApiEventsByIdData,
   GetApiHealthData,
   GetApiHealthResponse,
+  PostApiSampleWebhookData,
+  PostApiSampleWebhookFailPermanentData,
+  PostApiSampleWebhookFailTransientData,
+  PostApiSampleWebhookSlowData,
   GetApiStatsData,
   GetApiStatsResponse,
   PostAuthCheckDomainData,
@@ -2068,6 +2091,220 @@ export const putApiAdminPlatformRolesByRoleName = <
 };
 
 /**
+ * List service accounts
+ * List all service accounts with optional filters
+ */
+export const getApiAdminPlatformServiceAccounts = <
+  ThrowOnError extends boolean = false,
+>(
+  options?: Options<GetApiAdminPlatformServiceAccountsData, ThrowOnError>,
+) => {
+  return (options?.client ?? _heyApiClient).get<
+    GetApiAdminPlatformServiceAccountsResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/service-accounts",
+    ...options,
+  });
+};
+
+/**
+ * Create a new service account
+ * Creates a service account and returns credentials. Credentials are shown only once.
+ */
+export const postApiAdminPlatformServiceAccounts = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<PostApiAdminPlatformServiceAccountsData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).post<
+    PostApiAdminPlatformServiceAccountsResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/service-accounts",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options?.headers,
+    },
+  });
+};
+
+/**
+ * Get service account by code
+ */
+export const getApiAdminPlatformServiceAccountsCodeByCode = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<
+    GetApiAdminPlatformServiceAccountsCodeByCodeData,
+    ThrowOnError
+  >,
+) => {
+  return (options.client ?? _heyApiClient).get<unknown, unknown, ThrowOnError>({
+    url: "/api/admin/platform/service-accounts/code/{code}",
+    ...options,
+  });
+};
+
+/**
+ * Delete service account
+ */
+export const deleteApiAdminPlatformServiceAccountsById = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<DeleteApiAdminPlatformServiceAccountsByIdData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).delete<
+    unknown,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/service-accounts/{id}",
+    ...options,
+  });
+};
+
+/**
+ * Get service account by ID
+ */
+export const getApiAdminPlatformServiceAccountsById = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<GetApiAdminPlatformServiceAccountsByIdData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).get<
+    GetApiAdminPlatformServiceAccountsByIdResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/service-accounts/{id}",
+    ...options,
+  });
+};
+
+/**
+ * Update service account metadata
+ */
+export const putApiAdminPlatformServiceAccountsById = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<PutApiAdminPlatformServiceAccountsByIdData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).put<unknown, unknown, ThrowOnError>({
+    url: "/api/admin/platform/service-accounts/{id}",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options?.headers,
+    },
+  });
+};
+
+/**
+ * Update auth token
+ * Replace the auth token with a custom value
+ */
+export const putApiAdminPlatformServiceAccountsByIdAuthToken = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<
+    PutApiAdminPlatformServiceAccountsByIdAuthTokenData,
+    ThrowOnError
+  >,
+) => {
+  return (options.client ?? _heyApiClient).put<unknown, unknown, ThrowOnError>({
+    url: "/api/admin/platform/service-accounts/{id}/auth-token",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options?.headers,
+    },
+  });
+};
+
+/**
+ * Regenerate signing secret
+ * Generate a new signing secret. Returns the new secret (shown only once).
+ */
+export const postApiAdminPlatformServiceAccountsByIdRegenerateSecret = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<
+    PostApiAdminPlatformServiceAccountsByIdRegenerateSecretData,
+    ThrowOnError
+  >,
+) => {
+  return (options.client ?? _heyApiClient).post<unknown, unknown, ThrowOnError>(
+    {
+      url: "/api/admin/platform/service-accounts/{id}/regenerate-secret",
+      ...options,
+    },
+  );
+};
+
+/**
+ * Regenerate auth token
+ * Generate a new random auth token. Returns the new token (shown only once).
+ */
+export const postApiAdminPlatformServiceAccountsByIdRegenerateToken = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<
+    PostApiAdminPlatformServiceAccountsByIdRegenerateTokenData,
+    ThrowOnError
+  >,
+) => {
+  return (options.client ?? _heyApiClient).post<unknown, unknown, ThrowOnError>(
+    {
+      url: "/api/admin/platform/service-accounts/{id}/regenerate-token",
+      ...options,
+    },
+  );
+};
+
+/**
+ * Get assigned roles
+ */
+export const getApiAdminPlatformServiceAccountsByIdRoles = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<
+    GetApiAdminPlatformServiceAccountsByIdRolesData,
+    ThrowOnError
+  >,
+) => {
+  return (options.client ?? _heyApiClient).get<unknown, unknown, ThrowOnError>({
+    url: "/api/admin/platform/service-accounts/{id}/roles",
+    ...options,
+  });
+};
+
+/**
+ * Assign roles
+ * Replace all roles with the provided list (declarative assignment)
+ */
+export const putApiAdminPlatformServiceAccountsByIdRoles = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<
+    PutApiAdminPlatformServiceAccountsByIdRolesData,
+    ThrowOnError
+  >,
+) => {
+  return (options.client ?? _heyApiClient).put<unknown, unknown, ThrowOnError>({
+    url: "/api/admin/platform/service-accounts/{id}/roles",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options?.headers,
+    },
+  });
+};
+
+/**
  * List subscriptions
  * Returns subscriptions with optional filtering
  */
@@ -2457,6 +2694,27 @@ export const postApiDispatchJobs = <ThrowOnError extends boolean = false>(
 };
 
 /**
+ * Create multiple dispatch jobs in batch
+ * Creates multiple dispatch jobs in a single operation. Maximum batch size is 100 jobs.
+ */
+export const postApiDispatchJobsBatch = <ThrowOnError extends boolean = false>(
+  options: Options<PostApiDispatchJobsBatchData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).post<
+    PostApiDispatchJobsBatchResponse,
+    PostApiDispatchJobsBatchError,
+    ThrowOnError
+  >({
+    url: "/api/dispatch/jobs/batch",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options?.headers,
+    },
+  });
+};
+
+/**
  * Get dispatch job by ID
  * Retrieves detailed information about a specific dispatch job
  */
@@ -2494,7 +2752,7 @@ export const getApiDispatchJobsByIdAttempts = <
 
 /**
  * Process a dispatch job (internal endpoint called by message router)
- * Internal endpoint that executes webhook dispatch and records attempts
+ * Internal endpoint that executes webhook dispatch and records attempts. Requires HMAC-SHA256 authentication via Bearer token.
  */
 export const postApiDispatchProcess = <ThrowOnError extends boolean = false>(
   options: Options<PostApiDispatchProcessData, ThrowOnError>,
@@ -2740,6 +2998,27 @@ export const postApiEvents = <ThrowOnError extends boolean = false>(
 };
 
 /**
+ * Create multiple events in batch
+ * Creates multiple events in a single operation. Maximum batch size is 100 events. Returns list of created events.
+ */
+export const postApiEventsBatch = <ThrowOnError extends boolean = false>(
+  options: Options<PostApiEventsBatchData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).post<
+    PostApiEventsBatchResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/events/batch",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options?.headers,
+    },
+  });
+};
+
+/**
  * Get event by ID
  */
 export const getApiEventsById = <ThrowOnError extends boolean = false>(
@@ -2765,6 +3044,82 @@ export const getApiHealth = <ThrowOnError extends boolean = false>(
     url: "/api/health",
     ...options,
   });
+};
+
+/**
+ * Receive Webhook
+ */
+export const postApiSampleWebhook = <ThrowOnError extends boolean = false>(
+  options: Options<PostApiSampleWebhookData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).post<unknown, unknown, ThrowOnError>(
+    {
+      url: "/api/sample/webhook",
+      ...options,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+      },
+    },
+  );
+};
+
+/**
+ * Receive Webhook Permanent Failure
+ */
+export const postApiSampleWebhookFailPermanent = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<PostApiSampleWebhookFailPermanentData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).post<unknown, unknown, ThrowOnError>(
+    {
+      url: "/api/sample/webhook/fail-permanent",
+      ...options,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+      },
+    },
+  );
+};
+
+/**
+ * Receive Webhook Transient Failure
+ */
+export const postApiSampleWebhookFailTransient = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<PostApiSampleWebhookFailTransientData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).post<unknown, unknown, ThrowOnError>(
+    {
+      url: "/api/sample/webhook/fail-transient",
+      ...options,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+      },
+    },
+  );
+};
+
+/**
+ * Receive Webhook Slow
+ */
+export const postApiSampleWebhookSlow = <ThrowOnError extends boolean = false>(
+  options: Options<PostApiSampleWebhookSlowData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).post<unknown, unknown, ThrowOnError>(
+    {
+      url: "/api/sample/webhook/slow",
+      ...options,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+      },
+    },
+  );
 };
 
 /**

@@ -14,6 +14,7 @@ import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 import org.jboss.logging.Logger;
 import tech.flowcatalyst.dispatchjob.dto.*;
 import tech.flowcatalyst.dispatchjob.entity.DispatchJob;
+import tech.flowcatalyst.dispatchjob.model.DispatchKind;
 import tech.flowcatalyst.dispatchjob.model.DispatchStatus;
 import tech.flowcatalyst.dispatchjob.service.DispatchJobService;
 import tech.flowcatalyst.platform.audit.AuditContext;
@@ -64,8 +65,8 @@ public class DispatchJobResource {
         String principalId = auditContext.requirePrincipalId();
         authorizationService.requirePermission(principalId, PlatformMessagingPermissions.DISPATCH_JOB_CREATE);
 
-        LOG.infof("Creating dispatch job: type=%s, source=%s, principal=%s",
-            request.type(), request.source(), principalId);
+        LOG.infof("Creating dispatch job: kind=%s, code=%s, source=%s, principal=%s",
+            request.kind(), request.code(), request.source(), principalId);
 
         try {
             DispatchJob job = dispatchJobService.createDispatchJob(request);
@@ -78,6 +79,62 @@ public class DispatchJobResource {
 
         } catch (Exception e) {
             LOG.errorf(e, "Error creating dispatch job");
+            return Response.status(500).entity(new ErrorResponse("Internal error: " + e.getMessage())).build();
+        }
+    }
+
+    @POST
+    @Path("/batch")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    @Operation(summary = "Create multiple dispatch jobs in batch", description = "Creates multiple dispatch jobs in a single operation. Maximum batch size is 100 jobs.")
+    @APIResponses({
+        @APIResponse(
+            responseCode = "201",
+            description = "Dispatch jobs created successfully",
+            content = @Content(mediaType = MediaType.APPLICATION_JSON, schema = @Schema(implementation = BatchDispatchJobResponse.class))
+        ),
+        @APIResponse(
+            responseCode = "400",
+            description = "Invalid request or batch size exceeds limit",
+            content = @Content(mediaType = MediaType.APPLICATION_JSON, schema = @Schema(implementation = ErrorResponse.class))
+        ),
+        @APIResponse(
+            responseCode = "500",
+            description = "Internal server error",
+            content = @Content(mediaType = MediaType.APPLICATION_JSON, schema = @Schema(implementation = ErrorResponse.class))
+        )
+    })
+    public Response createDispatchJobBatch(@Valid List<CreateDispatchJobRequest> requests) {
+        // Authorization - require DISPATCH_JOB_CREATE permission
+        String principalId = auditContext.requirePrincipalId();
+        authorizationService.requirePermission(principalId, PlatformMessagingPermissions.DISPATCH_JOB_CREATE);
+
+        if (requests == null || requests.isEmpty()) {
+            return Response.status(400).entity(new ErrorResponse("Request body must contain at least one dispatch job")).build();
+        }
+        if (requests.size() > 100) {
+            return Response.status(400).entity(new ErrorResponse("Batch size cannot exceed 100 dispatch jobs")).build();
+        }
+
+        LOG.infof("Creating batch of %d dispatch jobs, principal=%s", requests.size(), principalId);
+
+        try {
+            List<DispatchJobResponse> results = requests.stream()
+                .map(request -> {
+                    DispatchJob job = dispatchJobService.createDispatchJob(request);
+                    return DispatchJobResponse.from(job);
+                })
+                .toList();
+
+            return Response.status(201).entity(new BatchDispatchJobResponse(results, results.size())).build();
+
+        } catch (IllegalArgumentException e) {
+            LOG.errorf("Invalid batch request: %s", e.getMessage());
+            return Response.status(400).entity(new ErrorResponse(e.getMessage())).build();
+
+        } catch (Exception e) {
+            LOG.errorf(e, "Error creating dispatch job batch");
             return Response.status(500).entity(new ErrorResponse("Internal error: " + e.getMessage())).build();
         }
     }
@@ -120,8 +177,8 @@ public class DispatchJobResource {
     public Response searchDispatchJobs(
         @QueryParam("status") DispatchStatus status,
         @QueryParam("source") String source,
-        @QueryParam("type") String type,
-        @QueryParam("groupId") String groupId,
+        @QueryParam("kind") DispatchKind kind,
+        @QueryParam("code") String code,
         @QueryParam("clientId") String clientId,
         @QueryParam("subscriptionId") String subscriptionId,
         @QueryParam("dispatchPoolId") String dispatchPoolId,
@@ -135,7 +192,7 @@ public class DispatchJobResource {
         authorizationService.requirePermission(principalId, PlatformMessagingPermissions.DISPATCH_JOB_VIEW);
 
         DispatchJobFilter filter = new DispatchJobFilter(
-            status, source, type, groupId, clientId, subscriptionId, dispatchPoolId, messageGroup,
+            status, source, kind, code, clientId, subscriptionId, dispatchPoolId, messageGroup,
             createdAfter, createdBefore, page, size
         );
 
@@ -191,6 +248,12 @@ public class DispatchJobResource {
         int size,
         long totalItems,
         int totalPages
+    ) {
+    }
+
+    public record BatchDispatchJobResponse(
+        List<DispatchJobResponse> jobs,
+        int count
     ) {
     }
 }

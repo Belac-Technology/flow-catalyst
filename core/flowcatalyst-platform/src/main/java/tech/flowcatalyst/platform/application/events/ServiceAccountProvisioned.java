@@ -32,7 +32,8 @@ public record ServiceAccountProvisioned(
     String applicationId,
     String applicationCode,
     String applicationName,
-    String serviceAccountPrincipalId,
+    String serviceAccountId,  // New standalone ServiceAccount entity ID
+    String serviceAccountPrincipalId,  // Legacy Principal ID (deprecated)
     String serviceAccountName,
     String oauthClientId,
     String oauthClientClientId  // The client_id used for OAuth (not the entity ID)
@@ -83,7 +84,7 @@ public record ServiceAccountProvisioned(
         try {
             return MAPPER.writeValueAsString(new Data(
                 applicationId, applicationCode, applicationName,
-                serviceAccountPrincipalId, serviceAccountName,
+                serviceAccountId, serviceAccountPrincipalId, serviceAccountName,
                 oauthClientId, oauthClientClientId
             ));
         } catch (JsonProcessingException e) {
@@ -98,6 +99,7 @@ public record ServiceAccountProvisioned(
         String applicationId,
         String applicationCode,
         String applicationName,
+        String serviceAccountId,
         String serviceAccountPrincipalId,
         String serviceAccountName,
         String oauthClientId,
@@ -118,6 +120,7 @@ public record ServiceAccountProvisioned(
         private String applicationId;
         private String applicationCode;
         private String applicationName;
+        private String serviceAccountId;
         private String serviceAccountPrincipalId;
         private String serviceAccountName;
         private String oauthClientId;
@@ -148,6 +151,11 @@ public record ServiceAccountProvisioned(
             return this;
         }
 
+        public Builder serviceAccountId(String serviceAccountId) {
+            this.serviceAccountId = serviceAccountId;
+            return this;
+        }
+
         public Builder serviceAccountPrincipalId(String serviceAccountPrincipalId) {
             this.serviceAccountPrincipalId = serviceAccountPrincipalId;
             return this;
@@ -172,7 +180,7 @@ public record ServiceAccountProvisioned(
             return new ServiceAccountProvisioned(
                 eventId, time, executionId, correlationId, causationId, principalId,
                 applicationId, applicationCode, applicationName,
-                serviceAccountPrincipalId, serviceAccountName,
+                serviceAccountId, serviceAccountPrincipalId, serviceAccountName,
                 oauthClientId, oauthClientClientId
             );
         }

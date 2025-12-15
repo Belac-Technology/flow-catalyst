@@ -12,6 +12,7 @@ import tech.flowcatalyst.platform.common.Result;
 import tech.flowcatalyst.platform.common.UnitOfWork;
 import tech.flowcatalyst.platform.common.errors.UseCaseError;
 import tech.flowcatalyst.platform.principal.PrincipalRepository;
+import tech.flowcatalyst.serviceaccount.repository.ServiceAccountRepository;
 
 import java.util.Map;
 
@@ -33,6 +34,9 @@ public class DeleteApplicationUseCase {
 
     @Inject
     OAuthClientRepository oauthClientRepo;
+
+    @Inject
+    ServiceAccountRepository serviceAccountRepo;
 
     @Inject
     UnitOfWork unitOfWork;
@@ -72,7 +76,12 @@ public class DeleteApplicationUseCase {
             ));
         }
 
-        // Clean up associated service account and OAuth clients before deleting the application
+        // Clean up associated service account (new entity) if it exists
+        if (app.serviceAccountId != null) {
+            serviceAccountRepo.deleteById(app.serviceAccountId);
+        }
+
+        // Clean up legacy service account principal and OAuth clients
         if (app.serviceAccountPrincipalId != null) {
             // Delete OAuth clients linked to this service account
             oauthClientRepo.delete("serviceAccountPrincipalId", app.serviceAccountPrincipalId);

@@ -37,6 +37,9 @@ include("core:flowcatalyst-event-processor")
 // SDK for integrating applications (postbox, events, roles)
 include("core:flowcatalyst-sdk")
 
+// Outbox processor (polls customer outbox tables, sends to FlowCatalyst)
+include("core:flowcatalyst-outbox-processor")
+
 // Benchmarks
 include("core:flowcatalyst-benchmark")
 

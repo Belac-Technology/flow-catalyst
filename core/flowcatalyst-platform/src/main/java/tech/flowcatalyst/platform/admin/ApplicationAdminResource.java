@@ -580,6 +580,7 @@ public class ApplicationAdminResource {
         result.put("description", app.description);
         result.put("defaultBaseUrl", app.defaultBaseUrl);
         result.put("iconUrl", app.iconUrl);
+        result.put("serviceAccountId", app.serviceAccountId);
         result.put("serviceAccountPrincipalId", app.serviceAccountPrincipalId);
         result.put("active", app.active);
         result.put("createdAt", app.createdAt);
@@ -596,6 +597,7 @@ public class ApplicationAdminResource {
         result.put("description", app.description);
         result.put("iconUrl", app.iconUrl);
         result.put("defaultBaseUrl", app.defaultBaseUrl);
+        result.put("serviceAccountId", app.serviceAccountId);
         result.put("serviceAccountPrincipalId", app.serviceAccountPrincipalId);
         result.put("active", app.active);
         result.put("createdAt", app.createdAt);

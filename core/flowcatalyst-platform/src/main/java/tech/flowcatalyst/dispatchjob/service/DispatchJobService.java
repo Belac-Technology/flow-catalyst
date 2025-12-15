@@ -17,6 +17,7 @@ import tech.flowcatalyst.dispatchjob.model.ErrorType;
 import tech.flowcatalyst.dispatchjob.model.MediationType;
 import tech.flowcatalyst.dispatchjob.model.MessagePointer;
 import tech.flowcatalyst.dispatchjob.repository.DispatchJobRepository;
+import tech.flowcatalyst.dispatchjob.security.DispatchAuthService;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -44,6 +45,9 @@ public class DispatchJobService {
     WebhookDispatcher webhookDispatcher;
 
     @Inject
+    DispatchAuthService dispatchAuthService;
+
+    @Inject
     SqsClient sqsClient;
 
     @Inject
@@ -57,7 +61,7 @@ public class DispatchJobService {
         // Create via repository (handles TSID generation and metadata conversion)
         DispatchJob job = dispatchJobRepository.create(request);
 
-        LOG.infof("Created dispatch job [%s] of type [%s] from source [%s]", job.id, job.type, job.source);
+        LOG.infof("Created dispatch job [%s] kind=[%s] code=[%s] from source [%s]", job.id, job.kind, job.code, job.source);
 
         // Send to SQS queue
         sendToQueue(job, request.queueUrl());
@@ -67,11 +71,14 @@ public class DispatchJobService {
 
     private void sendToQueue(DispatchJob job, String queueUrl) {
         try {
+            // Generate HMAC auth token for this dispatch job
+            String authToken = dispatchAuthService.generateAuthToken(job.id);
+
             // Create MessagePointer for the dispatch job
             MessagePointer messagePointer = new MessagePointer(
                 job.id.toString(),
                 DISPATCH_POOL_CODE,
-                "dispatch-auth-token", // Auth token for internal processing endpoint
+                authToken,
                 MEDIATION_TYPE,
                 PROCESSING_ENDPOINT,
                 null,  // No message group ordering needed for dispatch jobs (each job is independent)
@@ -83,7 +90,7 @@ public class DispatchJobService {
             SendMessageRequest sendRequest = SendMessageRequest.builder()
                 .queueUrl(queueUrl)
                 .messageBody(messageBody)
-                .messageGroupId("dispatch-" + job.type) // Group by type
+                .messageGroupId("dispatch-" + job.code) // Group by code
                 .messageDeduplicationId(job.id.toString())
                 .build();
 
@@ -128,7 +135,7 @@ public class DispatchJobService {
                 job.id, DispatchStatus.COMPLETED, completedAt, duration, null);
 
             LOG.infof("Dispatch job [%s] completed successfully", job.id);
-            return DispatchJobProcessResult.success("Completed successfully");
+            return DispatchJobProcessResult.success("");
 
         } else {
             // Failure - check if we should retry based on error type and retry count
@@ -137,6 +144,7 @@ public class DispatchJobService {
 
             if (isNotTransient || retriesExhausted) {
                 // Permanent error - either non-transient or max attempts exhausted
+                // ACK to remove from queue
                 Instant completedAt = Instant.now();
                 Long duration = Duration.between(job.createdAt, completedAt).toMillis();
 
@@ -145,19 +153,19 @@ public class DispatchJobService {
 
                 if (isNotTransient) {
                     LOG.warnf("Dispatch job [%s] failed with non-transient error, marking as ERROR", job.id);
-                    return DispatchJobProcessResult.permanentError("Non-transient error", attempt.errorMessage);
+                    return DispatchJobProcessResult.permanentError("Non-transient error");
                 } else {
                     LOG.warnf("Dispatch job [%s] failed after %d attempts, marking as ERROR", job.id, newAttemptCount);
-                    return DispatchJobProcessResult.permanentError("Max attempts exhausted", attempt.errorMessage);
+                    return DispatchJobProcessResult.permanentError("Max attempts exhausted");
                 }
 
             } else {
-                // More attempts available and error is transient - queue for retry
+                // More attempts available and error is transient - NACK for retry
                 dispatchJobRepository.updateStatus(
                     job.id, DispatchStatus.QUEUED, null, null, attempt.errorMessage);
 
-                LOG.warnf("Dispatch job [%s] failed, attempt %d/%d, re-queued for retry", job.id, newAttemptCount, job.maxRetries);
-                return DispatchJobProcessResult.transientError("Failed, re-queued for retry", attempt.errorMessage);
+                LOG.warnf("Dispatch job [%s] failed, attempt %d/%d, will retry", job.id, newAttemptCount, job.maxRetries);
+                return DispatchJobProcessResult.transientError("Error but retries not exhausted.");
             }
         }
     }
@@ -177,37 +185,32 @@ public class DispatchJobService {
     /**
      * Result of processing a dispatch job.
      *
+     * <p>This is used to build the response to the message router:</p>
+     * <ul>
+     *   <li><b>ack: true</b> - Remove from queue (success OR permanent error like max retries reached)</li>
+     *   <li><b>ack: false</b> - Keep on queue, retry later (transient errors)</li>
+     * </ul>
+     *
      * @param ack Whether to acknowledge (true) or nack (false) the message
-     * @param message Human-readable status message
-     * @param details Optional error details (stack trace, response body, etc.)
-     * @param errorType Classification of error for retry decisions (null if ack=true)
-     * @param httpStatusCode HTTP status code to return to message router
+     * @param message Human-readable status message for the message router
      */
     public record DispatchJobProcessResult(
         boolean ack,
-        String message,
-        String details,
-        ErrorType errorType,
-        int httpStatusCode
+        String message
     ) {
-        /** Success result - ack the message */
+        /** Success - ack the message, remove from queue */
         public static DispatchJobProcessResult success(String message) {
-            return new DispatchJobProcessResult(true, message, null, null, 200);
+            return new DispatchJobProcessResult(true, message);
         }
 
-        /** Transient error - nack for retry */
-        public static DispatchJobProcessResult transientError(String message, String details) {
-            return new DispatchJobProcessResult(false, message, details, ErrorType.TRANSIENT, 400);
+        /** Transient error - nack for retry via queue visibility timeout */
+        public static DispatchJobProcessResult transientError(String message) {
+            return new DispatchJobProcessResult(false, message);
         }
 
-        /** Permanent error - ack to prevent retry, goes to ERROR status */
-        public static DispatchJobProcessResult permanentError(String message, String details) {
-            return new DispatchJobProcessResult(true, message, details, ErrorType.NOT_TRANSIENT, 200);
-        }
-
-        /** Unknown error - nack, treat as transient */
-        public static DispatchJobProcessResult unknownError(String message, String details) {
-            return new DispatchJobProcessResult(false, message, details, ErrorType.UNKNOWN, 500);
+        /** Permanent error - ack to prevent retry (e.g., 4xx or max retries exhausted) */
+        public static DispatchJobProcessResult permanentError(String message) {
+            return new DispatchJobProcessResult(true, message);
         }
     }
 }

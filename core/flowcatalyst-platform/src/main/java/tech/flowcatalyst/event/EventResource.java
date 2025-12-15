@@ -71,6 +71,52 @@ public class EventResource {
         return Response.status(201).entity(response).build();
     }
 
+    @POST
+    @Path("/batch")
+    @Operation(summary = "Create multiple events in batch", description = "Creates multiple events in a single operation. Maximum batch size is 100 events. Returns list of created events.")
+    @APIResponses({
+        @APIResponse(
+            responseCode = "201",
+            description = "Events created successfully",
+            content = @Content(mediaType = MediaType.APPLICATION_JSON,
+                schema = @Schema(implementation = BatchEventResponse.class))
+        ),
+        @APIResponse(responseCode = "400", description = "Invalid request or batch size exceeds limit")
+    })
+    public Response createEventBatch(List<CreateEventRequest> requests) {
+        if (requests == null || requests.isEmpty()) {
+            return Response.status(400)
+                .entity(new ErrorResponse("Request body must contain at least one event"))
+                .build();
+        }
+        if (requests.size() > 100) {
+            return Response.status(400)
+                .entity(new ErrorResponse("Batch size cannot exceed 100 events"))
+                .build();
+        }
+
+        List<EventResponse> results = requests.stream()
+            .map(request -> {
+                Event event = eventService.create(new CreateEvent(
+                    request.specVersion(),
+                    request.type(),
+                    request.source(),
+                    request.subject(),
+                    request.time(),
+                    request.data(),
+                    request.correlationId(),
+                    request.causationId(),
+                    request.deduplicationId(),
+                    request.messageGroup(),
+                    request.contextData()
+                ));
+                return EventResponse.from(event);
+            })
+            .toList();
+
+        return Response.status(201).entity(new BatchEventResponse(results, results.size())).build();
+    }
+
     @GET
     @Path("/{id}")
     @Operation(summary = "Get event by ID")
@@ -146,4 +192,6 @@ public class EventResource {
     public record ContextDataResponse(String key, String value) {}
 
     public record ErrorResponse(String error) {}
+
+    public record BatchEventResponse(List<EventResponse> events, int count) {}
 }

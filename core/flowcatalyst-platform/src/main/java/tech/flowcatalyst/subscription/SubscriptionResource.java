@@ -166,7 +166,8 @@ public class SubscriptionResource {
             request.delaySeconds(),
             request.sequence(),
             request.mode(),
-            request.timeoutSeconds()
+            request.timeoutSeconds(),
+            request.dataOnly()
         );
 
         ExecutionContext ctx = ExecutionContext.create(principalId);
@@ -228,7 +229,8 @@ public class SubscriptionResource {
             request.delaySeconds(),
             request.sequence(),
             request.mode(),
-            request.timeoutSeconds()
+            request.timeoutSeconds(),
+            request.dataOnly()
         );
 
         ExecutionContext ctx = ExecutionContext.create(principalId);
@@ -315,7 +317,7 @@ public class SubscriptionResource {
 
         UpdateSubscriptionCommand command = new UpdateSubscriptionCommand(
             id, null, null, null, null, null, null,
-            SubscriptionStatus.PAUSED, null, null, null, null, null, null
+            SubscriptionStatus.PAUSED, null, null, null, null, null, null, null
         );
 
         ExecutionContext ctx = ExecutionContext.create(principalId);
@@ -357,7 +359,7 @@ public class SubscriptionResource {
 
         UpdateSubscriptionCommand command = new UpdateSubscriptionCommand(
             id, null, null, null, null, null, null,
-            SubscriptionStatus.ACTIVE, null, null, null, null, null, null
+            SubscriptionStatus.ACTIVE, null, null, null, null, null, null, null
         );
 
         ExecutionContext ctx = ExecutionContext.create(principalId);
@@ -403,6 +405,7 @@ public class SubscriptionResource {
             subscription.sequence(),
             subscription.mode(),
             subscription.timeoutSeconds(),
+            subscription.dataOnly(),
             subscription.createdAt(),
             subscription.updatedAt()
         );
@@ -430,6 +433,7 @@ public class SubscriptionResource {
         int sequence,
         DispatchMode mode,
         int timeoutSeconds,
+        boolean dataOnly,
         Instant createdAt,
         Instant updatedAt
     ) {}
@@ -480,7 +484,9 @@ public class SubscriptionResource {
         DispatchMode mode,
 
         @Min(value = 1, message = "Timeout must be at least 1 second")
-        Integer timeoutSeconds
+        Integer timeoutSeconds,
+
+        Boolean dataOnly
     ) {}
 
     public record UpdateSubscriptionRequest(
@@ -513,7 +519,9 @@ public class SubscriptionResource {
         DispatchMode mode,
 
         @Min(value = 1, message = "Timeout must be at least 1 second")
-        Integer timeoutSeconds
+        Integer timeoutSeconds,
+
+        Boolean dataOnly
     ) {}
 
     public record StatusResponse(

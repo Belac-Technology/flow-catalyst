@@ -10,11 +10,14 @@ import org.junit.jupiter.api.Test;
 import tech.flowcatalyst.platform.application.Application;
 import tech.flowcatalyst.platform.application.ApplicationRepository;
 import tech.flowcatalyst.platform.application.ApplicationService;
+import tech.flowcatalyst.platform.application.operations.EnableApplicationForClientCommand;
 import tech.flowcatalyst.platform.authentication.JwtKeyService;
+import tech.flowcatalyst.platform.common.ExecutionContext;
 import tech.flowcatalyst.platform.principal.Principal;
 import tech.flowcatalyst.platform.principal.UserService;
 import tech.flowcatalyst.platform.client.Client;
 import tech.flowcatalyst.platform.client.ClientService;
+import tech.flowcatalyst.platform.shared.TsidGenerator;
 
 import java.util.List;
 import java.util.Set;
@@ -305,8 +308,20 @@ class ApplicationAdminResourceTest {
     void getClientConfigs_shouldReturnConfigs() {
         Application app = createTestApplication("listconfigs" + System.currentTimeMillis(), "List Configs App");
 
-        // Create a config first
-        applicationService.configureForClient(app.id, testClient.id, true, "https://client.test.com", null);
+        // Create a config first using the admin API endpoint
+        given()
+            .header("Authorization", "Bearer " + adminToken)
+            .contentType(ContentType.JSON)
+            .body("""
+                {
+                    "enabled": true,
+                    "baseUrlOverride": "https://client.test.com"
+                }
+                """)
+        .when()
+            .put("/api/admin/platform/applications/" + app.id + "/clients/" + testClient.id)
+        .then()
+            .statusCode(200);
 
         given()
             .header("Authorization", "Bearer " + adminToken)
@@ -339,8 +354,14 @@ class ApplicationAdminResourceTest {
     void disableForClient_shouldDisable() {
         Application app = createTestApplication("disabletest" + System.currentTimeMillis(), "Disable Test App");
 
-        // Enable first
-        applicationService.enableForClient(app.id, testClient.id);
+        // Enable first using the admin API endpoint
+        given()
+            .header("Authorization", "Bearer " + adminToken)
+            .contentType(ContentType.JSON)
+        .when()
+            .post("/api/admin/platform/applications/" + app.id + "/clients/" + testClient.id + "/enable")
+        .then()
+            .statusCode(200);
 
         given()
             .header("Authorization", "Bearer " + adminToken)
@@ -355,12 +376,23 @@ class ApplicationAdminResourceTest {
     // ==================== Helpers ====================
 
     private Application createTestApplication(String code, String name) {
-        return applicationService.createApplication(code, name, "Test description", "https://test.example.com");
+        return QuarkusTransaction.requiringNew().call(() -> {
+            Application app = new Application();
+            app.id = TsidGenerator.generate();
+            app.code = code;
+            app.name = name;
+            app.description = "Test description";
+            app.defaultBaseUrl = "https://test.example.com";
+            app.active = true;
+            applicationRepo.persist(app);
+            return app;
+        });
     }
 
     private Application createDeactivatedTestApplication() {
         return QuarkusTransaction.requiringNew().call(() -> {
             Application app = new Application();
+            app.id = TsidGenerator.generate();
             app.code = "deactivated" + System.currentTimeMillis();
             app.name = "Deactivated Test App";
             app.active = false;

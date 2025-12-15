@@ -93,6 +93,7 @@ public class UpdateSubscriptionUseCase {
         int newSequence = command.sequence() != null ? command.sequence() : existing.sequence();
         DispatchMode newMode = command.mode() != null ? command.mode() : existing.mode();
         int newTimeoutSeconds = command.timeoutSeconds() != null ? command.timeoutSeconds() : existing.timeoutSeconds();
+        boolean newDataOnly = command.dataOnly() != null ? command.dataOnly() : existing.dataOnly();
 
         // Create updated subscription
         Subscription updated = new Subscription(
@@ -115,6 +116,7 @@ public class UpdateSubscriptionUseCase {
             newSequence,
             newMode,
             newTimeoutSeconds,
+            newDataOnly,
             existing.createdAt(),
             Instant.now()
         );
@@ -140,6 +142,7 @@ public class UpdateSubscriptionUseCase {
             .sequence(updated.sequence())
             .mode(updated.mode())
             .timeoutSeconds(updated.timeoutSeconds())
+            .dataOnly(updated.dataOnly())
             .build();
 
         // Commit atomically

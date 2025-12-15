@@ -4,22 +4,54 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import tech.flowcatalyst.dispatch.DispatchMode;
+import tech.flowcatalyst.dispatchjob.model.DispatchKind;
 import tech.flowcatalyst.dispatchjob.model.DispatchProtocol;
 
 import java.time.Instant;
 import java.util.Map;
 
+/**
+ * Request to create a new dispatch job.
+ *
+ * <h2>Classification Fields</h2>
+ * <p>The {@code kind} and {@code code} fields work together:</p>
+ * <ul>
+ *   <li>{@code kind = EVENT}: The {@code code} is an event type (e.g., order.created)</li>
+ *   <li>{@code kind = TASK}: The {@code code} is a task identifier (e.g., send-welcome-email)</li>
+ * </ul>
+ *
+ * <h2>Tracing Fields</h2>
+ * <ul>
+ *   <li>{@code eventId}: Source event ID (required for EVENT kind, optional for TASK)</li>
+ *   <li>{@code correlationId}: Distributed tracing correlation ID</li>
+ *   <li>{@code subject}: CloudEvents-style subject/aggregate reference</li>
+ * </ul>
+ */
 public record CreateDispatchJobRequest(
     @JsonProperty("source")
     @NotBlank(message = "source is required")
     String source,
 
-    @JsonProperty("type")
-    @NotBlank(message = "type is required")
-    String type,
+    /** The kind of dispatch job (EVENT or TASK) */
+    @JsonProperty("kind")
+    DispatchKind kind,
 
-    @JsonProperty("groupId")
-    String groupId,
+    /** The event type or task code (depends on kind) */
+    @JsonProperty("code")
+    @NotBlank(message = "code is required")
+    String code,
+
+    /** CloudEvents-style subject/aggregate reference */
+    @JsonProperty("subject")
+    String subject,
+
+    /** Source event ID (required for EVENT kind) */
+    @JsonProperty("eventId")
+    String eventId,
+
+    /** Correlation ID for distributed tracing */
+    @JsonProperty("correlationId")
+    String correlationId,
 
     @JsonProperty("metadata")
     Map<String, String> metadata,
@@ -40,6 +72,10 @@ public record CreateDispatchJobRequest(
 
     @JsonProperty("payloadContentType")
     String payloadContentType,
+
+    /** If true, send raw payload only; if false, wrap in JSON envelope */
+    @JsonProperty("dataOnly")
+    Boolean dataOnly,
 
     @JsonProperty("credentialsId")
     @NotNull(message = "credentialsId is required")
