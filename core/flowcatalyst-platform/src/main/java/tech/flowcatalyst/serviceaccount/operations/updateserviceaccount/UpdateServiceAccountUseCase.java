@@ -10,6 +10,7 @@ import tech.flowcatalyst.serviceaccount.entity.ServiceAccount;
 import tech.flowcatalyst.serviceaccount.repository.ServiceAccountRepository;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Map;
 
 /**
@@ -45,6 +46,11 @@ public class UpdateServiceAccountUseCase {
 
         if (command.description() != null) {
             sa.description = command.description();
+            changed = true;
+        }
+
+        if (command.clientIds() != null) {
+            sa.clientIds = new ArrayList<>(command.clientIds());
             changed = true;
         }
 

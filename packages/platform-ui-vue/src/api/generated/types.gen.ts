@@ -385,7 +385,7 @@ export type CreateServiceAccountRequest = {
   code: string;
   name: string;
   description?: string;
-  clientId?: string;
+  clientIds?: Array<string>;
   applicationId?: string;
 };
 
@@ -773,7 +773,7 @@ export type ServiceAccountDto = {
   code?: string;
   name?: string;
   description?: string;
-  clientId?: string;
+  clientIds?: Array<string>;
   applicationId?: string;
   active?: boolean;
   authType?: WebhookAuthType;
@@ -966,6 +966,7 @@ export type UpdateRoleRequest1 = {
 export type UpdateServiceAccountRequest = {
   name?: string;
   description?: string;
+  clientIds?: Array<string>;
 };
 
 export type UpdateSubscriptionRequest = {

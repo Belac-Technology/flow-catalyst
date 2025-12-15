@@ -5,6 +5,7 @@ import { useToast } from 'primevue/usetoast';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
 import Textarea from 'primevue/textarea';
+import MultiSelect from 'primevue/multiselect';
 import Tag from 'primevue/tag';
 import DataTable from 'primevue/datatable';
 import Column from 'primevue/column';
@@ -31,6 +32,14 @@ const saving = ref(false);
 const editMode = ref(false);
 const editName = ref('');
 const editDescription = ref('');
+const editClientIds = ref<string[]>([]);
+
+const clientOptions = computed(() => {
+  return clients.value.map(c => ({
+    label: c.name,
+    value: c.id,
+  }));
+});
 
 // Credentials dialogs
 const showRegenerateTokenDialog = ref(false);
@@ -77,6 +86,7 @@ async function loadServiceAccount() {
     serviceAccount.value = await serviceAccountsApi.get(serviceAccountId);
     editName.value = serviceAccount.value.name;
     editDescription.value = serviceAccount.value.description || '';
+    editClientIds.value = serviceAccount.value.clientIds || [];
   } catch (error) {
     toast.add({
       severity: 'error',
@@ -119,12 +129,14 @@ async function loadRoleAssignments() {
 function startEdit() {
   editName.value = serviceAccount.value?.name || '';
   editDescription.value = serviceAccount.value?.description || '';
+  editClientIds.value = serviceAccount.value?.clientIds || [];
   editMode.value = true;
 }
 
 function cancelEdit() {
   editName.value = serviceAccount.value?.name || '';
   editDescription.value = serviceAccount.value?.description || '';
+  editClientIds.value = serviceAccount.value?.clientIds || [];
   editMode.value = false;
 }
 
@@ -143,10 +155,12 @@ async function saveServiceAccount() {
   try {
     await serviceAccountsApi.update(serviceAccountId, {
       name: editName.value,
-      description: editDescription.value || undefined
+      description: editDescription.value || undefined,
+      clientIds: editClientIds.value
     });
     serviceAccount.value!.name = editName.value;
     serviceAccount.value!.description = editDescription.value;
+    serviceAccount.value!.clientIds = editClientIds.value;
     editMode.value = false;
     toast.add({
       severity: 'success',
@@ -292,10 +306,14 @@ function getRoleDisplay(roleName: string) {
   };
 }
 
-function getClientName(clientId: string | null): string {
-  if (!clientId) return '—';
+function getClientName(clientId: string): string {
   const client = clients.value.find(c => c.id === clientId);
   return client?.name || clientId;
+}
+
+function getClientNames(clientIds: string[]): string {
+  if (!clientIds || clientIds.length === 0) return 'All clients (no restriction)';
+  return clientIds.map(id => getClientName(id)).join(', ');
 }
 
 function formatDate(dateStr: string | null | undefined) {
@@ -371,9 +389,20 @@ function goBack() {
             <span v-else>{{ serviceAccount.description || '—' }}</span>
           </div>
 
-          <div class="info-item">
-            <label>Client</label>
-            <span>{{ getClientName(serviceAccount.clientId) }}</span>
+          <div class="info-item span-2">
+            <label>Client Access</label>
+            <MultiSelect
+              v-if="editMode"
+              v-model="editClientIds"
+              :options="clientOptions"
+              optionLabel="label"
+              optionValue="value"
+              placeholder="All clients (no restriction)"
+              display="chip"
+              filter
+              class="w-full"
+            />
+            <span v-else>{{ getClientNames(serviceAccount.clientIds) }}</span>
           </div>
 
           <div class="info-item">

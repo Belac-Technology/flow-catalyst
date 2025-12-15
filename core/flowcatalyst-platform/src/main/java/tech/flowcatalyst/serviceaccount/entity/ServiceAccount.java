@@ -50,11 +50,11 @@ public class ServiceAccount extends PanacheMongoEntityBase {
     public String description;
 
     /**
-     * Optional client ID for multi-tenant scoping.
-     * When set, this service account can only be used for operations
-     * within that client's scope.
+     * List of client IDs this service account has access to.
+     * When empty, the service account has no client restrictions.
+     * When populated, the service account can only operate within these clients' scopes.
      */
-    public String clientId;
+    public List<String> clientIds = new ArrayList<>();
 
     /**
      * Optional application ID if this service account was created for an application.

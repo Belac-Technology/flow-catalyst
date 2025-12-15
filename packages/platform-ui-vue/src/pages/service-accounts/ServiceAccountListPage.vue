@@ -113,10 +113,16 @@ function editServiceAccount(sa: ServiceAccount) {
   router.push(`/identity/service-accounts/${sa.id}?edit=true`);
 }
 
-function getClientName(clientId: string | null): string {
-  if (!clientId) return '—';
+function getClientName(clientId: string): string {
   const client = clients.value.find(c => c.id === clientId);
   return client?.name || clientId;
+}
+
+function getClientNames(clientIds: string[]): string {
+  if (!clientIds || clientIds.length === 0) return 'All';
+  if (clientIds.length === 1) return getClientName(clientIds[0]);
+  if (clientIds.length <= 2) return clientIds.map(id => getClientName(id)).join(', ');
+  return `${getClientName(clientIds[0])} +${clientIds.length - 1} more`;
 }
 
 function formatDate(dateStr: string | undefined | null) {
@@ -227,9 +233,9 @@ function formatDate(dateStr: string | undefined | null) {
           </template>
         </Column>
 
-        <Column header="Client" style="width: 15%">
+        <Column header="Clients" style="width: 15%">
           <template #body="{ data }">
-            <span class="client-name-text">{{ getClientName(data.clientId) }}</span>
+            <span class="client-name-text">{{ getClientNames(data.clientIds) }}</span>
           </template>
         </Column>
 

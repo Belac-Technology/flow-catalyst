@@ -178,7 +178,7 @@ public class ServiceAccountAdminResource {
             request.code(),
             request.name(),
             request.description(),
-            request.clientId(),
+            request.clientIds(),
             request.applicationId()
         );
 
@@ -226,7 +226,8 @@ public class ServiceAccountAdminResource {
         UpdateServiceAccountCommand command = new UpdateServiceAccountCommand(
             id,
             request.name(),
-            request.description()
+            request.description(),
+            request.clientIds()
         );
 
         Result<ServiceAccountUpdated> result = operations.update(command, context);
@@ -425,7 +426,7 @@ public class ServiceAccountAdminResource {
             sa.code,
             sa.name,
             sa.description,
-            sa.clientId,
+            sa.clientIds != null ? sa.clientIds : List.of(),
             sa.applicationId,
             sa.active,
             sa.webhookCredentials != null ? sa.webhookCredentials.authType : null,
@@ -462,13 +463,14 @@ public class ServiceAccountAdminResource {
         @NotBlank @Size(max = 50) String code,
         @NotBlank @Size(max = 100) String name,
         @Size(max = 500) String description,
-        String clientId,
+        List<String> clientIds,
         String applicationId
     ) {}
 
     public record UpdateServiceAccountRequest(
         @Size(max = 100) String name,
-        @Size(max = 500) String description
+        @Size(max = 500) String description,
+        List<String> clientIds
     ) {}
 
     public record UpdateAuthTokenRequest(
@@ -484,7 +486,7 @@ public class ServiceAccountAdminResource {
         String code,
         String name,
         String description,
-        String clientId,
+        List<String> clientIds,
         String applicationId,
         boolean active,
         WebhookAuthType authType,

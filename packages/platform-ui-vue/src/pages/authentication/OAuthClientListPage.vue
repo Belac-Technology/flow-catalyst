@@ -207,31 +207,33 @@ function formatDate(dateString: string) {
             {{ formatDate(data.createdAt) }}
           </template>
         </Column>
-        <Column header="Actions" style="width: 150px">
+        <Column header="Actions" style="width: 120px">
           <template #body="{ data }">
-            <Button
-              icon="pi pi-eye"
-              text
-              rounded
-              v-tooltip="'View Details'"
-              @click="router.push(`/authentication/oauth-clients/${data.id}`)"
-            />
-            <Button
-              :icon="data.active ? 'pi pi-ban' : 'pi pi-check-circle'"
-              text
-              rounded
-              :severity="data.active ? 'warn' : 'success'"
-              :v-tooltip="data.active ? 'Deactivate' : 'Activate'"
-              @click="toggleActive(data)"
-            />
-            <Button
-              icon="pi pi-trash"
-              text
-              rounded
-              severity="danger"
-              v-tooltip="'Delete'"
-              @click="confirmDelete(data)"
-            />
+            <div class="action-buttons">
+              <Button
+                icon="pi pi-eye"
+                text
+                rounded
+                v-tooltip="'View Details'"
+                @click="router.push(`/authentication/oauth-clients/${data.id}`)"
+              />
+              <Button
+                :icon="data.active ? 'pi pi-ban' : 'pi pi-check-circle'"
+                text
+                rounded
+                :severity="data.active ? 'warn' : 'success'"
+                v-tooltip="data.active ? 'Deactivate' : 'Activate'"
+                @click="toggleActive(data)"
+              />
+              <Button
+                icon="pi pi-trash"
+                text
+                rounded
+                severity="danger"
+                v-tooltip="'Delete'"
+                @click="confirmDelete(data)"
+              />
+            </div>
           </template>
         </Column>
       </DataTable>
@@ -346,5 +348,11 @@ function formatDate(dateString: string) {
 
 .warning-message {
   margin: 0;
+}
+
+.action-buttons {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 0;
 }
 </style>

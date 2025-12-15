@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useToast } from 'primevue/usetoast';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
 import Textarea from 'primevue/textarea';
+import MultiSelect from 'primevue/multiselect';
 import Dialog from 'primevue/dialog';
 import { serviceAccountsApi, type CreateServiceAccountResponse } from '@/api/service-accounts';
+import { clientsApi, type Client } from '@/api/clients';
 
 const router = useRouter();
 const toast = useToast();
@@ -14,6 +16,8 @@ const toast = useToast();
 const code = ref('');
 const name = ref('');
 const description = ref('');
+const selectedClientIds = ref<string[]>([]);
+const clients = ref<Client[]>([]);
 const saving = ref(false);
 
 // Created credentials dialog
@@ -24,6 +28,26 @@ const createdServiceAccountId = ref<string | null>(null);
 const isValid = computed(() => {
   return code.value.trim() && name.value.trim();
 });
+
+const clientOptions = computed(() => {
+  return clients.value.map(c => ({
+    label: c.name,
+    value: c.id,
+  }));
+});
+
+onMounted(async () => {
+  await loadClients();
+});
+
+async function loadClients() {
+  try {
+    const response = await clientsApi.list();
+    clients.value = response.clients;
+  } catch (error) {
+    console.error('Failed to fetch clients:', error);
+  }
+}
 
 function generateCode() {
   // Generate a code from the name (lowercase, replace spaces with dashes, remove special chars)
@@ -54,6 +78,7 @@ async function createServiceAccount() {
       code: code.value,
       name: name.value,
       description: description.value || undefined,
+      clientIds: selectedClientIds.value.length > 0 ? selectedClientIds.value : undefined,
     });
 
     // Store credentials and show dialog
@@ -163,6 +188,24 @@ function goBack() {
             rows="3"
             class="w-full"
           />
+        </div>
+
+        <div class="form-group">
+          <label for="clients">Client Access</label>
+          <MultiSelect
+            id="clients"
+            v-model="selectedClientIds"
+            :options="clientOptions"
+            optionLabel="label"
+            optionValue="value"
+            placeholder="All clients (no restriction)"
+            display="chip"
+            filter
+            class="w-full"
+          />
+          <small class="help-text">
+            Select which clients this service account can access. Leave empty for no restrictions.
+          </small>
         </div>
       </div>
 

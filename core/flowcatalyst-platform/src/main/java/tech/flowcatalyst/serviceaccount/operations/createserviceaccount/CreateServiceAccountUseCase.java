@@ -16,6 +16,7 @@ import tech.flowcatalyst.serviceaccount.repository.ServiceAccountRepository;
 
 import java.security.SecureRandom;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.Map;
 
@@ -100,7 +101,7 @@ public class CreateServiceAccountUseCase {
         sa.code = command.code();
         sa.name = command.name();
         sa.description = command.description();
-        sa.clientId = command.clientId();
+        sa.clientIds = command.clientIds() != null ? new ArrayList<>(command.clientIds()) : new ArrayList<>();
         sa.applicationId = command.applicationId();
         sa.active = true;
         sa.createdAt = Instant.now();
@@ -121,7 +122,7 @@ public class CreateServiceAccountUseCase {
             .serviceAccountId(sa.id)
             .code(sa.code)
             .name(sa.name)
-            .clientId(sa.clientId)
+            .clientIds(sa.clientIds)
             .applicationId(sa.applicationId)
             .build();
 

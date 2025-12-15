@@ -7,7 +7,7 @@ export interface ServiceAccount {
   code: string;
   name: string;
   description: string | null;
-  clientId: string | null;
+  clientIds: string[];
   applicationId: string | null;
   active: boolean;
   authType: WebhookAuthType | null;
@@ -26,7 +26,7 @@ export interface CreateServiceAccountRequest {
   code: string;
   name: string;
   description?: string;
-  clientId?: string;
+  clientIds?: string[];
   applicationId?: string;
 }
 
@@ -39,6 +39,7 @@ export interface CreateServiceAccountResponse {
 export interface UpdateServiceAccountRequest {
   name?: string;
   description?: string;
+  clientIds?: string[];
 }
 
 export interface RegenerateTokenResponse {

@@ -10,6 +10,7 @@ import tech.flowcatalyst.platform.common.ExecutionContext;
 import tech.flowcatalyst.platform.shared.TsidGenerator;
 
 import java.time.Instant;
+import java.util.List;
 
 /**
  * Event emitted when a new service account is created.
@@ -26,7 +27,7 @@ public record ServiceAccountCreated(
     String serviceAccountId,
     String code,
     String name,
-    String clientId,
+    List<String> clientIds,
     String applicationId
 ) implements DomainEvent {
 
@@ -73,7 +74,7 @@ public record ServiceAccountCreated(
     @JsonIgnore
     public String toDataJson() {
         try {
-            return MAPPER.writeValueAsString(new Data(serviceAccountId, code, name, clientId, applicationId));
+            return MAPPER.writeValueAsString(new Data(serviceAccountId, code, name, clientIds, applicationId));
         } catch (JsonProcessingException e) {
             throw new RuntimeException("Failed to serialize event data", e);
         }
@@ -83,7 +84,7 @@ public record ServiceAccountCreated(
         String serviceAccountId,
         String code,
         String name,
-        String clientId,
+        List<String> clientIds,
         String applicationId
     ) {}
 
@@ -101,7 +102,7 @@ public record ServiceAccountCreated(
         private String serviceAccountId;
         private String code;
         private String name;
-        private String clientId;
+        private List<String> clientIds;
         private String applicationId;
 
         public Builder from(ExecutionContext ctx) {
@@ -117,12 +118,12 @@ public record ServiceAccountCreated(
         public Builder serviceAccountId(String serviceAccountId) { this.serviceAccountId = serviceAccountId; return this; }
         public Builder code(String code) { this.code = code; return this; }
         public Builder name(String name) { this.name = name; return this; }
-        public Builder clientId(String clientId) { this.clientId = clientId; return this; }
+        public Builder clientIds(List<String> clientIds) { this.clientIds = clientIds; return this; }
         public Builder applicationId(String applicationId) { this.applicationId = applicationId; return this; }
 
         public ServiceAccountCreated build() {
             return new ServiceAccountCreated(eventId, time, executionId, correlationId, causationId, principalId,
-                serviceAccountId, code, name, clientId, applicationId);
+                serviceAccountId, code, name, clientIds, applicationId);
         }
     }
 }

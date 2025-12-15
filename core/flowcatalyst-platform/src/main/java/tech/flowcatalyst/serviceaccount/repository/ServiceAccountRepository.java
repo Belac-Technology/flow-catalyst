@@ -28,10 +28,13 @@ public class ServiceAccountRepository implements PanacheMongoRepositoryBase<Serv
     }
 
     /**
-     * Find all service accounts for a specific client.
+     * Find all service accounts that have access to a specific client.
+     * Checks if clientId is in the clientIds array, or if clientIds is empty (unrestricted).
      */
     public List<ServiceAccount> findByClientId(String clientId) {
-        return find("clientId", clientId).list();
+        // Find service accounts where clientIds contains the given clientId
+        // or where clientIds is empty (unrestricted access)
+        return find("{ $or: [{ clientIds: ?1 }, { clientIds: { $size: 0 } }, { clientIds: null }] }", clientId).list();
     }
 
     /**
@@ -48,8 +51,9 @@ public class ServiceAccountRepository implements PanacheMongoRepositoryBase<Serv
         StringBuilder query = new StringBuilder();
         java.util.Map<String, Object> params = new java.util.HashMap<>();
 
+        // Filter by client: match if clientIds contains the value, or clientIds is empty/null
         if (filter.clientId() != null) {
-            query.append("clientId = :clientId");
+            query.append("{ $or: [{ clientIds: :clientId }, { clientIds: { $size: 0 } }, { clientIds: null }] }");
             params.put("clientId", filter.clientId());
         }
 
@@ -79,8 +83,9 @@ public class ServiceAccountRepository implements PanacheMongoRepositoryBase<Serv
         StringBuilder query = new StringBuilder();
         java.util.Map<String, Object> params = new java.util.HashMap<>();
 
+        // Filter by client: match if clientIds contains the value, or clientIds is empty/null
         if (filter.clientId() != null) {
-            query.append("clientId = :clientId");
+            query.append("{ $or: [{ clientIds: :clientId }, { clientIds: { $size: 0 } }, { clientIds: null }] }");
             params.put("clientId", filter.clientId());
         }
 
