@@ -57,6 +57,9 @@ public record CreateDispatchJobRequest(
     @JsonProperty("dispatchPoolId")
     String dispatchPoolId,
 
+    @JsonProperty("messageGroup")
+    String messageGroup,
+
     @JsonProperty("sequence")
     Integer sequence,
 

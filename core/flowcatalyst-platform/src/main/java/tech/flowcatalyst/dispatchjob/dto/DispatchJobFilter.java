@@ -12,6 +12,7 @@ public record DispatchJobFilter(
     String clientId,
     String subscriptionId,
     String dispatchPoolId,
+    String messageGroup,
     Instant createdAfter,
     Instant createdBefore,
     Integer page,

@@ -69,6 +69,9 @@ public class DispatchJob extends PanacheMongoEntityBase {
     /** Dispatch pool for rate limiting */
     public String dispatchPoolId;
 
+    /** Message group for FIFO ordering (e.g., subscriptionName:eventMessageGroup) */
+    public String messageGroup;
+
     /** Sequence number for ordering within message group (default 99) */
     public int sequence = 99;
 

@@ -125,6 +125,7 @@ public class DispatchJobResource {
         @QueryParam("clientId") String clientId,
         @QueryParam("subscriptionId") String subscriptionId,
         @QueryParam("dispatchPoolId") String dispatchPoolId,
+        @QueryParam("messageGroup") String messageGroup,
         @QueryParam("createdAfter") Instant createdAfter,
         @QueryParam("createdBefore") Instant createdBefore,
         @QueryParam("page") @DefaultValue("0") Integer page,
@@ -134,7 +135,7 @@ public class DispatchJobResource {
         authorizationService.requirePermission(principalId, PlatformMessagingPermissions.DISPATCH_JOB_VIEW);
 
         DispatchJobFilter filter = new DispatchJobFilter(
-            status, source, type, groupId, clientId, subscriptionId, dispatchPoolId,
+            status, source, type, groupId, clientId, subscriptionId, dispatchPoolId, messageGroup,
             createdAfter, createdBefore, page, size
         );
 

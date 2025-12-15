@@ -2,6 +2,7 @@ package tech.flowcatalyst.dispatchjob.repository;
 
 import io.quarkus.mongodb.panache.PanacheMongoRepositoryBase;
 import io.quarkus.panache.common.Parameters;
+import io.quarkus.panache.common.Sort;
 import jakarta.enterprise.context.ApplicationScoped;
 import tech.flowcatalyst.dispatch.DispatchMode;
 import tech.flowcatalyst.dispatchjob.dto.CreateDispatchJobRequest;
@@ -14,6 +15,7 @@ import tech.flowcatalyst.platform.shared.TsidGenerator;
 
 import java.time.Instant;
 import java.util.*;
+import java.util.HashSet;
 
 /**
  * MongoDB repository for DispatchJob using Panache MongoDB.
@@ -48,6 +50,7 @@ public class DispatchJobRepository implements PanacheMongoRepositoryBase<Dispatc
         job.subscriptionId = request.subscriptionId();
         job.mode = request.mode() != null ? request.mode() : DispatchMode.IMMEDIATE;
         job.dispatchPoolId = request.dispatchPoolId();
+        job.messageGroup = request.messageGroup();
         job.sequence = request.sequence() != null ? request.sequence() : 99;
         job.timeoutSeconds = request.timeoutSeconds() != null ? request.timeoutSeconds() : 30;
         job.schemaId = request.schemaId();
@@ -156,6 +159,10 @@ public class DispatchJobRepository implements PanacheMongoRepositoryBase<Dispatc
             conditions.add("dispatchPoolId = :dispatchPoolId");
             params.put("dispatchPoolId", filter.dispatchPoolId());
         }
+        if (filter.messageGroup() != null) {
+            conditions.add("messageGroup = :messageGroup");
+            params.put("messageGroup", filter.messageGroup());
+        }
         if (filter.createdAfter() != null) {
             conditions.add("createdAt >= :createdAfter");
             params.put("createdAfter", filter.createdAfter());
@@ -212,6 +219,10 @@ public class DispatchJobRepository implements PanacheMongoRepositoryBase<Dispatc
             conditions.add("dispatchPoolId = :dispatchPoolId");
             params.put("dispatchPoolId", filter.dispatchPoolId());
         }
+        if (filter.messageGroup() != null) {
+            conditions.add("messageGroup = :messageGroup");
+            params.put("messageGroup", filter.messageGroup());
+        }
         if (filter.createdAfter() != null) {
             conditions.add("createdAt >= :createdAfter");
             params.put("createdAfter", filter.createdAfter());
@@ -259,5 +270,59 @@ public class DispatchJobRepository implements PanacheMongoRepositoryBase<Dispatc
 
         org.bson.Document query = new org.bson.Document("$and", conditions);
         return mongoCollection().find(query).into(new ArrayList<>());
+    }
+
+    // =========================================================================
+    // Scheduler Query Methods
+    // =========================================================================
+
+    /**
+     * Find PENDING jobs, ordered by messageGroup, sequence, and createdAt.
+     * Used by the dispatch scheduler to poll for jobs to process.
+     *
+     * @param limit Maximum number of jobs to return
+     * @return List of pending jobs
+     */
+    public List<DispatchJob> findPendingJobs(int limit) {
+        return find("status", Sort.by("messageGroup").and("sequence").and("createdAt"), DispatchStatus.PENDING)
+            .page(0, limit)
+            .list();
+    }
+
+    /**
+     * Count jobs in a specific status for a message group.
+     * Used to check for ERROR jobs when enforcing BLOCK_ON_ERROR mode.
+     *
+     * @param messageGroup The message group to check
+     * @param status The status to count
+     * @return Count of jobs matching the criteria
+     */
+    public long countByMessageGroupAndStatus(String messageGroup, DispatchStatus status) {
+        return count("messageGroup = ?1 and status = ?2", messageGroup, status);
+    }
+
+    /**
+     * Find all distinct message groups that have jobs in ERROR status.
+     * Used to efficiently check multiple groups at once.
+     *
+     * @param messageGroups Set of message groups to check
+     * @return Set of groups that have ERROR jobs
+     */
+    public Set<String> findGroupsWithErrors(Set<String> messageGroups) {
+        if (messageGroups == null || messageGroups.isEmpty()) {
+            return Set.of();
+        }
+
+        // Query for ERROR jobs in any of the specified groups
+        org.bson.Document query = new org.bson.Document()
+            .append("status", DispatchStatus.ERROR.name())
+            .append("messageGroup", new org.bson.Document("$in", new ArrayList<>(messageGroups)));
+
+        // Use aggregation to get distinct message groups
+        List<String> errorGroups = mongoCollection()
+            .distinct("messageGroup", query, String.class)
+            .into(new ArrayList<>());
+
+        return new HashSet<>(errorGroups);
     }
 }

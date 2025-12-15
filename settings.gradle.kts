@@ -19,6 +19,12 @@ rootProject.name = "flowcatalyst"
 // Shared hot standby module (Redis-based leader election)
 include("core:flowcatalyst-standby")
 
+// Shared queue client abstraction (SQS, ActiveMQ, Embedded)
+include("core:flowcatalyst-queue-client")
+
+// Dispatch job scheduler (polls PENDING jobs, respects DispatchMode, queues to message router)
+include("core:flowcatalyst-dispatch-scheduler")
+
 // The main platform service (auth, admin, dispatch, mediation, event types)
 include("core:flowcatalyst-platform")
 

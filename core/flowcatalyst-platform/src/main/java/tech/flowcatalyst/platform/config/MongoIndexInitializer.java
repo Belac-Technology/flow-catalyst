@@ -162,6 +162,11 @@ public class MongoIndexInitializer {
         jobs.createIndex(Indexes.ascending("clientId"), opt().sparse(true));
         jobs.createIndex(Indexes.ascending("subscriptionId"), opt().sparse(true));
         jobs.createIndex(Indexes.ascending("dispatchPoolId"), opt().sparse(true));
+        jobs.createIndex(Indexes.ascending("messageGroup"), opt().sparse(true));
+        // Compound index for scheduler: find PENDING jobs ordered by messageGroup
+        jobs.createIndex(
+            Indexes.compoundIndex(Indexes.ascending("messageGroup"), Indexes.ascending("status")),
+            opt());
         // Index for metadata queries
         jobs.createIndex(Indexes.ascending("metadata.key", "metadata.value"), opt());
         // TTL index - auto-delete dispatch jobs after 30 days based on 'createdAt' field

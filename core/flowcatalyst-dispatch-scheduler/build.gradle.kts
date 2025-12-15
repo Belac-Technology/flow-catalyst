@@ -1,5 +1,5 @@
 plugins {
-    java
+    `java-library`
     id("io.quarkus")
 }
 
@@ -15,14 +15,22 @@ val quarkusPlatformVersion: String by project
 dependencies {
     implementation(enforcedPlatform("${quarkusPlatformGroupId}:${quarkusPlatformArtifactId}:${quarkusPlatformVersion}"))
 
-    // Core Quarkus (needed for startup/shutdown hooks)
-    implementation("io.quarkus:quarkus-arc")
-
-    // Include all modules for full-stack deployment
+    // Shared modules
+    implementation(project(":core:flowcatalyst-standby"))
+    implementation(project(":core:flowcatalyst-queue-client"))
     implementation(project(":core:flowcatalyst-platform"))
-    implementation(project(":core:flowcatalyst-message-router"))
-    implementation(project(":core:flowcatalyst-event-processor"))
-    implementation(project(":core:flowcatalyst-dispatch-scheduler"))
+
+    // Core Quarkus
+    implementation("io.quarkus:quarkus-arc")
+    implementation("io.quarkus:quarkus-scheduler")
+    implementation("io.quarkus:quarkus-mongodb-panache")
+
+    // JSON serialization
+    implementation("io.quarkus:quarkus-jackson")
+
+    // Testing
+    testImplementation("io.quarkus:quarkus-junit5")
+    testImplementation("io.quarkus:quarkus-junit5-mockito")
 }
 
 group = "tech.flowcatalyst"
@@ -36,4 +44,9 @@ java {
 tasks.withType<JavaCompile> {
     options.encoding = "UTF-8"
     options.compilerArgs.add("-parameters")
+}
+
+tasks.withType<Test> {
+    useJUnitPlatform()
+    systemProperty("java.util.logging.manager", "org.jboss.logmanager.LogManager")
 }
