@@ -8,7 +8,7 @@ import org.junit.jupiter.api.AfterEach;
 import tech.flowcatalyst.messagerouter.callback.MessageCallback;
 import tech.flowcatalyst.messagerouter.mediator.Mediator;
 import tech.flowcatalyst.messagerouter.metrics.PoolMetricsService;
-import tech.flowcatalyst.messagerouter.model.MediationResult;
+import tech.flowcatalyst.messagerouter.model.MediationOutcome;
 import tech.flowcatalyst.messagerouter.model.MessagePointer;
 import tech.flowcatalyst.messagerouter.model.MediationType;
 import tech.flowcatalyst.messagerouter.pool.ProcessPoolImpl;
@@ -70,7 +70,7 @@ class RateLimiterIntegrationTest {
     void shouldAllowMessagesWithinRateLimit() {
         // Given: Pool with rate limit of 60 per minute
         createPoolWithRateLimit(60);
-        when(mockMediator.process(any())).thenReturn(MediationResult.SUCCESS);
+        when(mockMediator.process(any())).thenReturn(MediationOutcome.success());
 
         processPool.start();
 
@@ -93,7 +93,7 @@ class RateLimiterIntegrationTest {
     void shouldEnforceRateLimitAndNackExcessMessages() {
         // Given: Pool with rate limit of 5 per minute
         createPoolWithRateLimit(5);
-        when(mockMediator.process(any())).thenReturn(MediationResult.SUCCESS);
+        when(mockMediator.process(any())).thenReturn(MediationOutcome.success());
         AtomicInteger ackedCount = new AtomicInteger(0);
         AtomicInteger nackedCount = new AtomicInteger(0);
 
@@ -129,7 +129,7 @@ class RateLimiterIntegrationTest {
     void shouldHandleHighRateLimit() {
         // Given: Pool with high rate limit of 600 per minute
         createPoolWithRateLimit(600);
-        when(mockMediator.process(any())).thenReturn(MediationResult.SUCCESS);
+        when(mockMediator.process(any())).thenReturn(MediationOutcome.success());
 
         processPool.start();
 
@@ -152,7 +152,7 @@ class RateLimiterIntegrationTest {
     void shouldProcessMessagesWithoutRateLimitImmediately() {
         // Given: Pool with no rate limit (null)
         createPoolWithRateLimit(null);
-        when(mockMediator.process(any())).thenReturn(MediationResult.SUCCESS);
+        when(mockMediator.process(any())).thenReturn(MediationOutcome.success());
 
         processPool.start();
 

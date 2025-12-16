@@ -197,10 +197,15 @@ public class ActiveMqQueueConsumer extends AbstractQueueConsumer {
      * Uses INDIVIDUAL_ACKNOWLEDGE mode to prevent head-of-line blocking:
      * - ack(): Acknowledges only this specific message
      * - nack(): NO-OP (like SQS) - message redelivered after 30s delay (RedeliveryPolicy)
+     *
+     * Implements MessageVisibilityControl for delay support:
+     * - setVisibilityDelay(): Sets AMQ_SCHEDULED_DELAY property for custom redelivery delay
      */
-    private static class ActiveMqMessageCallback implements MessageCallback {
+    private static class ActiveMqMessageCallback implements MessageCallback,
+            tech.flowcatalyst.messagerouter.callback.MessageVisibilityControl {
         private final Message jmsMessage;
         private final Session session;
+        private int customDelayMs = 0; // Custom delay in milliseconds (0 means use default)
 
         ActiveMqMessageCallback(Message jmsMessage, Session session) {
             this.jmsMessage = jmsMessage;
@@ -220,14 +225,63 @@ public class ActiveMqQueueConsumer extends AbstractQueueConsumer {
 
         @Override
         public void nack(MessagePointer message) {
-            // NO-OP - Just like SQS
+            // NO-OP for basic nack
             // With INDIVIDUAL_ACKNOWLEDGE, simply NOT acknowledging the message
-            // is sufficient. The message will be redelivered after 30 seconds
-            // (configured via RedeliveryPolicy) when the session closes/times out.
+            // is sufficient. The message will be redelivered after the configured
+            // RedeliveryPolicy delay (default 30s) or custom delay if set.
             //
-            // No exponential backoff - constant 30 second delay between redeliveries.
-            // This does NOT affect other messages (no head-of-line blocking).
-            LOG.debugf("Nacked message [%s] - will be redelivered after 30s delay", message.id());
+            // Note: If setVisibilityDelay was called, the custom delay will be applied
+            // via AMQ_SCHEDULED_DELAY property on next redelivery.
+            if (customDelayMs > 0) {
+                LOG.debugf("Nacked message [%s] - will be redelivered after custom delay of %dms", message.id(), customDelayMs);
+            } else {
+                LOG.debugf("Nacked message [%s] - will be redelivered after 30s delay", message.id());
+            }
+        }
+
+        @Override
+        public void setFastFailVisibility(MessagePointer message) {
+            // For ActiveMQ, we can't dynamically change visibility like SQS
+            // The message will use the RedeliveryPolicy delay
+            // Set a short delay for fast retry
+            customDelayMs = 10_000; // 10 seconds
+            try {
+                jmsMessage.setLongProperty("AMQ_SCHEDULED_DELAY", customDelayMs);
+                LOG.debugf("Set fast-fail delay (10s) for message [%s]", message.id());
+            } catch (Exception e) {
+                LOG.warnf(e, "Failed to set AMQ_SCHEDULED_DELAY for message [%s]", message.id());
+            }
+        }
+
+        @Override
+        public void resetVisibilityToDefault(MessagePointer message) {
+            // Reset to default RedeliveryPolicy delay (30 seconds)
+            customDelayMs = 30_000;
+            try {
+                jmsMessage.setLongProperty("AMQ_SCHEDULED_DELAY", customDelayMs);
+                LOG.debugf("Reset delay to 30s for message [%s]", message.id());
+            } catch (Exception e) {
+                LOG.warnf(e, "Failed to reset AMQ_SCHEDULED_DELAY for message [%s]", message.id());
+            }
+        }
+
+        @Override
+        public void setVisibilityDelay(MessagePointer message, int delaySeconds) {
+            // Set custom redelivery delay using ActiveMQ's scheduled delay feature
+            customDelayMs = delaySeconds * 1000;
+            try {
+                jmsMessage.setLongProperty("AMQ_SCHEDULED_DELAY", customDelayMs);
+                LOG.infof("Set custom delay to %ds for message [%s]", delaySeconds, message.id());
+            } catch (Exception e) {
+                LOG.warnf(e, "Failed to set AMQ_SCHEDULED_DELAY for message [%s]", message.id());
+            }
+        }
+
+        @Override
+        public void extendVisibility(MessagePointer message, int visibilityTimeoutSeconds) {
+            // For ActiveMQ, we can't extend visibility like SQS
+            // This is a no-op, but log for debugging
+            LOG.debugf("extendVisibility called for ActiveMQ message [%s] - not supported, using scheduled delay instead", message.id());
         }
     }
 }

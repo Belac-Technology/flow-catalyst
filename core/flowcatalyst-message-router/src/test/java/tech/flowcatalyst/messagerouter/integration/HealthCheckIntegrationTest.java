@@ -94,8 +94,8 @@ class HealthCheckIntegrationTest {
         String poolCode = "TEST-TIMESTAMP-POOL";
         Mediator mockMediator = new Mediator() {
             @Override
-            public MediationResult process(MessagePointer message) {
-                return MediationResult.SUCCESS;
+            public tech.flowcatalyst.messagerouter.model.MediationOutcome process(MessagePointer message) {
+                return tech.flowcatalyst.messagerouter.model.MediationOutcome.success();
             }
 
             @Override
@@ -166,10 +166,11 @@ class HealthCheckIntegrationTest {
 
         Mediator alternatingMediator = new Mediator() {
             @Override
-            public MediationResult process(MessagePointer message) {
+            public tech.flowcatalyst.messagerouter.model.MediationOutcome process(MessagePointer message) {
                 boolean result = shouldSucceed[0];
                 shouldSucceed[0] = !shouldSucceed[0];
-                return result ? MediationResult.SUCCESS : MediationResult.ERROR_SERVER;
+                return result ? tech.flowcatalyst.messagerouter.model.MediationOutcome.success()
+                    : tech.flowcatalyst.messagerouter.model.MediationOutcome.errorProcess(null);
             }
 
             @Override
@@ -250,8 +251,8 @@ class HealthCheckIntegrationTest {
         String poolCode = "TEST-RECENT-ACTIVITY-POOL";
         Mediator mockMediator = new Mediator() {
             @Override
-            public MediationResult process(MessagePointer message) {
-                return MediationResult.SUCCESS;
+            public tech.flowcatalyst.messagerouter.model.MediationOutcome process(MessagePointer message) {
+                return tech.flowcatalyst.messagerouter.model.MediationOutcome.success();
             }
 
             @Override

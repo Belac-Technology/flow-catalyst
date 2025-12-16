@@ -1,21 +1,21 @@
 package tech.flowcatalyst.messagerouter.mediator;
 
-import tech.flowcatalyst.messagerouter.model.MediationResult;
+import tech.flowcatalyst.messagerouter.model.MediationOutcome;
 import tech.flowcatalyst.messagerouter.model.MediationType;
 import tech.flowcatalyst.messagerouter.model.MessagePointer;
 
 public interface Mediator {
 
     /**
-     * Processes a message pointer by mediating to the downstream system
+     * Processes a message pointer by mediating to the downstream system.
      *
      * @param message the message pointer to process
-     * @return the result of the mediation
+     * @return the outcome of the mediation, including result and optional delay for retries
      */
-    MediationResult process(MessagePointer message);
+    MediationOutcome process(MessagePointer message);
 
     /**
-     * Returns the mediation type this mediator handles
+     * Returns the mediation type this mediator handles.
      */
     MediationType getMediationType();
 }

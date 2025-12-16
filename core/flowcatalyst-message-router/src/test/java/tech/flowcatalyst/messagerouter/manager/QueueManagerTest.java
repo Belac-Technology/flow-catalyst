@@ -12,6 +12,7 @@ import tech.flowcatalyst.messagerouter.health.QueueValidationService;
 import tech.flowcatalyst.messagerouter.mediator.Mediator;
 import tech.flowcatalyst.messagerouter.metrics.PoolMetricsService;
 import tech.flowcatalyst.messagerouter.metrics.QueueMetricsService;
+import tech.flowcatalyst.messagerouter.model.MediationOutcome;
 import tech.flowcatalyst.messagerouter.model.MediationResult;
 import tech.flowcatalyst.messagerouter.model.MessagePointer;
 import tech.flowcatalyst.messagerouter.model.MediationType;
@@ -118,7 +119,7 @@ class QueueManagerTest {
             , null);
 
         MessageCallback mockCallback = mock(MessageCallback.class);
-        when(mockMediator.process(message)).thenReturn(MediationResult.SUCCESS);
+        when(mockMediator.process(message)).thenReturn(MediationOutcome.success());
 
         // When
         boolean routed = queueManager.routeMessage(message, mockCallback, "test-queue");
@@ -146,7 +147,7 @@ class QueueManagerTest {
         MessageCallback mockCallback1 = mock(MessageCallback.class);
         MessageCallback mockCallback2 = mock(MessageCallback.class);
 
-        when(mockMediator.process(message)).thenReturn(MediationResult.SUCCESS);
+        when(mockMediator.process(message)).thenReturn(MediationOutcome.success());
 
         // When
         boolean firstRoute = queueManager.routeMessage(message, mockCallback1, "test-queue");
@@ -221,7 +222,7 @@ class QueueManagerTest {
             , null);
 
         MessageCallback mockCallback = mock(MessageCallback.class);
-        when(mockMediator.process(any(MessagePointer.class))).thenReturn(MediationResult.SUCCESS);
+        when(mockMediator.process(any(MessagePointer.class))).thenReturn(MediationOutcome.success());
 
         // Route the message
         queueManager.routeMessage(message, mockCallback, "test-queue");
@@ -249,7 +250,7 @@ class QueueManagerTest {
             , null);
 
         MessageCallback mockCallback = mock(MessageCallback.class);
-        when(mockMediator.process(any(MessagePointer.class))).thenReturn(MediationResult.ERROR_SERVER);
+        when(mockMediator.process(any(MessagePointer.class))).thenReturn(tech.flowcatalyst.messagerouter.model.MediationOutcome.errorProcess(null));
 
         // Route the message
         queueManager.routeMessage(message, mockCallback, "test-queue");
@@ -307,7 +308,7 @@ class QueueManagerTest {
         MessageCallback mockCallback1 = mock(MessageCallback.class);
         MessageCallback mockCallback2 = mock(MessageCallback.class);
 
-        when(mockMediator.process(any())).thenReturn(MediationResult.SUCCESS);
+        when(mockMediator.process(any())).thenReturn(MediationOutcome.success());
 
         // When
         boolean routed1 = queueManager.routeMessage(message1, mockCallback1, "test-queue");

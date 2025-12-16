@@ -101,7 +101,7 @@ class BatchGroupFifoIntegrationTest {
         // Create mediator that records processing order
         Mediator trackingMediator = new Mediator() {
             @Override
-            public MediationResult process(MessagePointer message) {
+            public tech.flowcatalyst.messagerouter.model.MediationOutcome process(MessagePointer message) {
                 processingOrder.add(message.id());
                 processingTimestamps.add(System.currentTimeMillis());
                 processedCount.incrementAndGet();
@@ -112,7 +112,7 @@ class BatchGroupFifoIntegrationTest {
                     Thread.currentThread().interrupt();
                 }
 
-                return MediationResult.SUCCESS;
+                return tech.flowcatalyst.messagerouter.model.MediationOutcome.success();
             }
 
             @Override
@@ -224,15 +224,15 @@ class BatchGroupFifoIntegrationTest {
 
         Mediator trackingMediator = new Mediator() {
             @Override
-            public MediationResult process(MessagePointer message) {
+            public tech.flowcatalyst.messagerouter.model.MediationOutcome process(MessagePointer message) {
                 processedMessages.add(message.id());
                 processAttempts.incrementAndGet();
 
                 // Simulate HTTP call result based on message ID
                 if (message.id().equals("msg-2")) {
-                    return MediationResult.ERROR_SERVER;  // Fail msg-2
+                    return tech.flowcatalyst.messagerouter.model.MediationOutcome.errorProcess(null);  // Fail msg-2
                 }
-                return MediationResult.SUCCESS;
+                return tech.flowcatalyst.messagerouter.model.MediationOutcome.success();
             }
 
             @Override
@@ -343,7 +343,7 @@ class BatchGroupFifoIntegrationTest {
 
         Mediator trackingMediator = new Mediator() {
             @Override
-            public MediationResult process(MessagePointer message) {
+            public tech.flowcatalyst.messagerouter.model.MediationOutcome process(MessagePointer message) {
                 String groupId = message.messageGroupId();
                 concurrentGroups.add(groupId);
 
@@ -360,7 +360,7 @@ class BatchGroupFifoIntegrationTest {
                     totalProcessed.incrementAndGet();
                 }
 
-                return MediationResult.SUCCESS;
+                return tech.flowcatalyst.messagerouter.model.MediationOutcome.success();
             }
 
             @Override

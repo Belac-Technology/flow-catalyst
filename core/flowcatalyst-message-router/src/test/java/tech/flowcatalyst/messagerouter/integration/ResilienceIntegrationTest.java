@@ -13,6 +13,7 @@ import tech.flowcatalyst.messagerouter.callback.MessageCallback;
 import tech.flowcatalyst.messagerouter.mediator.HttpMediator;
 import tech.flowcatalyst.messagerouter.mediator.Mediator;
 import tech.flowcatalyst.messagerouter.metrics.PoolMetricsService;
+import tech.flowcatalyst.messagerouter.model.MediationOutcome;
 import tech.flowcatalyst.messagerouter.model.MediationResult;
 import tech.flowcatalyst.messagerouter.model.MediationType;
 import tech.flowcatalyst.messagerouter.model.MessagePointer;
@@ -124,13 +125,13 @@ class ResilienceIntegrationTest {
             private final HttpMediator httpMediator = new HttpMediator("HTTP_2", 10000, warningService); // 10 second timeout
 
             @Override
-            public MediationResult process(MessagePointer message) {
-                MediationResult result = httpMediator.process(message);
-                if (result == MediationResult.ERROR_PROCESS) {
+            public MediationOutcome process(MessagePointer message) {
+                MediationOutcome outcome = httpMediator.process(message);
+                if (outcome.result() == MediationResult.ERROR_PROCESS) {
                     // Timeout errors return ERROR_PROCESS (transient, will be retried via visibility timeout)
                     timeoutCount.incrementAndGet();
                 }
-                return result;
+                return outcome;
             }
 
             @Override
@@ -233,13 +234,13 @@ class ResilienceIntegrationTest {
             private final HttpMediator httpMediator = new HttpMediator("HTTP_2", 10000, warningService);
 
             @Override
-            public MediationResult process(MessagePointer message) {
-                MediationResult result = httpMediator.process(message);
-                if (result == MediationResult.ERROR_PROCESS) {
+            public MediationOutcome process(MessagePointer message) {
+                MediationOutcome outcome = httpMediator.process(message);
+                if (outcome.result() == MediationResult.ERROR_PROCESS) {
                     // 5xx server errors return ERROR_PROCESS (transient, will be retried via visibility timeout)
                     serverErrorCount.incrementAndGet();
                 }
-                return result;
+                return outcome;
             }
 
             @Override
@@ -361,14 +362,14 @@ class ResilienceIntegrationTest {
             private final HttpMediator httpMediator = new HttpMediator("HTTP_2", 10000, warningService);
 
             @Override
-            public MediationResult process(MessagePointer message) {
-                MediationResult result = httpMediator.process(message);
-                if (result == MediationResult.ERROR_PROCESS) {
+            public MediationOutcome process(MessagePointer message) {
+                MediationOutcome outcome = httpMediator.process(message);
+                if (outcome.result() == MediationResult.ERROR_PROCESS) {
                     processErrorCount.incrementAndGet();
-                } else if (result == MediationResult.ERROR_CONFIG) {
+                } else if (outcome.result() == MediationResult.ERROR_CONFIG) {
                     configErrorCount.incrementAndGet();
                 }
-                return result;
+                return outcome;
             }
 
             @Override
@@ -493,10 +494,10 @@ class ResilienceIntegrationTest {
             private final HttpMediator httpMediator = new HttpMediator("HTTP_2", 10000, warningService);
 
             @Override
-            public MediationResult process(MessagePointer message) {
-                MediationResult result = httpMediator.process(message);
+            public MediationOutcome process(MessagePointer message) {
+                MediationOutcome outcome = httpMediator.process(message);
                 processedCount.incrementAndGet();
-                return result;
+                return outcome;
             }
 
             @Override
@@ -606,10 +607,10 @@ class ResilienceIntegrationTest {
             private final HttpMediator httpMediator = new HttpMediator("HTTP_2", 10000, warningService);
 
             @Override
-            public MediationResult process(MessagePointer message) {
-                MediationResult result = httpMediator.process(message);
+            public MediationOutcome process(MessagePointer message) {
+                MediationOutcome outcome = httpMediator.process(message);
                 processedCount.incrementAndGet();
-                return result;
+                return outcome;
             }
 
             @Override
@@ -738,7 +739,7 @@ class ResilienceIntegrationTest {
             private final HttpMediator httpMediator = new HttpMediator("HTTP_2", 10000, warningService);
 
             @Override
-            public MediationResult process(MessagePointer message) {
+            public MediationOutcome process(MessagePointer message) {
                 attemptCount.incrementAndGet();
                 return httpMediator.process(message);
             }

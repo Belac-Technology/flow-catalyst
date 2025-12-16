@@ -158,7 +158,7 @@ public class MongoIndexInitializer {
         jobs.createIndex(Indexes.ascending("externalId"), opt());
         jobs.createIndex(Indexes.ascending("idempotencyKey"), opt().unique(true).sparse(true));
         jobs.createIndex(Indexes.ascending("scheduledFor"), opt());
-        jobs.createIndex(Indexes.ascending("credentialsId"), opt());
+        jobs.createIndex(Indexes.ascending("serviceAccountId"), opt());
         jobs.createIndex(Indexes.ascending("clientId"), opt().sparse(true));
         jobs.createIndex(Indexes.ascending("subscriptionId"), opt().sparse(true));
         jobs.createIndex(Indexes.ascending("dispatchPoolId"), opt().sparse(true));
@@ -174,9 +174,6 @@ public class MongoIndexInitializer {
             Indexes.ascending("createdAt"),
             opt().expireAfter(TTL_30_DAYS_SECONDS, TimeUnit.SECONDS));
         LOG.info("Created TTL index on dispatch_jobs.createdAt (30 days)");
-
-        MongoCollection<Document> credentials = db.getCollection("dispatch_credentials");
-        // No specific indexes needed - queried by ID
     }
 
     private void createEventTypeIndexes(MongoDatabase db) {

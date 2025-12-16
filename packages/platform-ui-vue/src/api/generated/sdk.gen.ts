@@ -11,15 +11,6 @@ import type {
   GetWellKnownJwksJsonResponse,
   GetWellKnownOpenidConfigurationData,
   GetWellKnownOpenidConfigurationResponse,
-  PostApiAdminDispatchCredentialsData,
-  PostApiAdminDispatchCredentialsResponse,
-  PostApiAdminDispatchCredentialsError,
-  DeleteApiAdminDispatchCredentialsByIdData,
-  DeleteApiAdminDispatchCredentialsByIdResponse,
-  DeleteApiAdminDispatchCredentialsByIdError,
-  GetApiAdminDispatchCredentialsByIdData,
-  GetApiAdminDispatchCredentialsByIdResponse,
-  GetApiAdminDispatchCredentialsByIdError,
   GetApiAdminPlatformAnchorDomainsData,
   GetApiAdminPlatformAnchorDomainsResponse,
   PostApiAdminPlatformAnchorDomainsData,
@@ -320,67 +311,6 @@ export const getWellKnownOpenidConfiguration = <
     ThrowOnError
   >({
     url: "/.well-known/openid-configuration",
-    ...options,
-  });
-};
-
-/**
- * Create new dispatch credentials
- * Creates new webhook credentials with bearer token and signing secret
- */
-export const postApiAdminDispatchCredentials = <
-  ThrowOnError extends boolean = false,
->(
-  options: Options<PostApiAdminDispatchCredentialsData, ThrowOnError>,
-) => {
-  return (options.client ?? _heyApiClient).post<
-    PostApiAdminDispatchCredentialsResponse,
-    PostApiAdminDispatchCredentialsError,
-    ThrowOnError
-  >({
-    url: "/api/admin/dispatch/credentials",
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...options?.headers,
-    },
-  });
-};
-
-/**
- * Delete credentials
- * Permanently deletes credentials and invalidates cache
- */
-export const deleteApiAdminDispatchCredentialsById = <
-  ThrowOnError extends boolean = false,
->(
-  options: Options<DeleteApiAdminDispatchCredentialsByIdData, ThrowOnError>,
-) => {
-  return (options.client ?? _heyApiClient).delete<
-    DeleteApiAdminDispatchCredentialsByIdResponse,
-    DeleteApiAdminDispatchCredentialsByIdError,
-    ThrowOnError
-  >({
-    url: "/api/admin/dispatch/credentials/{id}",
-    ...options,
-  });
-};
-
-/**
- * Get credentials by ID (without sensitive data)
- * Retrieves credential metadata without exposing bearer token or signing secret
- */
-export const getApiAdminDispatchCredentialsById = <
-  ThrowOnError extends boolean = false,
->(
-  options: Options<GetApiAdminDispatchCredentialsByIdData, ThrowOnError>,
-) => {
-  return (options.client ?? _heyApiClient).get<
-    GetApiAdminDispatchCredentialsByIdResponse,
-    GetApiAdminDispatchCredentialsByIdError,
-    ThrowOnError
-  >({
-    url: "/api/admin/dispatch/credentials/{id}",
     ...options,
   });
 };

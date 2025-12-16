@@ -17,7 +17,7 @@ import java.util.*;
  * <ul>
  *   <li>metadata: embedded array for flexible key-value pairs</li>
  *   <li>attempts: embedded array for delivery history</li>
- *   <li>credentialsId: reference to DispatchCredentials collection</li>
+ *   <li>serviceAccountId: reference to ServiceAccount for webhook credentials</li>
  * </ul>
  *
  * <h2>Kind and Code Fields</h2>
@@ -220,20 +220,9 @@ public class DispatchJob extends PanacheMongoEntityBase {
      * <p>The ServiceAccount contains embedded webhook credentials
      * (auth token, signing secret) used for authenticating the webhook request.</p>
      *
-     * <p>When set, the dispatcher loads credentials from the ServiceAccount entity.
-     * Either this or {@link #credentialsId} should be set, not both.</p>
-     *
      * @see tech.flowcatalyst.serviceaccount.entity.ServiceAccount
      */
     public String serviceAccountId;
-
-    /**
-     * @deprecated Use {@link #serviceAccountId} instead.
-     * Legacy reference to DispatchCredentials entity.
-     * Kept for backward compatibility during migration.
-     */
-    @Deprecated
-    public String credentialsId;
 
     // Context - Client and Subscription
     /** Client this job belongs to (nullable - null means anchor-level) */

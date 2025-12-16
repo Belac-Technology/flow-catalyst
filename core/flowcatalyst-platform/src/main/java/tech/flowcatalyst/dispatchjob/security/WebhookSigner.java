@@ -1,7 +1,6 @@
 package tech.flowcatalyst.dispatchjob.security;
 
 import jakarta.enterprise.context.ApplicationScoped;
-import tech.flowcatalyst.dispatchjob.entity.DispatchCredentials;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -10,23 +9,18 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.HexFormat;
 
+/**
+ * Service for signing webhook requests using HMAC-SHA256.
+ *
+ * <p>The signature is generated using the timestamp concatenated with the payload,
+ * then signed with the signing secret. The receiver can verify by reproducing this signature.</p>
+ */
 @ApplicationScoped
 public class WebhookSigner {
 
     public static final String SIGNATURE_HEADER = "X-FLOWCATALYST-SIGNATURE";
     public static final String TIMESTAMP_HEADER = "X-FLOWCATALYST-TIMESTAMP";
     private static final String ALGORITHM = "HmacSHA256";
-
-    /**
-     * Sign a webhook payload using DispatchCredentials.
-     *
-     * @deprecated Use {@link #sign(String, String, String)} instead.
-     * This method is kept for backward compatibility.
-     */
-    @Deprecated
-    public SignedWebhookRequest sign(String payload, DispatchCredentials credentials) {
-        return sign(payload, credentials.bearerToken, credentials.signingSecret);
-    }
 
     /**
      * Sign a webhook payload with the provided credentials.

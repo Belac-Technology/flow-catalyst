@@ -6,7 +6,6 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
 import tech.flowcatalyst.dispatchjob.entity.DispatchAttempt;
-import tech.flowcatalyst.dispatchjob.entity.DispatchCredentials;
 import tech.flowcatalyst.dispatchjob.entity.DispatchJob;
 import tech.flowcatalyst.dispatchjob.model.DispatchAttemptStatus;
 import tech.flowcatalyst.dispatchjob.model.ErrorType;
@@ -93,16 +92,6 @@ public class WebhookDispatcher {
      */
     public DispatchAttempt sendWebhook(DispatchJob job, ResolvedCredentials credentials) {
         return sendWebhook(job, credentials.authToken(), credentials.signingSecret());
-    }
-
-    /**
-     * Send a webhook using legacy DispatchCredentials.
-     *
-     * @deprecated Use {@link #sendWebhook(DispatchJob, ResolvedCredentials)} instead.
-     */
-    @Deprecated
-    public DispatchAttempt sendWebhook(DispatchJob job, DispatchCredentials credentials) {
-        return sendWebhook(job, credentials.bearerToken, credentials.signingSecret);
     }
 
     /**

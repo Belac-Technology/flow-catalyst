@@ -5,28 +5,20 @@ import io.quarkus.cache.CacheResult;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
-import tech.flowcatalyst.dispatchjob.dto.CreateCredentialsRequest;
-import tech.flowcatalyst.dispatchjob.entity.DispatchCredentials;
 import tech.flowcatalyst.dispatchjob.entity.DispatchJob;
-import tech.flowcatalyst.dispatchjob.repository.CredentialsRepository;
 import tech.flowcatalyst.platform.security.secrets.SecretService;
-import tech.flowcatalyst.serviceaccount.entity.ServiceAccount;
 import tech.flowcatalyst.serviceaccount.repository.ServiceAccountRepository;
 
 import java.util.Optional;
 
 /**
- * Service for managing dispatch credentials.
+ * Service for resolving webhook credentials from ServiceAccounts.
  */
 @ApplicationScoped
 public class CredentialsService {
 
     private static final Logger LOG = Logger.getLogger(CredentialsService.class);
-    private static final String CACHE_NAME = "dispatch-credentials";
     private static final String SERVICE_ACCOUNT_CACHE = "service-account-credentials";
-
-    @Inject
-    CredentialsRepository credentialsRepository;
 
     @Inject
     ServiceAccountRepository serviceAccountRepository;
@@ -44,30 +36,32 @@ public class CredentialsService {
     ) {}
 
     /**
-     * Resolve credentials for a dispatch job from either ServiceAccount or DispatchCredentials.
-     *
-     * <p>Looks up credentials in the following order:
-     * <ol>
-     *   <li>ServiceAccount (if serviceAccountId is set)</li>
-     *   <li>DispatchCredentials (if credentialsId is set - legacy)</li>
-     * </ol>
+     * Resolve credentials for a dispatch job from its ServiceAccount.
      *
      * @param job The dispatch job to resolve credentials for
      * @return Resolved credentials, or empty if not found
      */
     public Optional<ResolvedCredentials> resolveCredentials(DispatchJob job) {
-        // First try ServiceAccount (new path)
-        if (job.serviceAccountId != null) {
-            return resolveFromServiceAccount(job.serviceAccountId);
+        if (job.serviceAccountId == null) {
+            LOG.warnf("Dispatch job [%s] has no serviceAccountId", job.id);
+            return Optional.empty();
         }
+        return resolveFromServiceAccount(job.serviceAccountId);
+    }
 
-        // Fall back to legacy DispatchCredentials
-        if (job.credentialsId != null) {
-            return findById(job.credentialsId)
-                .map(creds -> new ResolvedCredentials(creds.bearerToken, creds.signingSecret));
+    /**
+     * Validate that a service account exists and has valid webhook credentials.
+     *
+     * @param serviceAccountId The service account ID to validate
+     * @return true if the service account exists, is active, and has webhook credentials
+     */
+    public boolean validateServiceAccount(String serviceAccountId) {
+        if (serviceAccountId == null) {
+            return false;
         }
-
-        return Optional.empty();
+        return serviceAccountRepository.findByIdOptional(serviceAccountId)
+            .filter(sa -> sa.active && sa.webhookCredentials != null)
+            .isPresent();
     }
 
     /**
@@ -96,31 +90,5 @@ public class CredentialsService {
     @CacheInvalidate(cacheName = SERVICE_ACCOUNT_CACHE)
     public void invalidateServiceAccountCache(String serviceAccountId) {
         LOG.debugf("Invalidated cache for service account credentials [%s]", serviceAccountId);
-    }
-
-    public DispatchCredentials create(CreateCredentialsRequest request) {
-        DispatchCredentials credentials = credentialsRepository.create(request);
-        LOG.infof("Created credentials [%s]", credentials.id);
-        return credentials;
-    }
-
-    @CacheResult(cacheName = CACHE_NAME)
-    public Optional<DispatchCredentials> findById(String id) {
-        LOG.debugf("Loading credentials [%s] from database (cache miss)", id);
-        return credentialsRepository.findByIdOptional(id);
-    }
-
-    @CacheInvalidate(cacheName = CACHE_NAME)
-    public boolean delete(String id) {
-        boolean deleted = credentialsRepository.deleteById(id);
-        if (deleted) {
-            LOG.infof("Deleted credentials [%s]", id);
-        }
-        return deleted;
-    }
-
-    @CacheInvalidate(cacheName = CACHE_NAME)
-    public void invalidateCache(String id) {
-        LOG.debugf("Invalidated cache for credentials [%s]", id);
     }
 }

@@ -4,6 +4,7 @@ import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import tech.flowcatalyst.messagerouter.model.MediationOutcome;
 import tech.flowcatalyst.messagerouter.model.MediationResult;
 import tech.flowcatalyst.messagerouter.model.MediationType;
 import tech.flowcatalyst.messagerouter.model.MessagePointer;
@@ -44,10 +45,10 @@ class HttpMediatorTest {
             , null);
 
         // When
-        MediationResult result = httpMediator.process(message);
+        MediationOutcome outcome = httpMediator.process(message);
 
         // Then
-        assertEquals(MediationResult.SUCCESS, result, "Should return SUCCESS for 200 response");
+        assertEquals(MediationResult.SUCCESS, outcome.result(), "Should return SUCCESS for 200 response");
     }
 
     @Test
@@ -58,10 +59,10 @@ class HttpMediatorTest {
             , null);
 
         // When
-        MediationResult result = httpMediator.process(message);
+        MediationOutcome outcome = httpMediator.process(message);
 
         // Then
-        assertEquals(MediationResult.ERROR_CONFIG, result, "Should return ERROR_CONFIG for 400 response (permanent error)");
+        assertEquals(MediationResult.ERROR_CONFIG, outcome.result(), "Should return ERROR_CONFIG for 400 response (permanent error)");
     }
 
     @Test
@@ -72,10 +73,10 @@ class HttpMediatorTest {
             , null);
 
         // When
-        MediationResult result = httpMediator.process(message);
+        MediationOutcome outcome = httpMediator.process(message);
 
         // Then
-        assertEquals(MediationResult.ERROR_PROCESS, result, "Should return ERROR_PROCESS for 500 response (transient error)");
+        assertEquals(MediationResult.ERROR_PROCESS, outcome.result(), "Should return ERROR_PROCESS for 500 response (transient error)");
     }
 
     @Test
@@ -86,11 +87,11 @@ class HttpMediatorTest {
             , null);
 
         // When
-        MediationResult result = httpMediator.process(message);
+        MediationOutcome outcome = httpMediator.process(message);
 
         // Then
         // Connection errors are transient, so they return ERROR_PROCESS after retries are exhausted
-        assertEquals(MediationResult.ERROR_PROCESS, result, "Should return ERROR_PROCESS for connection failure (transient error)");
+        assertEquals(MediationResult.ERROR_PROCESS, outcome.result(), "Should return ERROR_PROCESS for connection failure (transient error)");
     }
 
     @Test
@@ -110,10 +111,10 @@ class HttpMediatorTest {
             , null);
 
         // When
-        MediationResult result = httpMediator.process(message);
+        MediationOutcome outcome = httpMediator.process(message);
 
         // Then
-        assertEquals(MediationResult.SUCCESS, result);
+        assertEquals(MediationResult.SUCCESS, outcome.result());
         // Note: In a real scenario, you'd verify the Authorization header was sent
         // This would require inspecting server logs or using WireMock
     }
@@ -127,10 +128,10 @@ class HttpMediatorTest {
             , null);
 
         // When
-        MediationResult result = httpMediator.process(message);
+        MediationOutcome outcome = httpMediator.process(message);
 
         // Then
-        assertEquals(MediationResult.SUCCESS, result);
+        assertEquals(MediationResult.SUCCESS, outcome.result());
         // The message ID should be in the JSON body: {"messageId":"msg-with-id-123"}
     }
 
@@ -143,11 +144,11 @@ class HttpMediatorTest {
 
         // When
         long startTime = System.currentTimeMillis();
-        MediationResult result = httpMediator.process(message);
+        MediationOutcome outcome = httpMediator.process(message);
         long duration = System.currentTimeMillis() - startTime;
 
         // Then
-        assertEquals(MediationResult.SUCCESS, result);
+        assertEquals(MediationResult.SUCCESS, outcome.result());
         assertTrue(duration >= 100 && duration < 1000, "Fast endpoint should take ~100ms");
     }
 
@@ -167,14 +168,14 @@ class HttpMediatorTest {
             , null);
 
         // When
-        MediationResult result1 = httpMediator.process(message1);
-        MediationResult result2 = httpMediator.process(message2);
-        MediationResult result3 = httpMediator.process(message3);
+        MediationOutcome outcome1 = httpMediator.process(message1);
+        MediationOutcome outcome2 = httpMediator.process(message2);
+        MediationOutcome outcome3 = httpMediator.process(message3);
 
         // Then
-        assertEquals(MediationResult.SUCCESS, result1);
-        assertEquals(MediationResult.ERROR_CONFIG, result2); // 400 errors are permanent, return ERROR_CONFIG
-        assertEquals(MediationResult.ERROR_PROCESS, result3); // 5xx errors are transient, return ERROR_PROCESS
+        assertEquals(MediationResult.SUCCESS, outcome1.result());
+        assertEquals(MediationResult.ERROR_CONFIG, outcome2.result()); // 400 errors are permanent, return ERROR_CONFIG
+        assertEquals(MediationResult.ERROR_PROCESS, outcome3.result()); // 5xx errors are transient, return ERROR_PROCESS
     }
 
     @Test
@@ -185,10 +186,10 @@ class HttpMediatorTest {
             , null);
 
         // When
-        MediationResult result = httpMediator.process(message);
+        MediationOutcome outcome = httpMediator.process(message);
 
         // Then
-        assertEquals(MediationResult.SUCCESS, result);
+        assertEquals(MediationResult.SUCCESS, outcome.result());
     }
 
     @Test
@@ -216,9 +217,9 @@ class HttpMediatorTest {
             , null);
 
         // When
-        MediationResult result = httpMediator.process(message);
+        MediationOutcome outcome = httpMediator.process(message);
 
         // Then
-        assertEquals(MediationResult.ERROR_PROCESS, result, "Should return ERROR_PROCESS for 200 with ack: false (will retry)");
+        assertEquals(MediationResult.ERROR_PROCESS, outcome.result(), "Should return ERROR_PROCESS for 200 with ack: false (will retry)");
     }
 }

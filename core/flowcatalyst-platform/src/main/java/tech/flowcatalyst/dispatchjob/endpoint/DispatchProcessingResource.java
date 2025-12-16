@@ -79,7 +79,7 @@ public class DispatchProcessingResource {
             DispatchJobService.DispatchJobProcessResult result = dispatchJobService.processDispatchJob(dispatchJobId);
 
             return Response.status(200)
-                .entity(new ProcessResponse(result.ack(), result.message()))
+                .entity(new ProcessResponse(result.ack(), result.message(), result.delaySeconds()))
                 .build();
 
         } catch (IllegalArgumentException e) {
@@ -93,7 +93,7 @@ public class DispatchProcessingResource {
             // Infrastructure error - return 500, message router will retry via visibility timeout
             LOG.errorf(e, "Error processing dispatch job: %s", request.messageId());
             return Response.status(500)
-                .entity(new ProcessResponse(false, e.getMessage()))
+                .entity(new ProcessResponse(false, e.getMessage(), null))
                 .build();
         }
     }
@@ -123,24 +123,33 @@ public class DispatchProcessingResource {
      * <ul>
      *   <li><b>ack: true</b> - Remove from queue (success OR permanent error like max retries reached)</li>
      *   <li><b>ack: false</b> - Keep on queue, retry later (transient errors, not ready yet)</li>
+     *   <li><b>delaySeconds</b> - Optional delay before message becomes visible again (for transient errors with backoff)</li>
      * </ul>
      */
     public record ProcessResponse(
         @JsonProperty("ack") boolean ack,
-        @JsonProperty("message") String message
+        @JsonProperty("message") String message,
+        @JsonProperty("delaySeconds") Integer delaySeconds
     ) {
         /**
          * Create a response that acknowledges (removes from queue).
          */
         public static ProcessResponse ack(String message) {
-            return new ProcessResponse(true, message);
+            return new ProcessResponse(true, message, null);
         }
 
         /**
          * Create a response that does not acknowledge (keeps on queue for retry).
          */
         public static ProcessResponse nack(String message) {
-            return new ProcessResponse(false, message);
+            return new ProcessResponse(false, message, null);
+        }
+
+        /**
+         * Create a response that does not acknowledge with a specific retry delay.
+         */
+        public static ProcessResponse nackWithDelay(String message, int delaySeconds) {
+            return new ProcessResponse(false, message, delaySeconds);
         }
     }
 }

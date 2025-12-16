@@ -10,13 +10,13 @@ import tech.flowcatalyst.messagerouter.model.MessagePointer;
  * <p>Implementations:
  * <ul>
  *   <li>SQS: Use ChangeMessageVisibility API</li>
- *   <li>ActiveMQ: No-op (doesn't support visibility control)</li>
+ *   <li>ActiveMQ: Uses scheduled redelivery delay</li>
  * </ul>
  */
 public interface MessageVisibilityControl {
 
     /**
-     * Set message visibility to 1 second for fast retry on transient failures.
+     * Set message visibility to 10 seconds for fast retry on transient failures.
      * Used when message couldn't be processed due to:
      * - Rate limiting
      * - Pool queue full
@@ -35,6 +35,18 @@ public interface MessageVisibilityControl {
      * @param message the message to adjust visibility for
      */
     void resetVisibilityToDefault(MessagePointer message);
+
+    /**
+     * Set a custom visibility delay for the message.
+     * Used when the mediation response specifies a delay (ack=false with delaySeconds).
+     *
+     * <p>This allows the downstream service to control when the message should be retried,
+     * for example when a "notBefore" time hasn't been reached yet.</p>
+     *
+     * @param message the message to adjust visibility for
+     * @param delaySeconds the delay in seconds before the message becomes visible again (1-43200)
+     */
+    void setVisibilityDelay(MessagePointer message, int delaySeconds);
 
     /**
      * Extend message visibility timeout to keep message invisible while processing continues.

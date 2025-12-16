@@ -273,6 +273,12 @@ public class EmbeddedQueueConsumer extends AbstractQueueConsumer {
             setVisibility(message, visibilityTimeoutSeconds);
         }
 
+        @Override
+        public void setVisibilityDelay(MessagePointer message, int delaySeconds) {
+            // Set custom delay for retry (used when MediationResponse specifies delaySeconds)
+            setVisibility(message, delaySeconds);
+        }
+
         private void setVisibility(MessagePointer message, int seconds) {
             long visibleAt = System.currentTimeMillis() + (seconds * 1000L);
 

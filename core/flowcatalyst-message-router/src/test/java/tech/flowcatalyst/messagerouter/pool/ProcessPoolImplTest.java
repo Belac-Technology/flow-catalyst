@@ -7,7 +7,7 @@ import org.mockito.ArgumentCaptor;
 import tech.flowcatalyst.messagerouter.callback.MessageCallback;
 import tech.flowcatalyst.messagerouter.mediator.Mediator;
 import tech.flowcatalyst.messagerouter.metrics.PoolMetricsService;
-import tech.flowcatalyst.messagerouter.model.MediationResult;
+import tech.flowcatalyst.messagerouter.model.MediationOutcome;
 import tech.flowcatalyst.messagerouter.model.MessagePointer;
 import tech.flowcatalyst.messagerouter.model.MediationType;
 import tech.flowcatalyst.messagerouter.warning.WarningService;
@@ -83,7 +83,7 @@ class ProcessPoolImplTest {
         , null
             , null);
 
-        when(mockMediator.process(message)).thenReturn(MediationResult.SUCCESS);
+        when(mockMediator.process(message)).thenReturn(MediationOutcome.success());
         inPipelineMap.put(message.id(), message);
 
         // When
@@ -107,22 +107,23 @@ class ProcessPoolImplTest {
         , null
             , null);
 
-        when(mockMediator.process(message)).thenReturn(MediationResult.ERROR_SERVER);
+        when(mockMediator.process(message)).thenReturn(MediationOutcome.errorProcess(null));
         inPipelineMap.put(message.id(), message);
 
         // When
         processPool.start();
         processPool.submit(message);
 
-        // Then
+        // Then - ERROR_PROCESS is a transient error, so it should nack but not generate a warning
         await().untilAsserted(() -> {
             verify(mockMediator).process(message);
             verify(mockCallback).nack(message);
-            verify(mockWarningService).addWarning(
+            // Transient errors (ERROR_PROCESS) don't generate warnings - they're expected and will be retried
+            verify(mockWarningService, never()).addWarning(
                 eq("MEDIATION"),
                 eq("ERROR"),
-                contains("ERROR_SERVER"),
-                eq("ProcessPool:TEST-POOL")
+                any(),
+                any()
             );
         });
     }
@@ -150,7 +151,7 @@ class ProcessPoolImplTest {
         , null
             , null);
 
-        when(mockMediator.process(any())).thenReturn(MediationResult.SUCCESS);
+        when(mockMediator.process(any())).thenReturn(MediationOutcome.success());
         inPipelineMap.put(message1.id(), message1);
         inPipelineMap.put(message2.id(), message2);
 
@@ -178,7 +179,7 @@ class ProcessPoolImplTest {
         // Given - use blocking mediator and no start() to prevent processing
         when(mockMediator.process(any())).thenAnswer(invocation -> {
             Thread.sleep(200); // Block for a bit
-            return MediationResult.SUCCESS;
+            return MediationOutcome.success();
         });
 
         ProcessPoolImpl smallPool = new ProcessPoolImpl(
@@ -254,7 +255,7 @@ class ProcessPoolImplTest {
         // Simulate slow processing
         when(mockMediator.process(any())).thenAnswer(invocation -> {
             Thread.sleep(500);
-            return MediationResult.SUCCESS;
+            return MediationOutcome.success();
         });
 
         // When
@@ -290,7 +291,7 @@ class ProcessPoolImplTest {
         , null
             , null);
 
-        when(mockMediator.process(message)).thenReturn(MediationResult.SUCCESS);
+        when(mockMediator.process(message)).thenReturn(MediationOutcome.success());
         inPipelineMap.put(message.id(), message);
 
         // When
@@ -310,7 +311,7 @@ class ProcessPoolImplTest {
         , null
             , null);
 
-        when(mockMediator.process(message)).thenReturn(MediationResult.SUCCESS);
+        when(mockMediator.process(message)).thenReturn(MediationOutcome.success());
         inPipelineMap.put(message.id(), message);
 
         processPool.start();
@@ -342,7 +343,7 @@ class ProcessPoolImplTest {
         , null
             , null);
 
-        when(mockMediator.process(any())).thenReturn(MediationResult.SUCCESS);
+        when(mockMediator.process(any())).thenReturn(MediationOutcome.success());
         inPipelineMap.put(message1.id(), message1);
         inPipelineMap.put(message2.id(), message2);
 
@@ -407,9 +408,9 @@ class ProcessPoolImplTest {
         );
 
         // First message succeeds, second fails, third should be auto-nacked
-        when(mockMediator.process(message1)).thenReturn(MediationResult.SUCCESS);
-        when(mockMediator.process(message2)).thenReturn(MediationResult.ERROR_SERVER);
-        when(mockMediator.process(message3)).thenReturn(MediationResult.SUCCESS);
+        when(mockMediator.process(message1)).thenReturn(MediationOutcome.success());
+        when(mockMediator.process(message2)).thenReturn(MediationOutcome.errorProcess(null));
+        when(mockMediator.process(message3)).thenReturn(MediationOutcome.success());
 
         inPipelineMap.put(message1.id(), message1);
         inPipelineMap.put(message2.id(), message2);
@@ -461,8 +462,8 @@ class ProcessPoolImplTest {
         );
 
         // First message fails, second should still process (different batch+group)
-        when(mockMediator.process(message1)).thenReturn(MediationResult.ERROR_SERVER);
-        when(mockMediator.process(message2)).thenReturn(MediationResult.SUCCESS);
+        when(mockMediator.process(message1)).thenReturn(MediationOutcome.errorProcess(null));
+        when(mockMediator.process(message2)).thenReturn(MediationOutcome.success());
 
         inPipelineMap.put(message1.id(), message1);
         inPipelineMap.put(message2.id(), message2);
@@ -510,8 +511,8 @@ class ProcessPoolImplTest {
             batchId
         );
 
-        when(mockMediator.process(message1)).thenReturn(MediationResult.SUCCESS);
-        when(mockMediator.process(message2)).thenReturn(MediationResult.SUCCESS);
+        when(mockMediator.process(message1)).thenReturn(MediationOutcome.success());
+        when(mockMediator.process(message2)).thenReturn(MediationOutcome.success());
 
         inPipelineMap.put(message1.id(), message1);
         inPipelineMap.put(message2.id(), message2);
@@ -558,8 +559,8 @@ class ProcessPoolImplTest {
         );
 
         // First fails, second should still process (no batch tracking)
-        when(mockMediator.process(message1)).thenReturn(MediationResult.ERROR_SERVER);
-        when(mockMediator.process(message2)).thenReturn(MediationResult.SUCCESS);
+        when(mockMediator.process(message1)).thenReturn(MediationOutcome.errorProcess(null));
+        when(mockMediator.process(message2)).thenReturn(MediationOutcome.success());
 
         inPipelineMap.put(message1.id(), message1);
         inPipelineMap.put(message2.id(), message2);

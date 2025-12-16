@@ -309,6 +309,27 @@ public class SqsQueueConsumer extends AbstractQueueConsumer {
         }
 
         @Override
+        public void setVisibilityDelay(MessagePointer message, int delaySeconds) {
+            try {
+                // Clamp delay to SQS limits: 0-43200 seconds (12 hours)
+                int effectiveDelay = Math.max(0, Math.min(delaySeconds, 43200));
+
+                ChangeMessageVisibilityRequest request = ChangeMessageVisibilityRequest.builder()
+                    .queueUrl(queueUrl)
+                    .receiptHandle(receiptHandle)
+                    .visibilityTimeout(effectiveDelay)
+                    .build();
+
+                sqsClient.changeMessageVisibility(request);
+                LOG.infof("Set custom visibility delay to %ds for message [%s]", effectiveDelay, message.id());
+            } catch (ReceiptHandleIsInvalidException e) {
+                LOG.debugf("Receipt handle invalid for message [%s], cannot set visibility delay", message.id());
+            } catch (Exception e) {
+                LOG.warnf(e, "Failed to set visibility delay for message [%s]", message.id());
+            }
+        }
+
+        @Override
         public void extendVisibility(MessagePointer message, int visibilityTimeoutSeconds) {
             try {
                 ChangeMessageVisibilityRequest request = ChangeMessageVisibilityRequest.builder()

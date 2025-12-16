@@ -253,12 +253,6 @@ export type CreateClientResponse = {
   clientSecret?: string;
 };
 
-export type CreateCredentialsRequest = {
-  bearerToken: string;
-  signingSecret: string;
-  algorithm?: SignatureAlgorithm;
-};
-
 export type CreateDispatchJobRequest = {
   source: string;
   kind?: DispatchKind;
@@ -277,7 +271,7 @@ export type CreateDispatchJobRequest = {
   payload: string;
   payloadContentType?: string;
   dataOnly?: boolean;
-  credentialsId: string;
+  serviceAccountId: string;
   clientId?: string;
   subscriptionId?: string;
   mode?: DispatchMode;
@@ -421,13 +415,6 @@ export type CreateUserRequest = {
   clientId?: string;
 };
 
-export type CredentialsResponse = {
-  id?: string;
-  algorithm?: SignatureAlgorithm;
-  createdAt?: Instant;
-  updatedAt?: Instant;
-};
-
 export type DeleteAnchorDomainResponse = {
   domain?: string;
   affectedUsers?: number;
@@ -473,7 +460,7 @@ export type DispatchJobResponse = {
   };
   payloadContentType?: string;
   dataOnly?: boolean;
-  credentialsId?: string;
+  serviceAccountId?: string;
   clientId?: string;
   subscriptionId?: string;
   mode?: DispatchMode;
@@ -717,6 +704,7 @@ export type ProcessRequest = {
 export type ProcessResponse = {
   ack?: boolean;
   message?: string;
+  delaySeconds?: number;
 };
 
 export type ResetPasswordRequest = {
@@ -788,8 +776,6 @@ export type ServiceAccountListResponse = {
   total?: number;
 };
 
-export type SignatureAlgorithm = "HMAC_SHA256" | "HMAC_SHA512";
-
 export type SpecVersionResponse = {
   version?: string;
   mimeType?: string;
@@ -834,10 +820,6 @@ export type SubscriptionListResponse = {
 export type SubscriptionSource = "API" | "UI";
 
 export type SubscriptionStatus = "ACTIVE" | "PAUSED";
-
-export type SuccessResponse = {
-  message?: string;
-};
 
 export type SwitchClientRequest = {
   clientId?: string;
@@ -1040,91 +1022,6 @@ export type GetWellKnownOpenidConfigurationResponses = {
 
 export type GetWellKnownOpenidConfigurationResponse =
   GetWellKnownOpenidConfigurationResponses[keyof GetWellKnownOpenidConfigurationResponses];
-
-export type PostApiAdminDispatchCredentialsData = {
-  body: CreateCredentialsRequest;
-  path?: never;
-  query?: never;
-  url: "/api/admin/dispatch/credentials";
-};
-
-export type PostApiAdminDispatchCredentialsErrors = {
-  /**
-   * Invalid request - missing required fields
-   */
-  400: ErrorResponse;
-};
-
-export type PostApiAdminDispatchCredentialsError =
-  PostApiAdminDispatchCredentialsErrors[keyof PostApiAdminDispatchCredentialsErrors];
-
-export type PostApiAdminDispatchCredentialsResponses = {
-  /**
-   * Credentials created successfully
-   */
-  201: CredentialsResponse;
-};
-
-export type PostApiAdminDispatchCredentialsResponse =
-  PostApiAdminDispatchCredentialsResponses[keyof PostApiAdminDispatchCredentialsResponses];
-
-export type DeleteApiAdminDispatchCredentialsByIdData = {
-  body?: never;
-  path: {
-    id: string;
-  };
-  query?: never;
-  url: "/api/admin/dispatch/credentials/{id}";
-};
-
-export type DeleteApiAdminDispatchCredentialsByIdErrors = {
-  /**
-   * Credentials not found
-   */
-  404: ErrorResponse;
-};
-
-export type DeleteApiAdminDispatchCredentialsByIdError =
-  DeleteApiAdminDispatchCredentialsByIdErrors[keyof DeleteApiAdminDispatchCredentialsByIdErrors];
-
-export type DeleteApiAdminDispatchCredentialsByIdResponses = {
-  /**
-   * Credentials deleted successfully
-   */
-  200: SuccessResponse;
-};
-
-export type DeleteApiAdminDispatchCredentialsByIdResponse =
-  DeleteApiAdminDispatchCredentialsByIdResponses[keyof DeleteApiAdminDispatchCredentialsByIdResponses];
-
-export type GetApiAdminDispatchCredentialsByIdData = {
-  body?: never;
-  path: {
-    id: string;
-  };
-  query?: never;
-  url: "/api/admin/dispatch/credentials/{id}";
-};
-
-export type GetApiAdminDispatchCredentialsByIdErrors = {
-  /**
-   * Credentials not found
-   */
-  404: ErrorResponse;
-};
-
-export type GetApiAdminDispatchCredentialsByIdError =
-  GetApiAdminDispatchCredentialsByIdErrors[keyof GetApiAdminDispatchCredentialsByIdErrors];
-
-export type GetApiAdminDispatchCredentialsByIdResponses = {
-  /**
-   * Credentials found
-   */
-  200: CredentialsResponse;
-};
-
-export type GetApiAdminDispatchCredentialsByIdResponse =
-  GetApiAdminDispatchCredentialsByIdResponses[keyof GetApiAdminDispatchCredentialsByIdResponses];
 
 export type GetApiAdminPlatformAnchorDomainsData = {
   body?: never;

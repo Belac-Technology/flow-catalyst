@@ -50,7 +50,7 @@ public class DispatchJobRepository implements PanacheMongoRepositoryBase<Dispatc
         job.payloadContentType = request.payloadContentType() != null ?
             request.payloadContentType() : job.payloadContentType;
         job.dataOnly = request.dataOnly() != null ? request.dataOnly() : true;
-        job.credentialsId = request.credentialsId();
+        job.serviceAccountId = request.serviceAccountId();
 
         // New context and dispatch behavior fields
         job.clientId = request.clientId();

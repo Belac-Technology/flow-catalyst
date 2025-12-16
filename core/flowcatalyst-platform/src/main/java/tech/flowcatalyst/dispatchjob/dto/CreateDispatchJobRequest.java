@@ -77,9 +77,9 @@ public record CreateDispatchJobRequest(
     @JsonProperty("dataOnly")
     Boolean dataOnly,
 
-    @JsonProperty("credentialsId")
-    @NotNull(message = "credentialsId is required")
-    String credentialsId,
+    @JsonProperty("serviceAccountId")
+    @NotNull(message = "serviceAccountId is required")
+    String serviceAccountId,
 
     @JsonProperty("clientId")
     String clientId,

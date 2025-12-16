@@ -7,6 +7,7 @@ import org.jboss.logging.MDC;
 import tech.flowcatalyst.messagerouter.callback.MessageCallback;
 import tech.flowcatalyst.messagerouter.mediator.Mediator;
 import tech.flowcatalyst.messagerouter.metrics.PoolMetricsService;
+import tech.flowcatalyst.messagerouter.model.MediationOutcome;
 import tech.flowcatalyst.messagerouter.model.MediationResult;
 import tech.flowcatalyst.messagerouter.model.MessagePointer;
 import tech.flowcatalyst.messagerouter.warning.WarningService;
@@ -570,13 +571,13 @@ public class ProcessPoolImpl implements ProcessPool {
                     LOG.infof("Processing message [%s] in pool [%s] via mediator to [%s]",
                         message.id(), poolCode, message.mediationTarget());
                     long startTime = System.currentTimeMillis();
-                    MediationResult result = mediator.process(message);
+                    MediationOutcome outcome = mediator.process(message);
                     long durationMs = System.currentTimeMillis() - startTime;
                     LOG.infof("Message [%s] processing completed with result [%s] in %dms",
-                        message.id(), result, durationMs);
+                        message.id(), outcome.result(), durationMs);
 
-                    // 8. Handle mediation result
-                    handleMediationResult(message, result, durationMs);
+                    // 8. Handle mediation outcome (result + optional delay)
+                    handleMediationOutcome(message, outcome, durationMs);
 
                 } catch (InterruptedException e) {
                     LOG.warnf("Message group processor [%s] interrupted, exiting gracefully", groupId);
@@ -668,21 +669,22 @@ public class ProcessPoolImpl implements ProcessPool {
     }
 
     /**
-     * Handle the result of message mediation
+     * Handle the outcome of message mediation (result + optional delay).
      */
-    private void handleMediationResult(MessagePointer message, MediationResult result, long durationMs) {
+    private void handleMediationOutcome(MessagePointer message, MediationOutcome outcome, long durationMs) {
         // Defensive: mediator should never return null, but guard against it
-        if (result == null) {
-            LOG.errorf("CRITICAL: Mediator returned null result for message [%s], treating as server error", message.id());
-            result = MediationResult.ERROR_SERVER;
+        if (outcome == null || outcome.result() == null) {
+            LOG.errorf("CRITICAL: Mediator returned null outcome/result for message [%s], treating as transient error", message.id());
+            outcome = MediationOutcome.errorProcess(null);
             warningService.addWarning(
                 "MEDIATOR_NULL_RESULT",
                 "CRITICAL",
-                "Mediator returned null result for message " + message.id(),
+                "Mediator returned null outcome for message " + message.id(),
                 "ProcessPool:" + poolCode
             );
         }
 
+        MediationResult result = outcome.result();
         MDC.put("result", result.name());
         MDC.put("durationMs", String.valueOf(durationMs));
 
@@ -716,10 +718,39 @@ public class ProcessPoolImpl implements ProcessPool {
             // Transient error: Message will be retried via queue visibility timeout
             // Do NOT count as failure - these may eventually succeed
             // Examples: 200 with ack=false (not ready yet), 5xx errors (infrastructure issues)
-            LOG.warnf("Message [%s] encountered transient error - NACKing for retry: %s", message.id(), result);
             poolMetrics.recordProcessingTransient(poolCode, durationMs);
 
-            // Reset visibility to default (30s retry)
+            // Set visibility timeout based on delay from outcome
+            if (messageCallback instanceof tech.flowcatalyst.messagerouter.callback.MessageVisibilityControl visibilityControl) {
+                if (outcome.hasCustomDelay()) {
+                    int delaySeconds = outcome.getEffectiveDelaySeconds();
+                    LOG.warnf("Message [%s] encountered transient error with custom delay=%ds - NACKing for delayed retry: %s",
+                        message.id(), delaySeconds, result);
+                    visibilityControl.setVisibilityDelay(message, delaySeconds);
+                } else {
+                    LOG.warnf("Message [%s] encountered transient error - NACKing for retry: %s", message.id(), result);
+                    visibilityControl.resetVisibilityToDefault(message);
+                }
+            } else {
+                LOG.warnf("Message [%s] encountered transient error - NACKing for retry: %s", message.id(), result);
+            }
+
+            messageCallback.nack(message);
+
+            // Mark batch+group as failed to trigger cascading nacks
+            if (batchGroupKey != null) {
+                boolean wasAlreadyFailed = failedBatchGroups.putIfAbsent(batchGroupKey, Boolean.TRUE) != null;
+                if (!wasAlreadyFailed) {
+                    LOG.warnf("Batch+group [%s] marked as failed - all remaining messages in this batch+group will be nacked",
+                        batchGroupKey);
+                }
+                decrementAndCleanupBatchGroup(batchGroupKey);
+            }
+        } else if (result == MediationResult.ERROR_CONNECTION) {
+            // Connection errors - transient, NACK for visibility timeout retry
+            LOG.warnf("Message [%s] connection error - NACKing for retry: %s", message.id(), result);
+            poolMetrics.recordProcessingFailure(poolCode, durationMs, result.name());
+
             if (messageCallback instanceof tech.flowcatalyst.messagerouter.callback.MessageVisibilityControl visibilityControl) {
                 visibilityControl.resetVisibilityToDefault(message);
             }
@@ -736,11 +767,10 @@ public class ProcessPoolImpl implements ProcessPool {
                 decrementAndCleanupBatchGroup(batchGroupKey);
             }
         } else {
-            // ERROR_SERVER or other unexpected errors - count as actual failure
-            LOG.warnf("Mediation failed with result: %s", result);
+            // Unknown result - log warning and treat as transient error
+            LOG.warnf("Message [%s] unexpected result: %s - NACKing for retry", message.id(), result);
             poolMetrics.recordProcessingFailure(poolCode, durationMs, result.name());
 
-            // Real processing failure: Reset visibility to default (30s retry)
             if (messageCallback instanceof tech.flowcatalyst.messagerouter.callback.MessageVisibilityControl visibilityControl) {
                 visibilityControl.resetVisibilityToDefault(message);
             }
@@ -755,16 +785,6 @@ public class ProcessPoolImpl implements ProcessPool {
                         batchGroupKey);
                 }
                 decrementAndCleanupBatchGroup(batchGroupKey);
-            }
-
-            // Generate warning for unexpected errors (ERROR_SERVER)
-            if (result == MediationResult.ERROR_SERVER) {
-                warningService.addWarning(
-                    "MEDIATION",
-                    "ERROR",
-                    String.format("Unexpected error processing message %s: %s", message.id(), result),
-                    "ProcessPool:" + poolCode
-                );
             }
         }
     }

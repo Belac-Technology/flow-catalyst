@@ -9,8 +9,8 @@ import software.amazon.awssdk.services.sqs.model.SendMessageRequest;
 import tech.flowcatalyst.dispatchjob.dto.CreateDispatchJobRequest;
 import tech.flowcatalyst.dispatchjob.dto.DispatchJobFilter;
 import tech.flowcatalyst.dispatchjob.entity.DispatchAttempt;
-import tech.flowcatalyst.dispatchjob.entity.DispatchCredentials;
 import tech.flowcatalyst.dispatchjob.entity.DispatchJob;
+import tech.flowcatalyst.dispatchjob.service.CredentialsService.ResolvedCredentials;
 import tech.flowcatalyst.dispatchjob.model.DispatchAttemptStatus;
 import tech.flowcatalyst.dispatchjob.model.DispatchStatus;
 import tech.flowcatalyst.dispatchjob.model.ErrorType;
@@ -54,9 +54,8 @@ public class DispatchJobService {
     ObjectMapper objectMapper;
 
     public DispatchJob createDispatchJob(CreateDispatchJobRequest request) {
-        // Validate credentials exist
-        credentialsService.findById(request.credentialsId())
-            .orElseThrow(() -> new IllegalArgumentException("Credentials not found: " + request.credentialsId()));
+        // Validate service account exists
+        credentialsService.validateServiceAccount(request.serviceAccountId());
 
         // Create via repository (handles TSID generation and metadata conversion)
         DispatchJob job = dispatchJobRepository.create(request);
@@ -113,9 +112,9 @@ public class DispatchJobService {
         // Update status to IN_PROGRESS
         dispatchJobRepository.updateStatus(job.id, DispatchStatus.IN_PROGRESS, null, null, null);
 
-        // Load credentials (separate collection)
-        DispatchCredentials credentials = credentialsService.findById(job.credentialsId)
-            .orElseThrow(() -> new IllegalArgumentException("Credentials not found: " + job.credentialsId));
+        // Resolve credentials from ServiceAccount
+        ResolvedCredentials credentials = credentialsService.resolveCredentials(job)
+            .orElseThrow(() -> new IllegalArgumentException("Credentials not found for job: " + job.id));
 
         // Dispatch webhook
         DispatchAttempt attempt = webhookDispatcher.sendWebhook(job, credentials);
@@ -160,12 +159,16 @@ public class DispatchJobService {
                 }
 
             } else {
-                // More attempts available and error is transient - NACK for retry
+                // More attempts available and error is transient - NACK for retry with backoff
                 dispatchJobRepository.updateStatus(
                     job.id, DispatchStatus.QUEUED, null, null, attempt.errorMessage);
 
-                LOG.warnf("Dispatch job [%s] failed, attempt %d/%d, will retry", job.id, newAttemptCount, job.maxRetries);
-                return DispatchJobProcessResult.transientError("Error but retries not exhausted.");
+                // Calculate exponential backoff delay based on attempt count
+                int backoffDelay = DispatchJobProcessResult.calculateBackoffDelay(newAttemptCount);
+
+                LOG.warnf("Dispatch job [%s] failed, attempt %d/%d, will retry in %ds",
+                    job.id, newAttemptCount, job.maxRetries, backoffDelay);
+                return DispatchJobProcessResult.transientError("Error but retries not exhausted.", backoffDelay);
             }
         }
     }
@@ -193,24 +196,68 @@ public class DispatchJobService {
      *
      * @param ack Whether to acknowledge (true) or nack (false) the message
      * @param message Human-readable status message for the message router
+     * @param delaySeconds Optional delay in seconds before the message becomes visible again (for transient errors)
      */
     public record DispatchJobProcessResult(
         boolean ack,
-        String message
+        String message,
+        Integer delaySeconds
     ) {
         /** Success - ack the message, remove from queue */
         public static DispatchJobProcessResult success(String message) {
-            return new DispatchJobProcessResult(true, message);
+            return new DispatchJobProcessResult(true, message, null);
         }
 
-        /** Transient error - nack for retry via queue visibility timeout */
-        public static DispatchJobProcessResult transientError(String message) {
-            return new DispatchJobProcessResult(false, message);
+        /** Transient error - nack for retry with calculated backoff delay */
+        public static DispatchJobProcessResult transientError(String message, int delaySeconds) {
+            return new DispatchJobProcessResult(false, message, delaySeconds);
         }
 
         /** Permanent error - ack to prevent retry (e.g., 4xx or max retries exhausted) */
         public static DispatchJobProcessResult permanentError(String message) {
-            return new DispatchJobProcessResult(true, message);
+            return new DispatchJobProcessResult(true, message, null);
+        }
+
+        /**
+         * Calculate exponential backoff delay based on attempt count.
+         *
+         * <p>Formula: min(baseDelay * (multiplier ^ attemptCount), maxDelay)</p>
+         *
+         * @param attemptCount The current attempt number (1-based, clamped to >= 1)
+         * @param baseDelaySeconds Base delay in seconds
+         * @param multiplier Backoff multiplier
+         * @param maxDelaySeconds Maximum delay cap in seconds
+         * @return Delay in seconds
+         */
+        public static int calculateBackoffDelay(int attemptCount, int baseDelaySeconds, double multiplier, int maxDelaySeconds) {
+            // Ensure attemptCount is at least 1
+            int safeAttemptCount = Math.max(1, attemptCount);
+            // Calculate exponential backoff: base * (multiplier ^ (attemptCount - 1))
+            double delay = baseDelaySeconds * Math.pow(multiplier, safeAttemptCount - 1);
+            return (int) Math.min(delay, maxDelaySeconds);
+        }
+
+        /**
+         * Calculate exponential backoff with default values:
+         * - Base delay: 3 seconds
+         * - Multiplier: 2.0
+         * - Max delay: 600 seconds (10 minutes)
+         *
+         * <p>Backoff schedule:
+         * <ul>
+         *   <li>Attempt 1: 3s</li>
+         *   <li>Attempt 2: 6s</li>
+         *   <li>Attempt 3: 12s</li>
+         *   <li>Attempt 4: 24s</li>
+         *   <li>Attempt 5: 48s</li>
+         *   <li>Attempt 6: 96s</li>
+         *   <li>Attempt 7: 192s (~3min)</li>
+         *   <li>Attempt 8: 384s (~6min)</li>
+         *   <li>Attempt 9+: capped at 600s (10 min)</li>
+         * </ul>
+         */
+        public static int calculateBackoffDelay(int attemptCount) {
+            return calculateBackoffDelay(attemptCount, 3, 2.0, 600);
         }
     }
 }
