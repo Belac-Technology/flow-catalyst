@@ -60,4 +60,12 @@ public record QueuePublishResult(
     public boolean allPublished() {
         return success && failedMessageIds.isEmpty();
     }
+
+    /**
+     * Check if the message was deduplicated (not published because duplicate).
+     */
+    public boolean deduplicated() {
+        return success && publishedMessageIds.isEmpty() &&
+               errorMessage.map(e -> e.equals("Deduplicated")).orElse(false);
+    }
 }

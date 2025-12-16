@@ -65,4 +65,18 @@ public interface DispatchSchedulerConfig {
      */
     @WithDefault("DISPATCH-POOL")
     String defaultDispatchPoolCode();
+
+    /**
+     * Threshold in minutes for considering QUEUED jobs as stale.
+     * Jobs in QUEUED status older than this are reset to PENDING.
+     */
+    @WithDefault("15")
+    int staleQueuedThresholdMinutes();
+
+    /**
+     * Interval between polling for stale QUEUED jobs.
+     * Uses Quarkus duration format (e.g., "60s", "1m").
+     */
+    @WithDefault("60s")
+    String staleQueuedPollInterval();
 }

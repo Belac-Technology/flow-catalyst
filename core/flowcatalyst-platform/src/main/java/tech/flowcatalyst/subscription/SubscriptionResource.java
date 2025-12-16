@@ -167,6 +167,8 @@ public class SubscriptionResource {
             request.sequence(),
             request.mode(),
             request.timeoutSeconds(),
+            request.maxRetries(),
+            request.serviceAccountId(),
             request.dataOnly()
         );
 
@@ -230,6 +232,8 @@ public class SubscriptionResource {
             request.sequence(),
             request.mode(),
             request.timeoutSeconds(),
+            request.maxRetries(),
+            request.serviceAccountId(),
             request.dataOnly()
         );
 
@@ -317,7 +321,7 @@ public class SubscriptionResource {
 
         UpdateSubscriptionCommand command = new UpdateSubscriptionCommand(
             id, null, null, null, null, null, null,
-            SubscriptionStatus.PAUSED, null, null, null, null, null, null, null
+            SubscriptionStatus.PAUSED, null, null, null, null, null, null, null, null, null
         );
 
         ExecutionContext ctx = ExecutionContext.create(principalId);
@@ -359,7 +363,7 @@ public class SubscriptionResource {
 
         UpdateSubscriptionCommand command = new UpdateSubscriptionCommand(
             id, null, null, null, null, null, null,
-            SubscriptionStatus.ACTIVE, null, null, null, null, null, null, null
+            SubscriptionStatus.ACTIVE, null, null, null, null, null, null, null, null, null
         );
 
         ExecutionContext ctx = ExecutionContext.create(principalId);
@@ -405,6 +409,8 @@ public class SubscriptionResource {
             subscription.sequence(),
             subscription.mode(),
             subscription.timeoutSeconds(),
+            subscription.maxRetries(),
+            subscription.serviceAccountId(),
             subscription.dataOnly(),
             subscription.createdAt(),
             subscription.updatedAt()
@@ -433,6 +439,8 @@ public class SubscriptionResource {
         int sequence,
         DispatchMode mode,
         int timeoutSeconds,
+        int maxRetries,
+        String serviceAccountId,
         boolean dataOnly,
         Instant createdAt,
         Instant updatedAt
@@ -486,6 +494,12 @@ public class SubscriptionResource {
         @Min(value = 1, message = "Timeout must be at least 1 second")
         Integer timeoutSeconds,
 
+        @Min(value = 0, message = "Max retries cannot be negative")
+        Integer maxRetries,
+
+        @NotBlank(message = "Service account ID is required")
+        String serviceAccountId,
+
         Boolean dataOnly
     ) {}
 
@@ -520,6 +534,11 @@ public class SubscriptionResource {
 
         @Min(value = 1, message = "Timeout must be at least 1 second")
         Integer timeoutSeconds,
+
+        @Min(value = 0, message = "Max retries cannot be negative")
+        Integer maxRetries,
+
+        String serviceAccountId,
 
         Boolean dataOnly
     ) {}

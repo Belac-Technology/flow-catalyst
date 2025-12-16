@@ -68,7 +68,7 @@ public class DispatchJobRepository implements PanacheMongoRepositoryBase<Dispatc
         job.scheduledFor = request.scheduledFor();
         job.expiresAt = request.expiresAt();
         job.idempotencyKey = request.idempotencyKey();
-        job.status = DispatchStatus.PENDING;
+        job.status = DispatchStatus.QUEUED;
         job.attemptCount = 0;
         job.createdAt = Instant.now();
         job.updatedAt = Instant.now();
@@ -331,5 +331,51 @@ public class DispatchJobRepository implements PanacheMongoRepositoryBase<Dispatc
             .into(new ArrayList<>());
 
         return new HashSet<>(errorGroups);
+    }
+
+    // =========================================================================
+    // Batch Operations
+    // =========================================================================
+
+    /**
+     * Update status for multiple jobs in a single operation.
+     *
+     * @param ids List of job IDs to update
+     * @param status The new status to set
+     */
+    public void updateStatusBatch(List<String> ids, DispatchStatus status) {
+        if (ids == null || ids.isEmpty()) {
+            return;
+        }
+
+        update("status = ?1, updatedAt = ?2", status, Instant.now())
+            .where("id in ?1", ids);
+    }
+
+    /**
+     * Find QUEUED jobs older than threshold (stale safety net).
+     *
+     * @param threshold Jobs created before this time are considered stale
+     * @return List of stale QUEUED jobs
+     */
+    public List<DispatchJob> findStaleQueued(Instant threshold) {
+        return list("status = ?1 and createdAt < ?2",
+            Sort.by("createdAt"),
+            DispatchStatus.QUEUED, threshold);
+    }
+
+    /**
+     * Find QUEUED jobs older than threshold with a limit.
+     *
+     * @param threshold Jobs created before this time are considered stale
+     * @param limit Maximum number of jobs to return
+     * @return List of stale QUEUED jobs
+     */
+    public List<DispatchJob> findStaleQueued(Instant threshold, int limit) {
+        return find("status = ?1 and createdAt < ?2",
+            Sort.by("createdAt"),
+            DispatchStatus.QUEUED, threshold)
+            .page(0, limit)
+            .list();
     }
 }

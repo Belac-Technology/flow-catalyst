@@ -1,6 +1,5 @@
 package tech.flowcatalyst.messagerouter.consumer;
 
-import io.quarkus.test.junit.QuarkusTest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.AfterEach;
@@ -20,7 +19,6 @@ import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
-@QuarkusTest
 class SqsQueueConsumerTest {
 
     private SqsQueueConsumer sqsConsumer;
@@ -67,12 +65,14 @@ class SqsQueueConsumerTest {
                 "poolCode": "POOL-A",
                 "authToken": "test-token",
                 "mediationType": "HTTP",
-                "mediationTarget": "http://localhost:8080/test"
+                "mediationTarget": "http://localhost:8080/test",
+                "messageGroupId": "test-group"
             }
             """;
 
         Message sqsMessage = Message.builder()
             .body(messageBody)
+            .messageId("sqs-msg-123")
             .receiptHandle("receipt-123")
             .build();
 
@@ -105,7 +105,8 @@ class SqsQueueConsumerTest {
                 "poolCode": "POOL-A",
                 "authToken": "test-token",
                 "mediationType": "HTTP",
-                "mediationTarget": "http://localhost:8080/test"
+                "mediationTarget": "http://localhost:8080/test",
+                "messageGroupId": "test-group"
             }
             """;
 
@@ -113,6 +114,7 @@ class SqsQueueConsumerTest {
 
         Message sqsMessage = Message.builder()
             .body(messageBody)
+            .messageId("sqs-msg-ack")
             .receiptHandle(receiptHandle)
             .build();
 
@@ -157,12 +159,14 @@ class SqsQueueConsumerTest {
                 "poolCode": "POOL-A",
                 "authToken": "test-token",
                 "mediationType": "HTTP",
-                "mediationTarget": "http://localhost:8080/test"
+                "mediationTarget": "http://localhost:8080/test",
+                "messageGroupId": "test-group"
             }
             """;
 
         Message sqsMessage = Message.builder()
             .body(messageBody)
+            .messageId("sqs-msg-nack")
             .receiptHandle("receipt-nack-123")
             .build();
 
@@ -242,6 +246,7 @@ class SqsQueueConsumerTest {
         // Given
         Message invalidMessage = Message.builder()
             .body("{ invalid json }")
+            .messageId("sqs-msg-invalid")
             .receiptHandle("receipt-invalid")
             .build();
 
@@ -262,12 +267,12 @@ class SqsQueueConsumerTest {
             // They're data quality issues that should be caught upstream
             verify(mockQueueMetrics, never()).recordMessageReceived(queueUrl);
             verify(mockQueueMetrics).recordMessageProcessed(queueUrl, false);
-            verify(mockQueueManager, never()).routeMessage(any(MessagePointer.class), any(MessageCallback.class), any(String.class));
+            verify(mockQueueManager, never()).routeMessageBatch(anyList());
         });
     }
 
     @Test
-    void shouldSetFastFailVisibilityTo1SecondThenResetTo30Seconds() {
+    void shouldSetFastFailVisibilityTo10SecondsThenResetTo30Seconds() {
         // Given
         String messageBody = """
             {
@@ -275,7 +280,8 @@ class SqsQueueConsumerTest {
                 "poolCode": "POOL-A",
                 "authToken": "test-token",
                 "mediationType": "HTTP",
-                "mediationTarget": "http://localhost:8080/test"
+                "mediationTarget": "http://localhost:8080/test",
+                "messageGroupId": "test-group"
             }
             """;
 
@@ -283,6 +289,7 @@ class SqsQueueConsumerTest {
 
         Message sqsMessage = Message.builder()
             .body(messageBody)
+            .messageId("sqs-msg-visibility")
             .receiptHandle(receiptHandle)
             .build();
 
@@ -324,7 +331,7 @@ class SqsQueueConsumerTest {
         ChangeMessageVisibilityRequest request1 = visibilityCaptor1.getValue();
         assertEquals(queueUrl, request1.queueUrl());
         assertEquals(receiptHandle, request1.receiptHandle());
-        assertEquals(1, request1.visibilityTimeout(), "Fast-fail visibility should be 1 second");
+        assertEquals(10, request1.visibilityTimeout(), "Fast-fail visibility should be 10 seconds");
 
         // Scenario 2: Message processed but failed (real error) - reset to default (30 seconds)
         visibilityControl.resetVisibilityToDefault(testMessage);

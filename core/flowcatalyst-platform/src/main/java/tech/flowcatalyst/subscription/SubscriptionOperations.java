@@ -53,6 +53,9 @@ public class SubscriptionOperations {
     @Inject
     DeleteSubscriptionUseCase deleteSubscriptionUseCase;
 
+    @Inject
+    SubscriptionCache subscriptionCache;
+
     /**
      * Create a new Subscription.
      *
@@ -64,7 +67,11 @@ public class SubscriptionOperations {
             CreateSubscriptionCommand command,
             ExecutionContext context
     ) {
-        return createSubscriptionUseCase.execute(command, context);
+        Result<SubscriptionCreated> result = createSubscriptionUseCase.execute(command, context);
+        if (result instanceof Result.Success<SubscriptionCreated> success) {
+            invalidateCacheForEventTypes(success.value().eventTypes());
+        }
+        return result;
     }
 
     /**
@@ -78,7 +85,11 @@ public class SubscriptionOperations {
             UpdateSubscriptionCommand command,
             ExecutionContext context
     ) {
-        return updateSubscriptionUseCase.execute(command, context);
+        Result<SubscriptionUpdated> result = updateSubscriptionUseCase.execute(command, context);
+        if (result instanceof Result.Success<SubscriptionUpdated> success) {
+            invalidateCacheForEventTypes(success.value().eventTypes());
+        }
+        return result;
     }
 
     /**
@@ -92,7 +103,11 @@ public class SubscriptionOperations {
             DeleteSubscriptionCommand command,
             ExecutionContext context
     ) {
-        return deleteSubscriptionUseCase.execute(command, context);
+        Result<SubscriptionDeleted> result = deleteSubscriptionUseCase.execute(command, context);
+        if (result instanceof Result.Success<SubscriptionDeleted> success) {
+            invalidateCacheForEventTypes(success.value().eventTypes());
+        }
+        return result;
     }
 
     // ========================================================================
@@ -187,5 +202,21 @@ public class SubscriptionOperations {
     public List<Subscription> findWithFilters(String clientId, SubscriptionStatus status,
                                                SubscriptionSource source, String dispatchPoolId) {
         return repo.findWithFilters(clientId, status, source, dispatchPoolId);
+    }
+
+    // ========================================================================
+    // Cache Invalidation
+    // ========================================================================
+
+    /**
+     * Invalidate subscription cache for the given event type bindings.
+     */
+    private void invalidateCacheForEventTypes(List<EventTypeBinding> eventTypes) {
+        if (eventTypes == null) {
+            return;
+        }
+        for (EventTypeBinding binding : eventTypes) {
+            subscriptionCache.invalidateByEventTypeCode(binding.eventTypeCode());
+        }
     }
 }

@@ -9,6 +9,7 @@ import tech.flowcatalyst.platform.common.Result;
 import tech.flowcatalyst.platform.common.UnitOfWork;
 import tech.flowcatalyst.dispatch.DispatchMode;
 import tech.flowcatalyst.platform.common.errors.UseCaseError;
+import tech.flowcatalyst.serviceaccount.repository.ServiceAccountRepository;
 import tech.flowcatalyst.subscription.*;
 import tech.flowcatalyst.subscription.events.SubscriptionUpdated;
 
@@ -28,6 +29,9 @@ public class UpdateSubscriptionUseCase {
 
     @Inject
     DispatchPoolRepository poolRepo;
+
+    @Inject
+    ServiceAccountRepository serviceAccountRepo;
 
     @Inject
     UnitOfWork unitOfWork;
@@ -80,6 +84,19 @@ public class UpdateSubscriptionUseCase {
             ));
         }
 
+        // Validate service account if changing
+        String newServiceAccountId = existing.serviceAccountId();
+        if (command.serviceAccountId() != null && !command.serviceAccountId().equals(existing.serviceAccountId())) {
+            if (!serviceAccountRepo.findByIdOptional(command.serviceAccountId()).isPresent()) {
+                return Result.failure(new UseCaseError.NotFoundError(
+                    "SERVICE_ACCOUNT_NOT_FOUND",
+                    "Service account not found",
+                    Map.of("serviceAccountId", command.serviceAccountId())
+                ));
+            }
+            newServiceAccountId = command.serviceAccountId();
+        }
+
         // Apply updates
         String newName = command.name() != null ? command.name() : existing.name();
         String newDescription = command.description() != null ? command.description() : existing.description();
@@ -93,6 +110,7 @@ public class UpdateSubscriptionUseCase {
         int newSequence = command.sequence() != null ? command.sequence() : existing.sequence();
         DispatchMode newMode = command.mode() != null ? command.mode() : existing.mode();
         int newTimeoutSeconds = command.timeoutSeconds() != null ? command.timeoutSeconds() : existing.timeoutSeconds();
+        int newMaxRetries = command.maxRetries() != null ? command.maxRetries() : existing.maxRetries();
         boolean newDataOnly = command.dataOnly() != null ? command.dataOnly() : existing.dataOnly();
 
         // Create updated subscription
@@ -116,6 +134,8 @@ public class UpdateSubscriptionUseCase {
             newSequence,
             newMode,
             newTimeoutSeconds,
+            newMaxRetries,
+            newServiceAccountId,
             newDataOnly,
             existing.createdAt(),
             Instant.now()
@@ -142,6 +162,8 @@ public class UpdateSubscriptionUseCase {
             .sequence(updated.sequence())
             .mode(updated.mode())
             .timeoutSeconds(updated.timeoutSeconds())
+            .maxRetries(updated.maxRetries())
+            .serviceAccountId(updated.serviceAccountId())
             .dataOnly(updated.dataOnly())
             .build();
 

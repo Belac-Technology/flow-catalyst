@@ -56,6 +56,7 @@ public class DeleteSubscriptionUseCase {
             .code(existing.code())
             .clientId(existing.clientId())
             .clientIdentifier(existing.clientIdentifier())
+            .eventTypes(existing.eventTypes())
             .build();
 
         // Commit delete atomically (deletes entity, emits event, creates audit log)

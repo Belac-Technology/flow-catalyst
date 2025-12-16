@@ -156,7 +156,7 @@ public class SubscriptionRepository implements PanacheMongoRepositoryBase<Subscr
     }
 
     /**
-     * Find active subscriptions for a specific event type and client.
+     * Find active subscriptions for a specific event type ID and client.
      * Used for matching events to subscriptions.
      *
      * @param eventTypeId The event type ID
@@ -172,5 +172,24 @@ public class SubscriptionRepository implements PanacheMongoRepositoryBase<Subscr
         return list("eventTypes.eventTypeId = ?1 and (clientId = ?2 or clientId = null) and status = ?3",
             Sort.by("sequence").and("code"),
             eventTypeId, clientId, SubscriptionStatus.ACTIVE);
+    }
+
+    /**
+     * Find active subscriptions for a specific event type code and client.
+     * Used for matching events to subscriptions during dispatch job creation.
+     *
+     * @param eventTypeCode The event type code (e.g., "operant:execution:trip:started")
+     * @param clientId The client ID (null for anchor-level)
+     * @return List of active subscriptions matching the criteria
+     */
+    public List<Subscription> findActiveByEventTypeCodeAndClient(String eventTypeCode, String clientId) {
+        if (clientId == null) {
+            return list("eventTypes.eventTypeCode = ?1 and clientId = null and status = ?2",
+                Sort.by("sequence").and("code"),
+                eventTypeCode, SubscriptionStatus.ACTIVE);
+        }
+        return list("eventTypes.eventTypeCode = ?1 and (clientId = ?2 or clientId = null) and status = ?3",
+            Sort.by("sequence").and("code"),
+            eventTypeCode, clientId, SubscriptionStatus.ACTIVE);
     }
 }

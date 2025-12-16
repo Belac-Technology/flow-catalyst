@@ -25,6 +25,8 @@ import java.util.List;
  * @param sequence Sequence number for ordering
  * @param mode Processing mode
  * @param timeoutSeconds Timeout for dispatch target
+ * @param maxRetries Maximum retry attempts for failed dispatch jobs
+ * @param serviceAccountId Service account ID for webhook credentials
  * @param dataOnly If true, send raw payload only; if false, wrap in JSON envelope
  */
 public record CreateSubscriptionCommand(
@@ -43,5 +45,7 @@ public record CreateSubscriptionCommand(
     Integer sequence,
     DispatchMode mode,
     Integer timeoutSeconds,
+    Integer maxRetries,
+    String serviceAccountId,
     Boolean dataOnly
 ) {}

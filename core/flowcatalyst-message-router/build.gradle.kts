@@ -18,8 +18,9 @@ dependencies {
     implementation(enforcedPlatform("${quarkusPlatformGroupId}:${quarkusPlatformArtifactId}:${quarkusPlatformVersion}"))
     implementation(enforcedPlatform("${quarkusPlatformGroupId}:quarkus-amazon-services-bom:${quarkusPlatformVersion}"))
 
-    // Shared standby module
+    // Shared modules
     implementation(project(":core:flowcatalyst-standby"))
+    implementation(project(":core:flowcatalyst-queue-client"))
 
     // REST API
     implementation("io.quarkus:quarkus-rest")

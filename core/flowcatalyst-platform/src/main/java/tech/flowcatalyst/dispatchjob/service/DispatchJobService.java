@@ -57,25 +57,39 @@ public class DispatchJobService {
         // Validate service account exists
         credentialsService.validateServiceAccount(request.serviceAccountId());
 
-        // Create via repository (handles TSID generation and metadata conversion)
+        // Create via repository (handles TSID generation, status = QUEUED)
         DispatchJob job = dispatchJobRepository.create(request);
 
         LOG.infof("Created dispatch job [%s] kind=[%s] code=[%s] from source [%s]", job.id, job.kind, job.code, job.source);
 
         // Send to SQS queue
-        sendToQueue(job, request.queueUrl());
+        boolean queued = sendToQueue(job, request.queueUrl());
+
+        // If queue send fails, update status to PENDING for safety net polling
+        if (!queued) {
+            LOG.warnf("Queue send failed for dispatch job [%s], updating to PENDING status", job.id);
+            dispatchJobRepository.updateStatus(job.id, DispatchStatus.PENDING, null, null, null);
+            job.status = DispatchStatus.PENDING;
+        }
 
         return job;
     }
 
-    private void sendToQueue(DispatchJob job, String queueUrl) {
+    /**
+     * Send a dispatch job to the queue.
+     *
+     * @param job The dispatch job to queue
+     * @param queueUrl The SQS queue URL
+     * @return true if successfully queued, false otherwise
+     */
+    private boolean sendToQueue(DispatchJob job, String queueUrl) {
         try {
             // Generate HMAC auth token for this dispatch job
             String authToken = dispatchAuthService.generateAuthToken(job.id);
 
             // Create MessagePointer for the dispatch job
             MessagePointer messagePointer = new MessagePointer(
-                job.id.toString(),
+                job.id,
                 DISPATCH_POOL_CODE,
                 authToken,
                 MEDIATION_TYPE,
@@ -90,15 +104,16 @@ public class DispatchJobService {
                 .queueUrl(queueUrl)
                 .messageBody(messageBody)
                 .messageGroupId("dispatch-" + job.code) // Group by code
-                .messageDeduplicationId(job.id.toString())
+                .messageDeduplicationId(job.id)
                 .build();
 
             sqsClient.sendMessage(sendRequest);
             LOG.infof("Sent dispatch job [%s] to queue [%s]", job.id, queueUrl);
+            return true;
 
         } catch (Exception e) {
             LOG.errorf(e, "Failed to send dispatch job [%s] to queue", job.id);
-            // Don't fail the create operation, job is persisted and can be retried
+            return false;
         }
     }
 

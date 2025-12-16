@@ -25,30 +25,24 @@ public class EventResource {
     EventService eventService;
 
     @POST
-    @Operation(summary = "Create a new event", description = "Creates a new event in the event store. If a deduplicationId is provided and an event with that ID already exists, the existing event is returned (idempotent operation).")
+    @Operation(summary = "Create a new event", description = "Creates a new event in the event store. If a deduplicationId is provided and an event with that ID already exists, the existing event is returned (idempotent operation). Dispatch jobs are automatically created for matching subscriptions.")
     @APIResponses({
         @APIResponse(
             responseCode = "201",
             description = "Event created successfully",
             content = @Content(mediaType = MediaType.APPLICATION_JSON,
-                schema = @Schema(implementation = EventResponse.class))
+                schema = @Schema(implementation = CreateEventResponse.class))
         ),
         @APIResponse(
             responseCode = "200",
             description = "Event already exists (idempotent response)",
             content = @Content(mediaType = MediaType.APPLICATION_JSON,
-                schema = @Schema(implementation = EventResponse.class))
+                schema = @Schema(implementation = CreateEventResponse.class))
         ),
         @APIResponse(responseCode = "400", description = "Invalid request")
     })
     public Response createEvent(CreateEventRequest request) {
-        // Check if this is an idempotent replay
-        boolean wasExisting = false;
-        if (request.deduplicationId() != null) {
-            wasExisting = eventService.findByDeduplicationId(request.deduplicationId()).isPresent();
-        }
-
-        Event event = eventService.create(new CreateEvent(
+        var result = eventService.create(new CreateEvent(
             request.specVersion(),
             request.type(),
             request.source(),
@@ -62,10 +56,13 @@ public class EventResource {
             request.contextData()
         ));
 
-        EventResponse response = EventResponse.from(event);
+        CreateEventResponse response = new CreateEventResponse(
+            EventResponse.from(result.event()),
+            result.dispatchJobs().size()
+        );
 
         // Return 200 if this was an idempotent replay, 201 if newly created
-        if (wasExisting) {
+        if (result.isDuplicate()) {
             return Response.ok(response).build();
         }
         return Response.status(201).entity(response).build();
@@ -73,7 +70,7 @@ public class EventResource {
 
     @POST
     @Path("/batch")
-    @Operation(summary = "Create multiple events in batch", description = "Creates multiple events in a single operation. Maximum batch size is 100 events. Returns list of created events.")
+    @Operation(summary = "Create multiple events in batch", description = "Creates multiple events in a single operation. Maximum batch size is 100 events. Dispatch jobs are automatically created for matching subscriptions.")
     @APIResponses({
         @APIResponse(
             responseCode = "201",
@@ -95,26 +92,34 @@ public class EventResource {
                 .build();
         }
 
-        List<EventResponse> results = requests.stream()
-            .map(request -> {
-                Event event = eventService.create(new CreateEvent(
-                    request.specVersion(),
-                    request.type(),
-                    request.source(),
-                    request.subject(),
-                    request.time(),
-                    request.data(),
-                    request.correlationId(),
-                    request.causationId(),
-                    request.deduplicationId(),
-                    request.messageGroup(),
-                    request.contextData()
-                ));
-                return EventResponse.from(event);
-            })
+        List<CreateEvent> operations = requests.stream()
+            .map(request -> new CreateEvent(
+                request.specVersion(),
+                request.type(),
+                request.source(),
+                request.subject(),
+                request.time(),
+                request.data(),
+                request.correlationId(),
+                request.causationId(),
+                request.deduplicationId(),
+                request.messageGroup(),
+                request.contextData()
+            ))
             .toList();
 
-        return Response.status(201).entity(new BatchEventResponse(results, results.size())).build();
+        var result = eventService.createBatch(operations);
+
+        List<EventResponse> eventResponses = result.events().stream()
+            .map(EventResponse::from)
+            .toList();
+
+        return Response.status(201).entity(new BatchEventResponse(
+            eventResponses,
+            eventResponses.size(),
+            result.dispatchJobs().size(),
+            result.duplicateCount()
+        )).build();
     }
 
     @GET
@@ -193,5 +198,15 @@ public class EventResource {
 
     public record ErrorResponse(String error) {}
 
-    public record BatchEventResponse(List<EventResponse> events, int count) {}
+    public record CreateEventResponse(
+        EventResponse event,
+        int dispatchJobCount
+    ) {}
+
+    public record BatchEventResponse(
+        List<EventResponse> events,
+        int count,
+        int dispatchJobCount,
+        int duplicateCount
+    ) {}
 }

@@ -405,6 +405,8 @@ export type CreateSubscriptionRequest = {
   sequence?: number;
   mode?: DispatchMode;
   timeoutSeconds?: number;
+  maxRetries?: number;
+  serviceAccountId: string;
   dataOnly?: boolean;
 };
 
@@ -807,6 +809,8 @@ export type SubscriptionDto = {
   sequence?: number;
   mode?: DispatchMode;
   timeoutSeconds?: number;
+  maxRetries?: number;
+  serviceAccountId?: string;
   dataOnly?: boolean;
   createdAt?: Instant;
   updatedAt?: Instant;
@@ -965,6 +969,8 @@ export type UpdateSubscriptionRequest = {
   sequence?: number;
   mode?: DispatchMode;
   timeoutSeconds?: number;
+  maxRetries?: number;
+  serviceAccountId?: string;
   dataOnly?: boolean;
 };
 

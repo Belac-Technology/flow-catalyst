@@ -12,6 +12,7 @@ import tech.flowcatalyst.platform.common.UnitOfWork;
 import tech.flowcatalyst.platform.common.errors.UseCaseError;
 import tech.flowcatalyst.dispatch.DispatchMode;
 import tech.flowcatalyst.platform.shared.TsidGenerator;
+import tech.flowcatalyst.serviceaccount.repository.ServiceAccountRepository;
 import tech.flowcatalyst.subscription.*;
 import tech.flowcatalyst.subscription.events.SubscriptionCreated;
 
@@ -33,6 +34,9 @@ public class CreateSubscriptionUseCase {
 
     @Inject
     ClientRepository clientRepo;
+
+    @Inject
+    ServiceAccountRepository serviceAccountRepo;
 
     @Inject
     UnitOfWork unitOfWork;
@@ -111,6 +115,22 @@ public class CreateSubscriptionUseCase {
         }
         DispatchPool pool = poolOpt.get();
 
+        // Validate service account
+        if (command.serviceAccountId() == null || command.serviceAccountId().isBlank()) {
+            return Result.failure(new UseCaseError.ValidationError(
+                "SERVICE_ACCOUNT_REQUIRED",
+                "Service account ID is required for webhook credentials",
+                Map.of()
+            ));
+        }
+        if (!serviceAccountRepo.findByIdOptional(command.serviceAccountId()).isPresent()) {
+            return Result.failure(new UseCaseError.NotFoundError(
+                "SERVICE_ACCOUNT_NOT_FOUND",
+                "Service account not found",
+                Map.of("serviceAccountId", command.serviceAccountId())
+            ));
+        }
+
         // Validate client (if provided)
         String clientIdentifier = null;
         if (command.clientId() != null && !command.clientId().isBlank()) {
@@ -139,6 +159,7 @@ public class CreateSubscriptionUseCase {
         int delaySeconds = command.delaySeconds() != null ? command.delaySeconds() : Subscription.DEFAULT_DELAY_SECONDS;
         int sequence = command.sequence() != null ? command.sequence() : Subscription.DEFAULT_SEQUENCE;
         int timeoutSeconds = command.timeoutSeconds() != null ? command.timeoutSeconds() : Subscription.DEFAULT_TIMEOUT_SECONDS;
+        int maxRetries = command.maxRetries() != null ? command.maxRetries() : Subscription.DEFAULT_MAX_RETRIES;
         DispatchMode mode = command.mode() != null ? command.mode() : DispatchMode.IMMEDIATE;
         SubscriptionSource source = command.source() != null ? command.source() : SubscriptionSource.UI;
         boolean dataOnly = command.dataOnly() != null ? command.dataOnly() : Subscription.DEFAULT_DATA_ONLY;
@@ -165,6 +186,8 @@ public class CreateSubscriptionUseCase {
             sequence,
             mode,
             timeoutSeconds,
+            maxRetries,
+            command.serviceAccountId(),
             dataOnly,
             now,
             now
@@ -192,6 +215,8 @@ public class CreateSubscriptionUseCase {
             .sequence(subscription.sequence())
             .mode(subscription.mode())
             .timeoutSeconds(subscription.timeoutSeconds())
+            .maxRetries(subscription.maxRetries())
+            .serviceAccountId(subscription.serviceAccountId())
             .dataOnly(subscription.dataOnly())
             .build();
 

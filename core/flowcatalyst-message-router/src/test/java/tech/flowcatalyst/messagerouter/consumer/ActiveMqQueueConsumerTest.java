@@ -1,6 +1,5 @@
 package tech.flowcatalyst.messagerouter.consumer;
 
-import io.quarkus.test.junit.QuarkusTest;
 import jakarta.jms.*;
 import org.apache.activemq.ActiveMQSession;
 import org.junit.jupiter.api.BeforeEach;
@@ -14,6 +13,7 @@ import tech.flowcatalyst.messagerouter.model.MessagePointer;
 import tech.flowcatalyst.messagerouter.model.MediationType;
 
 import java.util.Enumeration;
+import java.util.List;
 
 import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.*;
@@ -28,7 +28,6 @@ import static org.mockito.Mockito.*;
  * - Error handling
  * - Resource cleanup
  */
-@QuarkusTest
 class ActiveMqQueueConsumerTest {
 
     private ActiveMqQueueConsumer activeMqConsumer;
@@ -92,7 +91,8 @@ class ActiveMqQueueConsumerTest {
                 "poolCode": "POOL-A",
                 "authToken": "test-token",
                 "mediationType": "HTTP",
-                "mediationTarget": "http://localhost:8080/test"
+                "mediationTarget": "http://localhost:8080/test",
+                "messageGroupId": "test-group"
             }
             """;
 
@@ -103,16 +103,15 @@ class ActiveMqQueueConsumerTest {
             .thenReturn(textMessage)
             .thenReturn(null); // Stop polling after first message
 
-        when(mockQueueManager.routeMessage(any(MessagePointer.class), any(MessageCallback.class), any(String.class))).thenReturn(true);
+        doNothing().when(mockQueueManager).routeMessageBatch(anyList());
 
         // When
         activeMqConsumer.start();
 
         // Then
         await().untilAsserted(() -> {
-            verify(mockQueueManager).routeMessage(any(MessagePointer.class), any(MessageCallback.class), any(String.class));
+            verify(mockQueueManager).routeMessageBatch(anyList());
             verify(mockQueueMetrics).recordMessageReceived(queueUri);
-            verify(mockQueueMetrics).recordMessageProcessed(queueUri, true);
         });
     }
 
@@ -125,7 +124,8 @@ class ActiveMqQueueConsumerTest {
                 "poolCode": "POOL-A",
                 "authToken": "test-token",
                 "mediationType": "HTTP",
-                "mediationTarget": "http://localhost:8080/test"
+                "mediationTarget": "http://localhost:8080/test",
+                "messageGroupId": "test-group"
             }
             """;
 
@@ -136,19 +136,22 @@ class ActiveMqQueueConsumerTest {
             .thenReturn(textMessage)
             .thenReturn(null);
 
-        ArgumentCaptor<MessageCallback> callbackCaptor = ArgumentCaptor.forClass(MessageCallback.class);
-        when(mockQueueManager.routeMessage(any(MessagePointer.class), callbackCaptor.capture(), any(String.class))).thenReturn(true);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<QueueManager.BatchMessage>> batchCaptor = ArgumentCaptor.forClass(List.class);
+        doNothing().when(mockQueueManager).routeMessageBatch(batchCaptor.capture());
 
         // When
         activeMqConsumer.start();
 
         await().untilAsserted(() -> {
-            verify(mockQueueManager).routeMessage(any(MessagePointer.class), any(MessageCallback.class), any(String.class));
+            verify(mockQueueManager).routeMessageBatch(anyList());
         });
 
-        MessageCallback callback = callbackCaptor.getValue();
-        MessagePointer testMessage = new MessagePointer("msg-ack", "POOL-A", "token", MediationType.HTTP, "http://test.com", null
-            , null);
+        // Extract callback from captured batch
+        List<QueueManager.BatchMessage> batch = batchCaptor.getValue();
+        assertFalse(batch.isEmpty());
+        MessageCallback callback = batch.get(0).callback();
+        MessagePointer testMessage = new MessagePointer("msg-ack", "POOL-A", "token", MediationType.HTTP, "http://test.com", "test-group", null);
         callback.ack(testMessage);
 
         // Then
@@ -164,7 +167,8 @@ class ActiveMqQueueConsumerTest {
                 "poolCode": "POOL-A",
                 "authToken": "test-token",
                 "mediationType": "HTTP",
-                "mediationTarget": "http://localhost:8080/test"
+                "mediationTarget": "http://localhost:8080/test",
+                "messageGroupId": "test-group"
             }
             """;
 
@@ -175,19 +179,22 @@ class ActiveMqQueueConsumerTest {
             .thenReturn(textMessage)
             .thenReturn(null);
 
-        ArgumentCaptor<MessageCallback> callbackCaptor = ArgumentCaptor.forClass(MessageCallback.class);
-        when(mockQueueManager.routeMessage(any(MessagePointer.class), callbackCaptor.capture(), any(String.class))).thenReturn(true);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<QueueManager.BatchMessage>> batchCaptor = ArgumentCaptor.forClass(List.class);
+        doNothing().when(mockQueueManager).routeMessageBatch(batchCaptor.capture());
 
         // When
         activeMqConsumer.start();
 
         await().untilAsserted(() -> {
-            verify(mockQueueManager).routeMessage(any(MessagePointer.class), any(MessageCallback.class), any(String.class));
+            verify(mockQueueManager).routeMessageBatch(anyList());
         });
 
-        MessageCallback callback = callbackCaptor.getValue();
-        MessagePointer testMessage = new MessagePointer("msg-nack", "POOL-A", "token", MediationType.HTTP, "http://test.com", null
-            , null);
+        // Extract callback from captured batch
+        List<QueueManager.BatchMessage> batch = batchCaptor.getValue();
+        assertFalse(batch.isEmpty());
+        MessageCallback callback = batch.get(0).callback();
+        MessagePointer testMessage = new MessagePointer("msg-nack", "POOL-A", "token", MediationType.HTTP, "http://test.com", "test-group", null);
         callback.nack(testMessage);
 
         // Then
@@ -244,10 +251,12 @@ class ActiveMqQueueConsumerTest {
         // When
         activeMqConsumer.stop();
 
-        // Then
-        verify(mockMessageConsumer, atLeastOnce()).close();
-        verify(mockSession, atLeastOnce()).close();
-        verify(mockConnection, atLeastOnce()).close();
+        // Then - wait for async cleanup to complete
+        await().untilAsserted(() -> {
+            verify(mockMessageConsumer, atLeastOnce()).close();
+            verify(mockSession, atLeastOnce()).close();
+            verify(mockConnection, atLeastOnce()).close();
+        });
     }
 
     @Test
@@ -274,7 +283,7 @@ class ActiveMqQueueConsumerTest {
             // They're data quality issues that should be caught upstream
             verify(mockQueueMetrics, never()).recordMessageReceived(queueUri);
             verify(mockQueueMetrics).recordMessageProcessed(queueUri, false);
-            verify(mockQueueManager, never()).routeMessage(any(MessagePointer.class), any(MessageCallback.class), any(String.class));
+            verify(mockQueueManager, never()).routeMessageBatch(anyList());
         });
     }
 
@@ -293,20 +302,21 @@ class ActiveMqQueueConsumerTest {
         // Then
         await().untilAsserted(() -> {
             // Should ignore non-text messages
-            verify(mockQueueManager, never()).routeMessage(any(MessagePointer.class), any(MessageCallback.class), any(String.class));
+            verify(mockQueueManager, never()).routeMessageBatch(anyList());
         });
     }
 
     @Test
-    void shouldHandleMessageNotRouted() throws Exception {
+    void shouldRouteBatchMessages() throws Exception {
         // Given
         String messageBody = """
             {
-                "id": "msg-not-routed",
+                "id": "msg-batch",
                 "poolCode": "POOL-A",
                 "authToken": "test-token",
                 "mediationType": "HTTP",
-                "mediationTarget": "http://localhost:8080/test"
+                "mediationTarget": "http://localhost:8080/test",
+                "messageGroupId": "test-group"
             }
             """;
 
@@ -317,17 +327,24 @@ class ActiveMqQueueConsumerTest {
             .thenReturn(textMessage)
             .thenReturn(null);
 
-        // Message not routed (pool full or duplicate)
-        when(mockQueueManager.routeMessage(any(MessagePointer.class), any(MessageCallback.class), any(String.class))).thenReturn(false);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<QueueManager.BatchMessage>> batchCaptor = ArgumentCaptor.forClass(List.class);
+        doNothing().when(mockQueueManager).routeMessageBatch(batchCaptor.capture());
 
         // When
         activeMqConsumer.start();
 
         // Then
         await().untilAsserted(() -> {
-            verify(mockQueueManager).routeMessage(any(MessagePointer.class), any(MessageCallback.class), any(String.class));
-            verify(mockQueueMetrics).recordMessageProcessed(queueUri, false);
+            verify(mockQueueManager).routeMessageBatch(anyList());
         });
+
+        // Verify batch contains the message
+        List<QueueManager.BatchMessage> batch = batchCaptor.getValue();
+        assertEquals(1, batch.size());
+        assertEquals("msg-batch", batch.get(0).message().id());
+        assertEquals("POOL-A", batch.get(0).message().poolCode());
+        assertEquals("test-group", batch.get(0).message().messageGroupId());
     }
 
     @Test

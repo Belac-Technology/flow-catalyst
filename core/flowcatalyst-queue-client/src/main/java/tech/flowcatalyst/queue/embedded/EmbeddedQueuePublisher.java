@@ -4,81 +4,108 @@ import org.jboss.logging.Logger;
 import tech.flowcatalyst.queue.*;
 
 import java.sql.*;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 /**
- * SQLite-based embedded queue publisher.
+ * SQLite-based embedded queue publisher with full SQS FIFO semantics.
  * Useful for development and single-node deployments.
  *
- * The queue table stores messages with FIFO ordering per message group.
+ * Features:
+ * - Message visibility timeout for reliable processing
+ * - Receipt handles for ACK/NACK operations
+ * - 5-minute deduplication window (matches SQS)
+ * - FIFO ordering per message group
+ *
+ * Supports two modes:
+ * - Standalone: Creates and manages its own JDBC connection (dispatch-scheduler)
+ * - Shared: Uses an externally provided connection (message-router with Agroal)
  */
 public class EmbeddedQueuePublisher implements QueuePublisher {
 
     private static final Logger LOG = Logger.getLogger(EmbeddedQueuePublisher.class);
+    private static final long DEDUP_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
 
     private final Connection connection;
-    private final String queueName;
+    private final boolean ownsConnection;
 
+    /**
+     * Create a standalone publisher that manages its own connection.
+     * Used by dispatch-scheduler and other standalone consumers.
+     *
+     * @param config Queue configuration with database path
+     * @throws SQLException if connection or schema initialization fails
+     */
     public EmbeddedQueuePublisher(QueueConfig config) throws SQLException {
         String dbPath = config.embeddedDbPath().orElse(":memory:");
         this.connection = DriverManager.getConnection("jdbc:sqlite:" + dbPath);
-        this.queueName = config.queueUrl();
-        initializeSchema();
+        this.ownsConnection = true;
+        EmbeddedQueueSchema.initialize(connection);
     }
 
-    private void initializeSchema() throws SQLException {
-        String createTable = """
-            CREATE TABLE IF NOT EXISTS queue_messages (
-                id TEXT PRIMARY KEY,
-                queue_name TEXT NOT NULL,
-                message_group_id TEXT,
-                deduplication_id TEXT,
-                body TEXT NOT NULL,
-                status TEXT DEFAULT 'PENDING',
-                created_at TEXT NOT NULL,
-                processed_at TEXT,
-                UNIQUE(queue_name, deduplication_id)
-            )
-            """;
+    /**
+     * Create a publisher using an externally managed connection.
+     * Used by message-router with Agroal DataSource.
+     * Schema must be initialized separately (e.g., by a CDI startup observer).
+     *
+     * @param connection Externally managed connection
+     */
+    public EmbeddedQueuePublisher(Connection connection) {
+        this.connection = connection;
+        this.ownsConnection = false;
+    }
 
-        String createIndex1 = """
-            CREATE INDEX IF NOT EXISTS idx_queue_status
-            ON queue_messages(queue_name, status, message_group_id, created_at)
-            """;
-
-        try (Statement stmt = connection.createStatement()) {
-            stmt.execute(createTable);
-            stmt.execute(createIndex1);
-        }
+    /**
+     * Get the underlying connection.
+     * Used by consumers that need to share the same database.
+     */
+    public Connection getConnection() {
+        return connection;
     }
 
     @Override
     public QueuePublishResult publish(QueueMessage message) {
-        String sql = """
-            INSERT INTO queue_messages (id, queue_name, message_group_id, deduplication_id, body, created_at)
-            VALUES (?, ?, ?, ?, ?, ?)
-            ON CONFLICT(queue_name, deduplication_id) DO NOTHING
-            """;
-
-        try (PreparedStatement stmt = connection.prepareStatement(sql)) {
-            stmt.setString(1, message.messageId());
-            stmt.setString(2, queueName);
-            stmt.setString(3, message.messageGroupId());
-            stmt.setString(4, message.deduplicationId());
-            stmt.setString(5, message.body());
-            stmt.setString(6, Instant.now().toString());
-
-            int rows = stmt.executeUpdate();
-
-            if (rows > 0) {
-                LOG.debugf("Published message [%s] to embedded queue", message.messageId());
-                return QueuePublishResult.success(message.messageId());
-            } else {
-                LOG.debugf("Message [%s] deduplicated", message.messageId());
+        try {
+            // Check deduplication if dedup ID provided
+            if (message.deduplicationId() != null && isDuplicate(message.deduplicationId())) {
+                LOG.debugf("Message [%s] deduplicated (dedup ID: %s)", message.messageId(), message.deduplicationId());
                 return QueuePublishResult.deduplicated(message.messageId());
             }
+
+            long now = System.currentTimeMillis();
+            String receiptHandle = UUID.randomUUID().toString();
+
+            // Insert message
+            String insertSql = """
+                INSERT INTO queue_messages
+                (message_id, message_group_id, message_deduplication_id, message_json,
+                 created_at, visible_at, receipt_handle, receive_count)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+                """;
+
+            try (PreparedStatement stmt = connection.prepareStatement(insertSql)) {
+                stmt.setString(1, message.messageId());
+                stmt.setString(2, message.messageGroupId());
+                stmt.setString(3, message.deduplicationId());
+                stmt.setString(4, message.body());
+                stmt.setLong(5, now);
+                stmt.setLong(6, now); // Immediately visible
+                stmt.setString(7, receiptHandle);
+
+                stmt.executeUpdate();
+            }
+
+            // Record deduplication entry if dedup ID provided
+            if (message.deduplicationId() != null) {
+                recordDeduplication(message.deduplicationId(), message.messageId(), now);
+            }
+
+            // Periodically clean up old deduplication entries
+            cleanupOldDeduplicationEntries(now - DEDUP_WINDOW_MS);
+
+            LOG.debugf("Published message [%s] to group [%s]", message.messageId(), message.messageGroupId());
+            return QueuePublishResult.success(message.messageId());
 
         } catch (SQLException e) {
             LOG.errorf(e, "Failed to publish message [%s] to embedded queue", message.messageId());
@@ -96,38 +123,18 @@ public class EmbeddedQueuePublisher implements QueuePublisher {
         List<String> failed = new ArrayList<>();
         StringBuilder errors = new StringBuilder();
 
-        String sql = """
-            INSERT INTO queue_messages (id, queue_name, message_group_id, deduplication_id, body, created_at)
-            VALUES (?, ?, ?, ?, ?, ?)
-            ON CONFLICT(queue_name, deduplication_id) DO NOTHING
-            """;
-
-        try (PreparedStatement stmt = connection.prepareStatement(sql)) {
-            for (QueueMessage message : messages) {
-                try {
-                    stmt.setString(1, message.messageId());
-                    stmt.setString(2, queueName);
-                    stmt.setString(3, message.messageGroupId());
-                    stmt.setString(4, message.deduplicationId());
-                    stmt.setString(5, message.body());
-                    stmt.setString(6, Instant.now().toString());
-
-                    int rows = stmt.executeUpdate();
-                    if (rows > 0) {
-                        published.add(message.messageId());
-                    }
-                    // Deduplicated messages are not failures
-
-                } catch (SQLException e) {
-                    failed.add(message.messageId());
-                    if (!errors.isEmpty()) errors.append("; ");
-                    errors.append(message.messageId()).append(": ").append(e.getMessage());
-                }
+        for (QueueMessage message : messages) {
+            QueuePublishResult result = publish(message);
+            if (result.deduplicated()) {
+                // Deduplicated messages are not failures, just not published
+                LOG.debugf("Message [%s] deduplicated in batch", message.messageId());
+            } else if (result.success()) {
+                published.add(message.messageId());
+            } else {
+                failed.add(message.messageId());
+                if (!errors.isEmpty()) errors.append("; ");
+                errors.append(message.messageId()).append(": ").append(result.errorMessage().orElse("unknown error"));
             }
-        } catch (SQLException e) {
-            LOG.errorf(e, "Failed to prepare batch insert");
-            messages.forEach(m -> failed.add(m.messageId()));
-            return QueuePublishResult.failure(failed, e.getMessage());
         }
 
         if (failed.isEmpty()) {
@@ -141,10 +148,12 @@ public class EmbeddedQueuePublisher implements QueuePublisher {
 
     @Override
     public long getQueueDepth() {
-        String sql = "SELECT COUNT(*) FROM queue_messages WHERE queue_name = ? AND status = 'PENDING'";
+        String sql = "SELECT COUNT(*) FROM queue_messages WHERE visible_at <= ?";
+        long now = System.currentTimeMillis();
 
         try (PreparedStatement stmt = connection.prepareStatement(sql)) {
-            stmt.setString(1, queueName);
+            stmt.setLong(1, now);
+
             try (ResultSet rs = stmt.executeQuery()) {
                 if (rs.next()) {
                     return rs.getLong(1);
@@ -172,83 +181,122 @@ public class EmbeddedQueuePublisher implements QueuePublisher {
 
     @Override
     public void close() {
-        try {
-            if (connection != null && !connection.isClosed()) {
-                connection.close();
+        if (ownsConnection) {
+            try {
+                if (connection != null && !connection.isClosed()) {
+                    connection.close();
+                }
+            } catch (SQLException e) {
+                LOG.warnf("Error closing embedded queue connection: %s", e.getMessage());
+            }
+        }
+    }
+
+    // ========================================================================
+    // Consumer support methods (used by message-router's EmbeddedQueueConsumer)
+    // ========================================================================
+
+    /**
+     * Delete a message by receipt handle (ACK).
+     * Called when a message has been successfully processed.
+     *
+     * @param receiptHandle The receipt handle of the message to delete
+     */
+    public void deleteMessage(String receiptHandle) {
+        String sql = "DELETE FROM queue_messages WHERE receipt_handle = ?";
+
+        try (PreparedStatement stmt = connection.prepareStatement(sql)) {
+            stmt.setString(1, receiptHandle);
+            int rows = stmt.executeUpdate();
+
+            if (rows > 0) {
+                LOG.debugf("Deleted message with receipt handle [%s]", receiptHandle);
             }
         } catch (SQLException e) {
-            LOG.warnf("Error closing embedded queue connection: %s", e.getMessage());
+            LOG.errorf(e, "Failed to delete message with receipt handle [%s]", receiptHandle);
         }
     }
 
     /**
-     * Poll for next message in a specific message group.
-     * Used internally by consumers.
+     * Extend or reset visibility timeout (NACK or extend).
+     * Sets a new visibility time for the message.
+     *
+     * @param receiptHandle The receipt handle of the message
+     * @param visibilityTimeoutSeconds New visibility timeout in seconds
      */
-    public QueueMessage pollNextMessage(String messageGroupId) {
+    public void changeMessageVisibility(String receiptHandle, int visibilityTimeoutSeconds) {
+        String sql = "UPDATE queue_messages SET visible_at = ? WHERE receipt_handle = ?";
+        long newVisibleAt = System.currentTimeMillis() + (visibilityTimeoutSeconds * 1000L);
+
+        try (PreparedStatement stmt = connection.prepareStatement(sql)) {
+            stmt.setLong(1, newVisibleAt);
+            stmt.setString(2, receiptHandle);
+            int rows = stmt.executeUpdate();
+
+            if (rows > 0) {
+                LOG.debugf("Changed visibility for receipt handle [%s] to %d seconds",
+                        receiptHandle, visibilityTimeoutSeconds);
+            }
+        } catch (SQLException e) {
+            LOG.errorf(e, "Failed to change visibility for receipt handle [%s]", receiptHandle);
+        }
+    }
+
+    // ========================================================================
+    // Internal helper methods
+    // ========================================================================
+
+    /**
+     * Check if message with dedup ID was already seen in the last 5 minutes.
+     */
+    private boolean isDuplicate(String dedupId) throws SQLException {
+        String sql = "SELECT message_id FROM message_deduplication WHERE message_deduplication_id = ?";
+
+        try (PreparedStatement stmt = connection.prepareStatement(sql)) {
+            stmt.setString(1, dedupId);
+
+            try (ResultSet rs = stmt.executeQuery()) {
+                return rs.next();
+            }
+        }
+    }
+
+    /**
+     * Record deduplication entry for 5-minute window.
+     */
+    private void recordDeduplication(String dedupId, String messageId, long timestamp) throws SQLException {
         String sql = """
-            SELECT id, message_group_id, deduplication_id, body
-            FROM queue_messages
-            WHERE queue_name = ? AND status = 'PENDING' AND message_group_id = ?
-            ORDER BY created_at ASC
-            LIMIT 1
+            INSERT OR REPLACE INTO message_deduplication
+            (message_deduplication_id, message_id, created_at)
+            VALUES (?, ?, ?)
             """;
 
         try (PreparedStatement stmt = connection.prepareStatement(sql)) {
-            stmt.setString(1, queueName);
-            stmt.setString(2, messageGroupId);
+            stmt.setString(1, dedupId);
+            stmt.setString(2, messageId);
+            stmt.setLong(3, timestamp);
 
-            try (ResultSet rs = stmt.executeQuery()) {
-                if (rs.next()) {
-                    return new QueueMessage(
-                        rs.getString("id"),
-                        rs.getString("message_group_id"),
-                        rs.getString("deduplication_id"),
-                        rs.getString("body")
-                    );
+            stmt.executeUpdate();
+        }
+    }
+
+    /**
+     * Clean up deduplication entries older than the dedup window.
+     */
+    private void cleanupOldDeduplicationEntries(long olderThan) {
+        try {
+            String sql = "DELETE FROM message_deduplication WHERE created_at < ?";
+
+            try (PreparedStatement stmt = connection.prepareStatement(sql)) {
+                stmt.setLong(1, olderThan);
+                int deleted = stmt.executeUpdate();
+
+                if (deleted > 0) {
+                    LOG.debugf("Cleaned up %d old deduplication entries", deleted);
                 }
             }
         } catch (SQLException e) {
-            LOG.errorf(e, "Failed to poll message for group [%s]", messageGroupId);
-        }
-        return null;
-    }
-
-    /**
-     * Mark a message as processed.
-     */
-    public void markProcessed(String messageId) {
-        String sql = """
-            UPDATE queue_messages
-            SET status = 'PROCESSED', processed_at = ?
-            WHERE id = ?
-            """;
-
-        try (PreparedStatement stmt = connection.prepareStatement(sql)) {
-            stmt.setString(1, Instant.now().toString());
-            stmt.setString(2, messageId);
-            stmt.executeUpdate();
-        } catch (SQLException e) {
-            LOG.errorf(e, "Failed to mark message [%s] as processed", messageId);
-        }
-    }
-
-    /**
-     * Delete old processed messages (cleanup).
-     */
-    public int deleteProcessedMessages(int olderThanDays) {
-        String sql = """
-            DELETE FROM queue_messages
-            WHERE status = 'PROCESSED'
-            AND processed_at < datetime('now', '-' || ? || ' days')
-            """;
-
-        try (PreparedStatement stmt = connection.prepareStatement(sql)) {
-            stmt.setInt(1, olderThanDays);
-            return stmt.executeUpdate();
-        } catch (SQLException e) {
-            LOG.errorf(e, "Failed to delete old messages");
-            return 0;
+            LOG.warnf(e, "Error cleaning up deduplication entries");
         }
     }
 }

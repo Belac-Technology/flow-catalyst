@@ -136,7 +136,7 @@ class QueueManagerTest {
     }
 
     @Test
-    void shouldDetectDuplicateMessages() {
+    void shouldDetectDuplicateMessages() throws InterruptedException {
         // Given
         ProcessPool pool = createAndRegisterPool("TEST-POOL", 5, 100);
 
@@ -147,7 +147,12 @@ class QueueManagerTest {
         MessageCallback mockCallback1 = mock(MessageCallback.class);
         MessageCallback mockCallback2 = mock(MessageCallback.class);
 
-        when(mockMediator.process(message)).thenReturn(MediationOutcome.success());
+        // Block mediator to prevent message from being processed before assertions
+        java.util.concurrent.CountDownLatch processLatch = new java.util.concurrent.CountDownLatch(1);
+        when(mockMediator.process(any(MessagePointer.class))).thenAnswer(invocation -> {
+            processLatch.await(); // Block until test releases
+            return MediationOutcome.success();
+        });
 
         // When
         boolean firstRoute = queueManager.routeMessage(message, mockCallback1, "test-queue");
@@ -157,6 +162,9 @@ class QueueManagerTest {
         assertTrue(firstRoute, "First message should be routed");
         assertFalse(secondRoute, "Duplicate message should be rejected");
         assertEquals(1, inPipelineMap.size(), "Only one message should be in pipeline");
+
+        // Release the blocked message processing
+        processLatch.countDown();
     }
 
     @Test

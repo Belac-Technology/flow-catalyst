@@ -47,6 +47,8 @@ public record SubscriptionUpdated(
     int sequence,
     DispatchMode mode,
     int timeoutSeconds,
+    int maxRetries,
+    String serviceAccountId,
     boolean dataOnly
 ) implements DomainEvent {
 
@@ -97,7 +99,8 @@ public record SubscriptionUpdated(
                 subscriptionId, code, name, description, clientId, clientIdentifier,
                 eventTypes, target, queue, customConfig, status,
                 maxAgeSeconds, dispatchPoolId, dispatchPoolCode,
-                delaySeconds, sequence, mode, timeoutSeconds, dataOnly
+                delaySeconds, sequence, mode, timeoutSeconds, maxRetries,
+                serviceAccountId, dataOnly
             ));
         } catch (JsonProcessingException e) {
             throw new RuntimeException("Failed to serialize event data", e);
@@ -123,6 +126,8 @@ public record SubscriptionUpdated(
         int sequence,
         DispatchMode mode,
         int timeoutSeconds,
+        int maxRetries,
+        String serviceAccountId,
         boolean dataOnly
     ) {}
 
@@ -155,6 +160,8 @@ public record SubscriptionUpdated(
         private int sequence;
         private DispatchMode mode;
         private int timeoutSeconds;
+        private int maxRetries;
+        private String serviceAccountId;
         private boolean dataOnly;
 
         public Builder from(ExecutionContext ctx) {
@@ -257,6 +264,16 @@ public record SubscriptionUpdated(
             return this;
         }
 
+        public Builder maxRetries(int maxRetries) {
+            this.maxRetries = maxRetries;
+            return this;
+        }
+
+        public Builder serviceAccountId(String serviceAccountId) {
+            this.serviceAccountId = serviceAccountId;
+            return this;
+        }
+
         public Builder dataOnly(boolean dataOnly) {
             this.dataOnly = dataOnly;
             return this;
@@ -268,7 +285,8 @@ public record SubscriptionUpdated(
                 subscriptionId, code, name, description, clientId, clientIdentifier,
                 eventTypes, target, queue, customConfig, status,
                 maxAgeSeconds, dispatchPoolId, dispatchPoolCode,
-                delaySeconds, sequence, mode, timeoutSeconds, dataOnly
+                delaySeconds, sequence, mode, timeoutSeconds, maxRetries,
+                serviceAccountId, dataOnly
             );
         }
     }

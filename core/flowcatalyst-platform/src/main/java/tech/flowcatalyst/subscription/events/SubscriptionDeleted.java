@@ -9,7 +9,10 @@ import tech.flowcatalyst.platform.common.DomainEvent;
 import tech.flowcatalyst.platform.common.ExecutionContext;
 import tech.flowcatalyst.platform.shared.TsidGenerator;
 
+import tech.flowcatalyst.subscription.EventTypeBinding;
+
 import java.time.Instant;
+import java.util.List;
 
 /**
  * Event emitted when a subscription is deleted.
@@ -29,7 +32,8 @@ public record SubscriptionDeleted(
     String subscriptionId,
     String code,
     String clientId,
-    String clientIdentifier
+    String clientIdentifier,
+    List<EventTypeBinding> eventTypes
 ) implements DomainEvent {
 
     private static final String EVENT_TYPE = "platform:control-plane:subscription:deleted";
@@ -76,7 +80,7 @@ public record SubscriptionDeleted(
     public String toDataJson() {
         try {
             return MAPPER.writeValueAsString(new Data(
-                subscriptionId, code, clientId, clientIdentifier
+                subscriptionId, code, clientId, clientIdentifier, eventTypes
             ));
         } catch (JsonProcessingException e) {
             throw new RuntimeException("Failed to serialize event data", e);
@@ -87,7 +91,8 @@ public record SubscriptionDeleted(
         String subscriptionId,
         String code,
         String clientId,
-        String clientIdentifier
+        String clientIdentifier,
+        List<EventTypeBinding> eventTypes
     ) {}
 
     public static Builder builder() {
@@ -105,6 +110,7 @@ public record SubscriptionDeleted(
         private String code;
         private String clientId;
         private String clientIdentifier;
+        private List<EventTypeBinding> eventTypes;
 
         public Builder from(ExecutionContext ctx) {
             this.eventId = TsidGenerator.generate();
@@ -136,10 +142,15 @@ public record SubscriptionDeleted(
             return this;
         }
 
+        public Builder eventTypes(List<EventTypeBinding> eventTypes) {
+            this.eventTypes = eventTypes;
+            return this;
+        }
+
         public SubscriptionDeleted build() {
             return new SubscriptionDeleted(
                 eventId, time, executionId, correlationId, causationId, principalId,
-                subscriptionId, code, clientId, clientIdentifier
+                subscriptionId, code, clientId, clientIdentifier, eventTypes
             );
         }
     }

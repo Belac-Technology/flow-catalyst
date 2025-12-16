@@ -74,6 +74,17 @@ public record Subscription(
     /** Timeout in seconds for dispatch target to respond */
     int timeoutSeconds,
 
+    /** Maximum retry attempts for failed dispatch jobs (default 3) */
+    int maxRetries,
+
+    /**
+     * Service account ID for webhook credentials.
+     *
+     * <p>The ServiceAccount contains embedded webhook credentials
+     * (auth token, signing secret) used for authenticating dispatch requests.</p>
+     */
+    String serviceAccountId,
+
     /**
      * Controls payload delivery format for dispatch jobs created by this subscription.
      *
@@ -104,6 +115,7 @@ public record Subscription(
     public static final int DEFAULT_DELAY_SECONDS = 0;
     public static final int DEFAULT_SEQUENCE = 99;
     public static final int DEFAULT_TIMEOUT_SECONDS = 30;
+    public static final int DEFAULT_MAX_RETRIES = 3;
     public static final boolean DEFAULT_DATA_ONLY = true;
 
     // ========================================================================
