@@ -161,6 +161,8 @@ class HealthCheckIntegrationTest {
     @Test
     void shouldUpdateTimestampOnBothSuccessAndFailure() throws Exception {
         // Given - pool with mediator that alternates success/failure
+        // Note: We use errorConfig() (permanent failure) instead of errorProcess() (transient)
+        // because transient errors don't update timestamp (they're not "completed" yet)
         String poolCode = "TEST-SUCCESS-FAILURE-POOL";
         final boolean[] shouldSucceed = {true};
 
@@ -170,7 +172,7 @@ class HealthCheckIntegrationTest {
                 boolean result = shouldSucceed[0];
                 shouldSucceed[0] = !shouldSucceed[0];
                 return result ? tech.flowcatalyst.messagerouter.model.MediationOutcome.success()
-                    : tech.flowcatalyst.messagerouter.model.MediationOutcome.errorProcess(null);
+                    : tech.flowcatalyst.messagerouter.model.MediationOutcome.errorConfig();
             }
 
             @Override

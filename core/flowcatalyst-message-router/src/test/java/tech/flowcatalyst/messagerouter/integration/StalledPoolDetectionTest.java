@@ -32,6 +32,8 @@ class StalledPoolDetectionTest {
     @BeforeEach
     void setUp() {
         reset(poolMetricsService);
+        // Stub void method to prevent Mockito state corruption from background calls
+        doNothing().when(poolMetricsService).updatePoolGauges(anyString(), anyInt(), anyInt(), anyInt(), anyInt());
     }
 
     @Test

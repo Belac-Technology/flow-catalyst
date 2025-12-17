@@ -239,7 +239,7 @@ public class ProcessPoolImpl implements ProcessPool {
 
         // Get or create queue for this message group
         // If this is a new group, also start a dedicated virtual thread for it
-        // Per-group queues are unbounded - pool-level capacity enforced by QueueManager
+        // Per-group queues are unbounded - pool-level capacity enforced by totalQueuedMessages check above
         BlockingQueue<MessagePointer> groupQueue = messageGroupQueues.computeIfAbsent(
             groupId,
             k -> {
@@ -264,14 +264,37 @@ public class ProcessPoolImpl implements ProcessPool {
             startGroupThread(finalGroupId, groupQueue);
         }
 
-        // Offer message to group queue
+        // Check total capacity before submitting
+        // Use compareAndSet loop to atomically check and increment
+        while (true) {
+            int current = totalQueuedMessages.get();
+            if (current >= queueCapacity) {
+                // At capacity - reject message
+                LOG.debugf("Pool [%s] at capacity (%d/%d), rejecting message [%s]",
+                    poolCode, current, queueCapacity, message.id());
+                // Clean up batch+group tracking for rejected message
+                if (batchId != null && !batchId.isBlank()) {
+                    String batchGroupKey = batchId + "|" + finalGroupId;
+                    decrementAndCleanupBatchGroup(batchGroupKey);
+                }
+                return false;
+            }
+            // Try to reserve a slot atomically
+            if (totalQueuedMessages.compareAndSet(current, current + 1)) {
+                break;
+            }
+            // Another thread modified counter, retry
+        }
+
+        // Offer message to group queue (should always succeed since queues are unbounded)
         boolean submitted = groupQueue.offer(message);
         if (submitted) {
-            totalQueuedMessages.incrementAndGet();
             poolMetrics.recordMessageSubmitted(poolCode);
             updateGauges();
         } else {
-            // Failed to submit - decrement batch+group count
+            // Unexpected failure - release the reserved slot
+            totalQueuedMessages.decrementAndGet();
+            // Clean up batch+group tracking for rejected message
             if (batchId != null && !batchId.isBlank()) {
                 String batchGroupKey = batchId + "|" + finalGroupId;
                 decrementAndCleanupBatchGroup(batchGroupKey);
