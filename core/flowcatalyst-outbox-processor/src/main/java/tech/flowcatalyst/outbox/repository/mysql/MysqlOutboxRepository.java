@@ -1,7 +1,9 @@
 package tech.flowcatalyst.outbox.repository.mysql;
 
 import io.agroal.api.AgroalDataSource;
+import io.quarkus.agroal.DataSource;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.inject.Alternative;
 import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
 import tech.flowcatalyst.outbox.config.OutboxProcessorConfig;
@@ -20,11 +22,13 @@ import java.util.List;
  * Uses SELECT FOR UPDATE with subquery for locking.
  */
 @ApplicationScoped
+@Alternative
 public class MysqlOutboxRepository implements OutboxRepository {
 
     private static final Logger LOG = Logger.getLogger(MysqlOutboxRepository.class);
 
     @Inject
+    @DataSource("outbox")
     AgroalDataSource dataSource;
 
     @Inject

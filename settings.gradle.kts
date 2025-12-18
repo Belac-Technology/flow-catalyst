@@ -31,10 +31,10 @@ include("core:flowcatalyst-platform")
 // High-volume message pointer routing (scales independently)
 include("core:flowcatalyst-message-router")
 
-// Event stream processor (MongoDB change streams to projection collection)
-include("core:flowcatalyst-event-processor")
+// Stream processor (MongoDB change streams to projection collections)
+include("core:flowcatalyst-stream-processor")
 
-// SDK for integrating applications (postbox, events, roles)
+// SDK for integrating applications (events, roles)
 include("core:flowcatalyst-sdk")
 
 // Outbox processor (polls customer outbox tables, sends to FlowCatalyst)
@@ -43,10 +43,12 @@ include("core:flowcatalyst-outbox-processor")
 // Benchmarks
 include("core:flowcatalyst-benchmark")
 
+// Developer build - single executable combining all services for local development
+include("core:flowcatalyst-dev-build")
+
 // =============================================================================
 // Legacy Modules (TO BE REMOVED after migration verified)
 // =============================================================================
-include("core:flowcatalyst-postbox")
 include("core:flowcatalyst-router-app")
 include("core:flowcatalyst-app")
 include("core:flowcatalyst-bffe")

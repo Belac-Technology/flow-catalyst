@@ -3,10 +3,10 @@
   "version": "0.0.1",
   "type": "module",
   "scripts": {
-    "dev": "concurrently --kill-others-on-fail --names \"BACKEND,EVENTS,UI,API\" --prefix-colors \"blue,magenta,green,yellow\" \"npm run dev:backend\" \"npm run dev:event-processor\" \"wait-on http://localhost:8080/q/health && vite\" \"wait-on http://localhost:8080/q/health && npm run api:watch\"",
+    "dev": "concurrently --kill-others-on-fail --names \"BACKEND,STREAMS,UI,API\" --prefix-colors \"blue,magenta,green,yellow\" \"npm run dev:backend\" \"npm run dev:stream-processor\" \"wait-on http://localhost:8080/q/health && vite\" \"wait-on http://localhost:8080/q/health && npm run api:watch\"",
     "dev:ui": "vite",
     "dev:backend": "cd ../../core/flowcatalyst-platform && ../../gradlew quarkusDev",
-    "dev:event-processor": "wait-on http://localhost:8080/q/health && cd ../../core/flowcatalyst-event-processor && ../../gradlew quarkusDev -Dquarkus.http.port=8082",
+    "dev:stream-processor": "wait-on http://localhost:8080/q/health && cd ../../core/flowcatalyst-stream-processor && ../../gradlew quarkusDev -Dquarkus.http.port=8082",
     "dev:db": "docker compose -f ../../docker-compose.dev.yml up -d",
     "dev:db:stop": "docker compose -f ../../docker-compose.dev.yml down",
     "dev:full": "npm run dev:db && npm run dev",

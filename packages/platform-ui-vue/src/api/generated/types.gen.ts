@@ -125,6 +125,8 @@ export type BatchDispatchJobResponse = {
 export type BatchEventResponse = {
   events?: Array<EventResponse>;
   count?: number;
+  dispatchJobCount?: number;
+  duplicateCount?: number;
 };
 
 export type ClientApplicationDto = {
@@ -310,6 +312,11 @@ export type CreateEventRequest = {
   deduplicationId?: string;
   messageGroup?: string;
   contextData?: Array<ContextData>;
+};
+
+export type CreateEventResponse = {
+  event?: EventResponse;
+  dispatchJobCount?: number;
 };
 
 export type CreateEventTypeRequest = {
@@ -4749,11 +4756,11 @@ export type PostApiEventsResponses = {
   /**
    * Event already exists (idempotent response)
    */
-  200: EventResponse;
+  200: CreateEventResponse;
   /**
    * Event created successfully
    */
-  201: EventResponse;
+  201: CreateEventResponse;
 };
 
 export type PostApiEventsResponse =

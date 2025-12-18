@@ -2908,7 +2908,7 @@ export const postApiEventTypesByIdSchemasByVersionFinalise = <
 
 /**
  * Create a new event
- * Creates a new event in the event store. If a deduplicationId is provided and an event with that ID already exists, the existing event is returned (idempotent operation).
+ * Creates a new event in the event store. If a deduplicationId is provided and an event with that ID already exists, the existing event is returned (idempotent operation). Dispatch jobs are automatically created for matching subscriptions.
  */
 export const postApiEvents = <ThrowOnError extends boolean = false>(
   options: Options<PostApiEventsData, ThrowOnError>,
@@ -2929,7 +2929,7 @@ export const postApiEvents = <ThrowOnError extends boolean = false>(
 
 /**
  * Create multiple events in batch
- * Creates multiple events in a single operation. Maximum batch size is 100 events. Returns list of created events.
+ * Creates multiple events in a single operation. Maximum batch size is 100 events. Dispatch jobs are automatically created for matching subscriptions.
  */
 export const postApiEventsBatch = <ThrowOnError extends boolean = false>(
   options: Options<PostApiEventsBatchData, ThrowOnError>,

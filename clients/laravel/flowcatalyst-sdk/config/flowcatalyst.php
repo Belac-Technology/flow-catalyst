@@ -76,63 +76,64 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Postbox Configuration
+    | Outbox Configuration
     |--------------------------------------------------------------------------
     |
-    | The postbox allows your application to write events and dispatch jobs
-    | directly to a local database table, implementing the outbox pattern.
-    | FlowCatalyst will poll this table and process the messages.
+    | The outbox allows your application to write events and dispatch jobs
+    | directly to a local database table, implementing the transactional
+    | outbox pattern. The outbox processor will poll this table and send
+    | messages to FlowCatalyst.
     |
     */
-    'postbox' => [
+    'outbox' => [
         /*
         |----------------------------------------------------------------------
-        | Enable Postbox
+        | Enable Outbox
         |----------------------------------------------------------------------
         |
-        | Set to false to disable the postbox functionality entirely.
+        | Set to false to disable the outbox functionality entirely.
         |
         */
-        'enabled' => env('FLOWCATALYST_POSTBOX_ENABLED', true),
+        'enabled' => env('FLOWCATALYST_OUTBOX_ENABLED', true),
 
         /*
         |----------------------------------------------------------------------
-        | Postbox Driver
+        | Outbox Driver
         |----------------------------------------------------------------------
         |
-        | The driver to use for storing postbox messages.
+        | The driver to use for storing outbox messages.
         | Supported: "database" (MySQL 8.0+, PostgreSQL 12+), "mongodb"
         |
         */
-        'driver' => env('FLOWCATALYST_POSTBOX_DRIVER', 'database'),
+        'driver' => env('FLOWCATALYST_OUTBOX_DRIVER', 'database'),
 
         /*
         |----------------------------------------------------------------------
         | Database Connection
         |----------------------------------------------------------------------
         |
-        | The database connection to use for the postbox. Leave null to use
+        | The database connection to use for the outbox. Leave null to use
         | the default connection.
         |
         */
-        'connection' => env('FLOWCATALYST_POSTBOX_CONNECTION'),
+        'connection' => env('FLOWCATALYST_OUTBOX_CONNECTION'),
 
         /*
         |----------------------------------------------------------------------
         | Table/Collection Name
         |----------------------------------------------------------------------
         |
-        | The name of the table (or MongoDB collection) for postbox messages.
+        | The name of the table (or MongoDB collection) for outbox messages.
         |
         */
-        'table' => env('FLOWCATALYST_POSTBOX_TABLE', 'postbox_messages'),
+        'table' => env('FLOWCATALYST_OUTBOX_TABLE', 'outbox_messages'),
 
         /*
         |----------------------------------------------------------------------
         | Tenant ID
         |----------------------------------------------------------------------
         |
-        | Your FlowCatalyst tenant ID. This is required for the postbox to
+        | Your FlowCatalyst tenant ID. This is required for the outbox to
         | function correctly.
         |
         */

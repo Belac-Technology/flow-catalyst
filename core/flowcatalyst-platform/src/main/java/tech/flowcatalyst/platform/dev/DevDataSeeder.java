@@ -28,11 +28,11 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Seeds development data on application startup in dev mode.
+ * Seeds development data on application startup.
  *
- * Only runs when:
- * - quarkus.launch-mode=DEV or TEST
- * - flowcatalyst.dev.seed-data=true (default in dev)
+ * Runs when any of:
+ * - quarkus.launch-mode=DEV or TEST (and flowcatalyst.dev.seed-data=true)
+ * - flowcatalyst.dev.force-seed=true (for dev-build native executables)
  *
  * Default credentials:
  *   Platform Admin: admin@flowcatalyst.local / DevPassword123!
@@ -50,6 +50,9 @@ public class DevDataSeeder {
 
     @ConfigProperty(name = "flowcatalyst.dev.seed-data", defaultValue = "true")
     boolean seedDataEnabled;
+
+    @ConfigProperty(name = "flowcatalyst.dev.force-seed", defaultValue = "false")
+    boolean forceSeed;
 
     @Inject
     PasswordService passwordService;
@@ -112,8 +115,14 @@ public class DevDataSeeder {
     }
 
     private boolean shouldSeed() {
+        // Force seed bypasses launch mode check (for dev-build native executables)
+        if (forceSeed) {
+            LOG.info("Force seed enabled - seeding regardless of launch mode");
+            return true;
+        }
+
         if (launchMode != LaunchMode.DEVELOPMENT && launchMode != LaunchMode.TEST) {
-            LOG.debug("Skipping dev seeder - not in dev/test mode");
+            LOG.debug("Skipping dev seeder - not in dev/test mode (use flowcatalyst.dev.force-seed=true to override)");
             return false;
         }
 

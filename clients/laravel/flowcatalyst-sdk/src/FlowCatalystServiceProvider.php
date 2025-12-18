@@ -6,10 +6,10 @@ namespace FlowCatalyst;
 
 use FlowCatalyst\Client\Auth\OidcTokenManager;
 use FlowCatalyst\Client\FlowCatalystClient;
-use FlowCatalyst\Postbox\Contracts\PostboxDriver;
-use FlowCatalyst\Postbox\Drivers\DatabaseDriver;
-use FlowCatalyst\Postbox\Drivers\MongoDriver;
-use FlowCatalyst\Postbox\PostboxManager;
+use FlowCatalyst\Outbox\Contracts\OutboxDriver;
+use FlowCatalyst\Outbox\Drivers\DatabaseDriver;
+use FlowCatalyst\Outbox\Drivers\MongoDriver;
+use FlowCatalyst\Outbox\OutboxManager;
 use Illuminate\Support\ServiceProvider;
 
 class FlowCatalystServiceProvider extends ServiceProvider
@@ -26,7 +26,7 @@ class FlowCatalystServiceProvider extends ServiceProvider
 
         $this->registerTokenManager();
         $this->registerClient();
-        $this->registerPostbox();
+        $this->registerOutbox();
     }
 
     /**
@@ -77,32 +77,32 @@ class FlowCatalystServiceProvider extends ServiceProvider
     }
 
     /**
-     * Register the postbox manager.
+     * Register the outbox manager.
      */
-    protected function registerPostbox(): void
+    protected function registerOutbox(): void
     {
         // Register the driver based on configuration
-        $this->app->singleton(PostboxDriver::class, function ($app) {
-            $config = $app['config']['flowcatalyst']['postbox'];
+        $this->app->singleton(OutboxDriver::class, function ($app) {
+            $config = $app['config']['flowcatalyst']['outbox'];
             $driver = $config['driver'] ?? 'database';
 
             return match ($driver) {
                 'mongodb' => new MongoDriver(
                     connection: $config['connection'],
-                    collection: $config['table'] ?? 'postbox_messages'
+                    collection: $config['table'] ?? 'outbox_messages'
                 ),
                 default => new DatabaseDriver(
                     connection: $config['connection'],
-                    table: $config['table'] ?? 'postbox_messages'
+                    table: $config['table'] ?? 'outbox_messages'
                 ),
             };
         });
 
-        $this->app->singleton(PostboxManager::class, function ($app) {
-            $config = $app['config']['flowcatalyst']['postbox'];
+        $this->app->singleton(OutboxManager::class, function ($app) {
+            $config = $app['config']['flowcatalyst']['outbox'];
 
-            return new PostboxManager(
-                driver: $app->make(PostboxDriver::class),
+            return new OutboxManager(
+                driver: $app->make(OutboxDriver::class),
                 tenantId: (int) ($config['tenant_id'] ?? 0),
                 defaultPartition: $config['default_partition'] ?? 'default'
             );

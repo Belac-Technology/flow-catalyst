@@ -21,7 +21,7 @@ dependencies {
     // Include all modules for full-stack deployment
     implementation(project(":core:flowcatalyst-platform"))
     implementation(project(":core:flowcatalyst-message-router"))
-    implementation(project(":core:flowcatalyst-event-processor"))
+    implementation(project(":core:flowcatalyst-stream-processor"))
     implementation(project(":core:flowcatalyst-dispatch-scheduler"))
 }
 

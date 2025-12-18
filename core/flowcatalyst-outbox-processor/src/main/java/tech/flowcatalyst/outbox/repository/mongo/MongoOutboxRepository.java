@@ -4,6 +4,7 @@ import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.model.*;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.inject.Alternative;
 import jakarta.inject.Inject;
 import org.bson.Document;
 import org.bson.conversions.Bson;
@@ -24,6 +25,7 @@ import java.util.List;
  * Uses findOneAndUpdate for atomic fetch-and-lock operations.
  */
 @ApplicationScoped
+@Alternative
 public class MongoOutboxRepository implements OutboxRepository {
 
     private static final Logger LOG = Logger.getLogger(MongoOutboxRepository.class);
