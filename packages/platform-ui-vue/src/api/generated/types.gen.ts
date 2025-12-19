@@ -608,6 +608,10 @@ export type EventTypeResponse = {
 
 export type EventTypeStatus = "CURRENT" | "ARCHIVE";
 
+export type FeaturesConfig = {
+  messagingEnabled?: boolean;
+};
+
 export type GrantClientAccessRequest = {
   clientId: string;
 };
@@ -658,6 +662,10 @@ export type PermissionDto = {
 export type PermissionListResponse = {
   permissions?: Array<PermissionDto>;
   total?: number;
+};
+
+export type PlatformConfigResponse = {
+  features?: FeaturesConfig;
 };
 
 export type PlatformStats = {
@@ -4264,6 +4272,23 @@ export type PostApiApplicationsByIdDeactivateResponses = {
    */
   200: unknown;
 };
+
+export type GetApiConfigPlatformData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/api/config/platform";
+};
+
+export type GetApiConfigPlatformResponses = {
+  /**
+   * Platform configuration
+   */
+  200: PlatformConfigResponse;
+};
+
+export type GetApiConfigPlatformResponse =
+  GetApiConfigPlatformResponses[keyof GetApiConfigPlatformResponses];
 
 export type GetApiDispatchJobsData = {
   body?: never;

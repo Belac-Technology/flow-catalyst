@@ -89,22 +89,27 @@ public class MicrometerQueueMetricsService implements QueueMetricsService {
                 .description("Total messages failed")
                 .register(meterRegistry);
 
-            AtomicLong depth = meterRegistry.gauge(
+            // Create AtomicLongs first, then register - gauge() can return null after extended runtime
+            // if weak references are cleaned up or there are gauge conflicts
+            AtomicLong depth = new AtomicLong(0);
+            meterRegistry.gauge(
                 "flowcatalyst.queue.depth",
                 io.micrometer.core.instrument.Tags.of("queue", queueId),
-                new AtomicLong(0)
+                depth
             );
 
-            AtomicLong pending = meterRegistry.gauge(
+            AtomicLong pending = new AtomicLong(0);
+            meterRegistry.gauge(
                 "flowcatalyst.queue.pending",
                 io.micrometer.core.instrument.Tags.of("queue", queueId),
-                new AtomicLong(0)
+                pending
             );
 
-            AtomicLong notVisible = meterRegistry.gauge(
+            AtomicLong notVisible = new AtomicLong(0);
+            meterRegistry.gauge(
                 "flowcatalyst.queue.not_visible",
                 io.micrometer.core.instrument.Tags.of("queue", queueId),
-                new AtomicLong(0)
+                notVisible
             );
 
             return new QueueMetricsHolder(received, consumed, failed, depth, pending, notVisible);

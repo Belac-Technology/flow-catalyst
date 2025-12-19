@@ -1,11 +1,13 @@
 import type { NavigationGuardNext, RouteLocationNormalized } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
 import { usePermissionsStore, getRoutePermission } from '@/stores/permissions';
+import { usePlatformConfigStore } from '@/stores/platformConfig';
 import { checkSession } from '@/api/auth';
 
 /**
  * Guard that ensures user is authenticated.
  * Redirects to login if not authenticated.
+ * Also loads platform configuration on first navigation.
  */
 export async function authGuard(
   to: RouteLocationNormalized,
@@ -13,6 +15,12 @@ export async function authGuard(
   next: NavigationGuardNext
 ): Promise<void> {
   const authStore = useAuthStore();
+  const platformConfigStore = usePlatformConfigStore();
+
+  // Load platform config on first navigation (public endpoint, no auth required)
+  if (!platformConfigStore.isLoaded) {
+    await platformConfigStore.loadConfig();
+  }
 
   // If already authenticated, allow access
   if (authStore.isAuthenticated) {

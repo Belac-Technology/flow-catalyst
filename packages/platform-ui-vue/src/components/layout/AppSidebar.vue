@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import { useRoute } from 'vue-router';
 import { NAVIGATION_CONFIG, type NavItem } from '@/config/navigation';
+import { usePlatformConfigStore } from '@/stores/platformConfig';
 
 defineProps<{
   collapsed: boolean;
@@ -12,7 +13,19 @@ const emit = defineEmits<{
 }>();
 
 const route = useRoute();
+const platformConfigStore = usePlatformConfigStore();
 const expandedItems = ref<Record<string, boolean>>({});
+
+// Filter navigation based on platform configuration
+const filteredNavigation = computed(() => {
+  return NAVIGATION_CONFIG.filter((group) => {
+    // Hide Messaging group when messaging is disabled
+    if (group.label === 'Messaging' && !platformConfigStore.messagingEnabled) {
+      return false;
+    }
+    return true;
+  });
+});
 
 function toggleExpand(itemLabel: string) {
   expandedItems.value = {
@@ -47,7 +60,7 @@ function isActive(item: NavItem): boolean {
 
     <!-- Navigation -->
     <nav class="sidebar-nav">
-      <div v-for="group in NAVIGATION_CONFIG" :key="group.label" class="nav-group">
+      <div v-for="group in filteredNavigation" :key="group.label" class="nav-group">
         <span v-if="!collapsed" class="nav-group-label">{{ group.label }}</span>
 
         <template v-for="item in group.items" :key="item.label">

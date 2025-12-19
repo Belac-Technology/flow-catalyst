@@ -181,6 +181,8 @@ import type {
   PutApiApplicationsByIdData,
   PostApiApplicationsByIdActivateData,
   PostApiApplicationsByIdDeactivateData,
+  GetApiConfigPlatformData,
+  GetApiConfigPlatformResponse,
   GetApiDispatchJobsData,
   GetApiDispatchJobsResponse,
   PostApiDispatchJobsData,
@@ -2583,6 +2585,23 @@ export const postApiApplicationsByIdDeactivate = <
       ...options,
     },
   );
+};
+
+/**
+ * Get platform configuration
+ * Returns platform feature flags and settings for the UI
+ */
+export const getApiConfigPlatform = <ThrowOnError extends boolean = false>(
+  options?: Options<GetApiConfigPlatformData, ThrowOnError>,
+) => {
+  return (options?.client ?? _heyApiClient).get<
+    GetApiConfigPlatformResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/config/platform",
+    ...options,
+  });
 };
 
 /**
