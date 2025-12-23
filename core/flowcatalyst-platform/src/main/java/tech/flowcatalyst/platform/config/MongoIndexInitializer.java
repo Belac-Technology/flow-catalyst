@@ -132,48 +132,40 @@ public class MongoIndexInitializer {
     }
 
     private void createEventIndexes(MongoDatabase db) {
+        // Events collection is write-optimized (transactional).
+        // Query indexes are on events_read projection instead.
         MongoCollection<Document> events = db.getCollection("events");
-        events.createIndex(Indexes.ascending("type"), opt());
-        events.createIndex(Indexes.ascending("source"), opt());
-        events.createIndex(Indexes.ascending("subject"), opt());
-        events.createIndex(Indexes.ascending("correlationId"), opt().sparse(true));
+        // Idempotency - essential for deduplication
         events.createIndex(Indexes.ascending("deduplicationId"), opt().unique(true).sparse(true));
-        events.createIndex(Indexes.ascending("messageGroup"), opt().sparse(true));
-        // Compound index for common queries
-        events.createIndex(
-            Indexes.compoundIndex(Indexes.ascending("type"), Indexes.descending("time")),
-            opt());
         // TTL index - auto-delete events after 30 days based on 'time' field
         events.createIndex(
             Indexes.ascending("time"),
             opt().expireAfter(TTL_30_DAYS_SECONDS, TimeUnit.SECONDS));
-        LOG.info("Created TTL index on events.time (30 days)");
+        LOG.info("Created minimal indexes on events (write-optimized, queries use events_read)");
     }
 
     private void createDispatchJobIndexes(MongoDatabase db) {
+        // Dispatch jobs collection is write-optimized (transactional).
+        // Query indexes are on dispatch_jobs_read projection instead.
         MongoCollection<Document> jobs = db.getCollection("dispatch_jobs");
-        jobs.createIndex(Indexes.ascending("status"), opt());
-        jobs.createIndex(Indexes.ascending("source"), opt());
-        jobs.createIndex(Indexes.ascending("type"), opt());
-        jobs.createIndex(Indexes.ascending("externalId"), opt());
+        // Idempotency - essential for deduplication
         jobs.createIndex(Indexes.ascending("idempotencyKey"), opt().unique(true).sparse(true));
-        jobs.createIndex(Indexes.ascending("scheduledFor"), opt());
-        jobs.createIndex(Indexes.ascending("serviceAccountId"), opt());
-        jobs.createIndex(Indexes.ascending("clientId"), opt().sparse(true));
-        jobs.createIndex(Indexes.ascending("subscriptionId"), opt().sparse(true));
-        jobs.createIndex(Indexes.ascending("dispatchPoolId"), opt().sparse(true));
-        jobs.createIndex(Indexes.ascending("messageGroup"), opt().sparse(true));
-        // Compound index for scheduler: find PENDING jobs ordered by messageGroup
+        // Scheduler - find pending jobs to dispatch
         jobs.createIndex(
-            Indexes.compoundIndex(Indexes.ascending("messageGroup"), Indexes.ascending("status")),
+            Indexes.compoundIndex(Indexes.ascending("status"), Indexes.ascending("scheduledFor")),
             opt());
-        // Index for metadata queries
-        jobs.createIndex(Indexes.ascending("metadata.key", "metadata.value"), opt());
+        // FIFO ordering within client context (messageGroup implies client scope)
+        jobs.createIndex(
+            Indexes.compoundIndex(
+                Indexes.ascending("clientId"),
+                Indexes.ascending("messageGroup"),
+                Indexes.ascending("status")),
+            opt().sparse(true));
         // TTL index - auto-delete dispatch jobs after 30 days based on 'createdAt' field
         jobs.createIndex(
             Indexes.ascending("createdAt"),
             opt().expireAfter(TTL_30_DAYS_SECONDS, TimeUnit.SECONDS));
-        LOG.info("Created TTL index on dispatch_jobs.createdAt (30 days)");
+        LOG.info("Created minimal indexes on dispatch_jobs (write-optimized, queries use dispatch_jobs_read)");
     }
 
     private void createEventTypeIndexes(MongoDatabase db) {

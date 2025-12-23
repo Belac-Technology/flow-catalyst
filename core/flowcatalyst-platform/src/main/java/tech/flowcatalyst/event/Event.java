@@ -84,6 +84,12 @@ public class Event extends PanacheMongoEntityBase {
      */
     public List<ContextData> contextData;
 
+    /**
+     * Optional client ID for multi-tenant scoping.
+     * Null indicates the event is not associated with a specific client.
+     */
+    public String clientId;
+
     public Event() {
     }
 
@@ -117,4 +123,5 @@ public class Event extends PanacheMongoEntityBase {
     public String deduplicationId() { return deduplicationId; }
     public String messageGroup() { return messageGroup; }
     public List<ContextData> contextData() { return contextData; }
+    public String clientId() { return clientId; }
 }

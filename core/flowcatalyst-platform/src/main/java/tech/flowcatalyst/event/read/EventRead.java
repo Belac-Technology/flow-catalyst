@@ -1,0 +1,98 @@
+package tech.flowcatalyst.event.read;
+
+import io.quarkus.mongodb.panache.PanacheMongoEntityBase;
+import io.quarkus.mongodb.panache.common.MongoEntity;
+import org.bson.codecs.pojo.annotations.BsonId;
+
+import java.time.Instant;
+import java.util.List;
+
+/**
+ * Read-optimized projection of events from the events_read collection.
+ *
+ * This collection is populated by the stream processor and has rich indexes
+ * for efficient querying. The raw events collection is write-optimized.
+ */
+@MongoEntity(collection = "events_read")
+public class EventRead extends PanacheMongoEntityBase {
+
+    @BsonId
+    public String id;
+
+    /** Original event ID (same as _id) */
+    public String eventId;
+
+    /** CloudEvents spec version */
+    public String specVersion;
+
+    /** Event type identifier (full code: app:subdomain:aggregate:event) */
+    public String type;
+
+    /**
+     * Application code - first segment of type.
+     * Parsed from type for efficient filtering.
+     */
+    public String application;
+
+    /**
+     * Subdomain - second segment of type.
+     * Parsed from type for efficient filtering.
+     */
+    public String subdomain;
+
+    /**
+     * Aggregate - third segment of type.
+     * Parsed from type for efficient filtering.
+     */
+    public String aggregate;
+
+    /** Event source URI */
+    public String source;
+
+    /** Subject/aggregate identifier */
+    public String subject;
+
+    /** When the event occurred */
+    public Instant time;
+
+    /** Event payload data (JSON string) */
+    public String data;
+
+    /** Message group for ordering */
+    public String messageGroup;
+
+    /** Correlation ID for distributed tracing */
+    public String correlationId;
+
+    /** ID of the event that caused this event */
+    public String causationId;
+
+    /** Deduplication/idempotency key */
+    public String deduplicationId;
+
+    /** Context data for filtering */
+    public List<ContextDataRead> contextData;
+
+    /** Client ID for multi-tenant scoping */
+    public String clientId;
+
+    /** When this projection was created */
+    public Instant projectedAt;
+
+    public EventRead() {
+    }
+
+    // Record for context data
+    public static class ContextDataRead {
+        public String key;
+        public String value;
+
+        public ContextDataRead() {
+        }
+
+        public ContextDataRead(String key, String value) {
+            this.key = key;
+            this.value = value;
+        }
+    }
+}

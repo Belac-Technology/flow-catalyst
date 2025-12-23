@@ -214,6 +214,16 @@ export type ContextDataResponse = {
   value?: string;
 };
 
+export type ContextDataResponse1 = {
+  key?: string;
+  value?: string;
+};
+
+export type ContextDataResponse2 = {
+  key?: string;
+  value?: string;
+};
+
 export type CreateAnchorDomainRequest = {
   domain: string;
 };
@@ -450,6 +460,43 @@ export type DispatchAttemptStatus =
   | "TIMEOUT"
   | "CIRCUIT_OPEN";
 
+export type DispatchJobReadResponse = {
+  id?: string;
+  externalId?: string;
+  source?: string;
+  kind?: string;
+  code?: string;
+  subject?: string;
+  eventId?: string;
+  correlationId?: string;
+  targetUrl?: string;
+  protocol?: string;
+  clientId?: string;
+  subscriptionId?: string;
+  serviceAccountId?: string;
+  dispatchPoolId?: string;
+  messageGroup?: string;
+  mode?: string;
+  sequence?: number;
+  status?: string;
+  attemptCount?: number;
+  maxRetries?: number;
+  lastError?: string;
+  timeoutSeconds?: number;
+  retryStrategy?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  scheduledFor?: string;
+  expiresAt?: string;
+  completedAt?: string;
+  lastAttemptAt?: string;
+  durationMillis?: number;
+  idempotencyKey?: string;
+  isCompleted?: boolean;
+  isTerminal?: boolean;
+  projectedAt?: string;
+};
+
 export type DispatchJobResponse = {
   id?: string;
   externalId?: string;
@@ -566,6 +613,26 @@ export type ErrorResponse = {
 
 export type ErrorType = "TRANSIENT" | "NOT_TRANSIENT" | "UNKNOWN";
 
+export type EventReadResponse = {
+  id?: string;
+  specVersion?: string;
+  type?: string;
+  application?: string;
+  subdomain?: string;
+  aggregate?: string;
+  source?: string;
+  subject?: string;
+  time?: string;
+  data?: string;
+  messageGroup?: string;
+  correlationId?: string;
+  causationId?: string;
+  deduplicationId?: string;
+  contextData?: Array<ContextDataResponse1>;
+  clientId?: string;
+  projectedAt?: string;
+};
+
 export type EventResponse = {
   id?: string;
   specVersion?: string;
@@ -612,6 +679,33 @@ export type FeaturesConfig = {
   messagingEnabled?: boolean;
 };
 
+export type FilterOption = {
+  value?: string;
+  label?: string;
+};
+
+export type FilterOption1 = {
+  value?: string;
+  label?: string;
+};
+
+export type FilterOptionsResponse = {
+  clients?: Array<FilterOption>;
+  applications?: Array<FilterOption>;
+  subdomains?: Array<FilterOption>;
+  aggregates?: Array<FilterOption>;
+  codes?: Array<FilterOption>;
+  statuses?: Array<FilterOption>;
+};
+
+export type FilterOptionsResponse1 = {
+  clients?: Array<FilterOption1>;
+  applications?: Array<FilterOption1>;
+  subdomains?: Array<FilterOption1>;
+  aggregates?: Array<FilterOption1>;
+  types?: Array<FilterOption1>;
+};
+
 export type GrantClientAccessRequest = {
   clientId: string;
 };
@@ -642,8 +736,40 @@ export type LoginResponse = {
   clientId?: string;
 };
 
+export type PagedDispatchJobReadResponse = {
+  items?: Array<DispatchJobReadResponse>;
+  page?: number;
+  size?: number;
+  totalItems?: number;
+  totalPages?: number;
+};
+
 export type PagedDispatchJobResponse = {
   items?: Array<DispatchJobResponse>;
+  page?: number;
+  size?: number;
+  totalItems?: number;
+  totalPages?: number;
+};
+
+export type PagedEventResponse = {
+  items?: Array<EventReadResponse>;
+  page?: number;
+  size?: number;
+  totalItems?: number;
+  totalPages?: number;
+};
+
+export type PagedRawDispatchJobResponse = {
+  items?: Array<RawDispatchJobResponse>;
+  page?: number;
+  size?: number;
+  totalItems?: number;
+  totalPages?: number;
+};
+
+export type PagedRawEventResponse = {
+  items?: Array<RawEventResponse>;
   page?: number;
   size?: number;
   totalItems?: number;
@@ -722,6 +848,56 @@ export type ProcessResponse = {
   ack?: boolean;
   message?: string;
   delaySeconds?: number;
+};
+
+export type RawDispatchJobResponse = {
+  id?: string;
+  externalId?: string;
+  source?: string;
+  kind?: string;
+  code?: string;
+  subject?: string;
+  eventId?: string;
+  correlationId?: string;
+  targetUrl?: string;
+  protocol?: string;
+  clientId?: string;
+  subscriptionId?: string;
+  serviceAccountId?: string;
+  dispatchPoolId?: string;
+  messageGroup?: string;
+  mode?: string;
+  sequence?: number;
+  status?: string;
+  attemptCount?: number;
+  maxRetries?: number;
+  lastError?: string;
+  timeoutSeconds?: number;
+  retryStrategy?: string;
+  idempotencyKey?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  scheduledFor?: string;
+  completedAt?: string;
+  payloadContentType?: string;
+  payloadLength?: number;
+  attemptHistoryCount?: number;
+};
+
+export type RawEventResponse = {
+  id?: string;
+  specVersion?: string;
+  type?: string;
+  source?: string;
+  subject?: string;
+  time?: string;
+  data?: string;
+  messageGroup?: string;
+  correlationId?: string;
+  causationId?: string;
+  deduplicationId?: string;
+  contextData?: Array<ContextDataResponse2>;
+  clientId?: string;
 };
 
 export type ResetPasswordRequest = {
@@ -4269,6 +4445,246 @@ export type PostApiApplicationsByIdDeactivateErrors = {
 export type PostApiApplicationsByIdDeactivateResponses = {
   /**
    * Application deactivated
+   */
+  200: unknown;
+};
+
+export type GetApiBffDebugDispatchJobsData = {
+  body?: never;
+  path?: never;
+  query?: {
+    page?: number;
+    size?: number;
+  };
+  url: "/api/bff/debug/dispatch-jobs";
+};
+
+export type GetApiBffDebugDispatchJobsResponses = {
+  /**
+   * Dispatch jobs found
+   */
+  200: PagedRawDispatchJobResponse;
+};
+
+export type GetApiBffDebugDispatchJobsResponse =
+  GetApiBffDebugDispatchJobsResponses[keyof GetApiBffDebugDispatchJobsResponses];
+
+export type GetApiBffDebugDispatchJobsByIdData = {
+  body?: never;
+  path: {
+    id: string;
+  };
+  query?: never;
+  url: "/api/bff/debug/dispatch-jobs/{id}";
+};
+
+export type GetApiBffDebugDispatchJobsByIdErrors = {
+  /**
+   * Dispatch job not found
+   */
+  404: unknown;
+};
+
+export type GetApiBffDebugDispatchJobsByIdResponses = {
+  /**
+   * Dispatch job found
+   */
+  200: unknown;
+};
+
+export type GetApiBffDebugEventsData = {
+  body?: never;
+  path?: never;
+  query?: {
+    page?: number;
+    size?: number;
+  };
+  url: "/api/bff/debug/events";
+};
+
+export type GetApiBffDebugEventsResponses = {
+  /**
+   * Events found
+   */
+  200: PagedRawEventResponse;
+};
+
+export type GetApiBffDebugEventsResponse =
+  GetApiBffDebugEventsResponses[keyof GetApiBffDebugEventsResponses];
+
+export type GetApiBffDebugEventsByIdData = {
+  body?: never;
+  path: {
+    id: string;
+  };
+  query?: never;
+  url: "/api/bff/debug/events/{id}";
+};
+
+export type GetApiBffDebugEventsByIdErrors = {
+  /**
+   * Event not found
+   */
+  404: unknown;
+};
+
+export type GetApiBffDebugEventsByIdResponses = {
+  /**
+   * Event found
+   */
+  200: unknown;
+};
+
+export type GetApiBffDispatchJobsData = {
+  body?: never;
+  path?: never;
+  query?: {
+    aggregates?: string;
+    applications?: string;
+    clientIds?: string;
+    codes?: string;
+    createdAfter?: Instant;
+    createdBefore?: Instant;
+    dispatchPoolId?: string;
+    kind?: string;
+    messageGroup?: string;
+    page?: number;
+    size?: number;
+    source?: string;
+    statuses?: string;
+    subdomains?: string;
+    subscriptionId?: string;
+  };
+  url: "/api/bff/dispatch-jobs";
+};
+
+export type GetApiBffDispatchJobsResponses = {
+  /**
+   * Dispatch jobs found
+   */
+  200: PagedDispatchJobReadResponse;
+};
+
+export type GetApiBffDispatchJobsResponse =
+  GetApiBffDispatchJobsResponses[keyof GetApiBffDispatchJobsResponses];
+
+export type GetApiBffDispatchJobsFilterOptionsData = {
+  body?: never;
+  path?: never;
+  query?: {
+    aggregates?: string;
+    applications?: string;
+    clientIds?: string;
+    subdomains?: string;
+  };
+  url: "/api/bff/dispatch-jobs/filter-options";
+};
+
+export type GetApiBffDispatchJobsFilterOptionsResponses = {
+  /**
+   * Filter options
+   */
+  200: FilterOptionsResponse;
+};
+
+export type GetApiBffDispatchJobsFilterOptionsResponse =
+  GetApiBffDispatchJobsFilterOptionsResponses[keyof GetApiBffDispatchJobsFilterOptionsResponses];
+
+export type GetApiBffDispatchJobsByIdData = {
+  body?: never;
+  path: {
+    id: string;
+  };
+  query?: never;
+  url: "/api/bff/dispatch-jobs/{id}";
+};
+
+export type GetApiBffDispatchJobsByIdErrors = {
+  /**
+   * Dispatch job not found
+   */
+  404: unknown;
+};
+
+export type GetApiBffDispatchJobsByIdResponses = {
+  /**
+   * Dispatch job found
+   */
+  200: unknown;
+};
+
+export type GetApiBffEventsData = {
+  body?: never;
+  path?: never;
+  query?: {
+    aggregates?: string;
+    applications?: string;
+    clientIds?: string;
+    correlationId?: string;
+    messageGroup?: string;
+    page?: number;
+    size?: number;
+    source?: string;
+    subdomains?: string;
+    subject?: string;
+    timeAfter?: Instant;
+    timeBefore?: Instant;
+    types?: string;
+  };
+  url: "/api/bff/events";
+};
+
+export type GetApiBffEventsResponses = {
+  /**
+   * Events found
+   */
+  200: PagedEventResponse;
+};
+
+export type GetApiBffEventsResponse =
+  GetApiBffEventsResponses[keyof GetApiBffEventsResponses];
+
+export type GetApiBffEventsFilterOptionsData = {
+  body?: never;
+  path?: never;
+  query?: {
+    aggregates?: string;
+    applications?: string;
+    clientIds?: string;
+    subdomains?: string;
+  };
+  url: "/api/bff/events/filter-options";
+};
+
+export type GetApiBffEventsFilterOptionsResponses = {
+  /**
+   * Filter options
+   */
+  200: FilterOptionsResponse1;
+};
+
+export type GetApiBffEventsFilterOptionsResponse =
+  GetApiBffEventsFilterOptionsResponses[keyof GetApiBffEventsFilterOptionsResponses];
+
+export type GetApiBffEventsByIdData = {
+  body?: never;
+  path: {
+    id: string;
+  };
+  query?: never;
+  url: "/api/bff/events/{id}";
+};
+
+export type GetApiBffEventsByIdErrors = {
+  /**
+   * Event not found
+   */
+  404: unknown;
+};
+
+export type GetApiBffEventsByIdResponses = {
+  /**
+   * Event found
    */
   200: unknown;
 };

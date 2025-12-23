@@ -181,6 +181,22 @@ import type {
   PutApiApplicationsByIdData,
   PostApiApplicationsByIdActivateData,
   PostApiApplicationsByIdDeactivateData,
+  GetApiBffDebugDispatchJobsData,
+  GetApiBffDebugDispatchJobsResponse,
+  GetApiBffDebugDispatchJobsByIdData,
+  GetApiBffDebugEventsData,
+  GetApiBffDebugEventsResponse,
+  GetApiBffDebugEventsByIdData,
+  GetApiBffDispatchJobsData,
+  GetApiBffDispatchJobsResponse,
+  GetApiBffDispatchJobsFilterOptionsData,
+  GetApiBffDispatchJobsFilterOptionsResponse,
+  GetApiBffDispatchJobsByIdData,
+  GetApiBffEventsData,
+  GetApiBffEventsResponse,
+  GetApiBffEventsFilterOptionsData,
+  GetApiBffEventsFilterOptionsResponse,
+  GetApiBffEventsByIdData,
   GetApiConfigPlatformData,
   GetApiConfigPlatformResponse,
   GetApiDispatchJobsData,
@@ -2585,6 +2601,168 @@ export const postApiApplicationsByIdDeactivate = <
       ...options,
     },
   );
+};
+
+/**
+ * List raw dispatch jobs
+ * List raw dispatch jobs from the transactional collection (debug/admin only)
+ */
+export const getApiBffDebugDispatchJobs = <
+  ThrowOnError extends boolean = false,
+>(
+  options?: Options<GetApiBffDebugDispatchJobsData, ThrowOnError>,
+) => {
+  return (options?.client ?? _heyApiClient).get<
+    GetApiBffDebugDispatchJobsResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/bff/debug/dispatch-jobs",
+    ...options,
+  });
+};
+
+/**
+ * Get raw dispatch job by ID
+ * Get a single raw dispatch job by its ID (debug/admin only)
+ */
+export const getApiBffDebugDispatchJobsById = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<GetApiBffDebugDispatchJobsByIdData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).get<unknown, unknown, ThrowOnError>({
+    url: "/api/bff/debug/dispatch-jobs/{id}",
+    ...options,
+  });
+};
+
+/**
+ * List raw events
+ * List raw events from the transactional collection (debug/admin only)
+ */
+export const getApiBffDebugEvents = <ThrowOnError extends boolean = false>(
+  options?: Options<GetApiBffDebugEventsData, ThrowOnError>,
+) => {
+  return (options?.client ?? _heyApiClient).get<
+    GetApiBffDebugEventsResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/bff/debug/events",
+    ...options,
+  });
+};
+
+/**
+ * Get raw event by ID
+ * Get a single raw event by its ID (debug/admin only)
+ */
+export const getApiBffDebugEventsById = <ThrowOnError extends boolean = false>(
+  options: Options<GetApiBffDebugEventsByIdData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).get<unknown, unknown, ThrowOnError>({
+    url: "/api/bff/debug/events/{id}",
+    ...options,
+  });
+};
+
+/**
+ * Search dispatch jobs
+ * Search dispatch jobs with optional filters and pagination. Multi-value parameters (clientIds, applications, etc.) support comma-separated values for OR filtering. Use 'null' in clientIds to include platform jobs (no client).
+ */
+export const getApiBffDispatchJobs = <ThrowOnError extends boolean = false>(
+  options?: Options<GetApiBffDispatchJobsData, ThrowOnError>,
+) => {
+  return (options?.client ?? _heyApiClient).get<
+    GetApiBffDispatchJobsResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/bff/dispatch-jobs",
+    ...options,
+  });
+};
+
+/**
+ * Get filter options
+ * Get available filter values for cascading filters. Each level is narrowed by selections at higher levels (client → application → subdomain → aggregate → code).
+ */
+export const getApiBffDispatchJobsFilterOptions = <
+  ThrowOnError extends boolean = false,
+>(
+  options?: Options<GetApiBffDispatchJobsFilterOptionsData, ThrowOnError>,
+) => {
+  return (options?.client ?? _heyApiClient).get<
+    GetApiBffDispatchJobsFilterOptionsResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/bff/dispatch-jobs/filter-options",
+    ...options,
+  });
+};
+
+/**
+ * Get dispatch job by ID
+ * Get a single dispatch job by its ID
+ */
+export const getApiBffDispatchJobsById = <ThrowOnError extends boolean = false>(
+  options: Options<GetApiBffDispatchJobsByIdData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).get<unknown, unknown, ThrowOnError>({
+    url: "/api/bff/dispatch-jobs/{id}",
+    ...options,
+  });
+};
+
+/**
+ * Search events
+ * Search events with optional filters and pagination. Multi-value parameters (clientIds, applications, etc.) support comma-separated values for OR filtering. Use 'null' in clientIds to include platform events (no client).
+ */
+export const getApiBffEvents = <ThrowOnError extends boolean = false>(
+  options?: Options<GetApiBffEventsData, ThrowOnError>,
+) => {
+  return (options?.client ?? _heyApiClient).get<
+    GetApiBffEventsResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/bff/events",
+    ...options,
+  });
+};
+
+/**
+ * Get filter options
+ * Get available filter values for cascading filters. Each level is narrowed by selections at higher levels (client → application → subdomain → aggregate → type).
+ */
+export const getApiBffEventsFilterOptions = <
+  ThrowOnError extends boolean = false,
+>(
+  options?: Options<GetApiBffEventsFilterOptionsData, ThrowOnError>,
+) => {
+  return (options?.client ?? _heyApiClient).get<
+    GetApiBffEventsFilterOptionsResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/bff/events/filter-options",
+    ...options,
+  });
+};
+
+/**
+ * Get event by ID
+ * Get a single event by its ID
+ */
+export const getApiBffEventsById = <ThrowOnError extends boolean = false>(
+  options: Options<GetApiBffEventsByIdData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).get<unknown, unknown, ThrowOnError>({
+    url: "/api/bff/events/{id}",
+    ...options,
+  });
 };
 
 /**

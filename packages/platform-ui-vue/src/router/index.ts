@@ -218,11 +218,33 @@ const router = createRouter({
           name: 'dispatch-jobs',
           component: () => import('@/pages/dispatch-jobs/DispatchJobListPage.vue'),
         },
+        // Events
+        {
+          path: 'events',
+          name: 'events',
+          component: () => import('@/pages/events/EventListPage.vue'),
+        },
+        {
+          path: 'events/:id',
+          name: 'event-detail',
+          component: () => import('@/pages/events/EventListPage.vue'),
+        },
         // Platform - Audit Log
         {
           path: 'platform/audit-log',
           name: 'audit-log',
           component: () => import('@/pages/platform/AuditLogListPage.vue'),
+        },
+        // Platform - Debug
+        {
+          path: 'platform/debug/events',
+          name: 'debug-raw-events',
+          component: () => import('@/pages/platform/debug/RawEventListPage.vue'),
+        },
+        {
+          path: 'platform/debug/dispatch-jobs',
+          name: 'debug-raw-dispatch-jobs',
+          component: () => import('@/pages/platform/debug/RawDispatchJobListPage.vue'),
         },
         // Profile
         {

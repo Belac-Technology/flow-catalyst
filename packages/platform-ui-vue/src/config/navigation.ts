@@ -80,11 +80,33 @@ export const NAVIGATION_CONFIG: NavGroup[] = [
         icon: 'pi pi-history',
         route: '/platform/audit-log',
       },
+      {
+        label: 'Debug',
+        icon: 'pi pi-wrench',
+        expanded: false,
+        children: [
+          {
+            label: 'Raw Events',
+            icon: 'pi pi-database',
+            route: '/platform/debug/events',
+          },
+          {
+            label: 'Raw Dispatch Jobs',
+            icon: 'pi pi-database',
+            route: '/platform/debug/dispatch-jobs',
+          },
+        ],
+      },
     ],
   },
   {
     label: 'Messaging',
     items: [
+      {
+        label: 'Events',
+        icon: 'pi pi-inbox',
+        route: '/events',
+      },
       {
         label: 'Event Types',
         icon: 'pi pi-bolt',

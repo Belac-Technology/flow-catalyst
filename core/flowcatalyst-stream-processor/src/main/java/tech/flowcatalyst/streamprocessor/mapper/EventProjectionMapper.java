@@ -37,7 +37,15 @@ public class EventProjectionMapper implements ProjectionMapper {
 
         // CloudEvents core fields
         projected.put("specVersion", event.getString("specVersion"));
-        projected.put("type", event.getString("type"));
+        String type = event.getString("type");
+        projected.put("type", type);
+
+        // Parse type into denormalized filter fields: {app}:{subdomain}:{aggregate}:{event}
+        String[] typeSegments = type != null ? type.split(":", 4) : new String[0];
+        projected.put("application", typeSegments.length > 0 ? typeSegments[0] : null);
+        projected.put("subdomain", typeSegments.length > 1 ? typeSegments[1] : null);
+        projected.put("aggregate", typeSegments.length > 2 ? typeSegments[2] : null);
+
         projected.put("source", event.getString("source"));
         projected.put("subject", event.getString("subject"));
         projected.put("time", event.get("time"));
@@ -64,42 +72,64 @@ public class EventProjectionMapper implements ProjectionMapper {
     @Override
     public List<IndexDefinition> getIndexDefinitions() {
         return List.of(
-                // Index on type - for filtering by event type
-                new IndexDefinition("type", Indexes.ascending("type")),
+                // =============================================================
+                // Global cascading filter indexes (no clientId filter)
+                // Supports: app, app+subdomain, app+subdomain+aggregate, full type
+                // =============================================================
 
-                // Index on subject - for looking up events by aggregate
-                new IndexDefinition("subject", Indexes.ascending("subject")),
-
-                // Index on time - for time-based queries (descending for "latest first")
-                new IndexDefinition("time", Indexes.descending("time")),
-
-                // Index on messageGroup - for ordered processing queries
-                new IndexDefinition("messageGroup", Indexes.ascending("messageGroup")),
-
-                // Index on correlationId - for distributed tracing (sparse - optional field)
-                new IndexDefinition("correlationId",
-                        Indexes.ascending("correlationId"),
-                        new IndexOptions().sparse(true)),
-
-                // Compound index on type + time - common query pattern
-                new IndexDefinition("type_time",
+                // Global cascading filter - covers all non-client-scoped filter combos
+                new IndexDefinition("app_subdomain_aggregate_type_time",
                         Indexes.compoundIndex(
+                                Indexes.ascending("application"),
+                                Indexes.ascending("subdomain"),
+                                Indexes.ascending("aggregate"),
                                 Indexes.ascending("type"),
                                 Indexes.descending("time"))),
 
-                // Compound index on subject + time - for aggregate event history
+                // Global subject + time - for aggregate history across all
                 new IndexDefinition("subject_time",
                         Indexes.compoundIndex(
                                 Indexes.ascending("subject"),
                                 Indexes.descending("time"))),
 
-                // Index on projectedAt - for monitoring projection lag
-                new IndexDefinition("projectedAt", Indexes.descending("projectedAt")),
+                // =============================================================
+                // Client-scoped cascading filter indexes
+                // Supports: client, client+app, client+app+subdomain, etc.
+                // =============================================================
 
-                // Index on clientId - for client-scoped queries
-                new IndexDefinition("clientId",
-                        Indexes.ascending("clientId"),
-                        new IndexOptions().sparse(true))
+                // Client-scoped cascading filter - covers all client-scoped filter combos
+                new IndexDefinition("clientId_app_subdomain_aggregate_type_time",
+                        Indexes.compoundIndex(
+                                Indexes.ascending("clientId"),
+                                Indexes.ascending("application"),
+                                Indexes.ascending("subdomain"),
+                                Indexes.ascending("aggregate"),
+                                Indexes.ascending("type"),
+                                Indexes.descending("time"))),
+
+                // Client + subject + time - aggregate history within client
+                new IndexDefinition("clientId_subject_time",
+                        Indexes.compoundIndex(
+                                Indexes.ascending("clientId"),
+                                Indexes.ascending("subject"),
+                                Indexes.descending("time"))),
+
+                // =============================================================
+                // Tracing and monitoring indexes
+                // =============================================================
+
+                // Correlation ID - for distributed tracing (sparse - truly optional)
+                new IndexDefinition("correlationId",
+                        Indexes.ascending("correlationId"),
+                        new IndexOptions().sparse(true)),
+
+                // Message group - for ordered processing queries (sparse)
+                new IndexDefinition("messageGroup",
+                        Indexes.ascending("messageGroup"),
+                        new IndexOptions().sparse(true)),
+
+                // Projection lag monitoring
+                new IndexDefinition("projectedAt", Indexes.descending("projectedAt"))
         );
     }
 

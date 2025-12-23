@@ -89,6 +89,8 @@ public class PermissionRegistry {
         // ====================================================================
         // Messaging Permissions
         // ====================================================================
+        registerPermission(PlatformMessagingPermissions.EVENT_VIEW);
+        registerPermission(PlatformMessagingPermissions.EVENT_VIEW_RAW);
         registerPermission(PlatformMessagingPermissions.EVENT_TYPE_VIEW);
         registerPermission(PlatformMessagingPermissions.EVENT_TYPE_CREATE);
         registerPermission(PlatformMessagingPermissions.EVENT_TYPE_UPDATE);
@@ -98,6 +100,7 @@ public class PermissionRegistry {
         registerPermission(PlatformMessagingPermissions.SUBSCRIPTION_UPDATE);
         registerPermission(PlatformMessagingPermissions.SUBSCRIPTION_DELETE);
         registerPermission(PlatformMessagingPermissions.DISPATCH_JOB_VIEW);
+        registerPermission(PlatformMessagingPermissions.DISPATCH_JOB_VIEW_RAW);
         registerPermission(PlatformMessagingPermissions.DISPATCH_JOB_CREATE);
         registerPermission(PlatformMessagingPermissions.DISPATCH_JOB_RETRY);
         registerPermission(PlatformMessagingPermissions.DISPATCH_POOL_VIEW);

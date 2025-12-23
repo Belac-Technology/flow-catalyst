@@ -50,7 +50,7 @@ function toggleSidebar() {
 
 .layout-content {
   flex: 1;
-  padding: 24px;
+  padding: 16px;
   margin-top: 64px;
 }
 

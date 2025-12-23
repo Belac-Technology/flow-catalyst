@@ -1,17 +1,18 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted } from 'vue';
 import DataTable from 'primevue/datatable';
 import Column from 'primevue/column';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
 import Tag from 'primevue/tag';
-import Select from 'primevue/select';
-import { getApiDispatchJobs } from '@/api/generated';
+import MultiSelect from 'primevue/multiselect';
+import { getApiBffDispatchJobs, getApiBffDispatchJobsFilterOptions } from '@/api/generated';
 
 interface DispatchJob {
   id: string;
   source: string;
-  type: string;
+  code: string;
+  kind: string;
   targetUrl: string;
   status: string;
   mode: string;
@@ -26,42 +27,86 @@ interface DispatchJob {
   lastError?: string;
 }
 
+interface FilterOption {
+  label: string;
+  value: string;
+}
+
 const dispatchJobs = ref<DispatchJob[]>([]);
 const loading = ref(true);
 const searchQuery = ref('');
-const statusFilter = ref<string | null>(null);
 const totalRecords = ref(0);
 const currentPage = ref(0);
 const pageSize = ref(20);
 
-const statusOptions = [
-  { label: 'All Statuses', value: null },
-  { label: 'Pending', value: 'PENDING' },
-  { label: 'Queued', value: 'QUEUED' },
-  { label: 'In Progress', value: 'IN_PROGRESS' },
-  { label: 'Completed', value: 'COMPLETED' },
-  { label: 'Error', value: 'ERROR' },
-  { label: 'Cancelled', value: 'CANCELLED' }
-];
+// Cascading filter selections
+const selectedClients = ref<string[]>([]);
+const selectedApplications = ref<string[]>([]);
+const selectedSubdomains = ref<string[]>([]);
+const selectedAggregates = ref<string[]>([]);
+const selectedCodes = ref<string[]>([]);
+const selectedStatuses = ref<string[]>([]);
+
+// Filter options
+const clientOptions = ref<FilterOption[]>([]);
+const applicationOptions = ref<FilterOption[]>([]);
+const subdomainOptions = ref<FilterOption[]>([]);
+const aggregateOptions = ref<FilterOption[]>([]);
+const codeOptions = ref<FilterOption[]>([]);
+const statusOptions = ref<FilterOption[]>([]);
+
+// Prevent infinite loops from cascading updates
+const isUpdating = ref(false);
 
 onMounted(async () => {
+  await loadFilterOptions();
   await loadDispatchJobs();
 });
+
+async function loadFilterOptions() {
+  try {
+    const response = await getApiBffDispatchJobsFilterOptions({
+      query: {
+        clientIds: selectedClients.value.length > 0 ? selectedClients.value.join(',') : undefined,
+        applications: selectedApplications.value.length > 0 ? selectedApplications.value.join(',') : undefined,
+        subdomains: selectedSubdomains.value.length > 0 ? selectedSubdomains.value.join(',') : undefined,
+        aggregates: selectedAggregates.value.length > 0 ? selectedAggregates.value.join(',') : undefined
+      }
+    });
+    const data = response.data as { clients?: FilterOption[]; applications?: FilterOption[]; subdomains?: FilterOption[]; aggregates?: FilterOption[]; codes?: FilterOption[]; statuses?: FilterOption[] };
+    if (data) {
+      clientOptions.value = (data.clients || []) as FilterOption[];
+      applicationOptions.value = (data.applications || []) as FilterOption[];
+      subdomainOptions.value = (data.subdomains || []) as FilterOption[];
+      aggregateOptions.value = (data.aggregates || []) as FilterOption[];
+      codeOptions.value = (data.codes || []) as FilterOption[];
+      statusOptions.value = (data.statuses || []) as FilterOption[];
+    }
+  } catch (error) {
+    console.error('Failed to load filter options:', error);
+  }
+}
 
 async function loadDispatchJobs() {
   loading.value = true;
   try {
-    const response = await getApiDispatchJobs({
+    const response = await getApiBffDispatchJobs({
       query: {
         page: currentPage.value,
         size: pageSize.value,
-        status: statusFilter.value || undefined,
+        clientIds: selectedClients.value.length > 0 ? selectedClients.value.join(',') : undefined,
+        statuses: selectedStatuses.value.length > 0 ? selectedStatuses.value.join(',') : undefined,
+        applications: selectedApplications.value.length > 0 ? selectedApplications.value.join(',') : undefined,
+        subdomains: selectedSubdomains.value.length > 0 ? selectedSubdomains.value.join(',') : undefined,
+        aggregates: selectedAggregates.value.length > 0 ? selectedAggregates.value.join(',') : undefined,
+        codes: selectedCodes.value.length > 0 ? selectedCodes.value.join(',') : undefined,
         source: searchQuery.value || undefined
       }
     });
-    if (response.data) {
-      dispatchJobs.value = (response.data.items || []) as DispatchJob[];
-      totalRecords.value = response.data.totalItems || 0;
+    const data = response.data as { items?: DispatchJob[]; totalItems?: number };
+    if (data) {
+      dispatchJobs.value = (data.items || []) as DispatchJob[];
+      totalRecords.value = data.totalItems || 0;
     }
   } catch (error) {
     console.error('Failed to load dispatch jobs:', error);
@@ -76,7 +121,41 @@ async function onPage(event: { page: number; rows: number }) {
   await loadDispatchJobs();
 }
 
-async function onFilterChange() {
+async function onFilterChange(clearDownstream: 'applications' | 'subdomains' | 'aggregates' | 'codes' | 'none' = 'none') {
+  if (isUpdating.value) return;
+  isUpdating.value = true;
+  try {
+    // Clear downstream selections based on which filter changed
+    if (clearDownstream === 'applications') {
+      selectedApplications.value = [];
+      selectedSubdomains.value = [];
+      selectedAggregates.value = [];
+      selectedCodes.value = [];
+    } else if (clearDownstream === 'subdomains') {
+      selectedSubdomains.value = [];
+      selectedAggregates.value = [];
+      selectedCodes.value = [];
+    } else if (clearDownstream === 'aggregates') {
+      selectedAggregates.value = [];
+      selectedCodes.value = [];
+    } else if (clearDownstream === 'codes') {
+      selectedCodes.value = [];
+    }
+
+    currentPage.value = 0;
+    await loadFilterOptions();
+    await loadDispatchJobs();
+  } finally {
+    isUpdating.value = false;
+  }
+}
+
+async function onStatusChange() {
+  currentPage.value = 0;
+  await loadDispatchJobs();
+}
+
+async function onSearchChange() {
   currentPage.value = 0;
   await loadDispatchJobs();
 }
@@ -110,6 +189,17 @@ function formatDate(dateStr: string | undefined): string {
 function formatAttempts(job: DispatchJob): string {
   return `${job.attemptCount || 0}/${job.maxRetries || 3}`;
 }
+
+function formatCode(code: string | undefined): { app?: string; subdomain?: string; aggregate?: string; event?: string } {
+  if (!code) return {};
+  const parts = code.split(':');
+  return {
+    app: parts[0],
+    subdomain: parts[1],
+    aggregate: parts[2],
+    event: parts[3]
+  };
+}
 </script>
 
 <template>
@@ -123,31 +213,79 @@ function formatAttempts(job: DispatchJob): string {
 
     <div class="fc-card">
       <div class="toolbar">
-        <span class="p-input-icon-left">
-          <i class="pi pi-search" />
-          <InputText
-            v-model="searchQuery"
-            placeholder="Search by source..."
-            @keyup.enter="onFilterChange"
+        <div class="filter-row">
+          <MultiSelect
+            v-model="selectedClients"
+            :options="clientOptions"
+            optionLabel="label"
+            optionValue="value"
+            placeholder="All Clients"
+            class="filter-select"
+            @change="onFilterChange('applications')"
           />
-        </span>
-        <Select
-          v-model="statusFilter"
-          :options="statusOptions"
-          optionLabel="label"
-          optionValue="value"
-          placeholder="Filter by status"
-          class="ml-2"
-          @change="onFilterChange"
-        />
-        <Button
-          icon="pi pi-refresh"
-          text
-          rounded
-          @click="loadDispatchJobs"
-          v-tooltip="'Refresh'"
-          class="ml-2"
-        />
+          <MultiSelect
+            v-model="selectedApplications"
+            :options="applicationOptions"
+            optionLabel="label"
+            optionValue="value"
+            placeholder="All Applications"
+            class="filter-select"
+            @change="onFilterChange('subdomains')"
+          />
+          <MultiSelect
+            v-model="selectedSubdomains"
+            :options="subdomainOptions"
+            optionLabel="label"
+            optionValue="value"
+            placeholder="All Subdomains"
+            class="filter-select"
+            @change="onFilterChange('aggregates')"
+          />
+          <MultiSelect
+            v-model="selectedAggregates"
+            :options="aggregateOptions"
+            optionLabel="label"
+            optionValue="value"
+            placeholder="All Aggregates"
+            class="filter-select"
+            @change="onFilterChange('codes')"
+          />
+          <MultiSelect
+            v-model="selectedCodes"
+            :options="codeOptions"
+            optionLabel="label"
+            optionValue="value"
+            placeholder="All Codes"
+            class="filter-select"
+            @change="onFilterChange('none')"
+          />
+        </div>
+        <div class="filter-row">
+          <MultiSelect
+            v-model="selectedStatuses"
+            :options="statusOptions"
+            optionLabel="label"
+            optionValue="value"
+            placeholder="All Statuses"
+            class="filter-select"
+            @change="onStatusChange"
+          />
+          <span class="p-input-icon-left">
+            <i class="pi pi-search" />
+            <InputText
+              v-model="searchQuery"
+              placeholder="Search by source..."
+              @keyup.enter="onSearchChange"
+            />
+          </span>
+          <Button
+            icon="pi pi-refresh"
+            text
+            rounded
+            @click="loadDispatchJobs"
+            v-tooltip="'Refresh'"
+          />
+        </div>
       </div>
 
       <DataTable
@@ -168,7 +306,19 @@ function formatAttempts(job: DispatchJob): string {
             <span class="font-mono text-sm">{{ data.id?.slice(0, 8) }}...</span>
           </template>
         </Column>
-        <Column field="type" header="Type" sortable />
+        <Column field="code" header="Code">
+          <template #body="{ data }">
+            <span class="code-display">
+              <span class="code-segment app">{{ formatCode(data.code).app }}</span>
+              <span class="code-separator">:</span>
+              <span class="code-segment subdomain">{{ formatCode(data.code).subdomain }}</span>
+              <span class="code-separator">:</span>
+              <span class="code-segment aggregate">{{ formatCode(data.code).aggregate }}</span>
+              <span class="code-separator">:</span>
+              <span class="code-segment event">{{ formatCode(data.code).event }}</span>
+            </span>
+          </template>
+        </Column>
         <Column field="source" header="Source" sortable />
         <Column field="status" header="Status" sortable style="width: 8rem">
           <template #body="{ data }">
@@ -217,9 +367,20 @@ function formatAttempts(job: DispatchJob): string {
 <style scoped>
 .toolbar {
   display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 16px;
+}
+
+.filter-row {
+  display: flex;
   align-items: center;
   gap: 0.5rem;
-  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.filter-select {
+  min-width: 160px;
 }
 
 .font-mono {
@@ -234,9 +395,5 @@ function formatAttempts(job: DispatchJob): string {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.ml-2 {
-  margin-left: 0.5rem;
 }
 </style>

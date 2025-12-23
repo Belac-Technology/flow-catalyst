@@ -44,10 +44,17 @@ public class DispatchJobProjectionMapper implements ProjectionMapper {
         projected.put("externalId", source.getString("externalId"));
         projected.put("source", source.getString("source"));
         projected.put("kind", source.getString("kind"));
-        projected.put("code", source.getString("code"));
+        String code = source.getString("code");
+        projected.put("code", code);
         projected.put("subject", source.getString("subject"));
         projected.put("eventId", source.getString("eventId"));
         projected.put("correlationId", source.getString("correlationId"));
+
+        // Parse code into denormalized filter fields: {app}:{subdomain}:{aggregate}:{event}
+        String[] codeSegments = code != null ? code.split(":", 4) : new String[0];
+        projected.put("application", codeSegments.length > 0 ? codeSegments[0] : null);
+        projected.put("subdomain", codeSegments.length > 1 ? codeSegments[1] : null);
+        projected.put("aggregate", codeSegments.length > 2 ? codeSegments[2] : null);
 
         // Target (URL only, no headers for light projection)
         projected.put("targetUrl", source.getString("targetUrl"));
@@ -107,64 +114,92 @@ public class DispatchJobProjectionMapper implements ProjectionMapper {
     @Override
     public List<IndexDefinition> getIndexDefinitions() {
         return List.of(
-                // Primary status-based queries
-                new IndexDefinition("status", Indexes.ascending("status")),
+                // =============================================================
+                // Global indexes (work for platform jobs where clientId=null)
+                // =============================================================
 
-                // Client and subscription scoping
-                new IndexDefinition("clientId",
-                        Indexes.ascending("clientId"),
-                        new IndexOptions().sparse(true)),
-                new IndexDefinition("subscriptionId",
-                        Indexes.ascending("subscriptionId"),
-                        new IndexOptions().sparse(true)),
-
-                // Event correlation
-                new IndexDefinition("eventId",
-                        Indexes.ascending("eventId"),
-                        new IndexOptions().sparse(true)),
-
-                // Distributed tracing
-                new IndexDefinition("correlationId",
-                        Indexes.ascending("correlationId"),
-                        new IndexOptions().sparse(true)),
-
-                // Time-based queries
-                new IndexDefinition("createdAt", Indexes.descending("createdAt")),
-                new IndexDefinition("scheduledFor",
-                        Indexes.ascending("scheduledFor"),
-                        new IndexOptions().sparse(true)),
-
-                // Dispatch pool and message group
-                new IndexDefinition("dispatchPoolId",
-                        Indexes.ascending("dispatchPoolId"),
-                        new IndexOptions().sparse(true)),
-                new IndexDefinition("messageGroup",
-                        Indexes.ascending("messageGroup"),
-                        new IndexOptions().sparse(true)),
-
-                // Compound indexes for common query patterns
-                new IndexDefinition("status_scheduledFor",
+                // Global status + createdAt - for status filtering across all
+                new IndexDefinition("status_createdAt",
                         Indexes.compoundIndex(
                                 Indexes.ascending("status"),
-                                Indexes.ascending("scheduledFor"))),
+                                Indexes.descending("createdAt"))),
 
+                // Global code + status - for filtering by job type
+                new IndexDefinition("code_status",
+                        Indexes.compoundIndex(
+                                Indexes.ascending("code"),
+                                Indexes.ascending("status"))),
+
+                // Global cascading filter - covers all non-client-scoped filter combos
+                new IndexDefinition("app_subdomain_aggregate_code_createdAt",
+                        Indexes.compoundIndex(
+                                Indexes.ascending("application"),
+                                Indexes.ascending("subdomain"),
+                                Indexes.ascending("aggregate"),
+                                Indexes.ascending("code"),
+                                Indexes.descending("createdAt"))),
+
+                // =============================================================
+                // Client-scoped indexes (clientId NOT sparse - allows null queries)
+                // =============================================================
+
+                // Client + status + createdAt - most common UI query pattern
                 new IndexDefinition("clientId_status_createdAt",
                         Indexes.compoundIndex(
                                 Indexes.ascending("clientId"),
                                 Indexes.ascending("status"),
                                 Indexes.descending("createdAt"))),
 
+                // Client + messageGroup + status - FIFO ordering within client
+                new IndexDefinition("clientId_messageGroup_status",
+                        Indexes.compoundIndex(
+                                Indexes.ascending("clientId"),
+                                Indexes.ascending("messageGroup"),
+                                Indexes.ascending("status"))),
+
+                // Client-scoped cascading filter
+                new IndexDefinition("clientId_app_subdomain_aggregate_code_createdAt",
+                        Indexes.compoundIndex(
+                                Indexes.ascending("clientId"),
+                                Indexes.ascending("application"),
+                                Indexes.ascending("subdomain"),
+                                Indexes.ascending("aggregate"),
+                                Indexes.ascending("code"),
+                                Indexes.descending("createdAt"))),
+
+                // =============================================================
+                // Relationship indexes
+                // =============================================================
+
+                // Subscription drill-down (subscriptionId implies client context)
                 new IndexDefinition("subscriptionId_createdAt",
                         Indexes.compoundIndex(
                                 Indexes.ascending("subscriptionId"),
-                                Indexes.descending("createdAt"))),
+                                Indexes.descending("createdAt")),
+                        new IndexOptions().sparse(true)),
 
-                new IndexDefinition("code_status",
+                // Dispatch pool queries
+                new IndexDefinition("dispatchPoolId_status",
                         Indexes.compoundIndex(
-                                Indexes.ascending("code"),
-                                Indexes.ascending("status"))),
+                                Indexes.ascending("dispatchPoolId"),
+                                Indexes.ascending("status")),
+                        new IndexOptions().sparse(true)),
 
-                // Projection tracking
+                // Event correlation - find jobs for an event
+                new IndexDefinition("eventId",
+                        Indexes.ascending("eventId"),
+                        new IndexOptions().sparse(true)),
+
+                // =============================================================
+                // Tracing and monitoring indexes
+                // =============================================================
+
+                // Correlation ID - for distributed tracing
+                new IndexDefinition("correlationId",
+                        Indexes.ascending("correlationId"),
+                        new IndexOptions().sparse(true)),
+
+                // Projection lag monitoring
                 new IndexDefinition("projectedAt", Indexes.descending("projectedAt")),
 
                 // Idempotency key (unique, sparse)

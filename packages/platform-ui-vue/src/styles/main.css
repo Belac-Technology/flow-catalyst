@@ -25,15 +25,14 @@ h1, h2, h3, h4, h5, h6 {
 
 /* Page layout utilities */
 .page-container {
-  max-width: 1400px;
-  margin: 0 auto;
+  /* Full width - no max-width constraint for data-heavy pages */
 }
 
 .page-header {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  margin-bottom: 24px;
+  margin-bottom: 16px;
 }
 
 .page-title {
@@ -51,9 +50,9 @@ h1, h2, h3, h4, h5, h6 {
 /* Card styling */
 .fc-card {
   background: white;
-  border-radius: 12px;
+  border-radius: 8px;
   border: 1px solid #e2e8f0;
-  padding: 24px;
+  padding: 16px;
 }
 
 /* Utility classes */

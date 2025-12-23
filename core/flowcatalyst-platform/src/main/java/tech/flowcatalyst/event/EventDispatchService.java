@@ -198,6 +198,7 @@ public class EventDispatchService {
         job.serviceAccountId = sub.serviceAccountId();
         job.clientId = sub.clientId();
         job.subscriptionId = sub.id();
+        job.idempotencyKey = event.id() + ":" + sub.id();
         job.dispatchPoolId = sub.dispatchPoolId();
         job.mode = sub.mode();
         job.messageGroup = computeMessageGroup(sub.code(), event.messageGroup());

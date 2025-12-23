@@ -14,6 +14,24 @@ public class PlatformMessagingPermissions {
     // Event Type Management
     // ========================================================================
 
+    // ========================================================================
+    // Event Viewing (events_read projection)
+    // ========================================================================
+
+    public static final PermissionDefinition EVENT_VIEW = PermissionDefinition.make(
+        "platform", "messaging", "event", "view",
+        "View events in the event store"
+    );
+
+    public static final PermissionDefinition EVENT_VIEW_RAW = PermissionDefinition.make(
+        "platform", "messaging", "event", "view-raw",
+        "View raw events (debug/admin)"
+    );
+
+    // ========================================================================
+    // Event Type Management
+    // ========================================================================
+
     public static final PermissionDefinition EVENT_TYPE_VIEW = PermissionDefinition.make(
         "platform", "messaging", "event-type", "view",
         "View event type definitions"
@@ -65,6 +83,11 @@ public class PlatformMessagingPermissions {
     public static final PermissionDefinition DISPATCH_JOB_VIEW = PermissionDefinition.make(
         "platform", "messaging", "dispatch-job", "view",
         "View dispatch jobs and delivery status"
+    );
+
+    public static final PermissionDefinition DISPATCH_JOB_VIEW_RAW = PermissionDefinition.make(
+        "platform", "messaging", "dispatch-job", "view-raw",
+        "View raw dispatch jobs (debug/admin)"
     );
 
     public static final PermissionDefinition DISPATCH_JOB_CREATE = PermissionDefinition.make(

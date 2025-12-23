@@ -2,7 +2,6 @@ package tech.flowcatalyst.streamprocessor.config;
 
 import io.smallrye.config.ConfigMapping;
 import io.smallrye.config.WithDefault;
-import io.smallrye.config.WithParentName;
 
 import java.util.Map;
 
@@ -58,6 +57,5 @@ public interface StreamProcessorConfig {
      *
      * @return map of stream name to configuration
      */
-    @WithParentName
     Map<String, StreamConfig> streams();
 }
