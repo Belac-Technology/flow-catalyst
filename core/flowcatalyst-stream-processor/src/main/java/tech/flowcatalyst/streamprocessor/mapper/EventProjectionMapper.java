@@ -123,9 +123,18 @@ public class EventProjectionMapper implements ProjectionMapper {
                         Indexes.ascending("correlationId"),
                         new IndexOptions().sparse(true)),
 
-                // Message group - for ordered processing queries (sparse)
-                new IndexDefinition("messageGroup",
-                        Indexes.ascending("messageGroup"),
+                // Client + message group - for ordered processing within client context
+                new IndexDefinition("clientId_messageGroup",
+                        Indexes.compoundIndex(
+                                Indexes.ascending("clientId"),
+                                Indexes.ascending("messageGroup")),
+                        new IndexOptions().sparse(true)),
+
+                // Context data key/value lookup - multikey index for querying by contextData entries
+                new IndexDefinition("contextData_key_value",
+                        Indexes.compoundIndex(
+                                Indexes.ascending("contextData.key"),
+                                Indexes.ascending("contextData.value")),
                         new IndexOptions().sparse(true)),
 
                 // Projection lag monitoring

@@ -150,9 +150,13 @@ public class MongoIndexInitializer {
         MongoCollection<Document> jobs = db.getCollection("dispatch_jobs");
         // Idempotency - essential for deduplication
         jobs.createIndex(Indexes.ascending("idempotencyKey"), opt().unique(true).sparse(true));
-        // Scheduler - find pending jobs to dispatch
+        // Scheduler - find pending jobs to dispatch (global or client-scoped)
+        // clientId at end allows filtering by client while preserving scheduledFor sort efficiency
         jobs.createIndex(
-            Indexes.compoundIndex(Indexes.ascending("status"), Indexes.ascending("scheduledFor")),
+            Indexes.compoundIndex(
+                Indexes.ascending("status"),
+                Indexes.ascending("scheduledFor"),
+                Indexes.ascending("clientId")),
             opt());
         // FIFO ordering within client context (messageGroup implies client scope)
         jobs.createIndex(
