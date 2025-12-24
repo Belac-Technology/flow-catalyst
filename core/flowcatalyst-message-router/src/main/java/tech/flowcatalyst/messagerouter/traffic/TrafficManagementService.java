@@ -28,9 +28,6 @@ public class TrafficManagementService {
     @Inject
     NoOpTrafficStrategy noOpStrategy;
 
-    @Inject
-    jakarta.enterprise.inject.Instance<AwsAlbTrafficStrategy> awsAlbStrategyInstance;
-
     private TrafficManagementStrategy activeStrategy;
 
     /**
@@ -50,17 +47,6 @@ public class TrafficManagementService {
             case "noop":
                 activeStrategy = noOpStrategy;
                 LOG.info("Using no-op traffic strategy");
-                break;
-
-            case "aws-alb":
-                if (awsAlbStrategyInstance.isResolvable()) {
-                    activeStrategy = awsAlbStrategyInstance.get();
-                    LOG.info("Using AWS ALB traffic strategy");
-                    validateAwsAlbConfig();
-                } else {
-                    LOG.warning("AWS ALB strategy requested but not available - falling back to no-op");
-                    activeStrategy = noOpStrategy;
-                }
                 break;
 
             default:
@@ -146,26 +132,5 @@ public class TrafficManagementService {
             );
         }
         return activeStrategy.getStatus();
-    }
-
-    /**
-     * Validate AWS ALB configuration.
-     */
-    private void validateAwsAlbConfig() {
-        if (config.awsAlb().targetGroupArn().isEmpty()) {
-            LOG.severe("AWS ALB strategy enabled but target group ARN not configured! " +
-                    "Set traffic-management.aws-alb.target-group-arn in application.properties");
-        }
-
-        if (config.awsAlb().port() <= 0 || config.awsAlb().port() > 65535) {
-            LOG.warning("Invalid port configured: " + config.awsAlb().port() + " - using default 8080");
-        }
-
-        // Check if running in ECS
-        String metadataUri = System.getenv("ECS_CONTAINER_METADATA_URI_V4");
-        if (metadataUri == null && config.awsAlb().instanceId().isEmpty()) {
-            LOG.warning("Not running in ECS and instance ID not configured - " +
-                    "traffic management may fail. Set traffic-management.aws-alb.instance-id");
-        }
     }
 }

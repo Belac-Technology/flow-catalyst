@@ -21,7 +21,7 @@ dependencies {
     implementation("io.quarkus:quarkus-picocli")
     implementation("io.quarkus:quarkus-arc")
 
-    // AWS SQS
+    // AWS SQS - use Quarkus extension
     implementation("io.quarkiverse.amazonservices:quarkus-amazon-sqs")
     implementation("software.amazon.awssdk:url-connection-client")
 

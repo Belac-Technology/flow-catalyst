@@ -21,7 +21,7 @@ dependencies {
     implementation("io.quarkus:quarkus-smallrye-health")
 
     // Redis for distributed locks
-    implementation("org.redisson:redisson-quarkus-30:3.40.2")
+    implementation("org.redisson:redisson-quarkus-30:3.45.0")
 
     // Testing
     testImplementation("io.quarkus:quarkus-junit5")

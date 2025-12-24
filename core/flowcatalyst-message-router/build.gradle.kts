@@ -14,6 +14,11 @@ val quarkusPlatformArtifactId: String by project
 val quarkusPlatformVersion: String by project
 val resilience4jVersion: String by project
 
+// Exclude netty-nio-client globally - it references AWS CRT classes that cause native image issues
+configurations.all {
+    exclude(group = "software.amazon.awssdk", module = "netty-nio-client")
+}
+
 dependencies {
     implementation(enforcedPlatform("${quarkusPlatformGroupId}:${quarkusPlatformArtifactId}:${quarkusPlatformVersion}"))
     implementation(enforcedPlatform("${quarkusPlatformGroupId}:quarkus-amazon-services-bom:${quarkusPlatformVersion}"))
@@ -35,23 +40,20 @@ dependencies {
 
     // Hot Standby (optional, only loaded if standby.enabled=true)
     // Using Redisson for proper distributed lock support with clean API
-    implementation("org.redisson:redisson-quarkus-30:3.40.2")
-
-    // Traffic Management - AWS ALB integration (optional, only loaded if traffic-management.strategy=aws-alb)
-    implementation("software.amazon.awssdk:elasticloadbalancingv2")
+    implementation("org.redisson:redisson-quarkus-30:3.45.0")
 
     // Health checks
     implementation("io.quarkus:quarkus-smallrye-health")
 
-    // Message Queues
+    // Message Queues - use Quarkus extension with URL connection client
     implementation("io.quarkiverse.amazonservices:quarkus-amazon-sqs")
-    implementation("software.amazon.awssdk:url-connection-client") // Required by Quarkus extension for default sync client
-    implementation("software.amazon.awssdk:apache-client") // Used for SYNC mode with HTTP/2 support (configured in application.properties)
-    implementation("software.amazon.awssdk:netty-nio-client") // Used for ASYNC mode (if enabled)
+    implementation("io.quarkiverse.amazonservices:quarkus-amazon-crt") // Native image support
+    implementation("com.github.jnr:jnr-unixsocket:0.38.22") // Required by aws-crt for native builds
+    implementation("software.amazon.awssdk:url-connection-client")
     implementation("org.apache.activemq:activemq-client:6.1.7")
 
     // Embedded Queue (for developer builds) - Pure Java SQLite for native image support
-    implementation("io.quarkiverse.jdbc:quarkus-jdbc-sqlite4j:0.0.5")
+    implementation("io.quarkiverse.jdbc:quarkus-jdbc-sqlite4j:0.0.8")
     implementation("io.quarkus:quarkus-agroal") // DataSource/connection pool support
 
     // Resilience

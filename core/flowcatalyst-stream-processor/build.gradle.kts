@@ -27,7 +27,7 @@ dependencies {
     implementation("io.quarkus:quarkus-mongodb-client")
 
     // Redis for checkpoints (uses same Redisson as standby)
-    implementation("org.redisson:redisson-quarkus-30:3.40.2")
+    implementation("org.redisson:redisson-quarkus-30:3.45.0")
 
     // Observability
     implementation("io.quarkus:quarkus-micrometer-registry-prometheus")

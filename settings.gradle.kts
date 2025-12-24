@@ -51,4 +51,3 @@ include("core:flowcatalyst-dev-build")
 // =============================================================================
 include("core:flowcatalyst-router-app")
 include("core:flowcatalyst-app")
-include("core:flowcatalyst-bffe")

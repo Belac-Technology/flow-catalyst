@@ -15,6 +15,11 @@ val quarkusPlatformArtifactId: String by project
 val quarkusPlatformVersion: String by project
 val resilience4jVersion: String by project
 
+// Exclude netty-nio-client globally - it references AWS CRT classes that cause native image issues
+configurations.all {
+    exclude(group = "software.amazon.awssdk", module = "netty-nio-client")
+}
+
 dependencies {
     // Quarkus BOM
     implementation(enforcedPlatform("${quarkusPlatformGroupId}:${quarkusPlatformArtifactId}:${quarkusPlatformVersion}"))
@@ -55,20 +60,20 @@ dependencies {
 
 
     // ==========================================================================
-    // Messaging (SQS for dispatch jobs)
+    // Messaging (SQS for dispatch jobs) - use Quarkus extension
     // ==========================================================================
     implementation("io.quarkiverse.amazonservices:quarkus-amazon-sqs")
+    implementation("io.quarkiverse.amazonservices:quarkus-amazon-crt") // Native image support
+    implementation("com.github.jnr:jnr-unixsocket:0.38.22") // Required by aws-crt for native builds
     implementation("software.amazon.awssdk:url-connection-client")
 
     // ==========================================================================
-    // Secret Management
+    // Secret Management - use Quarkus extensions
     // ==========================================================================
     // AWS Secrets Manager
     implementation("io.quarkiverse.amazonservices:quarkus-amazon-secretsmanager")
     // AWS Systems Manager Parameter Store
     implementation("io.quarkiverse.amazonservices:quarkus-amazon-ssm")
-    // GCP Secret Manager
-    implementation("com.google.cloud:google-cloud-secretmanager:2.54.0")
     // HashiCorp Vault (quarkiverse extension)
     implementation("io.quarkiverse.vault:quarkus-vault:4.4.0")
 

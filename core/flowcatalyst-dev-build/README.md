@@ -153,7 +153,7 @@ Build a native executable for faster startup:
 
 ```bash
 # From repository root
-./gradlew :core:flowcatalyst-dev-build:build -Dquarkus.native.enabled=true
+./gradlew :core:flowcatalyst-dev-build:build -Dquarkus.native.enabled=true -Dquarkus.package.jar.enabled=false
 ```
 
 The native executable will be at:
