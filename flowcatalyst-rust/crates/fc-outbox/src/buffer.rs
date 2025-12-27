@@ -1,0 +1,167 @@
+//! Global Buffer
+//!
+//! A thread-safe buffer that collects messages from multiple sources before distribution.
+
+use std::collections::VecDeque;
+use std::sync::Arc;
+use tokio::sync::{Mutex, mpsc};
+use fc_common::Message;
+use tracing::{debug, warn};
+
+/// Global buffer configuration
+#[derive(Debug, Clone)]
+pub struct GlobalBufferConfig {
+    /// Maximum buffer size (messages will be dropped if exceeded)
+    pub max_size: usize,
+    /// Batch size for draining
+    pub batch_size: usize,
+}
+
+impl Default for GlobalBufferConfig {
+    fn default() -> Self {
+        Self {
+            max_size: 10000,
+            batch_size: 100,
+        }
+    }
+}
+
+/// Global buffer for collecting messages before distribution
+pub struct GlobalBuffer {
+    config: GlobalBufferConfig,
+    buffer: Arc<Mutex<VecDeque<Message>>>,
+    sender: mpsc::Sender<Message>,
+    receiver: Arc<Mutex<mpsc::Receiver<Message>>>,
+}
+
+impl GlobalBuffer {
+    pub fn new(config: GlobalBufferConfig) -> Self {
+        let (sender, receiver) = mpsc::channel(config.max_size);
+        Self {
+            config,
+            buffer: Arc::new(Mutex::new(VecDeque::new())),
+            sender,
+            receiver: Arc::new(Mutex::new(receiver)),
+        }
+    }
+
+    /// Get a sender handle for pushing messages
+    pub fn sender(&self) -> mpsc::Sender<Message> {
+        self.sender.clone()
+    }
+
+    /// Push a message to the buffer
+    pub async fn push(&self, message: Message) -> Result<(), String> {
+        let mut buffer = self.buffer.lock().await;
+        if buffer.len() >= self.config.max_size {
+            warn!("Global buffer full, dropping message {}", message.id);
+            return Err("Buffer full".to_string());
+        }
+        buffer.push_back(message);
+        debug!("Message added to global buffer, size: {}", buffer.len());
+        Ok(())
+    }
+
+    /// Drain up to batch_size messages from the buffer
+    pub async fn drain_batch(&self) -> Vec<Message> {
+        let mut buffer = self.buffer.lock().await;
+        let count = buffer.len().min(self.config.batch_size);
+        let mut batch = Vec::with_capacity(count);
+        for _ in 0..count {
+            if let Some(msg) = buffer.pop_front() {
+                batch.push(msg);
+            }
+        }
+        debug!("Drained {} messages from global buffer", batch.len());
+        batch
+    }
+
+    /// Get current buffer size
+    pub async fn len(&self) -> usize {
+        let buffer = self.buffer.lock().await;
+        buffer.len()
+    }
+
+    /// Check if buffer is empty
+    pub async fn is_empty(&self) -> bool {
+        let buffer = self.buffer.lock().await;
+        buffer.is_empty()
+    }
+
+    /// Process incoming messages from the channel
+    pub async fn process_incoming(&self) {
+        let mut receiver = self.receiver.lock().await;
+        while let Some(msg) = receiver.recv().await {
+            let _ = self.push(msg).await;
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Utc;
+    use fc_common::MediationType;
+
+    fn create_test_message(id: &str) -> Message {
+        Message {
+            id: id.to_string(),
+            pool_code: "default".to_string(),
+            auth_token: None,
+            mediation_type: MediationType::HTTP,
+            mediation_target: "http://localhost".to_string(),
+            message_group_id: None,
+            payload: "{}".to_string(),
+            created_at: Utc::now(),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_push_and_drain() {
+        let config = GlobalBufferConfig {
+            max_size: 100,
+            batch_size: 10,
+        };
+        let buffer = GlobalBuffer::new(config);
+
+        // Push messages
+        for i in 0..25 {
+            buffer.push(create_test_message(&format!("msg-{}", i))).await.unwrap();
+        }
+
+        assert_eq!(buffer.len().await, 25);
+
+        // Drain first batch
+        let batch1 = buffer.drain_batch().await;
+        assert_eq!(batch1.len(), 10);
+        assert_eq!(buffer.len().await, 15);
+
+        // Drain second batch
+        let batch2 = buffer.drain_batch().await;
+        assert_eq!(batch2.len(), 10);
+        assert_eq!(buffer.len().await, 5);
+
+        // Drain remaining
+        let batch3 = buffer.drain_batch().await;
+        assert_eq!(batch3.len(), 5);
+        assert!(buffer.is_empty().await);
+    }
+
+    #[tokio::test]
+    async fn test_buffer_overflow() {
+        let config = GlobalBufferConfig {
+            max_size: 5,
+            batch_size: 2,
+        };
+        let buffer = GlobalBuffer::new(config);
+
+        // Fill buffer
+        for i in 0..5 {
+            buffer.push(create_test_message(&format!("msg-{}", i))).await.unwrap();
+        }
+
+        // Should fail on overflow
+        let result = buffer.push(create_test_message("overflow")).await;
+        assert!(result.is_err());
+    }
+}

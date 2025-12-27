@@ -1,5 +1,6 @@
 package tech.flowcatalyst.platform.bff;
 
+import io.quarkus.runtime.annotations.RegisterForReflection;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
@@ -34,6 +35,7 @@ import java.util.List;
 @Path("/api/bff/events")
 @Produces(MediaType.APPLICATION_JSON)
 @Tag(name = "Events (BFF)", description = "Query events from the read-optimized projection")
+@RegisterForReflection(registerFullHierarchy = true)
 public class EventBffResource {
 
     @Inject

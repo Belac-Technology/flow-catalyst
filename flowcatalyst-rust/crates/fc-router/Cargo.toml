@@ -1,0 +1,30 @@
+[package]
+name = "fc-router"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+fc-common = { path = "../fc-common" }
+fc-queue = { path = "../fc-queue" }
+tokio = { workspace = true }
+async-trait = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+metrics = { workspace = true }
+reqwest = { workspace = true }
+dashmap = { workspace = true }
+futures = { workspace = true }
+governor = { workspace = true }
+nonzero_ext = { workspace = true }
+parking_lot = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+
+[dev-dependencies]
+tokio-test = { workspace = true }
+wiremock = { workspace = true }
+tempfile = { workspace = true }
+tracing-subscriber = { workspace = true }

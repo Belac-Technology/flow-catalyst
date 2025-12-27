@@ -1,5 +1,6 @@
 package tech.flowcatalyst.platform.bff;
 
+import io.quarkus.runtime.annotations.RegisterForReflection;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
@@ -32,6 +33,7 @@ import java.util.Map;
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
 @Tag(name = "BFF - Event Types", description = "Web-optimized event type endpoints with string IDs")
+@RegisterForReflection(registerFullHierarchy = true)
 public class EventTypeBffResource {
 
     @Inject

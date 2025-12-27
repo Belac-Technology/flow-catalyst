@@ -78,16 +78,16 @@ INFO: SQS: Successfully deleted message [01K97FHM11EKYSXT135MVM6AC7] from queue
 
 **If you see receipt handle error:**
 ```
-WARN: SQS: Receipt handle INVALID for message [01K97FHM11EKYSXT135MVM6AC7] - visibility timeout expired, message will reappear in queue!
+INFO: SQS: Receipt handle expired for message [01K97FHM11EKYSXT135MVM6AC7] (SQS ID: xxx) - added to pending delete set
 ```
-**This is the problem!** The visibility timeout expired before the delete could complete. The message will reappear.
+**This means** the visibility timeout expired before the delete could complete. The router tracks these messages and will delete them when they reappear.
 
-**Root Cause:** Processing took longer than 30 seconds (default SQS visibility timeout).
+**Root Cause:** Processing took longer than the SQS visibility timeout.
 
-**Solutions:**
-1. Increase SQS visibility timeout to 60-120 seconds
-2. Speed up processing (optimize endpoint response time)
-3. Check if there are network delays
+**Note:** The router automatically extends message visibility every 55 seconds for long-running tasks. If you see this error, either:
+1. The endpoint took extremely long to respond (>55 seconds between extensions)
+2. There was a network issue preventing the visibility extension
+3. The SQS queue visibility timeout is configured too short (recommend 120 seconds)
 
 ## Common Issues
 
@@ -113,19 +113,25 @@ WARN: SQS: Receipt handle INVALID for message [01K97FHM11EKYSXT135MVM6AC7] - vis
 **Symptoms:**
 - See "processed successfully with ack=true"
 - See "ACKing and removing from queue"
-- BUT message appears again after 30 seconds
+- BUT message appears again after visibility timeout expires
 
-**Root Cause:** Receipt handle invalid (line 190 of SqsQueueConsumer.java)
+**Root Cause:** Receipt handle expired before the DeleteMessage API call completed.
 
 **Look for:**
 ```
-WARN: SQS: Receipt handle INVALID for message [01K97FHM11...] - visibility timeout expired, message will reappear in queue!
+INFO: SQS: Receipt handle expired for message [01K97FHM11...] (SQS ID: xxx) - added to pending delete set
 ```
 
-**Fix:** Processing takes too long. Either:
-1. Increase visibility timeout in SQS queue settings (recommended: 60-120s)
-2. Optimize endpoint to respond faster
-3. Check for network/DNS delays
+**Good news:** The router automatically tracks these and will delete them when they reappear. You'll then see:
+```
+INFO: SQS message [xxx] was previously processed - deleting from queue now
+INFO: SQS message [xxx] deleted successfully
+```
+
+**If this happens frequently:**
+1. Increase SQS visibility timeout in queue settings (recommended: 120s)
+2. Check for network latency between router and SQS
+3. The router extends visibility every 55 seconds - ensure this is working
 
 ### Issue 3: Endpoint Not Receiving Requests
 
@@ -201,8 +207,9 @@ curl http://localhost:8080/monitoring/pool-stats
 
 Look for your pool and check:
 - `successRate30min`: Should be > 0.90 (90%)
-- `queuedMessages`: Messages waiting in pool
-- `activeThreads`: Currently processing
+- `queueSize`: Messages waiting in pool buffer
+- `activeWorkers`: Currently processing
+- `maxConcurrency`: Maximum concurrent workers
 
 ### Search logs for specific message
 ```bash

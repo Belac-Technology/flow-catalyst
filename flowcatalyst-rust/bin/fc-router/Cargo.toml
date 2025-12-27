@@ -1,0 +1,20 @@
+[package]
+name = "fc-router-bin"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+fc-common = { path = "../../crates/fc-common" }
+fc-router = { path = "../../crates/fc-router" }
+fc-queue = { path = "../../crates/fc-queue", features = ["sqs"] }
+fc-api = { path = "../../crates/fc-api" }
+aws-config = { workspace = true }
+aws-sdk-sqs = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }
+axum = { workspace = true }
+tower-http = { workspace = true }
+async-trait = { workspace = true }
+serde_json = { workspace = true }

@@ -1,0 +1,150 @@
+//! DispatchJob Repository
+
+use mongodb::{Collection, Database, bson::doc};
+use futures::TryStreamExt;
+use chrono::{DateTime, Utc};
+use crate::domain::{DispatchJob, DispatchJobRead, DispatchStatus};
+use crate::error::Result;
+
+pub struct DispatchJobRepository {
+    collection: Collection<DispatchJob>,
+    read_collection: Collection<DispatchJobRead>,
+}
+
+impl DispatchJobRepository {
+    pub fn new(db: &Database) -> Self {
+        Self {
+            collection: db.collection("dispatch_jobs"),
+            read_collection: db.collection("dispatch_jobs_read"),
+        }
+    }
+
+    pub async fn insert(&self, job: &DispatchJob) -> Result<()> {
+        self.collection.insert_one(job, None).await?;
+        Ok(())
+    }
+
+    pub async fn find_by_id(&self, id: &str) -> Result<Option<DispatchJob>> {
+        Ok(self.collection.find_one(doc! { "_id": id }, None).await?)
+    }
+
+    pub async fn find_by_event_id(&self, event_id: &str) -> Result<Vec<DispatchJob>> {
+        let cursor = self.collection
+            .find(doc! { "eventId": event_id }, None)
+            .await?;
+        Ok(cursor.try_collect().await?)
+    }
+
+    pub async fn find_by_subscription_id(&self, subscription_id: &str, _limit: i64) -> Result<Vec<DispatchJob>> {
+        let cursor = self.collection
+            .find(doc! { "subscriptionId": subscription_id }, None)
+            .await?;
+        Ok(cursor.try_collect().await?)
+    }
+
+    pub async fn find_by_status(&self, status: DispatchStatus, _limit: i64) -> Result<Vec<DispatchJob>> {
+        let status_str = serde_json::to_string(&status)
+            .unwrap_or_default()
+            .trim_matches('"')
+            .to_string();
+        let cursor = self.collection
+            .find(doc! { "status": status_str }, None)
+            .await?;
+        Ok(cursor.try_collect().await?)
+    }
+
+    pub async fn find_pending_for_dispatch(&self, _limit: i64) -> Result<Vec<DispatchJob>> {
+        let cursor = self.collection
+            .find(doc! {
+                "status": "PENDING",
+                "$or": [
+                    { "nextRetryAt": { "$exists": false } },
+                    { "nextRetryAt": null },
+                    { "nextRetryAt": { "$lte": Utc::now() } }
+                ]
+            }, None)
+            .await?;
+        Ok(cursor.try_collect().await?)
+    }
+
+    pub async fn find_stale_in_progress(&self, stale_threshold: DateTime<Utc>, _limit: i64) -> Result<Vec<DispatchJob>> {
+        let cursor = self.collection
+            .find(doc! {
+                "status": "IN_PROGRESS",
+                "updatedAt": { "$lt": stale_threshold }
+            }, None)
+            .await?;
+        Ok(cursor.try_collect().await?)
+    }
+
+    pub async fn find_by_client(&self, client_id: &str, _limit: i64) -> Result<Vec<DispatchJob>> {
+        let cursor = self.collection
+            .find(doc! { "clientId": client_id }, None)
+            .await?;
+        Ok(cursor.try_collect().await?)
+    }
+
+    pub async fn find_by_correlation_id(&self, correlation_id: &str) -> Result<Vec<DispatchJob>> {
+        let cursor = self.collection
+            .find(doc! { "correlationId": correlation_id }, None)
+            .await?;
+        Ok(cursor.try_collect().await?)
+    }
+
+    pub async fn update(&self, job: &DispatchJob) -> Result<()> {
+        self.collection
+            .replace_one(doc! { "_id": &job.id }, job, None)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn update_status(&self, id: &str, status: DispatchStatus) -> Result<bool> {
+        let status_str = serde_json::to_string(&status)
+            .unwrap_or_default()
+            .trim_matches('"')
+            .to_string();
+        let result = self.collection
+            .update_one(
+                doc! { "_id": id },
+                doc! { "$set": { "status": status_str, "updatedAt": Utc::now() } },
+                None
+            )
+            .await?;
+        Ok(result.modified_count > 0)
+    }
+
+    // Read projection methods
+    pub async fn find_read_by_id(&self, id: &str) -> Result<Option<DispatchJobRead>> {
+        Ok(self.read_collection.find_one(doc! { "_id": id }, None).await?)
+    }
+
+    pub async fn insert_read_projection(&self, projection: &DispatchJobRead) -> Result<()> {
+        self.read_collection.insert_one(projection, None).await?;
+        Ok(())
+    }
+
+    pub async fn update_read_projection(&self, projection: &DispatchJobRead) -> Result<()> {
+        self.read_collection
+            .replace_one(doc! { "_id": &projection.id }, projection, None)
+            .await?;
+        Ok(())
+    }
+
+    /// Count jobs by status
+    pub async fn count_by_status(&self, status: DispatchStatus) -> Result<u64> {
+        let status_str = serde_json::to_string(&status)
+            .unwrap_or_default()
+            .trim_matches('"')
+            .to_string();
+        let count = self.collection
+            .count_documents(doc! { "status": status_str }, None)
+            .await?;
+        Ok(count)
+    }
+
+    /// Count all jobs
+    pub async fn count_all(&self) -> Result<u64> {
+        let count = self.collection.count_documents(doc! {}, None).await?;
+        Ok(count)
+    }
+}

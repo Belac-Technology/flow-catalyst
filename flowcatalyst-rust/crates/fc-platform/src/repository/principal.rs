@@ -1,0 +1,119 @@
+//! Principal Repository
+
+use mongodb::{Collection, Database, bson::doc};
+use futures::TryStreamExt;
+use crate::domain::{Principal, UserScope};
+use crate::error::Result;
+
+pub struct PrincipalRepository {
+    collection: Collection<Principal>,
+}
+
+impl PrincipalRepository {
+    pub fn new(db: &Database) -> Self {
+        Self {
+            collection: db.collection("principals"),
+        }
+    }
+
+    pub async fn insert(&self, principal: &Principal) -> Result<()> {
+        self.collection.insert_one(principal, None).await?;
+        Ok(())
+    }
+
+    pub async fn find_by_id(&self, id: &str) -> Result<Option<Principal>> {
+        Ok(self.collection.find_one(doc! { "_id": id }, None).await?)
+    }
+
+    pub async fn find_by_email(&self, email: &str) -> Result<Option<Principal>> {
+        Ok(self.collection.find_one(doc! {
+            "type": "USER",
+            "userIdentity.email": email
+        }, None).await?)
+    }
+
+    pub async fn find_by_service_account(&self, service_account_id: &str) -> Result<Option<Principal>> {
+        Ok(self.collection.find_one(doc! {
+            "type": "SERVICE",
+            "serviceAccountId": service_account_id
+        }, None).await?)
+    }
+
+    pub async fn find_active(&self) -> Result<Vec<Principal>> {
+        let cursor = self.collection
+            .find(doc! { "active": true }, None)
+            .await?;
+        Ok(cursor.try_collect().await?)
+    }
+
+    pub async fn find_users(&self) -> Result<Vec<Principal>> {
+        let cursor = self.collection
+            .find(doc! { "type": "USER", "active": true }, None)
+            .await?;
+        Ok(cursor.try_collect().await?)
+    }
+
+    pub async fn find_services(&self) -> Result<Vec<Principal>> {
+        let cursor = self.collection
+            .find(doc! { "type": "SERVICE", "active": true }, None)
+            .await?;
+        Ok(cursor.try_collect().await?)
+    }
+
+    pub async fn find_by_client(&self, client_id: &str) -> Result<Vec<Principal>> {
+        let cursor = self.collection
+            .find(doc! {
+                "active": true,
+                "$or": [
+                    { "clientId": client_id },
+                    { "assignedClients": client_id }
+                ]
+            }, None)
+            .await?;
+        Ok(cursor.try_collect().await?)
+    }
+
+    pub async fn find_by_scope(&self, scope: UserScope) -> Result<Vec<Principal>> {
+        let scope_str = serde_json::to_string(&scope)
+            .unwrap_or_default()
+            .trim_matches('"')
+            .to_string();
+        let cursor = self.collection
+            .find(doc! { "scope": scope_str, "active": true }, None)
+            .await?;
+        Ok(cursor.try_collect().await?)
+    }
+
+    pub async fn find_anchors(&self) -> Result<Vec<Principal>> {
+        let cursor = self.collection
+            .find(doc! { "scope": "ANCHOR", "active": true }, None)
+            .await?;
+        Ok(cursor.try_collect().await?)
+    }
+
+    pub async fn find_by_application(&self, application_id: &str) -> Result<Vec<Principal>> {
+        let cursor = self.collection
+            .find(doc! { "applicationId": application_id }, None)
+            .await?;
+        Ok(cursor.try_collect().await?)
+    }
+
+    pub async fn find_with_role(&self, role: &str) -> Result<Vec<Principal>> {
+        let cursor = self.collection
+            .find(doc! { "roles.role": role, "active": true }, None)
+            .await?;
+        Ok(cursor.try_collect().await?)
+    }
+
+    pub async fn update(&self, principal: &Principal) -> Result<()> {
+        self.collection
+            .replace_one(doc! { "_id": &principal.id }, principal, None)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn delete(&self, id: &str) -> Result<bool> {
+        let result = self.collection.delete_one(doc! { "_id": id }, None).await?;
+        Ok(result.deleted_count > 0)
+    }
+}

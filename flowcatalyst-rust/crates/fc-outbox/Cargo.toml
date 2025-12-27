@@ -1,0 +1,25 @@
+[package]
+name = "fc-outbox"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+fc-common = { path = "../fc-common" }
+fc-queue = { path = "../fc-queue" }
+tokio = { workspace = true }
+sqlx = { workspace = true, optional = true }
+mongodb = { version = "2.8", features = ["tokio-runtime"], optional = true }
+futures = { version = "0.3", optional = true }
+chrono = { workspace = true }
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+tracing = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+bson = { version = "2.9", features = ["chrono-0_4"], optional = true }
+
+[features]
+sqlite = ["dep:sqlx"]
+postgres = ["dep:sqlx"]
+mysql = ["dep:sqlx"]
+mongo = ["dep:mongodb", "dep:bson", "dep:futures"]

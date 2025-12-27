@@ -1,0 +1,210 @@
+package serviceaccount
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"time"
+
+	"github.com/go-chi/chi/v5"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
+
+	"go.flowcatalyst.tech/internal/common/tsid"
+)
+
+// Repository handles service account persistence
+type Repository struct {
+	collection *mongo.Collection
+}
+
+// NewRepository creates a new service account repository
+func NewRepository(db *mongo.Database) *Repository {
+	return &Repository{
+		collection: db.Collection("service_accounts"),
+	}
+}
+
+// FindAll finds all service accounts
+func (r *Repository) FindAll(ctx context.Context) ([]*ServiceAccount, error) {
+	cursor, err := r.collection.Find(ctx, bson.M{}, options.Find().SetSort(bson.M{"name": 1}))
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var accounts []*ServiceAccount
+	if err := cursor.All(ctx, &accounts); err != nil {
+		return nil, err
+	}
+	return accounts, nil
+}
+
+// FindByID finds a service account by ID
+func (r *Repository) FindByID(ctx context.Context, id string) (*ServiceAccount, error) {
+	var account ServiceAccount
+	err := r.collection.FindOne(ctx, bson.M{"_id": id}).Decode(&account)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &account, nil
+}
+
+// FindByCredentialID finds a service account by credential ID
+func (r *Repository) FindByCredentialID(ctx context.Context, credentialID string) (*ServiceAccount, error) {
+	var account ServiceAccount
+	err := r.collection.FindOne(ctx, bson.M{"credentialId": credentialID}).Decode(&account)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &account, nil
+}
+
+// Insert inserts a new service account
+func (r *Repository) Insert(ctx context.Context, account *ServiceAccount) error {
+	account.ID = tsid.Generate()
+	account.CreatedAt = time.Now()
+	account.UpdatedAt = time.Now()
+	_, err := r.collection.InsertOne(ctx, account)
+	return err
+}
+
+// Update updates a service account
+func (r *Repository) Update(ctx context.Context, account *ServiceAccount) error {
+	account.UpdatedAt = time.Now()
+	_, err := r.collection.UpdateByID(ctx, account.ID, bson.M{"$set": account})
+	return err
+}
+
+// Delete deletes a service account
+func (r *Repository) Delete(ctx context.Context, id string) error {
+	_, err := r.collection.DeleteOne(ctx, bson.M{"_id": id})
+	return err
+}
+
+
+// HTTP Handlers
+
+func (r *Repository) ListHandler(w http.ResponseWriter, req *http.Request) {
+	accounts, err := r.FindAll(req.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, accounts)
+}
+
+func (r *Repository) CreateHandler(w http.ResponseWriter, req *http.Request) {
+	var account ServiceAccount
+	if err := json.NewDecoder(req.Body).Decode(&account); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	account.Active = true
+
+	if err := r.Insert(req.Context(), &account); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, account)
+}
+
+func (r *Repository) GetHandler(w http.ResponseWriter, req *http.Request) {
+	id := chi.URLParam(req, "id")
+	account, err := r.FindByID(req.Context(), id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if account == nil {
+		http.Error(w, "Service account not found", http.StatusNotFound)
+		return
+	}
+	writeJSON(w, http.StatusOK, account)
+}
+
+func (r *Repository) UpdateHandler(w http.ResponseWriter, req *http.Request) {
+	id := chi.URLParam(req, "id")
+	existing, err := r.FindByID(req.Context(), id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if existing == nil {
+		http.Error(w, "Service account not found", http.StatusNotFound)
+		return
+	}
+
+	var account ServiceAccount
+	if err := json.NewDecoder(req.Body).Decode(&account); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+	account.ID = id
+	account.CreatedAt = existing.CreatedAt
+	account.WebhookCredentials = existing.WebhookCredentials
+	if err := r.Update(req.Context(), &account); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, account)
+}
+
+func (r *Repository) DeleteHandler(w http.ResponseWriter, req *http.Request) {
+	id := chi.URLParam(req, "id")
+	if err := r.Delete(req.Context(), id); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (r *Repository) RegenerateHandler(w http.ResponseWriter, req *http.Request) {
+	id := chi.URLParam(req, "id")
+	account, err := r.FindByID(req.Context(), id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if account == nil {
+		http.Error(w, "Service account not found", http.StatusNotFound)
+		return
+	}
+
+	// Update regenerated timestamp
+	now := time.Now()
+	if account.WebhookCredentials == nil {
+		account.WebhookCredentials = &WebhookCredentials{
+			AuthType:  WebhookAuthTypeBearer,
+			CreatedAt: now,
+		}
+	}
+	account.WebhookCredentials.RegeneratedAt = now
+
+	if err := r.Update(req.Context(), account); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Note: In production, this would generate and return actual credentials
+	response := map[string]interface{}{
+		"message":       "Credentials regenerated",
+		"regeneratedAt": now,
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
+func writeJSON(w http.ResponseWriter, status int, data interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(data)
+}

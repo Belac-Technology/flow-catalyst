@@ -1,0 +1,107 @@
+use async_trait::async_trait;
+use fc_common::{OutboxItem, OutboxStatus};
+use crate::repository::OutboxRepository;
+use anyhow::Result;
+use sqlx::{SqlitePool, Row};
+use chrono::{Utc, DateTime};
+
+pub struct SqliteOutboxRepository {
+    pool: SqlitePool,
+}
+
+impl SqliteOutboxRepository {
+    pub fn new(pool: SqlitePool) -> Self {
+        Self { pool }
+    }
+
+    pub async fn init_schema(&self) -> Result<()> {
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS outbox_items (
+                id TEXT PRIMARY KEY,
+                item_type TEXT NOT NULL,
+                pool_code TEXT,
+                mediation_target TEXT,
+                message_group TEXT,
+                payload TEXT NOT NULL,
+                status TEXT NOT NULL,
+                retry_count INTEGER DEFAULT 0,
+                error_message TEXT,
+                created_at INTEGER NOT NULL,
+                processed_at INTEGER
+            );
+            CREATE INDEX IF NOT EXISTS idx_outbox_status ON outbox_items(status);
+            "#
+        )
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl OutboxRepository for SqliteOutboxRepository {
+    async fn fetch_pending(&self, limit: u32) -> Result<Vec<OutboxItem>> {
+        let rows = sqlx::query(
+            "SELECT id, item_type, pool_code, mediation_target, message_group, payload, status, retry_count, created_at FROM outbox_items WHERE status = 'PENDING' ORDER BY created_at LIMIT ?"
+        )
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut items = Vec::new();
+        for row in rows {
+            let created_at_ts: i64 = row.get("created_at");
+            let created_at = DateTime::from_timestamp_millis(created_at_ts)
+                .ok_or_else(|| anyhow::anyhow!("Invalid timestamp"))?;
+
+            items.push(OutboxItem {
+                id: row.get("id"),
+                item_type: row.get("item_type"),
+                pool_code: row.get("pool_code"),
+                mediation_target: row.get("mediation_target"),
+                message_group: row.get("message_group"),
+                payload: serde_json::from_str(row.get("payload"))?,
+                status: OutboxStatus::PENDING,
+                retry_count: row.get::<i64, _>("retry_count") as u32,
+                created_at,
+            });
+        }
+        Ok(items)
+    }
+
+    async fn mark_processing(&self, ids: Vec<String>) -> Result<()> {
+        if ids.is_empty() { return Ok(()); }
+        
+        let now = Utc::now().timestamp_millis();
+        let query = format!(
+            "UPDATE outbox_items SET status = 'PROCESSING', processed_at = ? WHERE id IN ({})",
+            ids.iter().map(|_| "?").collect::<Vec<_>>().join(",")
+        );
+
+        let mut q = sqlx::query(&query).bind(now);
+        for id in ids {
+            q = q.bind(id);
+        }
+        
+        q.execute(&self.pool).await?;
+        Ok(())
+    }
+
+    async fn update_status(&self, id: &str, status: OutboxStatus, error: Option<String>) -> Result<()> {
+        let status_str = match status {
+            OutboxStatus::PENDING => "PENDING",
+            OutboxStatus::PROCESSING => "PROCESSING",
+            OutboxStatus::COMPLETED => "COMPLETED",
+            OutboxStatus::FAILED => "FAILED",
+        };
+
+        sqlx::query("UPDATE outbox_items SET status = ?, error_message = ? WHERE id = ?")
+            .bind(status_str)
+            .bind(error)
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+}

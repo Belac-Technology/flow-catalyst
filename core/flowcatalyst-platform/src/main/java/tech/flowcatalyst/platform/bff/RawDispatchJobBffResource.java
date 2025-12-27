@@ -1,6 +1,7 @@
 package tech.flowcatalyst.platform.bff;
 
 import io.quarkus.panache.common.Sort;
+import io.quarkus.runtime.annotations.RegisterForReflection;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
@@ -29,6 +30,7 @@ import java.util.List;
 @Path("/api/bff/debug/dispatch-jobs")
 @Produces(MediaType.APPLICATION_JSON)
 @Tag(name = "Raw Dispatch Jobs (Debug)", description = "Debug endpoint for raw dispatch job queries")
+@RegisterForReflection(registerFullHierarchy = true)
 public class RawDispatchJobBffResource {
 
     @Inject

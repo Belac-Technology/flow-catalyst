@@ -29,7 +29,7 @@ git push origin v1.0.0
 ### Local Build (Your Platform)
 
 ```bash
-# Developer build (with Chronicle Queue)
+# Developer build (with embedded SQLite queue)
 ./gradlew nativeBuildDev
 
 # Production build (SQS/ActiveMQ)
@@ -106,16 +106,16 @@ native-image --version
 
 ### Build Commands
 
-#### Developer Build (with Chronicle Queue)
+#### Developer Build (with Embedded SQLite Queue)
 ```bash
 # Gradle
 ./gradlew nativeBuildDev
 
 # Or directly with Quarkus
-./gradlew build -Dquarkus.package.type=native -Dquarkus.profile=chronicle-dev
+./gradlew build -Dquarkus.package.type=native -Dquarkus.profile=embedded-dev
 ```
 
-This creates a self-contained binary with embedded Chronicle Queue for zero-setup development.
+This creates a self-contained binary with embedded SQLite queue for zero-setup development.
 
 **Output:**
 - Linux/macOS: `build/flowcatalyst-message-router-1.0.0-SNAPSHOT-runner`
@@ -177,7 +177,7 @@ The repository is configured to automatically build native images for all platfo
 3. Click **"Run workflow"**
 4. Choose options:
    - Branch: `main` (or your branch)
-   - Chronicle Queue: `true` (developer) or `false` (production)
+   - Embedded Queue: `true` (developer) or `false` (production)
 5. Click **"Run workflow"**
 
 ### Download Artifacts
@@ -216,10 +216,10 @@ File: `.github/workflows/native-build.yml`
 
 ## Build Types
 
-### Developer Build (Chronicle Queue)
+### Developer Build (Embedded SQLite Queue)
 
 **Includes:**
-- Embedded Chronicle Queue
+- Embedded SQLite queue with SQS FIFO semantics
 - REST API for queue operations
 - Zero external dependencies
 - Perfect for local development
@@ -231,9 +231,9 @@ File: `.github/workflows/native-build.yml`
 
 **Configuration:**
 ```properties
-message-router.queue-type=CHRONICLE
-chronicle.queue.enabled=true
-chronicle.queue.base-path=./chronicle-queues
+message-router.queue-type=EMBEDDED
+message-router.embedded.visibility-timeout-seconds=30
+message-router.embedded.receive-timeout-ms=1000
 ```
 
 **Binary size:** ~60-80 MB
@@ -403,7 +403,7 @@ Requires `musl` toolchain installed.
    ├── flowcatalyst-message-router-windows-amd64.exe
    ├── flowcatalyst-message-router-macos-amd64
    ├── README.md
-   ├── CHRONICLE_QUEUE_API.md
+   ├── ARCHITECTURE.md
    └── application.properties (optional config)
    ```
 
@@ -432,7 +432,7 @@ echo "Check: https://github.com/YOUR_ORG/flowcatalyst/actions"
 
 ## See Also
 
-- [Chronicle Queue API Documentation](./CHRONICLE_QUEUE_API.md)
+- [Architecture Documentation](./ARCHITECTURE.md)
 - [GraalVM Native Image](https://www.graalvm.org/latest/reference-manual/native-image/)
 - [Quarkus Native Guide](https://quarkus.io/guides/building-native-image)
 - [GitHub Actions Documentation](https://docs.github.com/en/actions)

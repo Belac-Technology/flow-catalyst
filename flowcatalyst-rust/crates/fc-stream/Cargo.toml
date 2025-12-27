@@ -1,0 +1,17 @@
+[package]
+name = "fc-stream"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+fc-common = { path = "../fc-common" }
+tokio = { workspace = true }
+mongodb = { workspace = true }
+bson = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+futures = "0.3"
+anyhow = { workspace = true }
+tracing = { workspace = true }
+async-trait = { workspace = true }

@@ -1,0 +1,67 @@
+//! Event Repository
+
+use mongodb::{Collection, Database, bson::doc};
+use futures::TryStreamExt;
+use crate::domain::{Event, EventRead};
+use crate::error::Result;
+
+pub struct EventRepository {
+    collection: Collection<Event>,
+    read_collection: Collection<EventRead>,
+}
+
+impl EventRepository {
+    pub fn new(db: &Database) -> Self {
+        Self {
+            collection: db.collection("events"),
+            read_collection: db.collection("events_read"),
+        }
+    }
+
+    pub async fn insert(&self, event: &Event) -> Result<()> {
+        self.collection.insert_one(event, None).await?;
+        Ok(())
+    }
+
+    pub async fn find_by_id(&self, id: &str) -> Result<Option<Event>> {
+        Ok(self.collection.find_one(doc! { "_id": id }, None).await?)
+    }
+
+    pub async fn find_by_type(&self, event_type: &str, _limit: i64) -> Result<Vec<Event>> {
+        let cursor = self.collection
+            .find(doc! { "type": event_type }, None)
+            .await?;
+        Ok(cursor.try_collect().await?)
+    }
+
+    pub async fn find_by_client(&self, client_id: &str, _limit: i64) -> Result<Vec<Event>> {
+        let cursor = self.collection
+            .find(doc! { "clientId": client_id }, None)
+            .await?;
+        Ok(cursor.try_collect().await?)
+    }
+
+    pub async fn find_by_correlation_id(&self, correlation_id: &str) -> Result<Vec<Event>> {
+        let cursor = self.collection
+            .find(doc! { "correlationId": correlation_id }, None)
+            .await?;
+        Ok(cursor.try_collect().await?)
+    }
+
+    // Read projection methods
+    pub async fn find_read_by_id(&self, id: &str) -> Result<Option<EventRead>> {
+        Ok(self.read_collection.find_one(doc! { "_id": id }, None).await?)
+    }
+
+    pub async fn insert_read_projection(&self, projection: &EventRead) -> Result<()> {
+        self.read_collection.insert_one(projection, None).await?;
+        Ok(())
+    }
+
+    pub async fn update_read_projection(&self, projection: &EventRead) -> Result<()> {
+        self.read_collection
+            .replace_one(doc! { "_id": &projection.id }, projection, None)
+            .await?;
+        Ok(())
+    }
+}

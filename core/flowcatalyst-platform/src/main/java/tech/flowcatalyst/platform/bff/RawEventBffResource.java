@@ -1,6 +1,7 @@
 package tech.flowcatalyst.platform.bff;
 
 import io.quarkus.panache.common.Sort;
+import io.quarkus.runtime.annotations.RegisterForReflection;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
@@ -30,6 +31,7 @@ import java.util.List;
 @Path("/api/bff/debug/events")
 @Produces(MediaType.APPLICATION_JSON)
 @Tag(name = "Raw Events (Debug)", description = "Debug endpoint for raw event store queries")
+@RegisterForReflection(registerFullHierarchy = true)
 public class RawEventBffResource {
 
     @Inject
