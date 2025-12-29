@@ -31,6 +31,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -41,8 +42,6 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
 	httpSwagger "github.com/swaggo/http-swagger"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -75,20 +74,21 @@ var (
 
 func main() {
 	// Configure logging
-	zerolog.TimeFieldFormat = time.RFC3339
+	logLevel := slog.LevelInfo
 	if os.Getenv("FLOWCATALYST_DEV") == "true" {
-		log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339})
+		logLevel = slog.LevelDebug
 	}
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel})))
 
-	log.Info().
-		Str("version", version).
-		Str("build_time", buildTime).
-		Msg("Starting FlowCatalyst")
+	slog.Info("Starting FlowCatalyst",
+		"version", version,
+		"build_time", buildTime)
 
 	// Load configuration
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatal().Err(err).Msg("Failed to load configuration")
+		slog.Error("Failed to load configuration", "error", err)
+		os.Exit(1)
 	}
 
 	// Create context for graceful shutdown
@@ -99,22 +99,24 @@ func main() {
 	healthChecker := health.NewChecker()
 
 	// Initialize MongoDB connection
-	log.Info().Str("uri", maskURI(cfg.MongoDB.URI)).Msg("Connecting to MongoDB")
+	slog.Info("Connecting to MongoDB", "uri", maskURI(cfg.MongoDB.URI))
 	mongoClient, err := mongo.Connect(ctx, options.Client().ApplyURI(cfg.MongoDB.URI))
 	if err != nil {
-		log.Fatal().Err(err).Msg("Failed to connect to MongoDB")
+		slog.Error("Failed to connect to MongoDB", "error", err)
+		os.Exit(1)
 	}
 	defer func() {
 		if err := mongoClient.Disconnect(ctx); err != nil {
-			log.Error().Err(err).Msg("Error disconnecting from MongoDB")
+			slog.Error("Error disconnecting from MongoDB", "error", err)
 		}
 	}()
 
 	// Ping MongoDB to verify connection
 	if err := mongoClient.Ping(ctx, nil); err != nil {
-		log.Fatal().Err(err).Msg("Failed to ping MongoDB")
+		slog.Error("Failed to ping MongoDB", "error", err)
+		os.Exit(1)
 	}
-	log.Info().Str("database", cfg.MongoDB.Database).Msg("Connected to MongoDB")
+	slog.Info("Connected to MongoDB", "database", cfg.MongoDB.Database)
 
 	// Add MongoDB health check
 	healthChecker.AddReadinessCheck(health.MongoDBCheck(func() error {
@@ -128,7 +130,7 @@ func main() {
 
 	switch cfg.Queue.Type {
 	case "embedded":
-		log.Info().Msg("Starting embedded NATS server")
+		slog.Info("Starting embedded NATS server")
 		natsCfg := natsqueue.DefaultEmbeddedConfig()
 		natsCfg.DataDir = cfg.Queue.NATS.DataDir
 		if cfg.DataDir != "" {
@@ -137,7 +139,8 @@ func main() {
 
 		embeddedNATS, err := natsqueue.NewEmbeddedServer(natsCfg)
 		if err != nil {
-			log.Fatal().Err(err).Msg("Failed to start embedded NATS server")
+			slog.Error("Failed to start embedded NATS server", "error", err)
+			os.Exit(1)
 		}
 		queueCloser = embeddedNATS.Close
 
@@ -147,7 +150,8 @@ func main() {
 		// Create consumer
 		consumer, err := embeddedNATS.CreateConsumer(ctx, "dispatch-consumer", "dispatch.>", nil)
 		if err != nil {
-			log.Fatal().Err(err).Msg("Failed to create NATS consumer")
+			slog.Error("Failed to create NATS consumer", "error", err)
+			os.Exit(1)
 		}
 		queueConsumer = consumer
 
@@ -156,16 +160,17 @@ func main() {
 			return embeddedNATS.Connection().IsConnected()
 		}))
 
-		log.Info().Msg("Embedded NATS server started")
+		slog.Info("Embedded NATS server started")
 
 	case "nats":
-		log.Info().Str("url", cfg.Queue.NATS.URL).Msg("Connecting to external NATS server")
+		slog.Info("Connecting to external NATS server", "url", cfg.Queue.NATS.URL)
 		natsClient, err := natsqueue.NewClient(&queue.NATSConfig{
 			URL:        cfg.Queue.NATS.URL,
 			StreamName: "DISPATCH",
 		})
 		if err != nil {
-			log.Fatal().Err(err).Msg("Failed to connect to NATS server")
+			slog.Error("Failed to connect to NATS server", "error", err)
+			os.Exit(1)
 		}
 		queueCloser = natsClient.Close
 
@@ -173,7 +178,8 @@ func main() {
 
 		consumer, err := natsClient.CreateConsumer(ctx, "dispatch-consumer", "dispatch.>")
 		if err != nil {
-			log.Fatal().Err(err).Msg("Failed to create NATS consumer")
+			slog.Error("Failed to create NATS consumer", "error", err)
+			os.Exit(1)
 		}
 		queueConsumer = consumer
 
@@ -182,13 +188,12 @@ func main() {
 			return true // Consumer creation would have failed if not connected
 		}))
 
-		log.Info().Msg("Connected to external NATS server")
+		slog.Info("Connected to external NATS server")
 
 	case "sqs":
-		log.Info().
-			Str("region", cfg.Queue.SQS.Region).
-			Str("queueURL", cfg.Queue.SQS.QueueURL).
-			Msg("Connecting to AWS SQS")
+		slog.Info("Connecting to AWS SQS",
+			"region", cfg.Queue.SQS.Region,
+			"queueURL", cfg.Queue.SQS.QueueURL)
 
 		sqsCfg := &queue.SQSConfig{
 			QueueURL:            cfg.Queue.SQS.QueueURL,
@@ -200,7 +205,8 @@ func main() {
 
 		sqsClient, err := sqsqueue.NewClient(ctx, sqsCfg)
 		if err != nil {
-			log.Fatal().Err(err).Msg("Failed to create SQS client")
+			slog.Error("Failed to create SQS client", "error", err)
+			os.Exit(1)
 		}
 		queueCloser = sqsClient.Close
 
@@ -208,7 +214,8 @@ func main() {
 
 		consumer, err := sqsClient.CreateConsumer(ctx, "dispatch-consumer", "")
 		if err != nil {
-			log.Fatal().Err(err).Msg("Failed to create SQS consumer")
+			slog.Error("Failed to create SQS consumer", "error", err)
+			os.Exit(1)
 		}
 		queueConsumer = consumer
 
@@ -219,17 +226,18 @@ func main() {
 			return sqsClient.HealthCheck(checkCtx)
 		}))
 
-		log.Info().Msg("Connected to AWS SQS")
+		slog.Info("Connected to AWS SQS")
 
 	default:
-		log.Fatal().Str("type", cfg.Queue.Type).Msg("Unknown queue type")
+		slog.Error("Unknown queue type", "type", cfg.Queue.Type)
+		os.Exit(1)
 	}
 
 	// Ensure queue is closed on shutdown
 	if queueCloser != nil {
 		defer func() {
 			if err := queueCloser(); err != nil {
-				log.Error().Err(err).Msg("Error closing queue")
+				slog.Error("Error closing queue", "error", err)
 			}
 		}()
 	}
@@ -244,12 +252,13 @@ func main() {
 
 	// Create indexes for projections
 	if err := streamProcessor.EnsureIndexes(ctx); err != nil {
-		log.Warn().Err(err).Msg("Failed to ensure projection indexes")
+		slog.Warn("Failed to ensure projection indexes", "error", err)
 	}
 
 	// Start stream processor
 	if err := streamProcessor.Start(); err != nil {
-		log.Fatal().Err(err).Msg("Failed to start stream processor")
+		slog.Error("Failed to start stream processor", "error", err)
+		os.Exit(1)
 	}
 	defer streamProcessor.Stop()
 
@@ -279,7 +288,8 @@ func main() {
 		devKeyDir = "./data"
 	}
 	if err := keyManager.Initialize("", "", devKeyDir+"/keys"); err != nil {
-		log.Fatal().Err(err).Msg("Failed to initialize key manager")
+		slog.Error("Failed to initialize key manager", "error", err)
+		os.Exit(1)
 	}
 
 	tokenService := jwt.NewTokenService(keyManager, jwt.TokenServiceConfig{
@@ -318,7 +328,7 @@ func main() {
 	// Create OIDC discovery handler
 	discoveryHandler := oidc.NewDiscoveryHandler(keyManager, cfg.Auth.JWT.Issuer, cfg.Auth.ExternalBase)
 
-	log.Info().Msg("Auth service initialized")
+	slog.Info("Auth service initialized")
 
 	// Set up HTTP router
 	r := chi.NewRouter()
@@ -534,9 +544,10 @@ func main() {
 
 	// Start server in goroutine
 	go func() {
-		log.Info().Int("port", cfg.HTTP.Port).Msg("HTTP server starting")
+		slog.Info("HTTP server starting", "port", cfg.HTTP.Port)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatal().Err(err).Msg("HTTP server failed")
+			slog.Error("HTTP server failed", "error", err)
+			os.Exit(1)
 		}
 	}()
 
@@ -545,17 +556,17 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	log.Info().Msg("Shutting down gracefully...")
+	slog.Info("Shutting down gracefully...")
 
 	// Graceful shutdown with timeout
 	shutdownCtx, shutdownCancel := context.WithTimeout(ctx, 30*time.Second)
 	defer shutdownCancel()
 
 	if err := server.Shutdown(shutdownCtx); err != nil {
-		log.Error().Err(err).Msg("HTTP server forced to shutdown")
+		slog.Error("HTTP server forced to shutdown", "error", err)
 	}
 
-	log.Info().Msg("FlowCatalyst stopped")
+	slog.Info("FlowCatalyst stopped")
 }
 
 // maskURI masks sensitive parts of a MongoDB URI for logging

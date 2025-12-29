@@ -2,10 +2,9 @@ package traffic
 
 import (
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
-
-	"github.com/rs/zerolog/log"
 )
 
 // Config holds traffic management configuration
@@ -60,21 +59,21 @@ func NewService(config *Config) *Service {
 // initStrategy initializes and selects the appropriate strategy
 func (s *Service) initStrategy() {
 	if !s.config.Enabled {
-		log.Info().Msg("Traffic management disabled - using no-op strategy")
+		slog.Info("Traffic management disabled - using no-op strategy")
 		s.activeStrategy = s.noOpStrategy
 		return
 	}
 
 	strategyType := strings.ToLower(s.config.Strategy)
-	log.Info().Str("strategy", strategyType).Msg("Traffic management enabled")
+	slog.Info("Traffic management enabled", "strategy", strategyType)
 
 	switch strategyType {
 	case "noop":
 		s.activeStrategy = s.noOpStrategy
-		log.Info().Msg("Using no-op traffic strategy")
+		slog.Info("Using no-op traffic strategy")
 
 	default:
-		log.Warn().Str("strategy", strategyType).Msg("Unknown traffic management strategy - using no-op")
+		slog.Warn("Unknown traffic management strategy - using no-op", "strategy", strategyType)
 		s.activeStrategy = s.noOpStrategy
 	}
 }
@@ -88,13 +87,13 @@ func (s *Service) RegisterAsActive() {
 	s.mu.RUnlock()
 
 	if strategy == nil {
-		log.Warn().Msg("Traffic management strategy not initialized - skipping registration")
+		slog.Warn("Traffic management strategy not initialized - skipping registration")
 		return
 	}
 
-	log.Info().Msg("Registering instance as active with load balancer")
+	slog.Info("Registering instance as active with load balancer")
 	if err := strategy.RegisterAsActive(); err != nil {
-		log.Error().Err(err).Msg("Failed to register instance with load balancer - Instance may receive traffic despite being STANDBY")
+		slog.Error("Failed to register instance with load balancer - Instance may receive traffic despite being STANDBY", "error", err)
 		// Don't return error - allow standby mode to continue working
 	}
 }
@@ -108,13 +107,13 @@ func (s *Service) DeregisterFromActive() {
 	s.mu.RUnlock()
 
 	if strategy == nil {
-		log.Warn().Msg("Traffic management strategy not initialized - skipping deregistration")
+		slog.Warn("Traffic management strategy not initialized - skipping deregistration")
 		return
 	}
 
-	log.Info().Msg("Deregistering instance from load balancer")
+	slog.Info("Deregistering instance from load balancer")
 	if err := strategy.DeregisterFromActive(); err != nil {
-		log.Error().Err(err).Msg("Failed to deregister instance from load balancer - Instance may continue receiving traffic despite being STANDBY")
+		slog.Error("Failed to deregister instance from load balancer - Instance may continue receiving traffic despite being STANDBY", "error", err)
 		// Don't return error - allow standby mode to continue working
 	}
 }
@@ -159,5 +158,5 @@ func (s *Service) SetStrategy(strategy Strategy) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.activeStrategy = strategy
-	log.Info().Str("strategy", fmt.Sprintf("%T", strategy)).Msg("Traffic strategy updated")
+	slog.Info("Traffic strategy updated", "strategy", fmt.Sprintf("%T", strategy))
 }

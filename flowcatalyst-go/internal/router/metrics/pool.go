@@ -1,10 +1,9 @@
 package metrics
 
 import (
+	"log/slog"
 	"sync"
 	"time"
-
-	"github.com/rs/zerolog/log"
 )
 
 // PoolStats represents statistics for a processing pool
@@ -230,7 +229,7 @@ func (s *InMemoryPoolMetricsService) RemovePoolMetrics(poolCode string) {
 
 	if _, ok := s.metrics[poolCode]; ok {
 		delete(s.metrics, poolCode)
-		log.Info().Str("poolCode", poolCode).Msg("Removed metrics for pool")
+		slog.Info("Removed metrics for pool", "poolCode", poolCode)
 	}
 }
 
@@ -255,7 +254,7 @@ func (s *InMemoryPoolMetricsService) getOrCreateMetrics(poolCode string) *poolMe
 		recordedOutcomes: make([]timestampedOutcome, 0),
 	}
 	s.metrics[poolCode] = holder
-	log.Info().Str("poolCode", poolCode).Msg("Creating metrics for pool")
+	slog.Info("Creating metrics for pool", "poolCode", poolCode)
 	return holder
 }
 

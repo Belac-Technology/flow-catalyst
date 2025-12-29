@@ -6,10 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"time"
-
-	"github.com/rs/zerolog/log"
 )
 
 // APIClient sends batches of outbox items to the FlowCatalyst API
@@ -97,10 +96,9 @@ func (c *APIClient) sendBatch(ctx context.Context, endpoint string, items []*Out
 		req.Header.Set("Authorization", "Bearer "+c.authToken)
 	}
 
-	log.Debug().
-		Str("endpoint", endpoint).
-		Int("batchSize", len(items)).
-		Msg("Sending batch to API")
+	slog.Debug("Sending batch to API",
+		"endpoint", endpoint,
+		"batchSize", len(items))
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -119,11 +117,10 @@ func (c *APIClient) sendBatch(ctx context.Context, endpoint string, items []*Out
 
 	if resp.StatusCode >= 400 {
 		err := fmt.Errorf("API returned status %d: %s", resp.StatusCode, string(respBody))
-		log.Error().
-			Int("statusCode", resp.StatusCode).
-			Str("endpoint", endpoint).
-			Str("response", string(respBody)).
-			Msg("API batch request failed")
+		slog.Error("API batch request failed",
+			"statusCode", resp.StatusCode,
+			"endpoint", endpoint,
+			"response", string(respBody))
 		result := NewBatchResult()
 		result.Error = err
 		// Determine status based on HTTP code
@@ -134,11 +131,10 @@ func (c *APIClient) sendBatch(ctx context.Context, endpoint string, items []*Out
 		return result, err
 	}
 
-	log.Debug().
-		Str("endpoint", endpoint).
-		Int("batchSize", len(items)).
-		Int("statusCode", resp.StatusCode).
-		Msg("Batch sent successfully")
+	slog.Debug("Batch sent successfully",
+		"endpoint", endpoint,
+		"batchSize", len(items),
+		"statusCode", resp.StatusCode)
 
 	result := NewBatchResult()
 	result.SuccessIDs = extractIDs(items)

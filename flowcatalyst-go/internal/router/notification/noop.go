@@ -1,6 +1,6 @@
 package notification
 
-import "github.com/rs/zerolog/log"
+import "log/slog"
 
 // NoOpService is a placeholder notification service that logs notifications instead of sending them.
 // In the future, this can be replaced with implementations for email, Slack, PagerDuty, etc.
@@ -13,28 +13,25 @@ func NewNoOpService() *NoOpService {
 
 // NotifyWarning logs the warning
 func (s *NoOpService) NotifyWarning(warning *Warning) {
-	log.Info().
-		Str("severity", warning.Severity).
-		Str("category", warning.Category).
-		Str("message", warning.Message).
-		Str("source", warning.Source).
-		Msg("NOTIFICATION [WARNING]")
+	slog.Info("NOTIFICATION [WARNING]",
+		"severity", warning.Severity,
+		"category", warning.Category,
+		"message", warning.Message,
+		"source", warning.Source)
 }
 
 // NotifyCriticalError logs the critical error
 func (s *NoOpService) NotifyCriticalError(message, source string) {
-	log.Error().
-		Str("message", message).
-		Str("source", source).
-		Msg("NOTIFICATION [CRITICAL]")
+	slog.Error("NOTIFICATION [CRITICAL]",
+		"message", message,
+		"source", source)
 }
 
 // NotifySystemEvent logs the system event
 func (s *NoOpService) NotifySystemEvent(eventType, message string) {
-	log.Info().
-		Str("eventType", eventType).
-		Str("message", message).
-		Msg("NOTIFICATION [EVENT]")
+	slog.Info("NOTIFICATION [EVENT]",
+		"eventType", eventType,
+		"message", message)
 }
 
 // IsEnabled returns false as this is a placeholder implementation

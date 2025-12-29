@@ -3,10 +3,10 @@ package stream
 
 import (
 	"context"
+	"log/slog"
 	"sync"
 	"time"
 
-	"github.com/rs/zerolog/log"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -75,13 +75,13 @@ func (p *Processor) Start() error {
 	p.runningMu.Lock()
 	if p.running {
 		p.runningMu.Unlock()
-		log.Warn().Msg("Stream processor already running")
+		slog.Warn("Stream processor already running")
 		return nil
 	}
 	p.running = true
 	p.runningMu.Unlock()
 
-	log.Info().Msg("Starting stream processor")
+	slog.Info("Starting stream processor")
 
 	// Create events stream watcher
 	if p.config.EventsEnabled {
@@ -105,10 +105,9 @@ func (p *Processor) Start() error {
 		p.watchers = append(p.watchers, eventsWatcher)
 		eventsWatcher.Start()
 
-		log.Info().
-			Str("source", eventsConfig.SourceCollection).
-			Str("target", eventsConfig.TargetCollection).
-			Msg("Events stream watcher started")
+		slog.Info("Events stream watcher started",
+			"source", eventsConfig.SourceCollection,
+			"target", eventsConfig.TargetCollection)
 	}
 
 	// Create dispatch jobs stream watcher
@@ -133,15 +132,13 @@ func (p *Processor) Start() error {
 		p.watchers = append(p.watchers, dispatchJobsWatcher)
 		dispatchJobsWatcher.Start()
 
-		log.Info().
-			Str("source", dispatchJobsConfig.SourceCollection).
-			Str("target", dispatchJobsConfig.TargetCollection).
-			Msg("Dispatch jobs stream watcher started")
+		slog.Info("Dispatch jobs stream watcher started",
+			"source", dispatchJobsConfig.SourceCollection,
+			"target", dispatchJobsConfig.TargetCollection)
 	}
 
-	log.Info().
-		Int("watcherCount", len(p.watchers)).
-		Msg("Stream processor started")
+	slog.Info("Stream processor started",
+		"watcherCount", len(p.watchers))
 
 	return nil
 }
@@ -156,7 +153,7 @@ func (p *Processor) Stop() {
 	p.running = false
 	p.runningMu.Unlock()
 
-	log.Info().Msg("Stopping stream processor")
+	slog.Info("Stopping stream processor")
 
 	// Stop all watchers concurrently
 	var wg sync.WaitGroup
@@ -171,7 +168,7 @@ func (p *Processor) Stop() {
 
 	p.watchers = make([]*Watcher, 0)
 
-	log.Info().Msg("Stream processor stopped")
+	slog.Info("Stream processor stopped")
 }
 
 // IsRunning returns true if the processor is running
@@ -360,10 +357,10 @@ func (p *Processor) EnsureIndexes(ctx context.Context) error {
 	}
 
 	if _, err := eventsReadColl.Indexes().CreateMany(ctx, eventsIndexes); err != nil {
-		log.Error().Err(err).Msg("Failed to create events_read indexes")
+		slog.Error("Failed to create events_read indexes", "error", err)
 		return err
 	}
-	log.Info().Int("count", len(eventsIndexes)).Msg("Created events_read indexes")
+	slog.Info("Created events_read indexes", "count", len(eventsIndexes))
 
 	// =========================================================================
 	// Dispatch jobs read projection indexes
@@ -451,11 +448,11 @@ func (p *Processor) EnsureIndexes(ctx context.Context) error {
 	}
 
 	if _, err := dispatchJobsReadColl.Indexes().CreateMany(ctx, dispatchJobsIndexes); err != nil {
-		log.Error().Err(err).Msg("Failed to create dispatch_jobs_read indexes")
+		slog.Error("Failed to create dispatch_jobs_read indexes", "error", err)
 		return err
 	}
-	log.Info().Int("count", len(dispatchJobsIndexes)).Msg("Created dispatch_jobs_read indexes")
+	slog.Info("Created dispatch_jobs_read indexes", "count", len(dispatchJobsIndexes))
 
-	log.Info().Msg("All projection indexes created successfully")
+	slog.Info("All projection indexes created successfully")
 	return nil
 }

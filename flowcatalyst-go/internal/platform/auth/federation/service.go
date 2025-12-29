@@ -9,7 +9,7 @@ import (
 	"io"
 	"sync"
 
-	"github.com/rs/zerolog/log"
+	"log/slog"
 )
 
 var (
@@ -74,7 +74,7 @@ func (s *Service) CreateAdapter(key string, idpType IdpType, config *Config) err
 	}
 
 	s.RegisterAdapter(key, adapter)
-	log.Info().Str("key", key).Str("type", string(idpType)).Msg("Registered federation adapter")
+	slog.Info("Registered federation adapter", "key", key, "type", string(idpType))
 	return nil
 }
 

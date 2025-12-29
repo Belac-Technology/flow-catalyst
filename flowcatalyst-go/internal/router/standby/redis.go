@@ -3,10 +3,10 @@ package standby
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"time"
 
 	"github.com/redis/go-redis/v9"
-	"github.com/rs/zerolog/log"
 )
 
 // RedisLockProvider implements distributed locking using Redis
@@ -32,7 +32,7 @@ func NewRedisLockProvider(redisURL string) (*RedisLockProvider, error) {
 		return nil, err
 	}
 
-	log.Info().Str("url", redisURL).Msg("Connected to Redis for distributed locking")
+	slog.Info("Connected to Redis for distributed locking", "url", redisURL)
 
 	return &RedisLockProvider{
 		client: client,
@@ -48,11 +48,10 @@ func (p *RedisLockProvider) TryAcquire(ctx context.Context, key, instanceID stri
 	}
 
 	if ok {
-		log.Debug().
-			Str("key", key).
-			Str("instanceId", instanceID).
-			Dur("ttl", ttl).
-			Msg("Lock acquired")
+		slog.Debug("Lock acquired",
+			"key", key,
+			"instanceId", instanceID,
+			"ttl", ttl)
 	}
 
 	return ok, nil
@@ -95,10 +94,9 @@ func (p *RedisLockProvider) Release(ctx context.Context, key, instanceID string)
 		return err
 	}
 
-	log.Debug().
-		Str("key", key).
-		Str("instanceId", instanceID).
-		Msg("Lock released")
+	slog.Debug("Lock released",
+		"key", key,
+		"instanceId", instanceID)
 
 	return nil
 }

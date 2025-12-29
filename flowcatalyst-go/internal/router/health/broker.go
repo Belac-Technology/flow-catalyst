@@ -3,11 +3,10 @@ package health
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"github.com/rs/zerolog/log"
 )
 
 // QueueType represents the type of message queue
@@ -66,7 +65,7 @@ func (s *BrokerHealthService) CheckBrokerConnectivity() []string {
 	defer s.mu.Unlock()
 
 	if !s.enabled {
-		log.Debug().Msg("Message router disabled, skipping broker connectivity check")
+		slog.Debug("Message router disabled, skipping broker connectivity check")
 		return []string{}
 	}
 
@@ -89,14 +88,14 @@ func (s *BrokerHealthService) CheckBrokerConnectivity() []string {
 		if s.checker != nil {
 			err := s.checker.CheckConnectivity(ctx)
 			if err != nil {
-				log.Error().Err(err).Str("queueType", string(s.queueType)).Msg("Broker connectivity check failed")
+				slog.Error("Broker connectivity check failed", "error", err, "queueType", string(s.queueType))
 				issues = append(issues, fmt.Sprintf("%s broker connectivity check failed: %v", s.queueType, err))
 				connected = false
 			} else {
 				connected = true
 			}
 		} else {
-			log.Warn().Str("queueType", string(s.queueType)).Msg("No broker connectivity checker configured")
+			slog.Warn("No broker connectivity checker configured", "queueType", string(s.queueType))
 			issues = append(issues, fmt.Sprintf("%s broker checker not configured", s.queueType))
 			connected = false
 		}
@@ -105,7 +104,7 @@ func (s *BrokerHealthService) CheckBrokerConnectivity() []string {
 	if connected {
 		atomic.AddInt64(&s.connectionSuccesses, 1)
 		s.brokerAvailable.Store(1)
-		log.Debug().Str("queueType", string(s.queueType)).Msg("Broker connectivity check passed")
+		slog.Debug("Broker connectivity check passed", "queueType", string(s.queueType))
 	} else {
 		atomic.AddInt64(&s.connectionFailures, 1)
 		s.brokerAvailable.Store(0)

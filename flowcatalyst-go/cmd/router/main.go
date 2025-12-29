@@ -8,6 +8,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -17,8 +18,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
 
 	"go.flowcatalyst.tech/internal/common/health"
 	"go.flowcatalyst.tech/internal/config"
@@ -38,21 +37,22 @@ var (
 
 func main() {
 	// Configure logging
-	zerolog.TimeFieldFormat = time.RFC3339
+	logLevel := slog.LevelInfo
 	if os.Getenv("FLOWCATALYST_DEV") == "true" {
-		log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339})
+		logLevel = slog.LevelDebug
 	}
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel})))
 
-	log.Info().
-		Str("version", version).
-		Str("build_time", buildTime).
-		Str("component", "router").
-		Msg("Starting FlowCatalyst Message Router")
+	slog.Info("Starting FlowCatalyst Message Router",
+		"version", version,
+		"build_time", buildTime,
+		"component", "router")
 
 	// Load configuration
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatal().Err(err).Msg("Failed to load configuration")
+		slog.Error("Failed to load configuration", "error", err)
+		os.Exit(1)
 	}
 
 	// Create context for graceful shutdown
@@ -68,19 +68,21 @@ func main() {
 
 	switch cfg.Queue.Type {
 	case "nats":
-		log.Info().Str("url", cfg.Queue.NATS.URL).Msg("Connecting to NATS server")
+		slog.Info("Connecting to NATS server", "url", cfg.Queue.NATS.URL)
 		natsClient, err := natsqueue.NewClient(&queue.NATSConfig{
 			URL:        cfg.Queue.NATS.URL,
 			StreamName: "DISPATCH",
 		})
 		if err != nil {
-			log.Fatal().Err(err).Msg("Failed to connect to NATS server")
+			slog.Error("Failed to connect to NATS server", "error", err)
+			os.Exit(1)
 		}
 		queueCloser = natsClient.Close
 
 		consumer, err := natsClient.CreateConsumer(ctx, "router-consumer", "dispatch.>")
 		if err != nil {
-			log.Fatal().Err(err).Msg("Failed to create NATS consumer")
+			slog.Error("Failed to create NATS consumer", "error", err)
+			os.Exit(1)
 		}
 		queueConsumer = consumer
 
@@ -88,13 +90,12 @@ func main() {
 			return true
 		}))
 
-		log.Info().Msg("Connected to NATS server")
+		slog.Info("Connected to NATS server")
 
 	case "sqs":
-		log.Info().
-			Str("region", cfg.Queue.SQS.Region).
-			Str("queueURL", cfg.Queue.SQS.QueueURL).
-			Msg("Connecting to AWS SQS")
+		slog.Info("Connecting to AWS SQS",
+			"region", cfg.Queue.SQS.Region,
+			"queueURL", cfg.Queue.SQS.QueueURL)
 
 		sqsCfg := &queue.SQSConfig{
 			QueueURL:            cfg.Queue.SQS.QueueURL,
@@ -106,13 +107,15 @@ func main() {
 
 		sqsClient, err := sqsqueue.NewClient(ctx, sqsCfg)
 		if err != nil {
-			log.Fatal().Err(err).Msg("Failed to create SQS client")
+			slog.Error("Failed to create SQS client", "error", err)
+			os.Exit(1)
 		}
 		queueCloser = sqsClient.Close
 
 		consumer, err := sqsClient.CreateConsumer(ctx, "router-consumer", "")
 		if err != nil {
-			log.Fatal().Err(err).Msg("Failed to create SQS consumer")
+			slog.Error("Failed to create SQS consumer", "error", err)
+			os.Exit(1)
 		}
 		queueConsumer = consumer
 
@@ -122,17 +125,18 @@ func main() {
 			return sqsClient.HealthCheck(checkCtx)
 		}))
 
-		log.Info().Msg("Connected to AWS SQS")
+		slog.Info("Connected to AWS SQS")
 
 	default:
-		log.Fatal().Str("type", cfg.Queue.Type).Msg("Unknown or unsupported queue type for router (use 'nats' or 'sqs')")
+		slog.Error("Unknown or unsupported queue type for router (use 'nats' or 'sqs')", "type", cfg.Queue.Type)
+		os.Exit(1)
 	}
 
 	// Ensure queue is closed on shutdown
 	if queueCloser != nil {
 		defer func() {
 			if err := queueCloser(); err != nil {
-				log.Error().Err(err).Msg("Error closing queue")
+				slog.Error("Error closing queue", "error", err)
 			}
 		}()
 	}
@@ -150,13 +154,13 @@ func main() {
 
 	standbyCallbacks := &standby.Callbacks{
 		OnBecomePrimary: func() {
-			log.Info().Msg("Became PRIMARY - starting message processing")
+			slog.Info("Became PRIMARY - starting message processing")
 			if messageRouter != nil {
 				messageRouter.Start()
 			}
 		},
 		OnBecomeStandby: func() {
-			log.Info().Msg("Became STANDBY - stopping message processing")
+			slog.Info("Became STANDBY - stopping message processing")
 			if messageRouter != nil {
 				messageRouter.Stop()
 			}
@@ -171,7 +175,8 @@ func main() {
 
 	// Start standby service (handles leader election)
 	if err := standbyService.Start(); err != nil {
-		log.Fatal().Err(err).Msg("Failed to start standby service")
+		slog.Error("Failed to start standby service", "error", err)
+		os.Exit(1)
 	}
 	defer standbyService.Stop()
 
@@ -219,9 +224,10 @@ func main() {
 	}
 
 	go func() {
-		log.Info().Int("port", cfg.HTTP.Port).Msg("HTTP server starting")
+		slog.Info("HTTP server starting", "port", cfg.HTTP.Port)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatal().Err(err).Msg("HTTP server failed")
+			slog.Error("HTTP server failed", "error", err)
+			os.Exit(1)
 		}
 	}()
 
@@ -230,15 +236,15 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	log.Info().Msg("Shutting down gracefully...")
+	slog.Info("Shutting down gracefully...")
 
 	// Graceful shutdown
 	shutdownCtx, shutdownCancel := context.WithTimeout(ctx, 30*time.Second)
 	defer shutdownCancel()
 
 	if err := server.Shutdown(shutdownCtx); err != nil {
-		log.Error().Err(err).Msg("HTTP server forced to shutdown")
+		slog.Error("HTTP server forced to shutdown", "error", err)
 	}
 
-	log.Info().Msg("FlowCatalyst Message Router stopped")
+	slog.Info("FlowCatalyst Message Router stopped")
 }

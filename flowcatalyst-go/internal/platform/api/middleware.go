@@ -2,10 +2,9 @@ package api
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"strings"
-
-	"github.com/rs/zerolog/log"
 
 	"go.flowcatalyst.tech/internal/platform/auth/jwt"
 	"go.flowcatalyst.tech/internal/platform/auth/session"
@@ -63,7 +62,7 @@ func (m *AuthMiddleware) RequireAuth(next http.Handler) http.Handler {
 		// Validate token
 		principalID, err := m.tokenService.ValidateSessionToken(token)
 		if err != nil {
-			log.Debug().Err(err).Msg("Token validation failed")
+			slog.Debug("Token validation failed", "error", err)
 			writeJSONError(w, http.StatusUnauthorized, "unauthorized", "Invalid or expired token")
 			return
 		}
@@ -71,7 +70,7 @@ func (m *AuthMiddleware) RequireAuth(next http.Handler) http.Handler {
 		// Load principal
 		p, err := m.principalRepo.FindByID(r.Context(), principalID)
 		if err != nil {
-			log.Debug().Err(err).Str("principalId", principalID).Msg("Principal not found")
+			slog.Debug("Principal not found", "error", err, "principalId", principalID)
 			writeJSONError(w, http.StatusUnauthorized, "unauthorized", "User not found")
 			return
 		}

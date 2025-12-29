@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/rs/zerolog/log"
+	"log/slog"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -103,7 +103,7 @@ func (h *RawEventBffHandler) List(w http.ResponseWriter, r *http.Request) {
 	// Count total
 	totalCount, err := h.events.CountDocuments(ctx, bson.M{})
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to count raw events")
+		slog.Error("Failed to count raw events", "error", err)
 		WriteInternalError(w, "Failed to list raw events")
 		return
 	}
@@ -116,7 +116,7 @@ func (h *RawEventBffHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	cursor, err := h.events.Find(ctx, bson.M{}, opts)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to find raw events")
+		slog.Error("Failed to find raw events", "error", err)
 		WriteInternalError(w, "Failed to list raw events")
 		return
 	}
@@ -174,7 +174,7 @@ func (h *RawEventBffHandler) Get(w http.ResponseWriter, r *http.Request) {
 			WriteNotFound(w, "Event not found: "+id)
 			return
 		}
-		log.Error().Err(err).Str("id", id).Msg("Failed to get raw event")
+		slog.Error("Failed to get raw event", "error", err, "id", id)
 		WriteInternalError(w, "Failed to get raw event")
 		return
 	}

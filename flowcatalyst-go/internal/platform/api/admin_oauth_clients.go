@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/rs/zerolog/log"
+	"log/slog"
 
 	"go.flowcatalyst.tech/internal/common/tsid"
 	"go.flowcatalyst.tech/internal/platform/auth/oidc"
@@ -113,7 +113,7 @@ func (h *OAuthClientAdminHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	clients, err := h.repo.FindAllClients(ctx)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to list OAuth clients")
+		slog.Error("Failed to list OAuth clients", "error", err)
 		WriteInternalError(w, "Failed to list OAuth clients")
 		return
 	}
@@ -137,7 +137,7 @@ func (h *OAuthClientAdminHandler) Get(w http.ResponseWriter, r *http.Request) {
 			WriteNotFound(w, "OAuth client not found")
 			return
 		}
-		log.Error().Err(err).Str("id", id).Msg("Failed to get OAuth client")
+		slog.Error("Failed to get OAuth client", "error", err, "id", id)
 		WriteInternalError(w, "Failed to get OAuth client")
 		return
 	}
@@ -156,7 +156,7 @@ func (h *OAuthClientAdminHandler) GetByClientID(w http.ResponseWriter, r *http.R
 			WriteNotFound(w, "OAuth client not found")
 			return
 		}
-		log.Error().Err(err).Str("clientId", clientID).Msg("Failed to get OAuth client")
+		slog.Error("Failed to get OAuth client", "error", err, "clientId", clientID)
 		WriteInternalError(w, "Failed to get OAuth client")
 		return
 	}
@@ -202,7 +202,7 @@ func (h *OAuthClientAdminHandler) Create(w http.ResponseWriter, r *http.Request)
 	if req.ClientType == "CONFIDENTIAL" {
 		secret, err := generateClientSecret()
 		if err != nil {
-			log.Error().Err(err).Msg("Failed to generate client secret")
+			slog.Error("Failed to generate client secret", "error", err)
 			WriteInternalError(w, "Failed to generate client secret")
 			return
 		}
@@ -232,17 +232,12 @@ func (h *OAuthClientAdminHandler) Create(w http.ResponseWriter, r *http.Request)
 	}
 
 	if err := h.repo.InsertClient(ctx, client); err != nil {
-		log.Error().Err(err).Msg("Failed to create OAuth client")
+		slog.Error("Failed to create OAuth client", "error", err)
 		WriteInternalError(w, "Failed to create OAuth client")
 		return
 	}
 
-	log.Info().
-		Str("id", client.ID).
-		Str("clientId", client.ClientID).
-		Str("clientName", client.ClientName).
-		Str("clientType", string(client.ClientType)).
-		Msg("OAuth client created")
+	slog.Info("OAuth client created", "id", client.ID, "clientId", client.ClientID, "clientName", client.ClientName, "clientType", string(client.ClientType))
 
 	response := CreateOAuthClientResponse{
 		OAuthClientResponse: toOAuthClientResponse(client),
@@ -263,7 +258,7 @@ func (h *OAuthClientAdminHandler) Update(w http.ResponseWriter, r *http.Request)
 			WriteNotFound(w, "OAuth client not found")
 			return
 		}
-		log.Error().Err(err).Str("id", id).Msg("Failed to get OAuth client")
+		slog.Error("Failed to get OAuth client", "error", err, "id", id)
 		WriteInternalError(w, "Failed to get OAuth client")
 		return
 	}
@@ -295,15 +290,12 @@ func (h *OAuthClientAdminHandler) Update(w http.ResponseWriter, r *http.Request)
 	}
 
 	if err := h.repo.UpdateClient(ctx, client); err != nil {
-		log.Error().Err(err).Str("id", id).Msg("Failed to update OAuth client")
+		slog.Error("Failed to update OAuth client", "error", err, "id", id)
 		WriteInternalError(w, "Failed to update OAuth client")
 		return
 	}
 
-	log.Info().
-		Str("id", client.ID).
-		Str("clientId", client.ClientID).
-		Msg("OAuth client updated")
+	slog.Info("OAuth client updated", "id", client.ID, "clientId", client.ClientID)
 
 	WriteJSON(w, http.StatusOK, toOAuthClientResponse(client))
 }
@@ -319,7 +311,7 @@ func (h *OAuthClientAdminHandler) RotateSecret(w http.ResponseWriter, r *http.Re
 			WriteNotFound(w, "OAuth client not found")
 			return
 		}
-		log.Error().Err(err).Str("id", id).Msg("Failed to get OAuth client")
+		slog.Error("Failed to get OAuth client", "error", err, "id", id)
 		WriteInternalError(w, "Failed to get OAuth client")
 		return
 	}
@@ -333,7 +325,7 @@ func (h *OAuthClientAdminHandler) RotateSecret(w http.ResponseWriter, r *http.Re
 	// Generate new secret
 	newSecret, err := generateClientSecret()
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to generate new client secret")
+		slog.Error("Failed to generate new client secret", "error", err)
 		WriteInternalError(w, "Failed to generate new client secret")
 		return
 	}
@@ -342,15 +334,12 @@ func (h *OAuthClientAdminHandler) RotateSecret(w http.ResponseWriter, r *http.Re
 	client.ClientSecretRef = newSecret
 
 	if err := h.repo.UpdateClient(ctx, client); err != nil {
-		log.Error().Err(err).Str("id", id).Msg("Failed to update OAuth client secret")
+		slog.Error("Failed to update OAuth client secret", "error", err, "id", id)
 		WriteInternalError(w, "Failed to update OAuth client secret")
 		return
 	}
 
-	log.Info().
-		Str("id", client.ID).
-		Str("clientId", client.ClientID).
-		Msg("OAuth client secret rotated")
+	slog.Info("OAuth client secret rotated", "id", client.ID, "clientId", client.ClientID)
 
 	WriteJSON(w, http.StatusOK, RotateSecretResponse{ClientSecret: newSecret})
 }
@@ -366,7 +355,7 @@ func (h *OAuthClientAdminHandler) Activate(w http.ResponseWriter, r *http.Reques
 			WriteNotFound(w, "OAuth client not found")
 			return
 		}
-		log.Error().Err(err).Str("id", id).Msg("Failed to get OAuth client")
+		slog.Error("Failed to get OAuth client", "error", err, "id", id)
 		WriteInternalError(w, "Failed to get OAuth client")
 		return
 	}
@@ -378,15 +367,12 @@ func (h *OAuthClientAdminHandler) Activate(w http.ResponseWriter, r *http.Reques
 
 	client.Active = true
 	if err := h.repo.UpdateClient(ctx, client); err != nil {
-		log.Error().Err(err).Str("id", id).Msg("Failed to activate OAuth client")
+		slog.Error("Failed to activate OAuth client", "error", err, "id", id)
 		WriteInternalError(w, "Failed to activate OAuth client")
 		return
 	}
 
-	log.Info().
-		Str("id", client.ID).
-		Str("clientId", client.ClientID).
-		Msg("OAuth client activated")
+	slog.Info("OAuth client activated", "id", client.ID, "clientId", client.ClientID)
 
 	WriteJSON(w, http.StatusOK, toOAuthClientResponse(client))
 }
@@ -402,7 +388,7 @@ func (h *OAuthClientAdminHandler) Deactivate(w http.ResponseWriter, r *http.Requ
 			WriteNotFound(w, "OAuth client not found")
 			return
 		}
-		log.Error().Err(err).Str("id", id).Msg("Failed to get OAuth client")
+		slog.Error("Failed to get OAuth client", "error", err, "id", id)
 		WriteInternalError(w, "Failed to get OAuth client")
 		return
 	}
@@ -414,15 +400,12 @@ func (h *OAuthClientAdminHandler) Deactivate(w http.ResponseWriter, r *http.Requ
 
 	client.Active = false
 	if err := h.repo.UpdateClient(ctx, client); err != nil {
-		log.Error().Err(err).Str("id", id).Msg("Failed to deactivate OAuth client")
+		slog.Error("Failed to deactivate OAuth client", "error", err, "id", id)
 		WriteInternalError(w, "Failed to deactivate OAuth client")
 		return
 	}
 
-	log.Info().
-		Str("id", client.ID).
-		Str("clientId", client.ClientID).
-		Msg("OAuth client deactivated")
+	slog.Info("OAuth client deactivated", "id", client.ID, "clientId", client.ClientID)
 
 	WriteJSON(w, http.StatusOK, toOAuthClientResponse(client))
 }
@@ -438,12 +421,12 @@ func (h *OAuthClientAdminHandler) Delete(w http.ResponseWriter, r *http.Request)
 			WriteNotFound(w, "OAuth client not found")
 			return
 		}
-		log.Error().Err(err).Str("id", id).Msg("Failed to delete OAuth client")
+		slog.Error("Failed to delete OAuth client", "error", err, "id", id)
 		WriteInternalError(w, "Failed to delete OAuth client")
 		return
 	}
 
-	log.Info().Str("id", id).Msg("OAuth client deleted")
+	slog.Info("OAuth client deleted", "id", id)
 
 	w.WriteHeader(http.StatusNoContent)
 }

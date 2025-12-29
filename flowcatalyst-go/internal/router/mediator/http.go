@@ -8,13 +8,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/rs/zerolog/log"
 	"github.com/sony/gobreaker"
 
 	"go.flowcatalyst.tech/internal/common/metrics"
@@ -111,11 +111,11 @@ func NewHTTPMediator(cfg *HTTPMediatorConfig) *HTTPMediator {
 		// Force HTTP/1.1 by disabling HTTP/2
 		transport.ForceAttemptHTTP2 = false
 		transport.TLSNextProto = make(map[string]func(authority string, c *tls.Conn) http.RoundTripper)
-		log.Info().Str("version", "HTTP/1.1").Msg("HTTP mediator configured")
+		slog.Info("HTTP mediator configured", "version", "HTTP/1.1")
 	} else {
 		// Enable HTTP/2 (default for production)
 		transport.ForceAttemptHTTP2 = true
-		log.Info().Str("version", "HTTP/2").Msg("HTTP mediator configured")
+		slog.Info("HTTP mediator configured", "version", "HTTP/2")
 	}
 
 	// Create HTTP client with timeout
@@ -145,11 +145,10 @@ func NewHTTPMediator(cfg *HTTPMediatorConfig) *HTTPMediator {
 				return failureRatio >= cfg.CircuitBreakerRatio
 			},
 			OnStateChange: func(name string, from gobreaker.State, to gobreaker.State) {
-				log.Info().
-					Str("name", name).
-					Str("from", from.String()).
-					Str("to", to.String()).
-					Msg("Circuit breaker state changed")
+				slog.Info("Circuit breaker state changed",
+					"name", name,
+					"from", from.String(),
+					"to", to.String())
 
 				// Update circuit breaker metrics
 				var stateValue float64
@@ -196,10 +195,9 @@ func (m *HTTPMediator) Process(msg *pool.MessagePointer) *pool.MediationOutcome 
 		if err != nil {
 			// Circuit breaker open
 			if errors.Is(err, gobreaker.ErrOpenState) || errors.Is(err, gobreaker.ErrTooManyRequests) {
-				log.Warn().
-					Str("messageId", msg.ID).
-					Str("target", targetURL).
-					Msg("Circuit breaker open")
+				slog.Warn("Circuit breaker open",
+					"messageId", msg.ID,
+					"target", targetURL)
 				return &pool.MediationOutcome{
 					Result: pool.MediationResultErrorConnection,
 					Error:  err,
@@ -243,11 +241,10 @@ func (m *HTTPMediator) executeWithRetry(msg *pool.MessagePointer) (*pool.Mediati
 		// Wait before retry (backoff = attempt * baseBackoff)
 		if attempt < m.maxRetries {
 			backoff := time.Duration(attempt) * m.baseBackoff
-			log.Info().
-				Str("messageId", msg.ID).
-				Int("attempt", attempt).
-				Dur("backoff", backoff).
-				Msg("Retrying after backoff")
+			slog.Info("Retrying after backoff",
+				"messageId", msg.ID,
+				"attempt", attempt,
+				"backoff", backoff)
 			time.Sleep(backoff)
 		}
 	}
@@ -299,11 +296,10 @@ func (m *HTTPMediator) executeOnce(msg *pool.MessagePointer, attempt int) *pool.
 	}
 
 	// Execute request
-	log.Debug().
-		Str("messageId", msg.ID).
-		Str("target", targetURL).
-		Int("attempt", attempt).
-		Msg("Executing HTTP request")
+	slog.Debug("Executing HTTP request",
+		"messageId", msg.ID,
+		"target", targetURL,
+		"attempt", attempt)
 
 	startTime := time.Now()
 	resp, err := m.client.Do(req)
@@ -324,12 +320,11 @@ func (m *HTTPMediator) executeOnce(msg *pool.MessagePointer, attempt int) *pool.
 	// Read response body
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024)) // Limit to 64KB
 
-	log.Debug().
-		Str("messageId", msg.ID).
-		Int("statusCode", resp.StatusCode).
-		Int("bodyLen", len(body)).
-		Dur("duration", duration).
-		Msg("HTTP response received")
+	slog.Debug("HTTP response received",
+		"messageId", msg.ID,
+		"statusCode", resp.StatusCode,
+		"bodyLen", len(body),
+		"duration", duration)
 
 	// Handle response
 	return m.handleResponse(msg, resp.StatusCode, body)
@@ -339,10 +334,9 @@ func (m *HTTPMediator) executeOnce(msg *pool.MessagePointer, attempt int) *pool.
 func (m *HTTPMediator) handleError(msg *pool.MessagePointer, err error) *pool.MediationOutcome {
 	// Check for specific error types
 	if errors.Is(err, context.DeadlineExceeded) {
-		log.Warn().
-			Str("messageId", msg.ID).
-			Err(err).
-			Msg("Request timeout")
+		slog.Warn("Request timeout",
+			"messageId", msg.ID,
+			"error", err)
 		return &pool.MediationOutcome{
 			Result: pool.MediationResultErrorConnection,
 			Error:  err,
@@ -359,11 +353,10 @@ func (m *HTTPMediator) handleError(msg *pool.MessagePointer, err error) *pool.Me
 	// Check for network errors
 	var netErr net.Error
 	if errors.As(err, &netErr) {
-		log.Warn().
-			Str("messageId", msg.ID).
-			Err(err).
-			Bool("timeout", netErr.Timeout()).
-			Msg("Network error")
+		slog.Warn("Network error",
+			"messageId", msg.ID,
+			"error", err,
+			"timeout", netErr.Timeout())
 		return &pool.MediationOutcome{
 			Result: pool.MediationResultErrorConnection,
 			Error:  err,
@@ -397,10 +390,9 @@ func (m *HTTPMediator) handleResponse(msg *pool.MessagePointer, statusCode int, 
 		if ack != nil && !*ack {
 			// ack=false means "not ready, try again later"
 			delay := m.parseDelayFromResponse(body)
-			log.Info().
-				Str("messageId", msg.ID).
-				Int("statusCode", statusCode).
-				Msg("Response ack=false, will retry")
+			slog.Info("Response ack=false, will retry",
+				"messageId", msg.ID,
+				"statusCode", statusCode)
 			return &pool.MediationOutcome{
 				Result:      pool.MediationResultErrorProcess,
 				StatusCode:  statusCode,
@@ -427,10 +419,9 @@ func (m *HTTPMediator) handleResponse(msg *pool.MessagePointer, statusCode int, 
 			}
 		}
 
-		log.Warn().
-			Str("messageId", msg.ID).
-			Int("statusCode", statusCode).
-			Msg("Client error - will not retry")
+		slog.Warn("Client error - will not retry",
+			"messageId", msg.ID,
+			"statusCode", statusCode)
 		return &pool.MediationOutcome{
 			Result:     pool.MediationResultErrorConfig,
 			StatusCode: statusCode,
@@ -439,10 +430,9 @@ func (m *HTTPMediator) handleResponse(msg *pool.MessagePointer, statusCode int, 
 
 	// 5xx server errors - transient, retry
 	if statusCode >= 500 {
-		log.Warn().
-			Str("messageId", msg.ID).
-			Int("statusCode", statusCode).
-			Msg("Server error - will retry")
+		slog.Warn("Server error - will retry",
+			"messageId", msg.ID,
+			"statusCode", statusCode)
 		return &pool.MediationOutcome{
 			Result:     pool.MediationResultErrorProcess,
 			StatusCode: statusCode,

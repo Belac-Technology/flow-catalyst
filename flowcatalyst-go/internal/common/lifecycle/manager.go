@@ -3,13 +3,12 @@ package lifecycle
 
 import (
 	"context"
+	"log/slog"
 	"os"
 	"os/signal"
 	"sync"
 	"syscall"
 	"time"
-
-	"github.com/rs/zerolog/log"
 )
 
 // ShutdownPhase defines the order of shutdown phases
@@ -131,9 +130,9 @@ func (m *Manager) WaitForSignal() {
 
 	select {
 	case sig := <-quit:
-		log.Info().Str("signal", sig.String()).Msg("Shutdown signal received")
+		slog.Info("Shutdown signal received", "signal", sig.String())
 	case <-m.done:
-		log.Info().Msg("Shutdown triggered programmatically")
+		slog.Info("Shutdown triggered programmatically")
 	}
 }
 
@@ -152,7 +151,7 @@ func (m *Manager) Execute() error {
 	timeout := m.shutdownTimeout
 	m.mu.Unlock()
 
-	log.Info().Int("hooks", len(hooks)).Dur("timeout", timeout).Msg("Starting graceful shutdown")
+	slog.Info("Starting graceful shutdown", "hooks", len(hooks), "timeout", timeout)
 
 	// Create overall context with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -172,7 +171,7 @@ func (m *Manager) Execute() error {
 			continue
 		}
 
-		log.Info().Int("phase", int(phase)).Int("hooks", len(phaseHooks[phase])).Msg("Executing shutdown phase")
+		slog.Info("Executing shutdown phase", "phase", int(phase), "hooks", len(phaseHooks[phase]))
 
 		// Execute hooks in parallel within each phase
 		var wg sync.WaitGroup
@@ -187,12 +186,12 @@ func (m *Manager) Execute() error {
 
 		// Check if context was cancelled
 		if ctx.Err() != nil {
-			log.Warn().Msg("Shutdown timeout reached, forcing exit")
+			slog.Warn("Shutdown timeout reached, forcing exit")
 			return ctx.Err()
 		}
 	}
 
-	log.Info().Msg("Graceful shutdown completed")
+	slog.Info("Graceful shutdown completed")
 	return nil
 }
 
@@ -201,7 +200,7 @@ func (m *Manager) executeHook(parentCtx context.Context, hook ShutdownHook) {
 	ctx, cancel := context.WithTimeout(parentCtx, hook.Timeout)
 	defer cancel()
 
-	log.Debug().Str("hook", hook.Name).Dur("timeout", hook.Timeout).Msg("Executing shutdown hook")
+	slog.Debug("Executing shutdown hook", "hook", hook.Name, "timeout", hook.Timeout)
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -211,12 +210,12 @@ func (m *Manager) executeHook(parentCtx context.Context, hook ShutdownHook) {
 	select {
 	case err := <-errCh:
 		if err != nil {
-			log.Error().Err(err).Str("hook", hook.Name).Msg("Shutdown hook failed")
+			slog.Error("Shutdown hook failed", "error", err, "hook", hook.Name)
 		} else {
-			log.Debug().Str("hook", hook.Name).Msg("Shutdown hook completed")
+			slog.Debug("Shutdown hook completed", "hook", hook.Name)
 		}
 	case <-ctx.Done():
-		log.Warn().Str("hook", hook.Name).Msg("Shutdown hook timed out")
+		slog.Warn("Shutdown hook timed out", "hook", hook.Name)
 	}
 }
 

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rs/zerolog/log"
+	"log/slog"
 
 	"go.flowcatalyst.tech/internal/common/tsid"
 	"go.flowcatalyst.tech/internal/platform/auth/federation"
@@ -124,7 +124,7 @@ func (s *AuthService) HandleLogin(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusUnauthorized, "invalid_credentials", "Invalid email or password")
 			return
 		}
-		log.Error().Err(err).Msg("Failed to find principal")
+		slog.Error("Failed to find principal", "error", err)
 		writeError(w, http.StatusInternalServerError, "server_error", "Internal server error")
 		return
 	}
@@ -165,7 +165,7 @@ func (s *AuthService) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		applications,
 	)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to issue session token")
+		slog.Error("Failed to issue session token", "error", err)
 		writeError(w, http.StatusInternalServerError, "server_error", "Failed to create session")
 		return
 	}
@@ -261,7 +261,7 @@ func (s *AuthService) HandleCheckDomain(w http.ResponseWriter, r *http.Request) 
 	// Check if this is an anchor domain (internal auth)
 	isAnchor, err := s.clientRepo.IsAnchorDomain(r.Context(), domain)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to check anchor domain")
+		slog.Error("Failed to check anchor domain", "error", err)
 		writeError(w, http.StatusInternalServerError, "server_error", "Internal server error")
 		return
 	}
@@ -283,7 +283,7 @@ func (s *AuthService) HandleCheckDomain(w http.ResponseWriter, r *http.Request) 
 			})
 			return
 		}
-		log.Error().Err(err).Msg("Failed to find auth config")
+		slog.Error("Failed to find auth config", "error", err)
 		writeError(w, http.StatusInternalServerError, "server_error", "Internal server error")
 		return
 	}
@@ -479,18 +479,18 @@ func (s *AuthService) HandleAuthorize(w http.ResponseWriter, r *http.Request) {
 	oauthClient, err := s.oidcRepo.FindClientByClientID(r.Context(), clientID)
 	if err != nil {
 		if errors.Is(err, oidc.ErrNotFound) {
-			log.Warn().Str("clientId", clientID).Msg("Authorization request with unknown client_id")
+			slog.Warn("Authorization request with unknown client_id", "clientId", clientID)
 			s.authorizeErrorRedirect(w, redirectURI, "invalid_client", "Unknown client_id", state)
 			return
 		}
-		log.Error().Err(err).Str("clientId", clientID).Msg("Failed to find OAuth client")
+		slog.Error("Failed to find OAuth client", "error", err, "clientId", clientID)
 		s.authorizeErrorRedirect(w, redirectURI, "server_error", "Internal server error", state)
 		return
 	}
 
 	// Check if client is active
 	if !oauthClient.Active {
-		log.Warn().Str("clientId", clientID).Msg("Authorization request for inactive client")
+		slog.Warn("Authorization request for inactive client", "clientId", clientID)
 		s.authorizeErrorRedirect(w, redirectURI, "invalid_client", "Client is disabled", state)
 		return
 	}
@@ -502,10 +502,7 @@ func (s *AuthService) HandleAuthorize(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !oauthClient.HasRedirectURI(redirectURI) {
-		log.Warn().
-			Str("clientId", clientID).
-			Str("redirectUri", redirectURI).
-			Msg("Authorization request with invalid redirect_uri")
+		slog.Warn("Authorization request with invalid redirect_uri", "clientId", clientID, "redirectUri", redirectURI)
 		writeError(w, http.StatusBadRequest, "invalid_request", "redirect_uri not allowed for this client")
 		return
 	}
@@ -532,7 +529,7 @@ func (s *AuthService) HandleAuthorize(w http.ResponseWriter, r *http.Request) {
 	// Validate session and get principal ID
 	principalID, err := s.tokenService.ValidateSessionToken(sessionToken)
 	if err != nil {
-		log.Debug().Err(err).Msg("Invalid session token in authorize request")
+		slog.Debug("Invalid session token in authorize request", "error", err)
 		s.redirectToLogin(w, r, responseType, clientID, redirectURI, scope, state, codeChallenge, codeChallengeMethod, nonce)
 		return
 	}
@@ -540,13 +537,13 @@ func (s *AuthService) HandleAuthorize(w http.ResponseWriter, r *http.Request) {
 	// Verify principal exists and is active
 	p, err := s.principalRepo.FindByID(r.Context(), principalID)
 	if err != nil {
-		log.Debug().Err(err).Str("principalId", principalID).Msg("Principal not found in authorize request")
+		slog.Debug("Principal not found in authorize request", "error", err, "principalId", principalID)
 		s.redirectToLogin(w, r, responseType, clientID, redirectURI, scope, state, codeChallenge, codeChallengeMethod, nonce)
 		return
 	}
 
 	if !p.Active {
-		log.Warn().Str("principalId", principalID).Msg("Inactive principal in authorize request")
+		slog.Warn("Inactive principal in authorize request", "principalId", principalID)
 		s.redirectToLogin(w, r, responseType, clientID, redirectURI, scope, state, codeChallenge, codeChallengeMethod, nonce)
 		return
 	}
@@ -555,11 +552,7 @@ func (s *AuthService) HandleAuthorize(w http.ResponseWriter, r *http.Request) {
 	if oauthClient.HasApplicationRestrictions() {
 		hasAccess := s.checkUserApplicationAccess(p, oauthClient)
 		if !hasAccess {
-			log.Warn().
-				Str("principalId", principalID).
-				Str("clientId", clientID).
-				Strs("requiredApps", oauthClient.ApplicationIDs).
-				Msg("User denied access - no application access")
+			slog.Warn("User denied access - no application access", "principalId", principalID, "clientId", clientID, "requiredApps", oauthClient.ApplicationIDs)
 			s.authorizeErrorRedirect(w, redirectURI, "access_denied", "You don't have access to this application", state)
 			return
 		}
@@ -568,7 +561,7 @@ func (s *AuthService) HandleAuthorize(w http.ResponseWriter, r *http.Request) {
 	// Generate authorization code
 	code, err := generateAuthorizationCode()
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to generate authorization code")
+		slog.Error("Failed to generate authorization code", "error", err)
 		s.authorizeErrorRedirect(w, redirectURI, "server_error", "Failed to generate authorization code", state)
 		return
 	}
@@ -589,7 +582,7 @@ func (s *AuthService) HandleAuthorize(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.oidcRepo.SaveAuthorizationCode(r.Context(), authCode); err != nil {
-		log.Error().Err(err).Msg("Failed to save authorization code")
+		slog.Error("Failed to save authorization code", "error", err)
 		s.authorizeErrorRedirect(w, redirectURI, "server_error", "Failed to create authorization code", state)
 		return
 	}
@@ -606,10 +599,7 @@ func (s *AuthService) HandleAuthorize(w http.ResponseWriter, r *http.Request) {
 		callbackURL += "&state=" + url.QueryEscape(state)
 	}
 
-	log.Info().
-		Str("clientId", clientID).
-		Str("principalId", principalID).
-		Msg("Authorization code issued")
+	slog.Info("Authorization code issued", "clientId", clientID, "principalId", principalID)
 
 	http.Redirect(w, r, callbackURL, http.StatusFound)
 }
@@ -690,7 +680,7 @@ func (s *AuthService) handleAuthorizationCodeGrant(w http.ResponseWriter, r *htt
 			writeError(w, http.StatusBadRequest, "invalid_grant", "Invalid or expired authorization code")
 			return
 		}
-		log.Error().Err(err).Msg("Failed to use authorization code")
+		slog.Error("Failed to use authorization code", "error", err)
 		writeError(w, http.StatusInternalServerError, "server_error", "Internal server error")
 		return
 	}
@@ -746,7 +736,7 @@ func (s *AuthService) handleAuthorizationCodeGrant(w http.ResponseWriter, r *htt
 		applications,
 	)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to issue access token")
+		slog.Error("Failed to issue access token", "error", err)
 		writeError(w, http.StatusInternalServerError, "server_error", "Failed to issue tokens")
 		return
 	}
@@ -754,7 +744,7 @@ func (s *AuthService) handleAuthorizationCodeGrant(w http.ResponseWriter, r *htt
 	// Generate refresh token
 	refreshTokenRaw, err := jwt.GenerateRefreshToken()
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to generate refresh token")
+		slog.Error("Failed to generate refresh token", "error", err)
 		writeError(w, http.StatusInternalServerError, "server_error", "Failed to issue tokens")
 		return
 	}
@@ -770,7 +760,7 @@ func (s *AuthService) handleAuthorizationCodeGrant(w http.ResponseWriter, r *htt
 		ExpiresAt:       time.Now().Add(30 * 24 * time.Hour),
 	}
 	if err := s.oidcRepo.SaveRefreshToken(r.Context(), refreshToken); err != nil {
-		log.Error().Err(err).Msg("Failed to save refresh token")
+		slog.Error("Failed to save refresh token", "error", err)
 		writeError(w, http.StatusInternalServerError, "server_error", "Failed to issue tokens")
 		return
 	}
@@ -815,7 +805,7 @@ func (s *AuthService) handleRefreshTokenGrant(w http.ResponseWriter, r *http.Req
 			writeError(w, http.StatusBadRequest, "invalid_grant", "Invalid refresh token")
 			return
 		}
-		log.Error().Err(err).Msg("Failed to find refresh token")
+		slog.Error("Failed to find refresh token", "error", err)
 		writeError(w, http.StatusInternalServerError, "server_error", "Internal server error")
 		return
 	}
@@ -864,7 +854,7 @@ func (s *AuthService) handleRefreshTokenGrant(w http.ResponseWriter, r *http.Req
 		applications,
 	)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to issue access token")
+		slog.Error("Failed to issue access token", "error", err)
 		writeError(w, http.StatusInternalServerError, "server_error", "Failed to issue tokens")
 		return
 	}
@@ -872,7 +862,7 @@ func (s *AuthService) handleRefreshTokenGrant(w http.ResponseWriter, r *http.Req
 	// Generate new refresh token (rotation)
 	newRefreshTokenRaw, err := jwt.GenerateRefreshToken()
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to generate refresh token")
+		slog.Error("Failed to generate refresh token", "error", err)
 		writeError(w, http.StatusInternalServerError, "server_error", "Failed to issue tokens")
 		return
 	}
@@ -891,7 +881,7 @@ func (s *AuthService) handleRefreshTokenGrant(w http.ResponseWriter, r *http.Req
 		ExpiresAt:       time.Now().Add(30 * 24 * time.Hour),
 	}
 	if err := s.oidcRepo.SaveRefreshToken(r.Context(), newRefreshToken); err != nil {
-		log.Error().Err(err).Msg("Failed to save refresh token")
+		slog.Error("Failed to save refresh token", "error", err)
 		writeError(w, http.StatusInternalServerError, "server_error", "Failed to issue tokens")
 		return
 	}
@@ -958,7 +948,7 @@ func (s *AuthService) handleClientCredentialsGrant(w http.ResponseWriter, r *htt
 		p.GetRoleNames(),
 	)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to issue access token")
+		slog.Error("Failed to issue access token", "error", err)
 		writeError(w, http.StatusInternalServerError, "server_error", "Failed to issue token")
 		return
 	}
@@ -1023,7 +1013,7 @@ func (s *AuthService) handlePasswordGrant(w http.ResponseWriter, r *http.Request
 		applications,
 	)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to issue access token")
+		slog.Error("Failed to issue access token", "error", err)
 		writeError(w, http.StatusInternalServerError, "server_error", "Failed to issue token")
 		return
 	}
@@ -1031,7 +1021,7 @@ func (s *AuthService) handlePasswordGrant(w http.ResponseWriter, r *http.Request
 	// Generate refresh token
 	refreshTokenRaw, err := jwt.GenerateRefreshToken()
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to generate refresh token")
+		slog.Error("Failed to generate refresh token", "error", err)
 		writeError(w, http.StatusInternalServerError, "server_error", "Failed to issue tokens")
 		return
 	}
@@ -1044,7 +1034,7 @@ func (s *AuthService) handlePasswordGrant(w http.ResponseWriter, r *http.Request
 		ExpiresAt:   time.Now().Add(30 * 24 * time.Hour),
 	}
 	if err := s.oidcRepo.SaveRefreshToken(r.Context(), refreshToken); err != nil {
-		log.Error().Err(err).Msg("Failed to save refresh token")
+		slog.Error("Failed to save refresh token", "error", err)
 		// Continue without refresh token
 	}
 
@@ -1076,7 +1066,7 @@ func (s *AuthService) HandleOIDCLogin(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "not_found", "No auth configuration for domain")
 			return
 		}
-		log.Error().Err(err).Str("domain", domain).Msg("Failed to find auth config")
+		slog.Error("Failed to find auth config", "error", err, "domain", domain)
 		writeError(w, http.StatusInternalServerError, "server_error", "Internal server error")
 		return
 	}
@@ -1107,7 +1097,7 @@ func (s *AuthService) HandleOIDCLogin(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if err := s.federationService.CreateAdapter(domain, idpType, federationConfig); err != nil {
-			log.Error().Err(err).Str("domain", domain).Msg("Failed to create federation adapter")
+			slog.Error("Failed to create federation adapter", "error", err, "domain", domain)
 			writeError(w, http.StatusInternalServerError, "server_error", "Failed to configure identity provider")
 			return
 		}
@@ -1116,7 +1106,7 @@ func (s *AuthService) HandleOIDCLogin(w http.ResponseWriter, r *http.Request) {
 	// Generate PKCE
 	codeVerifier, _, err := s.pkceService.GeneratePKCEPair()
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to generate PKCE")
+		slog.Error("Failed to generate PKCE", "error", err)
 		writeError(w, http.StatusInternalServerError, "server_error", "Internal server error")
 		return
 	}
@@ -1135,7 +1125,7 @@ func (s *AuthService) HandleOIDCLogin(w http.ResponseWriter, r *http.Request) {
 		ExpiresAt:    time.Now().Add(10 * time.Minute),
 	}
 	if err := s.oidcRepo.SaveLoginState(r.Context(), loginState); err != nil {
-		log.Error().Err(err).Msg("Failed to save login state")
+		slog.Error("Failed to save login state", "error", err)
 		writeError(w, http.StatusInternalServerError, "server_error", "Internal server error")
 		return
 	}
@@ -1154,7 +1144,7 @@ func (s *AuthService) HandleOIDCLogin(w http.ResponseWriter, r *http.Request) {
 
 	authURL, err := s.federationService.InitiateLogin(r.Context(), domain, authReq)
 	if err != nil {
-		log.Error().Err(err).Str("domain", domain).Msg("Failed to initiate login")
+		slog.Error("Failed to initiate login", "error", err, "domain", domain)
 		writeError(w, http.StatusInternalServerError, "server_error", "Failed to initiate login")
 		return
 	}
@@ -1169,7 +1159,7 @@ func (s *AuthService) HandleOIDCCallback(w http.ResponseWriter, r *http.Request)
 	// Check for error from IDP
 	if errParam := r.URL.Query().Get("error"); errParam != "" {
 		errDesc := r.URL.Query().Get("error_description")
-		log.Warn().Str("error", errParam).Str("description", errDesc).Msg("OIDC callback error")
+		slog.Warn("OIDC callback error", "error", errParam, "description", errDesc)
 		s.redirectWithError(w, r, errParam, errDesc)
 		return
 	}
@@ -1193,7 +1183,7 @@ func (s *AuthService) HandleOIDCCallback(w http.ResponseWriter, r *http.Request)
 			writeError(w, http.StatusBadRequest, "invalid_state", "State has expired")
 			return
 		}
-		log.Error().Err(err).Msg("Failed to consume login state")
+		slog.Error("Failed to consume login state", "error", err)
 		writeError(w, http.StatusInternalServerError, "server_error", "Internal server error")
 		return
 	}
@@ -1211,7 +1201,7 @@ func (s *AuthService) HandleOIDCCallback(w http.ResponseWriter, r *http.Request)
 		loginState.Nonce,
 	)
 	if err != nil {
-		log.Error().Err(err).Str("domain", loginState.Domain).Msg("Failed to handle OIDC callback")
+		slog.Error("Failed to handle OIDC callback", "error", err, "domain", loginState.Domain)
 		s.redirectWithError(w, r, "authentication_failed", "Failed to authenticate with identity provider")
 		return
 	}
@@ -1219,7 +1209,7 @@ func (s *AuthService) HandleOIDCCallback(w http.ResponseWriter, r *http.Request)
 	// Find or create principal
 	p, err := s.findOrCreateFederatedPrincipal(r.Context(), loginState, userInfo)
 	if err != nil {
-		log.Error().Err(err).Str("email", userInfo.Email).Msg("Failed to find or create principal")
+		slog.Error("Failed to find or create principal", "error", err, "email", userInfo.Email)
 		s.redirectWithError(w, r, "provisioning_failed", "Failed to provision user account")
 		return
 	}
@@ -1251,7 +1241,7 @@ func (s *AuthService) HandleOIDCCallback(w http.ResponseWriter, r *http.Request)
 		applications,
 	)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to issue session token")
+		slog.Error("Failed to issue session token", "error", err)
 		s.redirectWithError(w, r, "token_error", "Failed to create session")
 		return
 	}
@@ -1330,11 +1320,7 @@ func (s *AuthService) findOrCreateFederatedPrincipal(ctx context.Context, loginS
 		return nil, err
 	}
 
-	log.Info().
-		Str("principalId", p.ID).
-		Str("email", email).
-		Str("domain", loginState.Domain).
-		Msg("Created federated user")
+	slog.Info("Created federated user", "principalId", p.ID, "email", email, "domain", loginState.Domain)
 
 	return p, nil
 }

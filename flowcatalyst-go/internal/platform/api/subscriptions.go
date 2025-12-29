@@ -1,10 +1,10 @@
 package api
 
 import (
+	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/rs/zerolog/log"
 
 	"go.flowcatalyst.tech/internal/platform/common"
 	"go.flowcatalyst.tech/internal/platform/dispatchpool"
@@ -109,7 +109,7 @@ func (h *SubscriptionHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to list subscriptions")
+		slog.Error("Failed to list subscriptions", "error", err)
 		WriteInternalError(w, "Failed to list subscriptions")
 		return
 	}
@@ -138,7 +138,7 @@ func (h *SubscriptionHandler) Get(w http.ResponseWriter, r *http.Request) {
 			WriteNotFound(w, "Subscription not found")
 			return
 		}
-		log.Error().Err(err).Str("id", id).Msg("Failed to get subscription")
+		slog.Error("Failed to get subscription", "error", err, "id", id)
 		WriteInternalError(w, "Failed to get subscription")
 		return
 	}
@@ -407,7 +407,7 @@ func (h *DispatchPoolHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to list dispatch pools")
+		slog.Error("Failed to list dispatch pools", "error", err)
 		WriteInternalError(w, "Failed to list dispatch pools")
 		return
 	}
@@ -436,7 +436,7 @@ func (h *DispatchPoolHandler) Get(w http.ResponseWriter, r *http.Request) {
 			WriteNotFound(w, "Dispatch pool not found")
 			return
 		}
-		log.Error().Err(err).Str("id", id).Msg("Failed to get dispatch pool")
+		slog.Error("Failed to get dispatch pool", "error", err, "id", id)
 		WriteInternalError(w, "Failed to get dispatch pool")
 		return
 	}
@@ -559,7 +559,7 @@ func (h *DispatchPoolHandler) Delete(w http.ResponseWriter, r *http.Request) {
 			WriteNotFound(w, "Dispatch pool not found")
 			return
 		}
-		log.Error().Err(err).Str("id", id).Msg("Failed to get dispatch pool")
+		slog.Error("Failed to get dispatch pool", "error", err, "id", id)
 		WriteInternalError(w, "Failed to get dispatch pool")
 		return
 	}
@@ -571,7 +571,7 @@ func (h *DispatchPoolHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.repo.Delete(r.Context(), id); err != nil {
-		log.Error().Err(err).Str("id", id).Msg("Failed to delete dispatch pool")
+		slog.Error("Failed to delete dispatch pool", "error", err, "id", id)
 		WriteInternalError(w, "Failed to delete dispatch pool")
 		return
 	}

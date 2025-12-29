@@ -5,7 +5,7 @@ import (
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/rs/zerolog/log"
+	"log/slog"
 
 	"go.flowcatalyst.tech/internal/platform/client"
 	"go.flowcatalyst.tech/internal/platform/client/operations"
@@ -97,7 +97,7 @@ func (h *ClientAdminHandler) Search(w http.ResponseWriter, r *http.Request) {
 
 	clients, err := h.repo.Search(r.Context(), query)
 	if err != nil {
-		log.Error().Err(err).Str("query", query).Msg("Failed to search clients")
+		slog.Error("Failed to search clients", "error", err, "query", query)
 		WriteInternalError(w, "Failed to search clients")
 		return
 	}
@@ -117,7 +117,7 @@ func (h *ClientAdminHandler) GetByIdentifier(w http.ResponseWriter, r *http.Requ
 
 	c, err := h.repo.FindByIdentifier(r.Context(), identifier)
 	if err != nil {
-		log.Error().Err(err).Str("identifier", identifier).Msg("Failed to get client by identifier")
+		slog.Error("Failed to get client by identifier", "error", err, "identifier", identifier)
 		WriteInternalError(w, "Failed to get client")
 		return
 	}
@@ -143,7 +143,7 @@ func (h *ClientAdminHandler) List(w http.ResponseWriter, r *http.Request) {
 	skip := int64((page - 1) * pageSize)
 	clients, err := h.repo.FindAll(r.Context(), skip, int64(pageSize))
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to list clients")
+		slog.Error("Failed to list clients", "error", err)
 		WriteInternalError(w, "Failed to list clients")
 		return
 	}
@@ -167,7 +167,7 @@ func (h *ClientAdminHandler) Get(w http.ResponseWriter, r *http.Request) {
 			WriteNotFound(w, "Client not found")
 			return
 		}
-		log.Error().Err(err).Str("id", id).Msg("Failed to get client")
+		slog.Error("Failed to get client", "error", err, "id", id)
 		WriteInternalError(w, "Failed to get client")
 		return
 	}
@@ -224,7 +224,7 @@ func (h *ClientAdminHandler) Delete(w http.ResponseWriter, r *http.Request) {
 			WriteNotFound(w, "Client not found")
 			return
 		}
-		log.Error().Err(err).Str("id", id).Msg("Failed to delete client")
+		slog.Error("Failed to delete client", "error", err, "id", id)
 		WriteInternalError(w, "Failed to delete client")
 		return
 	}
@@ -297,7 +297,7 @@ func (h *ClientAdminHandler) AddNote(w http.ResponseWriter, r *http.Request) {
 			WriteNotFound(w, "Client not found")
 			return
 		}
-		log.Error().Err(err).Str("id", id).Msg("Failed to add note")
+		slog.Error("Failed to add note", "error", err, "id", id)
 		WriteInternalError(w, "Failed to add note")
 		return
 	}

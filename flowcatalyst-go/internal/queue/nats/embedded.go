@@ -11,7 +11,7 @@ import (
 	"github.com/nats-io/nats-server/v2/server"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
-	"github.com/rs/zerolog/log"
+	"log/slog"
 
 	"go.flowcatalyst.tech/internal/queue"
 )
@@ -100,11 +100,7 @@ func NewEmbeddedServer(cfg *EmbeddedConfig) (*EmbeddedServer, error) {
 		return nil, fmt.Errorf("NATS server failed to start within timeout")
 	}
 
-	log.Info().
-		Str("host", cfg.Host).
-		Int("port", cfg.Port).
-		Str("dataDir", cfg.DataDir).
-		Msg("Embedded NATS server started")
+	slog.Info("Embedded NATS server started", "host", cfg.Host, "port", cfg.Port, "dataDir", cfg.DataDir)
 
 	// Connect to the server
 	url := fmt.Sprintf("nats://%s:%d", cfg.Host, cfg.Port)
@@ -113,11 +109,11 @@ func NewEmbeddedServer(cfg *EmbeddedConfig) (*EmbeddedServer, error) {
 		nats.MaxReconnects(-1),
 		nats.DisconnectErrHandler(func(_ *nats.Conn, err error) {
 			if err != nil {
-				log.Warn().Err(err).Msg("NATS disconnected")
+				slog.Warn("NATS disconnected", "error", err)
 			}
 		}),
 		nats.ReconnectHandler(func(_ *nats.Conn) {
-			log.Info().Msg("NATS reconnected")
+			slog.Info("NATS reconnected")
 		}),
 	)
 	if err != nil {
@@ -153,10 +149,7 @@ func NewEmbeddedServer(cfg *EmbeddedConfig) (*EmbeddedServer, error) {
 		stream: cfg.StreamName,
 	}
 
-	log.Info().
-		Str("stream", cfg.StreamName).
-		Strs("subjects", cfg.Subjects).
-		Msg("JetStream stream configured")
+	slog.Info("JetStream stream configured", "stream", cfg.StreamName, "subjects", cfg.Subjects)
 
 	return embedded, nil
 }
@@ -184,14 +177,14 @@ func (e *EmbeddedServer) ensureStream(ctx context.Context, cfg *EmbeddedConfig) 
 		if err != nil {
 			return fmt.Errorf("failed to create stream: %w", err)
 		}
-		log.Info().Str("stream", cfg.StreamName).Msg("Created JetStream stream")
+		slog.Info("Created JetStream stream", "stream", cfg.StreamName)
 	} else {
 		// Stream exists, update it
 		_, err = e.js.UpdateStream(ctx, streamCfg)
 		if err != nil {
 			return fmt.Errorf("failed to update stream: %w", err)
 		}
-		log.Info().Str("stream", cfg.StreamName).Msg("Updated JetStream stream")
+		slog.Info("Updated JetStream stream", "stream", cfg.StreamName)
 	}
 
 	return nil
@@ -274,7 +267,7 @@ func (e *EmbeddedServer) Port() int {
 
 // Close shuts down the embedded server
 func (e *EmbeddedServer) Close() error {
-	log.Info().Msg("Shutting down embedded NATS server")
+	slog.Info("Shutting down embedded NATS server")
 
 	if e.conn != nil {
 		e.conn.Close()
@@ -291,6 +284,6 @@ func (e *EmbeddedServer) Close() error {
 		os.Remove(lockFile)
 	}
 
-	log.Info().Msg("Embedded NATS server shut down")
+	slog.Info("Embedded NATS server shut down")
 	return nil
 }

@@ -3,11 +3,10 @@ package notification
 import (
 	"fmt"
 	"html"
+	"log/slog"
 	"net/smtp"
 	"strings"
 	"time"
-
-	"github.com/rs/zerolog/log"
 )
 
 // EmailConfig holds email notification configuration
@@ -37,11 +36,10 @@ func NewEmailService(config *EmailConfig) *EmailService {
 		svc.auth = smtp.PlainAuth("", config.Username, config.Password, config.SMTPHost)
 	}
 
-	log.Info().
-		Bool("enabled", config.Enabled).
-		Str("from", config.FromAddress).
-		Str("to", config.ToAddress).
-		Msg("EmailNotificationService initialized")
+	slog.Info("EmailNotificationService initialized",
+		"enabled", config.Enabled,
+		"from", config.FromAddress,
+		"to", config.ToAddress)
 
 	return svc
 }
@@ -56,16 +54,15 @@ func (s *EmailService) NotifyWarning(warning *Warning) {
 	htmlBody := s.buildHtmlEmail(warning)
 
 	if err := s.sendMail(subject, htmlBody); err != nil {
-		log.Error().Err(err).
-			Str("category", warning.Category).
-			Msg("Failed to send email notification for warning")
+		slog.Error("Failed to send email notification for warning",
+			"error", err,
+			"category", warning.Category)
 		return
 	}
 
-	log.Info().
-		Str("severity", warning.Severity).
-		Str("category", warning.Category).
-		Msg("Email notification sent")
+	slog.Info("Email notification sent",
+		"severity", warning.Severity,
+		"category", warning.Category)
 }
 
 // NotifyCriticalError sends an email for a critical error
@@ -94,11 +91,11 @@ func (s *EmailService) NotifyCriticalError(message, source string) {
 `, html.EscapeString(source), html.EscapeString(message))
 
 	if err := s.sendMail(subject, htmlBody); err != nil {
-		log.Error().Err(err).Msg("Failed to send critical error email")
+		slog.Error("Failed to send critical error email", "error", err)
 		return
 	}
 
-	log.Info().Str("to", s.config.ToAddress).Msg("Critical error email sent")
+	slog.Info("Critical error email sent", "to", s.config.ToAddress)
 }
 
 // NotifySystemEvent sends an email for a system event
@@ -122,11 +119,11 @@ func (s *EmailService) NotifySystemEvent(eventType, message string) {
 `, html.EscapeString(eventType), html.EscapeString(message))
 
 	if err := s.sendMail(subject, htmlBody); err != nil {
-		log.Error().Err(err).Msg("Failed to send system event email")
+		slog.Error("Failed to send system event email", "error", err)
 		return
 	}
 
-	log.Debug().Str("eventType", eventType).Msg("System event email sent")
+	slog.Debug("System event email sent", "eventType", eventType)
 }
 
 // IsEnabled returns whether email notifications are enabled

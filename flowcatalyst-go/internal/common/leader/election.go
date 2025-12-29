@@ -3,11 +3,11 @@ package leader
 
 import (
 	"context"
+	"log/slog"
 	"os"
 	"sync/atomic"
 	"time"
 
-	"github.com/rs/zerolog/log"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -105,18 +105,17 @@ func (e *LeaderElector) Start(ctx context.Context) error {
 	_, err := e.collection.Indexes().CreateOne(ctx, indexModel)
 	if err != nil {
 		// Index may already exist, log and continue
-		log.Debug().Err(err).Msg("Could not create TTL index (may already exist)")
+		slog.Debug("Could not create TTL index (may already exist)", "error", err)
 	}
 
 	// Start the election loop
 	go e.electionLoop()
 
-	log.Info().
-		Str("instanceId", e.config.InstanceID).
-		Str("lockName", e.config.LockName).
-		Dur("ttl", e.config.TTL).
-		Dur("refreshInterval", e.config.RefreshInterval).
-		Msg("Leader election started")
+	slog.Info("Leader election started",
+		"instanceId", e.config.InstanceID,
+		"lockName", e.config.LockName,
+		"ttl", e.config.TTL,
+		"refreshInterval", e.config.RefreshInterval)
 
 	return nil
 }
@@ -135,9 +134,7 @@ func (e *LeaderElector) Stop() {
 		e.Release(ctx)
 	}
 
-	log.Info().
-		Str("instanceId", e.config.InstanceID).
-		Msg("Leader election stopped")
+	slog.Info("Leader election stopped", "instanceId", e.config.InstanceID)
 }
 
 // IsPrimary returns true if this instance is currently the leader
@@ -184,10 +181,9 @@ func (e *LeaderElector) tryAcquireOrRefresh() {
 		}
 		// Refresh failed, we lost leadership
 		e.isPrimary.Store(false)
-		log.Warn().
-			Str("instanceId", e.config.InstanceID).
-			Str("lockName", e.config.LockName).
-			Msg("Lost leadership - refresh failed")
+		slog.Warn("Lost leadership - refresh failed",
+			"instanceId", e.config.InstanceID,
+			"lockName", e.config.LockName)
 		if e.onLoseLeadership != nil {
 			e.onLoseLeadership()
 		}
@@ -196,10 +192,9 @@ func (e *LeaderElector) tryAcquireOrRefresh() {
 	// Try to acquire
 	if e.tryAcquire(ctx) {
 		if !wasPrimary {
-			log.Info().
-				Str("instanceId", e.config.InstanceID).
-				Str("lockName", e.config.LockName).
-				Msg("Acquired leadership")
+			slog.Info("Acquired leadership",
+				"instanceId", e.config.InstanceID,
+				"lockName", e.config.LockName)
 			if e.onBecomeLeader != nil {
 				e.onBecomeLeader()
 			}
@@ -245,10 +240,9 @@ func (e *LeaderElector) tryAcquire(ctx context.Context) bool {
 	if err != nil {
 		if mongo.IsDuplicateKeyError(err) {
 			// Another instance beat us to it
-			log.Debug().
-				Str("instanceId", e.config.InstanceID).
-				Str("lockName", e.config.LockName).
-				Msg("Lock already held by another instance")
+			slog.Debug("Lock already held by another instance",
+				"instanceId", e.config.InstanceID,
+				"lockName", e.config.LockName)
 			return false
 		}
 
@@ -263,16 +257,16 @@ func (e *LeaderElector) tryAcquire(ctx context.Context) bool {
 			_, insertErr := e.collection.InsertOne(ctx, lock)
 			if insertErr != nil {
 				if !mongo.IsDuplicateKeyError(insertErr) {
-					log.Error().Err(insertErr).Msg("Failed to insert leader lock")
+					slog.Error("Failed to insert leader lock", "error", insertErr)
 				}
 				return false
 			}
 			return true
 		}
 
-		log.Error().Err(err).
-			Str("lockName", e.config.LockName).
-			Msg("Failed to acquire leader lock")
+		slog.Error("Failed to acquire leader lock",
+			"error", err,
+			"lockName", e.config.LockName)
 		return false
 	}
 
@@ -299,26 +293,24 @@ func (e *LeaderElector) refresh(ctx context.Context) bool {
 
 	result, err := e.collection.UpdateOne(ctx, filter, update)
 	if err != nil {
-		log.Error().Err(err).
-			Str("lockName", e.config.LockName).
-			Msg("Failed to refresh leader lock")
+		slog.Error("Failed to refresh leader lock",
+			"error", err,
+			"lockName", e.config.LockName)
 		return false
 	}
 
 	if result.MatchedCount == 0 {
 		// We don't hold the lock anymore
-		log.Debug().
-			Str("instanceId", e.config.InstanceID).
-			Str("lockName", e.config.LockName).
-			Msg("Lock no longer held by this instance")
+		slog.Debug("Lock no longer held by this instance",
+			"instanceId", e.config.InstanceID,
+			"lockName", e.config.LockName)
 		return false
 	}
 
-	log.Debug().
-		Str("instanceId", e.config.InstanceID).
-		Str("lockName", e.config.LockName).
-		Time("expiresAt", expiresAt).
-		Msg("Refreshed leader lock")
+	slog.Debug("Refreshed leader lock",
+		"instanceId", e.config.InstanceID,
+		"lockName", e.config.LockName,
+		"expiresAt", expiresAt)
 
 	return true
 }
@@ -332,17 +324,16 @@ func (e *LeaderElector) Release(ctx context.Context) {
 
 	result, err := e.collection.DeleteOne(ctx, filter)
 	if err != nil {
-		log.Error().Err(err).
-			Str("lockName", e.config.LockName).
-			Msg("Failed to release leader lock")
+		slog.Error("Failed to release leader lock",
+			"error", err,
+			"lockName", e.config.LockName)
 		return
 	}
 
 	if result.DeletedCount > 0 {
-		log.Info().
-			Str("instanceId", e.config.InstanceID).
-			Str("lockName", e.config.LockName).
-			Msg("Released leader lock")
+		slog.Info("Released leader lock",
+			"instanceId", e.config.InstanceID,
+			"lockName", e.config.LockName)
 	}
 
 	e.isPrimary.Store(false)

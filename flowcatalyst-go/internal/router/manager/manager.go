@@ -5,11 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/rs/zerolog/log"
 	"go.mongodb.org/mongo-driver/mongo"
 
 	"go.flowcatalyst.tech/internal/common/metrics"
@@ -284,9 +284,7 @@ func (m *QueueManager) Start() {
 		m.syncCtx, m.syncCancel = context.WithCancel(context.Background())
 		m.syncWg.Add(1)
 		go m.runConfigSync()
-		log.Info().
-			Dur("interval", m.syncConfig.Interval).
-			Msg("Pool config sync started")
+		slog.Info("Pool config sync started", "interval", m.syncConfig.Interval)
 	}
 
 	// Start pipeline cleanup if enabled
@@ -294,10 +292,9 @@ func (m *QueueManager) Start() {
 		m.cleanupCtx, m.cleanupCancel = context.WithCancel(context.Background())
 		m.cleanupWg.Add(1)
 		go m.runPipelineCleanup()
-		log.Info().
-			Dur("interval", m.cleanupConfig.Interval).
-			Dur("ttl", m.cleanupConfig.TTL).
-			Msg("Pipeline cleanup started")
+		slog.Info("Pipeline cleanup started",
+			"interval", m.cleanupConfig.Interval,
+			"ttl", m.cleanupConfig.TTL)
 	}
 
 	// Start visibility extender if enabled (extends SQS visibility for long-running messages)
@@ -305,11 +302,10 @@ func (m *QueueManager) Start() {
 		m.visibilityCtx, m.visibilityCancel = context.WithCancel(context.Background())
 		m.visibilityWg.Add(1)
 		go m.runVisibilityExtender()
-		log.Info().
-			Dur("interval", m.visibilityConfig.Interval).
-			Dur("threshold", m.visibilityConfig.Threshold).
-			Int32("extensionSeconds", m.visibilityConfig.ExtensionSeconds).
-			Msg("Visibility extender started")
+		slog.Info("Visibility extender started",
+			"interval", m.visibilityConfig.Interval,
+			"threshold", m.visibilityConfig.Threshold,
+			"extensionSeconds", m.visibilityConfig.ExtensionSeconds)
 	}
 
 	// Start memory leak detection if enabled (matching Java's checkForMapLeaks)
@@ -317,12 +313,10 @@ func (m *QueueManager) Start() {
 		m.leakDetectionCtx, m.leakDetectionCancel = context.WithCancel(context.Background())
 		m.leakDetectionWg.Add(1)
 		go m.runLeakDetection()
-		log.Info().
-			Dur("interval", m.leakDetectionConfig.Interval).
-			Msg("Memory leak detection started")
+		slog.Info("Memory leak detection started", "interval", m.leakDetectionConfig.Interval)
 	}
 
-	log.Info().Msg("Queue manager started")
+	slog.Info("Queue manager started")
 }
 
 // Stop stops the queue manager and all pools
@@ -359,11 +353,11 @@ func (m *QueueManager) Stop() {
 	defer m.poolsMu.Unlock()
 
 	for code, p := range m.pools {
-		log.Info().Str("pool", code).Msg("Shutting down pool")
+		slog.Info("Shutting down pool", "pool", code)
 		p.Shutdown()
 	}
 
-	log.Info().Msg("Queue manager stopped")
+	slog.Info("Queue manager stopped")
 }
 
 // GetOrCreatePool gets or creates a processing pool
@@ -388,11 +382,10 @@ func (m *QueueManager) GetOrCreatePool(cfg *PoolConfig) *pool.ProcessPool {
 	m.pools[cfg.Code] = p
 	p.Start()
 
-	log.Info().
-		Str("pool", cfg.Code).
-		Int("concurrency", cfg.Concurrency).
-		Int("queueCapacity", cfg.QueueCapacity).
-		Msg("Created new processing pool")
+	slog.Info("Created new processing pool",
+		"pool", cfg.Code,
+		"concurrency", cfg.Concurrency,
+		"queueCapacity", cfg.QueueCapacity)
 
 	return p
 }
@@ -434,7 +427,7 @@ func (m *QueueManager) RemovePool(code string) {
 		p.Drain()
 		p.Shutdown()
 		delete(m.pools, code)
-		log.Info().Str("pool", code).Msg("Removed processing pool")
+		slog.Info("Removed processing pool", "pool", code)
 	}
 }
 
@@ -457,10 +450,9 @@ func (m *QueueManager) RouteMessage(msg *DispatchMessage) bool {
 	// Check 1: Same SQS message ID (visibility timeout redelivery)
 	if msg.SQSMessageID != "" {
 		if _, exists := m.inPipelineMap.Load(msg.SQSMessageID); exists {
-			log.Debug().
-				Str("sqsMessageId", msg.SQSMessageID).
-				Str("appMessageId", msg.JobID).
-				Msg("Duplicate: visibility timeout redelivery - updating receipt handle")
+			slog.Debug("Duplicate: visibility timeout redelivery - updating receipt handle",
+				"sqsMessageId", msg.SQSMessageID,
+				"appMessageId", msg.JobID)
 
 			// Update the stored message's receipt handle with the new one
 			m.updateReceiptHandleIfPossible(msg.SQSMessageID, msg.JobID, msg)
@@ -473,17 +465,14 @@ func (m *QueueManager) RouteMessage(msg *DispatchMessage) bool {
 	if existingKey, loaded := m.appIdToPipelineKey.Load(msg.JobID); loaded {
 		existingSQSID := existingKey.(string)
 		if msg.SQSMessageID != "" && msg.SQSMessageID != existingSQSID {
-			log.Info().
-				Str("appMessageId", msg.JobID).
-				Str("existingSQSId", existingSQSID).
-				Str("newSQSId", msg.SQSMessageID).
-				Msg("Requeued duplicate detected")
+			slog.Info("Requeued duplicate detected",
+				"appMessageId", msg.JobID,
+				"existingSQSId", existingSQSID,
+				"newSQSId", msg.SQSMessageID)
 			return true // Already processing (caller should ACK to remove)
 		}
 		// Same app ID with same or empty SQS ID - already in pipeline
-		log.Debug().
-			Str("messageId", msg.JobID).
-			Msg("Duplicate message detected, skipping")
+		slog.Debug("Duplicate message detected, skipping", "messageId", msg.JobID)
 		return true // Already processing
 	}
 
@@ -576,10 +565,9 @@ func (m *QueueManager) RouteMessageBatch(ctx context.Context, messages []*Dispat
 		// Check 1: Same SQS message ID (visibility timeout redelivery)
 		if sqsMessageId != "" {
 			if _, exists := m.inPipelineMap.Load(sqsMessageId); exists {
-				log.Debug().
-					Str("sqsMessageId", sqsMessageId).
-					Str("appMessageId", appMessageId).
-					Msg("Duplicate: visibility timeout redelivery - updating receipt handle and NACK")
+				slog.Debug("Duplicate: visibility timeout redelivery - updating receipt handle and NACK",
+					"sqsMessageId", sqsMessageId,
+					"appMessageId", appMessageId)
 
 				// Update the stored message's receipt handle with the new one from the redelivered message
 				// This ensures when processing completes, ACK uses the valid (latest) receipt handle
@@ -595,11 +583,10 @@ func (m *QueueManager) RouteMessageBatch(ctx context.Context, messages []*Dispat
 		if existingKey, loaded := m.appIdToPipelineKey.Load(appMessageId); loaded {
 			existingSQSID := existingKey.(string)
 			if sqsMessageId != "" && sqsMessageId != existingSQSID {
-				log.Info().
-					Str("appMessageId", appMessageId).
-					Str("existingSQSId", existingSQSID).
-					Str("newSQSId", sqsMessageId).
-					Msg("Requeued duplicate detected - will ACK to remove")
+				slog.Info("Requeued duplicate detected - will ACK to remove",
+					"appMessageId", appMessageId,
+					"existingSQSId", existingSQSID,
+					"newSQSId", sqsMessageId)
 				requeuedDups = append(requeuedDups, msg)
 				result.Deduplicated++
 				continue
@@ -644,10 +631,9 @@ func (m *QueueManager) RouteMessageBatch(ctx context.Context, messages []*Dispat
 		if p != nil {
 			// Check rate limiting and capacity
 			if p.IsRateLimited() {
-				log.Warn().
-					Str("pool", poolCode).
-					Int("messageCount", len(poolMessages)).
-					Msg("Pool rate limited, nacking batch for pool")
+				slog.Warn("Pool rate limited, nacking batch for pool",
+					"pool", poolCode,
+					"messageCount", len(poolMessages))
 				for _, msg := range poolMessages {
 					m.inPipelineMap.Delete(msg.JobID)
 					if msg.NakFunc != nil {
@@ -658,10 +644,9 @@ func (m *QueueManager) RouteMessageBatch(ctx context.Context, messages []*Dispat
 				continue
 			}
 			if !p.HasCapacity(len(poolMessages)) {
-				log.Warn().
-					Str("pool", poolCode).
-					Int("messageCount", len(poolMessages)).
-					Msg("Pool at capacity, nacking batch for pool")
+				slog.Warn("Pool at capacity, nacking batch for pool",
+					"pool", poolCode,
+					"messageCount", len(poolMessages))
 				for _, msg := range poolMessages {
 					m.inPipelineMap.Delete(msg.JobID)
 					if msg.NakFunc != nil {
@@ -761,11 +746,10 @@ func (m *QueueManager) RouteMessageBatch(ctx context.Context, messages []*Dispat
 				// Submit to pool
 				if !p.Submit(pointer) {
 					// Submit failed - activate failure barrier for this group
-					log.Warn().
-						Str("pool", poolCode).
-						Str("messageId", msg.JobID).
-						Str("group", group.groupID).
-						Msg("Failed to submit message, activating failure barrier")
+					slog.Warn("Failed to submit message, activating failure barrier",
+						"pool", poolCode,
+						"messageId", msg.JobID,
+						"group", group.groupID)
 					m.cleanupPipelineEntry(msg.JobID, pipelineKey)
 					if msg.NakFunc != nil {
 						msg.NakFunc()
@@ -779,12 +763,11 @@ func (m *QueueManager) RouteMessageBatch(ctx context.Context, messages []*Dispat
 		}
 	}
 
-	log.Info().
-		Int("submitted", result.Submitted).
-		Int("deduplicated", result.Deduplicated).
-		Int("rejected", result.Rejected).
-		Int("failBarrier", result.FailBarrier).
-		Msg("Batch routing complete")
+	slog.Info("Batch routing complete",
+		"submitted", result.Submitted,
+		"deduplicated", result.Deduplicated,
+		"rejected", result.Rejected,
+		"failBarrier", result.FailBarrier)
 
 	return result
 }
@@ -812,43 +795,38 @@ func (m *QueueManager) updateReceiptHandleIfPossible(pipelineKey, appMessageId s
 	// Get stored message from pipeline
 	storedValue, exists := m.inPipelineMap.Load(pipelineKey)
 	if !exists {
-		log.Warn().
-			Str("pipelineKey", pipelineKey).
-			Str("appMessageId", appMessageId).
-			Msg("Cannot update receipt handle - no stored message found")
+		slog.Warn("Cannot update receipt handle - no stored message found",
+			"pipelineKey", pipelineKey,
+			"appMessageId", appMessageId)
 		return
 	}
 
 	storedMsg, ok := storedValue.(*DispatchMessage)
 	if !ok {
-		log.Warn().
-			Str("pipelineKey", pipelineKey).
-			Msg("Cannot update receipt handle - stored value is not DispatchMessage")
+		slog.Warn("Cannot update receipt handle - stored value is not DispatchMessage",
+			"pipelineKey", pipelineKey)
 		return
 	}
 
 	// Check if stored message supports receipt handle updates
 	if storedMsg.UpdateReceiptHandleFunc == nil {
-		log.Debug().
-			Str("appMessageId", appMessageId).
-			Msg("Stored message does not support receipt handle updates")
+		slog.Debug("Stored message does not support receipt handle updates",
+			"appMessageId", appMessageId)
 		return
 	}
 
 	// Check if new message can provide its receipt handle
 	if newMsg.GetReceiptHandleFunc == nil {
-		log.Warn().
-			Str("appMessageId", appMessageId).
-			Msg("New message cannot provide receipt handle for update")
+		slog.Warn("New message cannot provide receipt handle for update",
+			"appMessageId", appMessageId)
 		return
 	}
 
 	// Get the new receipt handle and update the stored message
 	newReceiptHandle := newMsg.GetReceiptHandleFunc()
 	if newReceiptHandle == "" {
-		log.Warn().
-			Str("appMessageId", appMessageId).
-			Msg("New receipt handle is empty - cannot update")
+		slog.Warn("New receipt handle is empty - cannot update",
+			"appMessageId", appMessageId)
 		return
 	}
 
@@ -861,12 +839,11 @@ func (m *QueueManager) updateReceiptHandleIfPossible(pipelineKey, appMessageId s
 	// Update the stored message's receipt handle
 	storedMsg.UpdateReceiptHandleFunc(newReceiptHandle)
 
-	log.Info().
-		Str("appMessageId", appMessageId).
-		Str("pipelineKey", pipelineKey).
-		Str("oldHandle", truncateHandle(oldReceiptHandle)).
-		Str("newHandle", truncateHandle(newReceiptHandle)).
-		Msg("Updated receipt handle for in-pipeline message due to redelivery")
+	slog.Info("Updated receipt handle for in-pipeline message due to redelivery",
+		"appMessageId", appMessageId,
+		"pipelineKey", pipelineKey,
+		"oldHandle", truncateHandle(oldReceiptHandle),
+		"newHandle", truncateHandle(newReceiptHandle))
 }
 
 // truncateHandle truncates a receipt handle for logging (first 20 chars)
@@ -891,7 +868,7 @@ func (m *QueueManager) Ack(msg *pool.MessagePointer) {
 	m.cleanupPipelineEntryFromPointer(msg)
 	if msg.AckFunc != nil {
 		if err := msg.AckFunc(); err != nil {
-			log.Error().Err(err).Str("messageId", msg.ID).Msg("Failed to ack message")
+			slog.Error("Failed to ack message", "error", err, "messageId", msg.ID)
 		}
 	}
 }
@@ -901,7 +878,7 @@ func (m *QueueManager) Nack(msg *pool.MessagePointer) {
 	m.cleanupPipelineEntryFromPointer(msg)
 	if msg.NakFunc != nil {
 		if err := msg.NakFunc(); err != nil {
-			log.Error().Err(err).Str("messageId", msg.ID).Msg("Failed to nack message")
+			slog.Error("Failed to nack message", "error", err, "messageId", msg.ID)
 		}
 	}
 }
@@ -1042,14 +1019,14 @@ func (c *Consumer) Start() {
 		defer c.wg.Done()
 		c.consume()
 	}()
-	log.Info().Msg("Consumer started")
+	slog.Info("Consumer started")
 }
 
 // Stop stops the consumer
 func (c *Consumer) Stop() {
 	c.cancel()
 	c.wg.Wait()
-	log.Info().Msg("Consumer stopped")
+	slog.Info("Consumer stopped")
 }
 
 // WireReceiptHandleCallbacks sets up receipt handle callbacks on a DispatchMessage
@@ -1072,7 +1049,7 @@ func (c *Consumer) consume() {
 		// Parse MessagePointer (Java-compatible format)
 		var pointer model.MessagePointer
 		if err := json.Unmarshal(msg.Data(), &pointer); err != nil {
-			log.Error().Err(err).Msg("Failed to unmarshal MessagePointer")
+			slog.Error("Failed to unmarshal MessagePointer", "error", err)
 			// Ack to prevent infinite retry of malformed messages
 			msg.Ack()
 			return nil
@@ -1102,10 +1079,9 @@ func (c *Consumer) consume() {
 		// Use RouteMessage for proper deduplication and pipeline tracking
 		if !c.manager.RouteMessage(&dispatchMsg) {
 			// Pool rejected - nack for redelivery
-			log.Warn().
-				Str("messageId", dispatchMsg.JobID).
-				Str("pool", dispatchMsg.DispatchPoolID).
-				Msg("Pool rejected message, nacking for redelivery")
+			slog.Warn("Pool rejected message, nacking for redelivery",
+				"messageId", dispatchMsg.JobID,
+				"pool", dispatchMsg.DispatchPoolID)
 			msg.Nak()
 		}
 
@@ -1113,7 +1089,7 @@ func (c *Consumer) consume() {
 	})
 
 	if err != nil && err != context.Canceled {
-		log.Error().Err(err).Msg("Consumer error")
+		slog.Error("Consumer error", "error", err)
 	}
 }
 
@@ -1177,14 +1153,13 @@ func (r *Router) Start() {
 		r.healthCtx, r.healthCancel = context.WithCancel(context.Background())
 		r.healthWg.Add(1)
 		go r.runConsumerHealthMonitor()
-		log.Info().
-			Dur("checkInterval", r.healthConfig.CheckInterval).
-			Dur("stallThreshold", r.healthConfig.StallThreshold).
-			Int("maxRestarts", r.healthConfig.MaxRestartAttempts).
-			Msg("Consumer health monitor started")
+		slog.Info("Consumer health monitor started",
+			"checkInterval", r.healthConfig.CheckInterval,
+			"stallThreshold", r.healthConfig.StallThreshold,
+			"maxRestarts", r.healthConfig.MaxRestartAttempts)
 	}
 
-	log.Info().Msg("Message router started")
+	slog.Info("Message router started")
 }
 
 // Stop stops the router
@@ -1203,7 +1178,7 @@ func (r *Router) Stop() {
 		consumer.Stop()
 	}
 	r.manager.Stop()
-	log.Info().Msg("Message router stopped")
+	slog.Info("Message router stopped")
 }
 
 // Manager returns the queue manager
@@ -1228,7 +1203,7 @@ func (r *Router) runConsumerHealthMonitor() {
 	for {
 		select {
 		case <-r.healthCtx.Done():
-			log.Info().Msg("Consumer health monitor stopped")
+			slog.Info("Consumer health monitor stopped")
 			return
 		case <-ticker.C:
 			r.checkConsumerHealth()
@@ -1255,7 +1230,7 @@ func (r *Router) checkConsumerHealth() {
 		if consumer.IsStalled() {
 			consumer.stalled.Store(false)
 			consumer.resetRestartCount()
-			log.Info().Msg("Consumer recovered from stalled state")
+			slog.Info("Consumer recovered from stalled state")
 		}
 		return
 	}
@@ -1267,17 +1242,15 @@ func (r *Router) checkConsumerHealth() {
 	// Record stall event metric
 	metrics.ConsumerStallEvents.Inc()
 
-	log.Warn().
-		Dur("stalledFor", stalledDuration).
-		Int("restartAttempts", restartCount).
-		Int("maxAttempts", r.healthConfig.MaxRestartAttempts).
-		Msg("Consumer appears stalled")
+	slog.Warn("Consumer appears stalled",
+		"stalledFor", stalledDuration,
+		"restartAttempts", restartCount,
+		"maxAttempts", r.healthConfig.MaxRestartAttempts)
 
 	// Check if we've exceeded max restart attempts
 	if restartCount >= r.healthConfig.MaxRestartAttempts {
-		log.Error().
-			Int("attempts", restartCount).
-			Msg("Consumer exceeded max restart attempts - requires manual intervention")
+		slog.Error("Consumer exceeded max restart attempts - requires manual intervention",
+			"attempts", restartCount)
 		return
 	}
 
@@ -1300,10 +1273,9 @@ func (r *Router) restartConsumer() {
 	// Record restart attempt metric
 	metrics.ConsumerRestarts.Inc()
 
-	log.Info().
-		Int("attempt", attempt).
-		Int("maxAttempts", r.healthConfig.MaxRestartAttempts).
-		Msg("Restarting stalled consumer")
+	slog.Info("Restarting stalled consumer",
+		"attempt", attempt,
+		"maxAttempts", r.healthConfig.MaxRestartAttempts)
 
 	// Stop old consumer
 	oldConsumer.Stop()
@@ -1321,16 +1293,14 @@ func (r *Router) restartConsumer() {
 			newConsumer.Start()
 			r.consumer = newConsumer
 
-			log.Info().
-				Int("attempt", attempt).
-				Msg("Consumer restarted successfully")
+			slog.Info("Consumer restarted successfully", "attempt", attempt)
 			return
 		}
 	}
 
 	// No factory or factory returned nil - try to restart with existing queue consumer
 	// This is a fallback that may not work if the underlying connection is broken
-	log.Warn().Msg("No consumer factory available, attempting restart with existing consumer")
+	slog.Warn("No consumer factory available, attempting restart with existing consumer")
 	newConsumer := NewConsumer(r.manager, oldConsumer.consumer)
 	newConsumer.restartCount = attempt
 	newConsumer.Start()
@@ -1349,9 +1319,10 @@ func (m *QueueManager) runConfigSync() {
 	// Do initial sync with retry logic (matching Java: 12 attempts × 5s)
 	if !m.doInitialSyncWithRetry() {
 		if m.syncConfig.FailOnInitialSyncError {
-			log.Fatal().Msg("Initial pool config sync failed after all retries - shutting down")
+			slog.Error("Initial pool config sync failed after all retries - shutting down")
+			panic("Initial pool config sync failed")
 		}
-		log.Error().Msg("Initial pool config sync failed - continuing with empty config")
+		slog.Error("Initial pool config sync failed - continuing with empty config")
 	}
 
 	ticker := time.NewTicker(m.syncConfig.Interval)
@@ -1360,7 +1331,7 @@ func (m *QueueManager) runConfigSync() {
 	for {
 		select {
 		case <-m.syncCtx.Done():
-			log.Info().Msg("Pool config sync stopped")
+			slog.Info("Pool config sync stopped")
 			return
 		case <-ticker.C:
 			m.syncPoolConfig()
@@ -1379,34 +1350,30 @@ func (m *QueueManager) doInitialSyncWithRetry() bool {
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		// Check standby status before syncing (matching Java)
 		if m.standbyChecker != nil && !m.standbyChecker.IsPrimary() {
-			log.Info().
-				Int("attempt", attempt).
-				Msg("In standby mode, waiting for primary lock before initial sync...")
+			slog.Info("In standby mode, waiting for primary lock before initial sync...",
+				"attempt", attempt)
 			time.Sleep(m.syncConfig.InitialRetryDelay)
 			continue
 		}
 
 		if m.syncPoolConfigWithResult() {
 			m.initialized = true
-			log.Info().
-				Int("attempt", attempt).
-				Msg("Initial pool config sync completed successfully")
+			slog.Info("Initial pool config sync completed successfully",
+				"attempt", attempt)
 			return true
 		}
 
 		if attempt < maxAttempts {
-			log.Warn().
-				Int("attempt", attempt).
-				Int("maxAttempts", maxAttempts).
-				Dur("retryDelay", m.syncConfig.InitialRetryDelay).
-				Msg("Initial pool config sync failed, retrying...")
+			slog.Warn("Initial pool config sync failed, retrying...",
+				"attempt", attempt,
+				"maxAttempts", maxAttempts,
+				"retryDelay", m.syncConfig.InitialRetryDelay)
 			time.Sleep(m.syncConfig.InitialRetryDelay)
 		}
 	}
 
-	log.Error().
-		Int("attempts", maxAttempts).
-		Msg("Initial pool config sync failed after all retry attempts")
+	slog.Error("Initial pool config sync failed after all retry attempts",
+		"attempts", maxAttempts)
 	return false
 }
 
@@ -1415,7 +1382,7 @@ func (m *QueueManager) syncPoolConfig() {
 	// Check standby status before syncing (matching Java)
 	if m.standbyChecker != nil && !m.standbyChecker.IsPrimary() {
 		if !m.initialized {
-			log.Info().Msg("In standby mode, waiting for primary lock...")
+			slog.Info("In standby mode, waiting for primary lock...")
 			m.initialized = true // Only log once
 		}
 		return
@@ -1431,7 +1398,7 @@ func (m *QueueManager) syncPoolConfigWithResult() bool {
 
 	configs, err := m.poolRepo.FindAllEnabled(ctx)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to fetch pool configs from database")
+		slog.Error("Failed to fetch pool configs from database", "error", err)
 		return false
 	}
 
@@ -1459,10 +1426,9 @@ func (m *QueueManager) syncPoolConfigWithResult() bool {
 			existing.UpdateRateLimit(cfg.RateLimitPerMin)
 
 			if updated {
-				log.Debug().
-					Str("pool", cfg.Code).
-					Int("concurrency", cfg.Concurrency).
-					Msg("Updated pool configuration")
+				slog.Debug("Updated pool configuration",
+					"pool", cfg.Code,
+					"concurrency", cfg.Concurrency)
 			}
 		} else {
 			// Create new pool from database config (defaults match Java)
@@ -1474,11 +1440,10 @@ func (m *QueueManager) syncPoolConfigWithResult() bool {
 			}
 
 			m.GetOrCreatePool(poolCfg)
-			log.Info().
-				Str("pool", cfg.Code).
-				Int("concurrency", poolCfg.Concurrency).
-				Int("queueCapacity", poolCfg.QueueCapacity).
-				Msg("Created pool from database config")
+			slog.Info("Created pool from database config",
+				"pool", cfg.Code,
+				"concurrency", poolCfg.Concurrency,
+				"queueCapacity", poolCfg.QueueCapacity)
 		}
 	}
 
@@ -1498,10 +1463,9 @@ func (m *QueueManager) syncPoolConfigWithResult() bool {
 	}
 
 	if len(configs) > 0 || len(poolsToRemove) > 0 {
-		log.Debug().
-			Int("activeCount", len(configs)).
-			Int("removedCount", len(poolsToRemove)).
-			Msg("Pool config sync completed")
+		slog.Debug("Pool config sync completed",
+			"activeCount", len(configs),
+			"removedCount", len(poolsToRemove))
 	}
 
 	return true
@@ -1521,14 +1485,14 @@ func (m *QueueManager) drainPool(code string) {
 	// Store in draining map for tracking
 	m.drainingPools.Store(code, p)
 
-	log.Info().Str("pool", code).Msg("Draining pool (no longer in database)")
+	slog.Info("Draining pool (no longer in database)", "pool", code)
 
 	// Async drain and shutdown
 	go func() {
 		p.Drain()
 		p.Shutdown()
 		m.drainingPools.Delete(code)
-		log.Info().Str("pool", code).Msg("Pool drained and removed")
+		slog.Info("Pool drained and removed", "pool", code)
 	}()
 }
 
@@ -1544,7 +1508,7 @@ func (m *QueueManager) runPipelineCleanup() {
 	for {
 		select {
 		case <-m.cleanupCtx.Done():
-			log.Info().Msg("Pipeline cleanup stopped")
+			slog.Info("Pipeline cleanup stopped")
 			return
 		case <-ticker.C:
 			m.cleanupStalePipelineEntries()
@@ -1591,10 +1555,9 @@ func (m *QueueManager) cleanupStalePipelineEntries() {
 	}
 
 	if cleanedCount > 0 {
-		log.Warn().
-			Int("count", cleanedCount).
-			Dur("ttl", m.cleanupConfig.TTL).
-			Msg("Cleaned up stale pipeline entries - messages may have been stuck")
+		slog.Warn("Cleaned up stale pipeline entries - messages may have been stuck",
+			"count", cleanedCount,
+			"ttl", m.cleanupConfig.TTL)
 	}
 }
 
@@ -1612,7 +1575,7 @@ func (m *QueueManager) runVisibilityExtender() {
 	for {
 		select {
 		case <-m.visibilityCtx.Done():
-			log.Info().Msg("Visibility extender stopped")
+			slog.Info("Visibility extender stopped")
 			return
 		case <-ticker.C:
 			m.extendLongRunningVisibility()
@@ -1649,27 +1612,24 @@ func (m *QueueManager) extendLongRunningVisibility() {
 
 		// Extend visibility by calling InProgress
 		if err := msg.InProgressFunc(); err != nil {
-			log.Warn().
-				Err(err).
-				Str("messageId", msg.JobID).
-				Int64("elapsedMs", elapsedMillis).
-				Msg("Failed to extend visibility for long-running message")
+			slog.Warn("Failed to extend visibility for long-running message",
+				"error", err,
+				"messageId", msg.JobID,
+				"elapsedMs", elapsedMillis)
 		} else {
 			extendedCount++
-			log.Debug().
-				Str("messageId", msg.JobID).
-				Int64("elapsedMs", elapsedMillis).
-				Msg("Extended visibility for long-running message")
+			slog.Debug("Extended visibility for long-running message",
+				"messageId", msg.JobID,
+				"elapsedMs", elapsedMillis)
 		}
 
 		return true
 	})
 
 	if extendedCount > 0 {
-		log.Info().
-			Int("count", extendedCount).
-			Dur("threshold", m.visibilityConfig.Threshold).
-			Msg("Extended visibility for long-running messages")
+		slog.Info("Extended visibility for long-running messages",
+			"count", extendedCount,
+			"threshold", m.visibilityConfig.Threshold)
 	}
 }
 
@@ -1684,7 +1644,7 @@ func (m *QueueManager) runLeakDetection() {
 	for {
 		select {
 		case <-m.leakDetectionCtx.Done():
-			log.Info().Msg("Memory leak detection stopped")
+			slog.Info("Memory leak detection stopped")
 			return
 		case <-ticker.C:
 			m.checkForMapLeaks()
@@ -1733,10 +1693,9 @@ func (m *QueueManager) checkForMapLeaks() {
 		message := fmt.Sprintf("inPipelineMap size (%d) exceeds total pool capacity (%d) - possible memory leak",
 			pipelineSize, totalCapacity)
 
-		log.Warn().
-			Int("pipelineSize", pipelineSize).
-			Int("totalCapacity", totalCapacity).
-			Msg("LEAK DETECTION: " + message)
+		slog.Warn("LEAK DETECTION: "+message,
+			"pipelineSize", pipelineSize,
+			"totalCapacity", totalCapacity)
 
 		if m.warningService != nil {
 			m.warningService.AddWarning("PIPELINE_MAP_LEAK", "WARN", message, "QueueManager")

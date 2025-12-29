@@ -3,12 +3,12 @@ package outbox
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/redis/go-redis/v9"
-	"github.com/rs/zerolog/log"
 
 	"go.flowcatalyst.tech/internal/common/leader"
 	"go.flowcatalyst.tech/internal/common/metrics"
@@ -38,6 +38,12 @@ type ProcessorConfig struct {
 	// MaxRetries is the maximum retry attempts before marking as failed
 	MaxRetries int
 
+	// RecoveryInterval is how often to run periodic recovery
+	RecoveryInterval time.Duration
+
+	// ProcessingTimeoutSeconds is how long items can be in error status before recovery
+	ProcessingTimeoutSeconds int
+
 	// LeaderElection enables distributed leader election
 	LeaderElection LeaderElectionConfig
 }
@@ -66,13 +72,15 @@ func DefaultLeaderElectionConfig() LeaderElectionConfig {
 // DefaultProcessorConfig returns sensible defaults
 func DefaultProcessorConfig() *ProcessorConfig {
 	return &ProcessorConfig{
-		Enabled:             true,
-		PollInterval:        time.Second,
-		PollBatchSize:       500,
-		APIBatchSize:        100,
-		MaxConcurrentGroups: 10,
-		MaxInFlight:         2500, // 5x PollBatchSize
-		MaxRetries:          3,
+		Enabled:                  true,
+		PollInterval:             time.Second,
+		PollBatchSize:            500,
+		APIBatchSize:             100,
+		MaxConcurrentGroups:      10,
+		MaxInFlight:              2500, // 5x PollBatchSize
+		MaxRetries:               3,
+		RecoveryInterval:         60 * time.Second,
+		ProcessingTimeoutSeconds: 300, // 5 minutes
 	}
 }
 
@@ -163,12 +171,12 @@ func (p *Processor) WithRedisLeaderElection(redisClient *redis.Client) *Processo
 	p.redisLeaderElector.OnBecomeLeader(func() {
 		p.isPrimary.Store(true)
 		metrics.OutboxLeaderElectionState.Set(1) // Leader
-		log.Info().Msg("Outbox processor became primary via Redis leader election")
+		slog.Info("Outbox processor became primary via Redis leader election")
 	})
 	p.redisLeaderElector.OnLoseLeadership(func() {
 		p.isPrimary.Store(false)
 		metrics.OutboxLeaderElectionState.Set(0) // Follower
-		log.Warn().Msg("Outbox processor lost primary status via Redis leader election")
+		slog.Warn("Outbox processor lost primary status via Redis leader election")
 	})
 
 	// Start with non-primary until we acquire leadership
@@ -188,7 +196,7 @@ func (p *Processor) Start() {
 	p.running = true
 
 	if !p.config.Enabled {
-		log.Info().Msg("Outbox processor is disabled")
+		slog.Info("Outbox processor is disabled")
 		return
 	}
 
@@ -198,12 +206,11 @@ func (p *Processor) Start() {
 	// Start leader election if configured
 	if p.redisLeaderElector != nil {
 		if err := p.redisLeaderElector.Start(p.ctx); err != nil {
-			log.Error().Err(err).Msg("Failed to start Redis leader election")
+			slog.Error("Failed to start Redis leader election", "error", err)
 		} else {
-			log.Info().
-				Bool("leaderElectionEnabled", true).
-				Str("lockName", p.config.LeaderElection.LockName).
-				Msg("Redis leader election started for outbox processor")
+			slog.Info("Redis leader election started for outbox processor",
+				"leaderElectionEnabled", true,
+				"lockName", p.config.LeaderElection.LockName)
 		}
 	}
 
@@ -215,13 +222,16 @@ func (p *Processor) Start() {
 	p.wg.Add(1)
 	go p.runPoller()
 
-	log.Info().
-		Dur("pollInterval", p.config.PollInterval).
-		Int("batchSize", p.config.PollBatchSize).
-		Int("maxConcurrentGroups", p.config.MaxConcurrentGroups).
-		Int("maxInFlight", p.config.MaxInFlight).
-		Bool("isPrimary", p.isPrimary.Load()).
-		Msg("Outbox processor started")
+	// Start the periodic recovery goroutine
+	p.wg.Add(1)
+	go p.runPeriodicRecovery()
+
+	slog.Info("Outbox processor started",
+		"pollInterval", p.config.PollInterval,
+		"batchSize", p.config.PollBatchSize,
+		"maxConcurrentGroups", p.config.MaxConcurrentGroups,
+		"maxInFlight", p.config.MaxInFlight,
+		"isPrimary", p.isPrimary.Load())
 }
 
 // Stop stops the outbox processor
@@ -238,7 +248,7 @@ func (p *Processor) Stop() {
 		p.redisLeaderElector.Stop()
 	}
 
-	log.Info().Msg("Outbox processor stopped")
+	slog.Info("Outbox processor stopped")
 }
 
 // IsPrimary returns whether this processor is the current leader
@@ -279,9 +289,9 @@ func (p *Processor) doCrashRecovery() {
 	for _, itemType := range []OutboxItemType{OutboxItemTypeEvent, OutboxItemTypeDispatchJob} {
 		stuckItems, err := p.repo.FetchStuckItems(ctx, itemType)
 		if err != nil {
-			log.Error().Err(err).
-				Str("type", string(itemType)).
-				Msg("Failed to fetch stuck items during crash recovery")
+			slog.Error("Failed to fetch stuck items during crash recovery",
+				"error", err,
+				"type", string(itemType))
 			continue
 		}
 
@@ -295,18 +305,81 @@ func (p *Processor) doCrashRecovery() {
 		}
 
 		if err := p.repo.ResetStuckItems(ctx, itemType, ids); err != nil {
-			log.Error().Err(err).
-				Str("type", string(itemType)).
-				Int("count", len(ids)).
-				Msg("Failed to reset stuck items during crash recovery")
+			slog.Error("Failed to reset stuck items during crash recovery",
+				"error", err,
+				"type", string(itemType),
+				"count", len(ids))
 			continue
 		}
 
 		metrics.OutboxRecoveredItems.WithLabelValues(string(itemType)).Add(float64(len(ids)))
-		log.Info().
-			Str("type", string(itemType)).
-			Int("count", len(ids)).
-			Msg("Reset stuck outbox items during crash recovery")
+		slog.Info("Reset stuck outbox items during crash recovery",
+			"type", string(itemType),
+			"count", len(ids))
+	}
+}
+
+// runPeriodicRecovery runs the periodic recovery loop
+func (p *Processor) runPeriodicRecovery() {
+	defer p.wg.Done()
+
+	ticker := time.NewTicker(p.config.RecoveryInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-p.ctx.Done():
+			return
+		case <-ticker.C:
+			if !p.isPrimary.Load() {
+				continue
+			}
+			p.doPeriodicRecovery()
+		}
+	}
+}
+
+// doPeriodicRecovery resets items that have been in error states for too long
+// Recovers: IN_PROGRESS, BAD_REQUEST, INTERNAL_ERROR, UNAUTHORIZED, FORBIDDEN, GATEWAY_ERROR
+func (p *Processor) doPeriodicRecovery() {
+	ctx, cancel := context.WithTimeout(p.ctx, 30*time.Second)
+	defer cancel()
+
+	for _, itemType := range []OutboxItemType{OutboxItemTypeEvent, OutboxItemTypeDispatchJob} {
+		recoverableItems, err := p.repo.FetchRecoverableItems(
+			ctx,
+			itemType,
+			p.config.ProcessingTimeoutSeconds,
+			p.config.PollBatchSize,
+		)
+		if err != nil {
+			slog.Error("Failed to fetch recoverable items during periodic recovery",
+				"error", err,
+				"type", string(itemType))
+			continue
+		}
+
+		if len(recoverableItems) == 0 {
+			continue
+		}
+
+		ids := make([]string, len(recoverableItems))
+		for i, item := range recoverableItems {
+			ids[i] = item.ID
+		}
+
+		if err := p.repo.ResetRecoverableItems(ctx, itemType, ids); err != nil {
+			slog.Error("Failed to reset recoverable items during periodic recovery",
+				"error", err,
+				"type", string(itemType),
+				"count", len(ids))
+			continue
+		}
+
+		metrics.OutboxRecoveredItems.WithLabelValues(string(itemType)).Add(float64(len(ids)))
+		slog.Info("Periodic recovery: reset items back to PENDING",
+			"type", string(itemType),
+			"count", len(ids))
 	}
 }
 
@@ -344,10 +417,9 @@ func (p *Processor) doPoll() {
 	availableSlots := p.config.MaxInFlight - int(currentInFlight)
 
 	if availableSlots < p.config.PollBatchSize {
-		log.Debug().
-			Int("availableSlots", availableSlots).
-			Int("pollBatchSize", p.config.PollBatchSize).
-			Msg("Skipping poll - insufficient in-flight capacity")
+		slog.Debug("Skipping poll - insufficient in-flight capacity",
+			"availableSlots", availableSlots,
+			"pollBatchSize", p.config.PollBatchSize)
 		return
 	}
 
@@ -371,9 +443,9 @@ func (p *Processor) pollItemType(ctx context.Context, itemType OutboxItemType) {
 	// 1. Fetch pending items (simple SELECT, no locking)
 	items, err := p.repo.FetchPending(ctx, itemType, p.config.PollBatchSize)
 	if err != nil {
-		log.Error().Err(err).
-			Str("type", string(itemType)).
-			Msg("Failed to fetch pending outbox items")
+		slog.Error("Failed to fetch pending outbox items",
+			"error", err,
+			"type", string(itemType))
 		return
 	}
 
@@ -388,10 +460,10 @@ func (p *Processor) pollItemType(ctx context.Context, itemType OutboxItemType) {
 	}
 
 	if err := p.repo.MarkAsInProgress(ctx, itemType, ids); err != nil {
-		log.Error().Err(err).
-			Str("type", string(itemType)).
-			Int("count", len(ids)).
-			Msg("Failed to mark items as in-progress")
+		slog.Error("Failed to mark items as in-progress",
+			"error", err,
+			"type", string(itemType),
+			"count", len(ids))
 		// Don't proceed - items will be picked up on next poll
 		return
 	}
@@ -400,10 +472,9 @@ func (p *Processor) pollItemType(ctx context.Context, itemType OutboxItemType) {
 	atomic.AddInt32(&p.inFlightCount, int32(len(items)))
 	metrics.OutboxInFlightItems.Set(float64(atomic.LoadInt32(&p.inFlightCount)))
 
-	log.Debug().
-		Str("type", string(itemType)).
-		Int("count", len(items)).
-		Msg("Fetched and marked outbox items as in-progress")
+	slog.Debug("Fetched and marked outbox items as in-progress",
+		"type", string(itemType),
+		"count", len(items))
 
 	// 4. Add to buffer
 	for _, item := range items {
@@ -458,10 +529,9 @@ func (p *Processor) distributeItem(item *OutboxItem) {
 		processor.tryStart()
 	default:
 		// Group queue full - this shouldn't happen with 1000 capacity
-		log.Warn().
-			Str("group", groupKey).
-			Str("itemId", item.ID).
-			Msg("Group queue full")
+		slog.Warn("Group queue full",
+			"group", groupKey,
+			"itemId", item.ID)
 	}
 }
 
@@ -470,9 +540,8 @@ func (p *Processor) drainBuffer() {
 	for {
 		select {
 		case item := <-p.buffer:
-			log.Debug().
-				Str("itemId", item.ID).
-				Msg("Draining item during shutdown - will be recovered on restart")
+			slog.Debug("Draining item during shutdown - will be recovered on restart",
+				"itemId", item.ID)
 		default:
 			return
 		}
@@ -581,10 +650,10 @@ func (m *MessageGroupProcessor) processBatch(batch []*OutboxItem) {
 	metrics.OutboxInFlightItems.Set(float64(atomic.LoadInt32(&m.processor.inFlightCount)))
 
 	if err != nil {
-		log.Error().Err(err).
-			Str("group", m.groupKey).
-			Int("batchSize", len(batch)).
-			Msg("Failed to send batch")
+		slog.Error("Failed to send batch",
+			"error", err,
+			"group", m.groupKey,
+			"batchSize", len(batch))
 		m.handleAPIError(ctx, batch, err)
 		return
 	}
@@ -592,7 +661,7 @@ func (m *MessageGroupProcessor) processBatch(batch []*OutboxItem) {
 	// Mark successful items
 	if len(result.SuccessIDs) > 0 {
 		if err := m.processor.repo.MarkWithStatus(ctx, m.itemType, result.SuccessIDs, StatusSuccess); err != nil {
-			log.Error().Err(err).Msg("Failed to mark items as completed")
+			slog.Error("Failed to mark items as completed", "error", err)
 		}
 		metrics.OutboxItemsProcessed.WithLabelValues(string(m.itemType), "completed").Add(float64(len(result.SuccessIDs)))
 	}
@@ -602,11 +671,10 @@ func (m *MessageGroupProcessor) processBatch(batch []*OutboxItem) {
 		m.handlePerItemFailures(ctx, batch, result.FailedItems)
 	}
 
-	log.Debug().
-		Str("group", m.groupKey).
-		Int("success", len(result.SuccessIDs)).
-		Int("failed", len(result.FailedItems)).
-		Msg("Batch processed")
+	slog.Debug("Batch processed",
+		"group", m.groupKey,
+		"success", len(result.SuccessIDs),
+		"failed", len(result.FailedItems))
 }
 
 // handleAPIError handles an API error for the entire batch
@@ -642,7 +710,7 @@ func (m *MessageGroupProcessor) handleAPIError(ctx context.Context, batch []*Out
 	// Schedule retries (increment retry count, reset to pending)
 	if len(retryIDs) > 0 {
 		if err := m.processor.repo.IncrementRetryCount(ctx, m.itemType, retryIDs); err != nil {
-			log.Error().Err(err).Msg("Failed to schedule retry")
+			slog.Error("Failed to schedule retry", "error", err)
 		}
 		metrics.OutboxItemsProcessed.WithLabelValues(string(m.itemType), "retried").Add(float64(len(retryIDs)))
 	}
@@ -650,14 +718,13 @@ func (m *MessageGroupProcessor) handleAPIError(ctx context.Context, batch []*Out
 	// Mark permanently failed
 	if len(failIDs) > 0 {
 		if err := m.processor.repo.MarkWithStatusAndError(ctx, m.itemType, failIDs, status, apiErr.Error()); err != nil {
-			log.Error().Err(err).Msg("Failed to mark items as failed")
+			slog.Error("Failed to mark items as failed", "error", err)
 		}
 		metrics.OutboxItemsProcessed.WithLabelValues(string(m.itemType), "failed").Add(float64(len(failIDs)))
-		log.Warn().
-			Str("group", m.groupKey).
-			Int("count", len(failIDs)).
-			Str("status", status.String()).
-			Msg("Items marked as failed")
+		slog.Warn("Items marked as failed",
+			"group", m.groupKey,
+			"count", len(failIDs),
+			"status", status.String())
 	}
 }
 
@@ -689,7 +756,7 @@ func (m *MessageGroupProcessor) handlePerItemFailures(ctx context.Context, batch
 	// Schedule retries
 	if len(retryIDs) > 0 {
 		if err := m.processor.repo.IncrementRetryCount(ctx, m.itemType, retryIDs); err != nil {
-			log.Error().Err(err).Msg("Failed to schedule retry for failed items")
+			slog.Error("Failed to schedule retry for failed items", "error", err)
 		}
 		metrics.OutboxItemsProcessed.WithLabelValues(string(m.itemType), "retried").Add(float64(len(retryIDs)))
 	}
@@ -697,9 +764,9 @@ func (m *MessageGroupProcessor) handlePerItemFailures(ctx context.Context, batch
 	// Mark failed items by status
 	for status, ids := range byStatus {
 		if err := m.processor.repo.MarkWithStatus(ctx, m.itemType, ids, status); err != nil {
-			log.Error().Err(err).
-				Str("status", status.String()).
-				Msg("Failed to mark items with status")
+			slog.Error("Failed to mark items with status",
+				"error", err,
+				"status", status.String())
 		}
 		metrics.OutboxItemsProcessed.WithLabelValues(string(m.itemType), "failed").Add(float64(len(ids)))
 	}

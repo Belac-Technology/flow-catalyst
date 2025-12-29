@@ -1,6 +1,6 @@
 package traffic
 
-import "github.com/rs/zerolog/log"
+import "log/slog"
 
 // NoOpStrategy is a no-op traffic management strategy.
 // Does nothing - maintains current behavior where both PRIMARY and STANDBY
@@ -16,13 +16,13 @@ func NewNoOpStrategy() *NoOpStrategy {
 
 // RegisterAsActive does nothing for no-op strategy
 func (s *NoOpStrategy) RegisterAsActive() error {
-	log.Debug().Msg("NoOp strategy: registerAsActive() - no action taken")
+	slog.Debug("NoOp strategy: registerAsActive() - no action taken")
 	return nil
 }
 
 // DeregisterFromActive does nothing for no-op strategy
 func (s *NoOpStrategy) DeregisterFromActive() error {
-	log.Debug().Msg("NoOp strategy: deregisterFromActive() - no action taken")
+	slog.Debug("NoOp strategy: deregisterFromActive() - no action taken")
 	return nil
 }
 

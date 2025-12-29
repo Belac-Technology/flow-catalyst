@@ -2,9 +2,9 @@ package mongo
 
 import (
 	"context"
+	"log/slog"
 	"time"
 
-	"github.com/rs/zerolog/log"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"go.mongodb.org/mongo-driver/mongo/readpref"
@@ -42,9 +42,7 @@ func Connect(ctx context.Context, cfg config.MongoDBConfig) (*Client, error) {
 		return nil, err
 	}
 
-	log.Info().
-		Str("database", cfg.Database).
-		Msg("Connected to MongoDB")
+	slog.Info("Connected to MongoDB", "database", cfg.Database)
 
 	return &Client{
 		client:   client,

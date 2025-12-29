@@ -8,11 +8,11 @@ package standby
 
 import (
 	"context"
+	"log/slog"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/rs/zerolog/log"
 
 	"go.flowcatalyst.tech/internal/router/health"
 )
@@ -153,7 +153,7 @@ func (s *Service) SetLockProvider(provider LockProvider) {
 // Start begins the standby service leader election loop
 func (s *Service) Start() error {
 	if !s.config.Enabled {
-		log.Info().Msg("Standby mode disabled - running as standalone PRIMARY")
+		slog.Info("Standby mode disabled - running as standalone PRIMARY")
 		s.mu.Lock()
 		s.currentRole = RolePrimary
 		s.mu.Unlock()
@@ -164,12 +164,11 @@ func (s *Service) Start() error {
 		return nil
 	}
 
-	log.Info().
-		Str("instanceId", s.instanceID).
-		Str("lockKey", s.config.LockKey).
-		Dur("lockTTL", s.config.LockTTL).
-		Dur("refreshInterval", s.config.RefreshInterval).
-		Msg("Starting standby service with leader election")
+	slog.Info("Starting standby service with leader election",
+		"instanceId", s.instanceID,
+		"lockKey", s.config.LockKey,
+		"lockTTL", s.config.LockTTL,
+		"refreshInterval", s.config.RefreshInterval)
 
 	// Initial lock acquisition attempt
 	s.tryAcquireOrRefresh()
@@ -183,7 +182,7 @@ func (s *Service) Start() error {
 
 // Stop stops the standby service and releases any held lock
 func (s *Service) Stop() {
-	log.Info().Str("instanceId", s.instanceID).Msg("Stopping standby service")
+	slog.Info("Stopping standby service", "instanceId", s.instanceID)
 
 	s.cancel()
 	s.wg.Wait()
@@ -199,9 +198,9 @@ func (s *Service) Stop() {
 		defer cancel()
 
 		if err := provider.Release(ctx, s.config.LockKey, s.instanceID); err != nil {
-			log.Warn().Err(err).Msg("Failed to release lock during shutdown")
+			slog.Warn("Failed to release lock during shutdown", "error", err)
 		} else {
-			log.Info().Msg("Released leader lock")
+			slog.Info("Released leader lock")
 		}
 	}
 
@@ -236,7 +235,7 @@ func (s *Service) tryAcquireOrRefresh() {
 	s.mu.RUnlock()
 
 	if provider == nil {
-		log.Warn().Msg("No lock provider configured - running as standalone")
+		slog.Warn("No lock provider configured - running as standalone")
 		s.setRole(RolePrimary)
 		return
 	}
@@ -251,7 +250,7 @@ func (s *Service) tryAcquireOrRefresh() {
 	s.mu.Unlock()
 
 	if !available {
-		log.Warn().Msg("Redis not available - maintaining current role")
+		slog.Warn("Redis not available - maintaining current role")
 		s.setWarning("Redis unavailable")
 		return
 	}
@@ -260,7 +259,7 @@ func (s *Service) tryAcquireOrRefresh() {
 		// Try to refresh our lock
 		refreshed, err := provider.Refresh(ctx, s.config.LockKey, s.instanceID, s.config.LockTTL)
 		if err != nil {
-			log.Error().Err(err).Msg("Error refreshing lock")
+			slog.Error("Error refreshing lock", "error", err)
 			s.setWarning("Lock refresh error: " + err.Error())
 			return
 		}
@@ -271,10 +270,10 @@ func (s *Service) tryAcquireOrRefresh() {
 			s.hasWarning = false
 			s.warningMessage = ""
 			s.mu.Unlock()
-			log.Debug().Msg("Lock refreshed successfully")
+			slog.Debug("Lock refreshed successfully")
 		} else {
 			// Lost the lock!
-			log.Warn().Msg("Lost leader lock - transitioning to STANDBY")
+			slog.Warn("Lost leader lock - transitioning to STANDBY")
 			s.setRole(RoleStandby)
 			s.updateLockHolder(ctx, provider)
 		}
@@ -282,14 +281,14 @@ func (s *Service) tryAcquireOrRefresh() {
 		// Try to acquire the lock
 		acquired, err := provider.TryAcquire(ctx, s.config.LockKey, s.instanceID, s.config.LockTTL)
 		if err != nil {
-			log.Error().Err(err).Msg("Error acquiring lock")
+			slog.Error("Error acquiring lock", "error", err)
 			s.setWarning("Lock acquisition error: " + err.Error())
 			s.updateLockHolder(ctx, provider)
 			return
 		}
 
 		if acquired {
-			log.Info().Msg("Acquired leader lock - transitioning to PRIMARY")
+			slog.Info("Acquired leader lock - transitioning to PRIMARY")
 			s.setRole(RolePrimary)
 			s.mu.Lock()
 			s.lastSuccessfulRefresh = time.Now()
@@ -317,11 +316,10 @@ func (s *Service) setRole(role Role) {
 		return
 	}
 
-	log.Info().
-		Str("instanceId", s.instanceID).
-		Str("oldRole", string(oldRole)).
-		Str("newRole", string(role)).
-		Msg("Role changed")
+	slog.Info("Role changed",
+		"instanceId", s.instanceID,
+		"oldRole", string(oldRole),
+		"newRole", string(role))
 
 	if s.callbacks == nil {
 		return
@@ -351,7 +349,7 @@ func (s *Service) setWarning(message string) {
 func (s *Service) updateLockHolder(ctx context.Context, provider LockProvider) {
 	holder, err := provider.GetHolder(ctx, s.config.LockKey)
 	if err != nil {
-		log.Debug().Err(err).Msg("Failed to get current lock holder")
+		slog.Debug("Failed to get current lock holder", "error", err)
 		return
 	}
 

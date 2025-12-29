@@ -13,7 +13,7 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/rs/zerolog/log"
+	"log/slog"
 )
 
 var (
@@ -42,10 +42,10 @@ func (km *KeyManager) Initialize(privateKeyPath, publicKeyPath, devKeyDir string
 	// Try to load from configured paths first
 	if privateKeyPath != "" && publicKeyPath != "" {
 		if err := km.loadFromFiles(privateKeyPath, publicKeyPath); err == nil {
-			log.Info().Str("keyId", km.keyID).Msg("Loaded JWT keys from configured paths")
+			slog.Info("Loaded JWT keys from configured paths", "keyId", km.keyID)
 			return nil
 		} else {
-			log.Warn().Err(err).Msg("Failed to load JWT keys from configured paths, will try dev keys")
+			slog.Warn("Failed to load JWT keys from configured paths, will try dev keys", "error", err)
 		}
 	}
 
@@ -55,21 +55,21 @@ func (km *KeyManager) Initialize(privateKeyPath, publicKeyPath, devKeyDir string
 		pubPath := filepath.Join(devKeyDir, "public.pem")
 
 		if err := km.loadFromFiles(privPath, pubPath); err == nil {
-			log.Info().Str("keyId", km.keyID).Str("dir", devKeyDir).Msg("Loaded JWT keys from dev directory")
+			slog.Info("Loaded JWT keys from dev directory", "keyId", km.keyID, "dir", devKeyDir)
 			return nil
 		}
 
 		// Generate new keys for dev mode
-		log.Info().Str("dir", devKeyDir).Msg("Generating new JWT keys for development")
+		slog.Info("Generating new JWT keys for development", "dir", devKeyDir)
 		if err := km.generateAndSave(devKeyDir); err != nil {
 			return fmt.Errorf("failed to generate dev keys: %w", err)
 		}
-		log.Info().Str("keyId", km.keyID).Msg("Generated new JWT keys")
+		slog.Info("Generated new JWT keys", "keyId", km.keyID)
 		return nil
 	}
 
 	// Generate ephemeral keys (not persisted)
-	log.Warn().Msg("Generating ephemeral JWT keys (will be lost on restart)")
+	slog.Warn("Generating ephemeral JWT keys (will be lost on restart)")
 	return km.generate()
 }
 

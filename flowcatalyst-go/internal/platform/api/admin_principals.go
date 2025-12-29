@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/rs/zerolog/log"
+	"log/slog"
 
 	"go.flowcatalyst.tech/internal/platform/auth/local"
 	"go.flowcatalyst.tech/internal/platform/client"
@@ -155,7 +155,7 @@ func (h *PrincipalAdminHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to list principals")
+		slog.Error("Failed to list principals", "error", err)
 		WriteInternalError(w, "Failed to list principals")
 		return
 	}
@@ -178,7 +178,7 @@ func (h *PrincipalAdminHandler) Get(w http.ResponseWriter, r *http.Request) {
 			WriteNotFound(w, "Principal not found")
 			return
 		}
-		log.Error().Err(err).Str("id", id).Msg("Failed to get principal")
+		slog.Error("Failed to get principal", "error", err, "id", id)
 		WriteInternalError(w, "Failed to get principal")
 		return
 	}
@@ -232,7 +232,7 @@ func (h *PrincipalAdminHandler) Create(w http.ResponseWriter, r *http.Request) {
 			}
 			hash, err := h.passwordService.HashPassword(req.Password)
 			if err != nil {
-				log.Error().Err(err).Msg("Failed to hash password")
+				slog.Error("Failed to hash password", "error", err)
 				WriteInternalError(w, "Failed to create user")
 				return
 			}
@@ -245,7 +245,7 @@ func (h *PrincipalAdminHandler) Create(w http.ResponseWriter, r *http.Request) {
 			WriteConflict(w, "Email already exists")
 			return
 		}
-		log.Error().Err(err).Msg("Failed to create principal")
+		slog.Error("Failed to create principal", "error", err)
 		WriteInternalError(w, "Failed to create principal")
 		return
 	}
@@ -269,7 +269,7 @@ func (h *PrincipalAdminHandler) Update(w http.ResponseWriter, r *http.Request) {
 			WriteNotFound(w, "Principal not found")
 			return
 		}
-		log.Error().Err(err).Str("id", id).Msg("Failed to get principal")
+		slog.Error("Failed to get principal", "error", err, "id", id)
 		WriteInternalError(w, "Failed to get principal")
 		return
 	}
@@ -282,7 +282,7 @@ func (h *PrincipalAdminHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.principalRepo.Update(r.Context(), p); err != nil {
-		log.Error().Err(err).Str("id", id).Msg("Failed to update principal")
+		slog.Error("Failed to update principal", "error", err, "id", id)
 		WriteInternalError(w, "Failed to update principal")
 		return
 	}
@@ -299,7 +299,7 @@ func (h *PrincipalAdminHandler) Delete(w http.ResponseWriter, r *http.Request) {
 			WriteNotFound(w, "Principal not found")
 			return
 		}
-		log.Error().Err(err).Str("id", id).Msg("Failed to delete principal")
+		slog.Error("Failed to delete principal", "error", err, "id", id)
 		WriteInternalError(w, "Failed to delete principal")
 		return
 	}
@@ -316,7 +316,7 @@ func (h *PrincipalAdminHandler) Activate(w http.ResponseWriter, r *http.Request)
 			WriteNotFound(w, "Principal not found")
 			return
 		}
-		log.Error().Err(err).Str("id", id).Msg("Failed to activate principal")
+		slog.Error("Failed to activate principal", "error", err, "id", id)
 		WriteInternalError(w, "Failed to activate principal")
 		return
 	}
@@ -334,7 +334,7 @@ func (h *PrincipalAdminHandler) Deactivate(w http.ResponseWriter, r *http.Reques
 			WriteNotFound(w, "Principal not found")
 			return
 		}
-		log.Error().Err(err).Str("id", id).Msg("Failed to deactivate principal")
+		slog.Error("Failed to deactivate principal", "error", err, "id", id)
 		WriteInternalError(w, "Failed to deactivate principal")
 		return
 	}
@@ -359,7 +359,7 @@ func (h *PrincipalAdminHandler) AssignRoles(w http.ResponseWriter, r *http.Reque
 			WriteNotFound(w, "Principal not found")
 			return
 		}
-		log.Error().Err(err).Str("id", id).Msg("Failed to get principal")
+		slog.Error("Failed to get principal", "error", err, "id", id)
 		WriteInternalError(w, "Failed to get principal")
 		return
 	}
@@ -383,7 +383,7 @@ func (h *PrincipalAdminHandler) AssignRoles(w http.ResponseWriter, r *http.Reque
 	}
 
 	if err := h.principalRepo.Update(r.Context(), p); err != nil {
-		log.Error().Err(err).Str("id", id).Msg("Failed to update principal roles")
+		slog.Error("Failed to update principal roles", "error", err, "id", id)
 		WriteInternalError(w, "Failed to assign roles")
 		return
 	}
@@ -402,7 +402,7 @@ func (h *PrincipalAdminHandler) RemoveRole(w http.ResponseWriter, r *http.Reques
 			WriteNotFound(w, "Principal not found")
 			return
 		}
-		log.Error().Err(err).Str("id", id).Msg("Failed to get principal")
+		slog.Error("Failed to get principal", "error", err, "id", id)
 		WriteInternalError(w, "Failed to get principal")
 		return
 	}
@@ -417,7 +417,7 @@ func (h *PrincipalAdminHandler) RemoveRole(w http.ResponseWriter, r *http.Reques
 	p.Roles = newRoles
 
 	if err := h.principalRepo.Update(r.Context(), p); err != nil {
-		log.Error().Err(err).Str("id", id).Msg("Failed to update principal roles")
+		slog.Error("Failed to update principal roles", "error", err, "id", id)
 		WriteInternalError(w, "Failed to remove role")
 		return
 	}
@@ -447,7 +447,7 @@ func (h *PrincipalAdminHandler) GrantClientAccess(w http.ResponseWriter, r *http
 			WriteNotFound(w, "Principal not found")
 			return
 		}
-		log.Error().Err(err).Str("id", id).Msg("Failed to get principal")
+		slog.Error("Failed to get principal", "error", err, "id", id)
 		WriteInternalError(w, "Failed to get principal")
 		return
 	}
@@ -459,7 +459,7 @@ func (h *PrincipalAdminHandler) GrantClientAccess(w http.ResponseWriter, r *http
 			WriteNotFound(w, "Client not found")
 			return
 		}
-		log.Error().Err(err).Str("clientId", req.ClientID).Msg("Failed to get client")
+		slog.Error("Failed to get client", "error", err, "clientId", req.ClientID)
 		WriteInternalError(w, "Failed to get client")
 		return
 	}
@@ -477,7 +477,7 @@ func (h *PrincipalAdminHandler) GrantClientAccess(w http.ResponseWriter, r *http
 	}
 
 	if err := h.clientRepo.GrantAccess(r.Context(), grant); err != nil {
-		log.Error().Err(err).Str("id", id).Str("clientId", req.ClientID).Msg("Failed to grant access")
+		slog.Error("Failed to grant access", "error", err, "id", id, "clientId", req.ClientID)
 		WriteInternalError(w, "Failed to grant access")
 		return
 	}
@@ -491,7 +491,7 @@ func (h *PrincipalAdminHandler) RevokeClientAccess(w http.ResponseWriter, r *htt
 	clientID := chi.URLParam(r, "clientId")
 
 	if err := h.clientRepo.RevokeAccess(r.Context(), id, clientID); err != nil {
-		log.Error().Err(err).Str("id", id).Str("clientId", clientID).Msg("Failed to revoke access")
+		slog.Error("Failed to revoke access", "error", err, "id", id, "clientId", clientID)
 		WriteInternalError(w, "Failed to revoke access")
 		return
 	}
@@ -525,7 +525,7 @@ func (h *PrincipalAdminHandler) ResetPassword(w http.ResponseWriter, r *http.Req
 			WriteNotFound(w, "Principal not found")
 			return
 		}
-		log.Error().Err(err).Str("id", id).Msg("Failed to get principal")
+		slog.Error("Failed to get principal", "error", err, "id", id)
 		WriteInternalError(w, "Failed to get principal")
 		return
 	}
@@ -537,7 +537,7 @@ func (h *PrincipalAdminHandler) ResetPassword(w http.ResponseWriter, r *http.Req
 
 	hash, err := h.passwordService.HashPassword(req.NewPassword)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to hash password")
+		slog.Error("Failed to hash password", "error", err)
 		WriteInternalError(w, "Failed to reset password")
 		return
 	}
@@ -545,7 +545,7 @@ func (h *PrincipalAdminHandler) ResetPassword(w http.ResponseWriter, r *http.Req
 	p.UserIdentity.PasswordHash = hash
 
 	if err := h.principalRepo.Update(r.Context(), p); err != nil {
-		log.Error().Err(err).Str("id", id).Msg("Failed to update principal")
+		slog.Error("Failed to update principal", "error", err, "id", id)
 		WriteInternalError(w, "Failed to reset password")
 		return
 	}

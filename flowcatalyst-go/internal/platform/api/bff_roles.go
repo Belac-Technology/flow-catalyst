@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/rs/zerolog/log"
+	"log/slog"
 
 	"go.flowcatalyst.tech/internal/platform/application"
 	"go.flowcatalyst.tech/internal/platform/common"
@@ -216,7 +216,7 @@ func (h *RoleBffHandler) List(w http.ResponseWriter, r *http.Request) {
 	// Get all roles
 	roles, err := h.roleRepo.FindAll(ctx)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to list roles")
+		slog.Error("Failed to list roles", "error", err)
 		WriteInternalError(w, "Failed to list roles")
 		return
 	}
@@ -270,7 +270,7 @@ func (h *RoleBffHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 	rol, err := h.roleRepo.FindByID(r.Context(), id)
 	if err != nil {
-		log.Error().Err(err).Str("id", id).Msg("Failed to get role")
+		slog.Error("Failed to get role", "error", err, "id", id)
 		WriteInternalError(w, "Failed to get role")
 		return
 	}
@@ -295,7 +295,7 @@ func (h *RoleBffHandler) GetApplications(w http.ResponseWriter, r *http.Request)
 
 	apps, err := h.applicationRepo.FindAll(ctx)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to get applications")
+		slog.Error("Failed to get applications", "error", err)
 		WriteInternalError(w, "Failed to get applications")
 		return
 	}
@@ -457,7 +457,7 @@ func (h *RoleBffHandler) ListPermissions(w http.ResponseWriter, r *http.Request)
 
 	permissions, err := h.permissionRepo.FindAll(ctx)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to list permissions")
+		slog.Error("Failed to list permissions", "error", err)
 		WriteInternalError(w, "Failed to list permissions")
 		return
 	}
@@ -490,7 +490,7 @@ func (h *RoleBffHandler) GetPermission(w http.ResponseWriter, r *http.Request) {
 
 	perm, err := h.permissionRepo.FindByCode(r.Context(), code)
 	if err != nil {
-		log.Error().Err(err).Str("code", code).Msg("Failed to get permission")
+		slog.Error("Failed to get permission", "error", err, "code", code)
 		WriteInternalError(w, "Failed to get permission")
 		return
 	}

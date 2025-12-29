@@ -4,11 +4,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
-
-	"github.com/rs/zerolog/log"
 )
 
 // TeamsConfig holds Teams webhook configuration
@@ -25,9 +24,8 @@ type TeamsService struct {
 
 // NewTeamsService creates a new Teams webhook notification service
 func NewTeamsService(config *TeamsConfig) *TeamsService {
-	log.Info().
-		Bool("enabled", config.Enabled).
-		Msg("TeamsWebhookNotificationService initialized")
+	slog.Info("TeamsWebhookNotificationService initialized",
+		"enabled", config.Enabled)
 
 	return &TeamsService{
 		config: config,
@@ -45,16 +43,15 @@ func (s *TeamsService) NotifyWarning(warning *Warning) {
 
 	adaptiveCard := s.buildAdaptiveCard(warning)
 	if err := s.sendToTeams(adaptiveCard); err != nil {
-		log.Error().Err(err).
-			Str("category", warning.Category).
-			Msg("Failed to send Teams notification for warning")
+		slog.Error("Failed to send Teams notification for warning",
+			"error", err,
+			"category", warning.Category)
 		return
 	}
 
-	log.Info().
-		Str("severity", warning.Severity).
-		Str("category", warning.Category).
-		Msg("Teams notification sent")
+	slog.Info("Teams notification sent",
+		"severity", warning.Severity,
+		"category", warning.Category)
 }
 
 // NotifyCriticalError sends a Teams notification for a critical error
@@ -65,11 +62,11 @@ func (s *TeamsService) NotifyCriticalError(message, source string) {
 
 	adaptiveCard := s.buildCriticalErrorCard(message, source)
 	if err := s.sendToTeams(adaptiveCard); err != nil {
-		log.Error().Err(err).Msg("Failed to send Teams critical error notification")
+		slog.Error("Failed to send Teams critical error notification", "error", err)
 		return
 	}
 
-	log.Info().Msg("Teams critical error notification sent")
+	slog.Info("Teams critical error notification sent")
 }
 
 // NotifySystemEvent sends a Teams notification for a system event
@@ -80,11 +77,11 @@ func (s *TeamsService) NotifySystemEvent(eventType, message string) {
 
 	adaptiveCard := s.buildSystemEventCard(eventType, message)
 	if err := s.sendToTeams(adaptiveCard); err != nil {
-		log.Error().Err(err).Msg("Failed to send Teams system event notification")
+		slog.Error("Failed to send Teams system event notification", "error", err)
 		return
 	}
 
-	log.Debug().Str("eventType", eventType).Msg("Teams system event notification sent")
+	slog.Debug("Teams system event notification sent", "eventType", eventType)
 }
 
 // IsEnabled returns whether Teams notifications are enabled

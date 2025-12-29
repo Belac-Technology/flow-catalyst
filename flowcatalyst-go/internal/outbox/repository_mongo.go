@@ -195,6 +195,62 @@ func (r *MongoRepository) IncrementRetryCount(ctx context.Context, itemType Outb
 	return nil
 }
 
+// FetchRecoverableItems fetches items eligible for periodic recovery.
+func (r *MongoRepository) FetchRecoverableItems(ctx context.Context, itemType OutboxItemType, timeoutSeconds int, limit int) ([]*OutboxItem, error) {
+	collection := r.getCollection(itemType)
+
+	// Calculate cutoff time
+	cutoff := time.Now().Add(-time.Duration(timeoutSeconds) * time.Second)
+
+	// Filter for error statuses older than timeout
+	filter := bson.M{
+		"status": bson.M{
+			"$in": []int{
+				int(StatusInProgress),
+				int(StatusBadRequest),
+				int(StatusInternalError),
+				int(StatusUnauthorized),
+				int(StatusForbidden),
+				int(StatusGatewayError),
+			},
+		},
+		"updatedAt": bson.M{"$lt": cutoff},
+	}
+	opts := options.Find().
+		SetSort(bson.D{{Key: "createdAt", Value: 1}}).
+		SetLimit(int64(limit))
+
+	cursor, err := collection.Find(ctx, filter, opts)
+	if err != nil {
+		return nil, fmt.Errorf("fetch recoverable items: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	return r.decodeCursor(ctx, cursor)
+}
+
+// ResetRecoverableItems resets recoverable items back to PENDING status.
+func (r *MongoRepository) ResetRecoverableItems(ctx context.Context, itemType OutboxItemType, ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+
+	collection := r.getCollection(itemType)
+	filter := bson.M{"_id": bson.M{"$in": ids}}
+	update := bson.M{
+		"$set": bson.M{
+			"status":    int(StatusPending),
+			"updatedAt": time.Now(),
+		},
+	}
+
+	_, err := collection.UpdateMany(ctx, filter, update)
+	if err != nil {
+		return fmt.Errorf("reset recoverable items: %w", err)
+	}
+	return nil
+}
+
 // CountPending returns the count of pending items.
 func (r *MongoRepository) CountPending(ctx context.Context, itemType OutboxItemType) (int64, error) {
 	collection := r.getCollection(itemType)

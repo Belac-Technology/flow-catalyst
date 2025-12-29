@@ -3,11 +3,11 @@ package pool
 
 import (
 	"context"
+	"log/slog"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/rs/zerolog/log"
 	"golang.org/x/time/rate"
 
 	"go.flowcatalyst.tech/internal/common/metrics"
@@ -180,10 +180,9 @@ func NewProcessPool(
 		// rate.Limiter uses per-second rate
 		perSecond := float64(*rateLimitPerMinute) / 60.0
 		pool.rateLimiter = rate.NewLimiter(rate.Limit(perSecond), *rateLimitPerMinute)
-		log.Info().
-			Str("pool", poolCode).
-			Int("rateLimit", *rateLimitPerMinute).
-			Msg("Created pool-level rate limiter")
+		slog.Info("Created pool-level rate limiter",
+			"pool", poolCode,
+			"rateLimit", *rateLimitPerMinute)
 	}
 
 	return pool
@@ -196,19 +195,17 @@ func (p *ProcessPool) Start() {
 		p.gaugeWg.Add(1)
 		go p.runGaugeUpdater()
 
-		log.Info().
-			Str("pool", p.poolCode).
-			Int32("concurrency", atomic.LoadInt32(&p.concurrency)).
-			Msg("Starting process pool with per-group goroutines")
+		slog.Info("Starting process pool with per-group goroutines",
+			"pool", p.poolCode,
+			"concurrency", atomic.LoadInt32(&p.concurrency))
 	}
 }
 
 // Drain stops accepting new work but finishes processing
 func (p *ProcessPool) Drain() {
-	log.Info().
-		Str("pool", p.poolCode).
-		Int32("queued", p.totalQueuedMessages.Load()).
-		Msg("Draining process pool")
+	slog.Info("Draining process pool",
+		"pool", p.poolCode,
+		"queued", p.totalQueuedMessages.Load())
 	p.running.Store(false)
 }
 
@@ -240,30 +237,27 @@ func (p *ProcessPool) Submit(msg *MessagePointer) bool {
 	if created {
 		// Start dedicated goroutine for this message group
 		p.startGroupGoroutine(groupID, queue)
-		log.Debug().
-			Str("pool", p.poolCode).
-			Str("group", groupID).
-			Msg("Created new message group with dedicated goroutine")
+		slog.Debug("Created new message group with dedicated goroutine",
+			"pool", p.poolCode,
+			"group", groupID)
 	}
 
 	// Check if group goroutine died and needs restart
 	if _, active := p.activeGroupThreads.Load(groupID); !active {
-		log.Warn().
-			Str("pool", p.poolCode).
-			Str("group", groupID).
-			Msg("Goroutine for message group appears to have died - restarting")
+		slog.Warn("Goroutine for message group appears to have died - restarting",
+			"pool", p.poolCode,
+			"group", groupID)
 		p.startGroupGoroutine(groupID, queue)
 	}
 
 	// Check total capacity
 	current := p.totalQueuedMessages.Load()
 	if int(current) >= p.queueCapacity {
-		log.Debug().
-			Str("pool", p.poolCode).
-			Int32("current", current).
-			Int("capacity", p.queueCapacity).
-			Str("messageId", msg.ID).
-			Msg("Pool at capacity, rejecting message")
+		slog.Debug("Pool at capacity, rejecting message",
+			"pool", p.poolCode,
+			"current", current,
+			"capacity", p.queueCapacity,
+			"messageId", msg.ID)
 		// Clean up batch+group tracking
 		if batchGroupKey != "" {
 			p.decrementAndCleanupBatchGroup(batchGroupKey)
@@ -297,10 +291,9 @@ func (p *ProcessPool) processMessageGroup(groupID string, queue chan *MessagePoi
 	defer p.wg.Done()
 	defer p.activeGroupThreads.Delete(groupID)
 
-	log.Debug().
-		Str("pool", p.poolCode).
-		Str("group", groupID).
-		Msg("Starting message group processor")
+	slog.Debug("Starting message group processor",
+		"pool", p.poolCode,
+		"group", groupID)
 
 	idleTimeout := time.Duration(IdleTimeoutMinutes) * time.Minute
 	timer := time.NewTimer(idleTimeout)
@@ -309,10 +302,9 @@ func (p *ProcessPool) processMessageGroup(groupID string, queue chan *MessagePoi
 	for {
 		select {
 		case <-p.ctx.Done():
-			log.Debug().
-				Str("pool", p.poolCode).
-				Str("group", groupID).
-				Msg("Message group processor shutting down")
+			slog.Debug("Message group processor shutting down",
+				"pool", p.poolCode,
+				"group", groupID)
 			return
 
 		case msg := <-queue:
@@ -335,11 +327,10 @@ func (p *ProcessPool) processMessageGroup(groupID string, queue chan *MessagePoi
 		case <-timer.C:
 			// Idle timeout - check if queue is empty and cleanup
 			if len(queue) == 0 {
-				log.Debug().
-					Str("pool", p.poolCode).
-					Str("group", groupID).
-					Int("idleMinutes", IdleTimeoutMinutes).
-					Msg("Message group idle, cleaning up")
+				slog.Debug("Message group idle, cleaning up",
+					"pool", p.poolCode,
+					"group", groupID,
+					"idleMinutes", IdleTimeoutMinutes)
 				p.messageGroupQueues.Delete(groupID)
 				return
 			}
@@ -360,11 +351,10 @@ func (p *ProcessPool) processMessage(groupID string, msg *MessagePointer) {
 
 		// Handle panic
 		if r := recover(); r != nil {
-			log.Error().
-				Str("pool", p.poolCode).
-				Str("messageId", msg.ID).
-				Interface("panic", r).
-				Msg("Panic during message processing")
+			slog.Error("Panic during message processing",
+				"pool", p.poolCode,
+				"messageId", msg.ID,
+				"panic", r)
 			p.nackSafely(msg)
 		}
 	}()
@@ -381,11 +371,10 @@ func (p *ProcessPool) processMessage(groupID string, msg *MessagePointer) {
 
 	if batchGroupKey != "" {
 		if _, failed := p.failedBatchGroups.Load(batchGroupKey); failed {
-			log.Warn().
-				Str("pool", p.poolCode).
-				Str("messageId", msg.ID).
-				Str("batchGroup", batchGroupKey).
-				Msg("Message from failed batch+group, nacking to preserve FIFO ordering")
+			slog.Warn("Message from failed batch+group, nacking to preserve FIFO ordering",
+				"pool", p.poolCode,
+				"messageId", msg.ID,
+				"batchGroup", batchGroupKey)
 			p.messageCallback.SetFastFailVisibility(msg)
 			p.nackSafely(msg)
 			p.decrementAndCleanupBatchGroup(batchGroupKey)
@@ -397,10 +386,9 @@ func (p *ProcessPool) processMessage(groupID string, msg *MessagePointer) {
 	if p.shouldRateLimit() {
 		metrics.PoolRateLimitRejections.WithLabelValues(p.poolCode).Inc()
 		metrics.PoolMessagesProcessed.WithLabelValues(p.poolCode, "rate_limited").Inc()
-		log.Warn().
-			Str("pool", p.poolCode).
-			Str("messageId", msg.ID).
-			Msg("Rate limit exceeded, nacking message")
+		slog.Warn("Rate limit exceeded, nacking message",
+			"pool", p.poolCode,
+			"messageId", msg.ID)
 		p.messageCallback.SetFastFailVisibility(msg)
 		p.nackSafely(msg)
 		if batchGroupKey != "" {
@@ -419,11 +407,10 @@ func (p *ProcessPool) processMessage(groupID string, msg *MessagePointer) {
 	}
 
 	// Process message through mediator
-	log.Info().
-		Str("pool", p.poolCode).
-		Str("messageId", msg.ID).
-		Str("target", msg.MediationTarget).
-		Msg("Processing message via mediator")
+	slog.Info("Processing message via mediator",
+		"pool", p.poolCode,
+		"messageId", msg.ID,
+		"target", msg.MediationTarget)
 
 	startTime := time.Now()
 	outcome := p.mediator.Process(msg)
@@ -432,12 +419,11 @@ func (p *ProcessPool) processMessage(groupID string, msg *MessagePointer) {
 	// Record metrics
 	metrics.PoolProcessingDuration.WithLabelValues(p.poolCode).Observe(duration.Seconds())
 
-	log.Info().
-		Str("pool", p.poolCode).
-		Str("messageId", msg.ID).
-		Str("result", string(outcome.Result)).
-		Dur("duration", duration).
-		Msg("Message processing completed")
+	slog.Info("Message processing completed",
+		"pool", p.poolCode,
+		"messageId", msg.ID,
+		"result", string(outcome.Result),
+		"duration", duration)
 
 	// Handle mediation outcome
 	p.handleMediationOutcome(msg, outcome, batchGroupKey)
@@ -466,10 +452,9 @@ func (p *ProcessPool) handleMediationOutcome(msg *MessagePointer, outcome *Media
 	switch outcome.Result {
 	case MediationResultSuccess:
 		metrics.PoolMessagesProcessed.WithLabelValues(p.poolCode, "success").Inc()
-		log.Info().
-			Str("pool", p.poolCode).
-			Str("messageId", msg.ID).
-			Msg("Message processed successfully - ACKing")
+		slog.Info("Message processed successfully - ACKing",
+			"pool", p.poolCode,
+			"messageId", msg.ID)
 		p.messageCallback.Ack(msg)
 		if batchGroupKey != "" {
 			p.decrementAndCleanupBatchGroup(batchGroupKey)
@@ -478,11 +463,10 @@ func (p *ProcessPool) handleMediationOutcome(msg *MessagePointer, outcome *Media
 	case MediationResultErrorConfig:
 		// Configuration error (4xx) - ACK to prevent infinite retries
 		metrics.PoolMessagesProcessed.WithLabelValues(p.poolCode, "failed").Inc()
-		log.Warn().
-			Str("pool", p.poolCode).
-			Str("messageId", msg.ID).
-			Int("statusCode", outcome.StatusCode).
-			Msg("Configuration error - ACKing to prevent retry")
+		slog.Warn("Configuration error - ACKing to prevent retry",
+			"pool", p.poolCode,
+			"messageId", msg.ID,
+			"statusCode", outcome.StatusCode)
 		p.messageCallback.Ack(msg)
 		if batchGroupKey != "" {
 			p.decrementAndCleanupBatchGroup(batchGroupKey)
@@ -493,17 +477,15 @@ func (p *ProcessPool) handleMediationOutcome(msg *MessagePointer, outcome *Media
 		metrics.PoolMessagesProcessed.WithLabelValues(p.poolCode, "failed").Inc()
 		if outcome.HasCustomDelay() {
 			delaySeconds := outcome.GetEffectiveDelaySeconds()
-			log.Warn().
-				Str("pool", p.poolCode).
-				Str("messageId", msg.ID).
-				Int("delaySeconds", delaySeconds).
-				Msg("Transient error with custom delay - NACKing")
+			slog.Warn("Transient error with custom delay - NACKing",
+				"pool", p.poolCode,
+				"messageId", msg.ID,
+				"delaySeconds", delaySeconds)
 			p.messageCallback.SetVisibilityDelay(msg, delaySeconds)
 		} else {
-			log.Warn().
-				Str("pool", p.poolCode).
-				Str("messageId", msg.ID).
-				Msg("Transient error - NACKing for retry")
+			slog.Warn("Transient error - NACKing for retry",
+				"pool", p.poolCode,
+				"messageId", msg.ID)
 			p.messageCallback.ResetVisibilityToDefault(msg)
 		}
 		p.messageCallback.Nack(msg)
@@ -511,20 +493,18 @@ func (p *ProcessPool) handleMediationOutcome(msg *MessagePointer, outcome *Media
 		// Mark batch+group as failed
 		if batchGroupKey != "" {
 			p.failedBatchGroups.Store(batchGroupKey, true)
-			log.Warn().
-				Str("pool", p.poolCode).
-				Str("batchGroup", batchGroupKey).
-				Msg("Batch+group marked as failed")
+			slog.Warn("Batch+group marked as failed",
+				"pool", p.poolCode,
+				"batchGroup", batchGroupKey)
 			p.decrementAndCleanupBatchGroup(batchGroupKey)
 		}
 
 	case MediationResultErrorConnection:
 		// Connection error - NACK for retry
 		metrics.PoolMessagesProcessed.WithLabelValues(p.poolCode, "failed").Inc()
-		log.Warn().
-			Str("pool", p.poolCode).
-			Str("messageId", msg.ID).
-			Msg("Connection error - NACKing for retry")
+		slog.Warn("Connection error - NACKing for retry",
+			"pool", p.poolCode,
+			"messageId", msg.ID)
 		p.messageCallback.ResetVisibilityToDefault(msg)
 		p.messageCallback.Nack(msg)
 
@@ -535,11 +515,10 @@ func (p *ProcessPool) handleMediationOutcome(msg *MessagePointer, outcome *Media
 		}
 
 	default:
-		log.Warn().
-			Str("pool", p.poolCode).
-			Str("messageId", msg.ID).
-			Str("result", string(outcome.Result)).
-			Msg("Unknown result - NACKing for retry")
+		slog.Warn("Unknown result - NACKing for retry",
+			"pool", p.poolCode,
+			"messageId", msg.ID,
+			"result", string(outcome.Result))
 		p.messageCallback.ResetVisibilityToDefault(msg)
 		p.messageCallback.Nack(msg)
 		if batchGroupKey != "" {
@@ -553,11 +532,10 @@ func (p *ProcessPool) handleMediationOutcome(msg *MessagePointer, outcome *Media
 func (p *ProcessPool) nackSafely(msg *MessagePointer) {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Error().
-				Str("pool", p.poolCode).
-				Str("messageId", msg.ID).
-				Interface("panic", r).
-				Msg("Panic during message nack")
+			slog.Error("Panic during message nack",
+				"pool", p.poolCode,
+				"messageId", msg.ID,
+				"panic", r)
 		}
 	}()
 	p.messageCallback.Nack(msg)
@@ -571,10 +549,9 @@ func (p *ProcessPool) decrementAndCleanupBatchGroup(batchGroupKey string) {
 		if remaining <= 0 {
 			p.batchGroupMessageCount.Delete(batchGroupKey)
 			p.failedBatchGroups.Delete(batchGroupKey)
-			log.Debug().
-				Str("pool", p.poolCode).
-				Str("batchGroup", batchGroupKey).
-				Msg("Batch+group fully processed, cleaned up")
+			slog.Debug("Batch+group fully processed, cleaned up",
+				"pool", p.poolCode,
+				"batchGroup", batchGroupKey)
 		}
 	}
 }
@@ -623,9 +600,9 @@ func (p *ProcessPool) Shutdown() {
 
 	select {
 	case <-done:
-		log.Info().Str("pool", p.poolCode).Msg("Pool shutdown complete")
+		slog.Info("Pool shutdown complete", "pool", p.poolCode)
 	case <-time.After(10 * time.Second):
-		log.Warn().Str("pool", p.poolCode).Msg("Pool shutdown timed out")
+		slog.Warn("Pool shutdown timed out", "pool", p.poolCode)
 	}
 }
 
@@ -679,11 +656,10 @@ func (p *ProcessPool) UpdateConcurrency(newLimit int, timeoutSeconds int) bool {
 			p.semaphore <- struct{}{}
 		}
 		atomic.StoreInt32(&p.concurrency, int32(newLimit))
-		log.Info().
-			Str("pool", p.poolCode).
-			Int("from", current).
-			Int("to", newLimit).
-			Msg("Concurrency increased")
+		slog.Info("Concurrency increased",
+			"pool", p.poolCode,
+			"from", current,
+			"to", newLimit)
 		return true
 	}
 
@@ -702,21 +678,19 @@ func (p *ProcessPool) UpdateConcurrency(newLimit int, timeoutSeconds int) bool {
 			for i := 0; i < acquired; i++ {
 				p.semaphore <- struct{}{}
 			}
-			log.Warn().
-				Str("pool", p.poolCode).
-				Int("from", current).
-				Int("to", newLimit).
-				Msg("Concurrency decrease timed out")
+			slog.Warn("Concurrency decrease timed out",
+				"pool", p.poolCode,
+				"from", current,
+				"to", newLimit)
 			return false
 		}
 	}
 
 	atomic.StoreInt32(&p.concurrency, int32(newLimit))
-	log.Info().
-		Str("pool", p.poolCode).
-		Int("from", current).
-		Int("to", newLimit).
-		Msg("Concurrency decreased")
+	slog.Info("Concurrency decreased",
+		"pool", p.poolCode,
+		"from", current,
+		"to", newLimit)
 	return true
 }
 
@@ -728,17 +702,16 @@ func (p *ProcessPool) UpdateRateLimit(newRateLimitPerMinute *int) {
 	if newRateLimitPerMinute == nil || *newRateLimitPerMinute <= 0 {
 		p.rateLimiter = nil
 		p.rateLimitPerMinute = nil
-		log.Info().Str("pool", p.poolCode).Msg("Rate limiting disabled")
+		slog.Info("Rate limiting disabled", "pool", p.poolCode)
 		return
 	}
 
 	perSecond := float64(*newRateLimitPerMinute) / 60.0
 	p.rateLimiter = rate.NewLimiter(rate.Limit(perSecond), *newRateLimitPerMinute)
 	p.rateLimitPerMinute = newRateLimitPerMinute
-	log.Info().
-		Str("pool", p.poolCode).
-		Int("rateLimit", *newRateLimitPerMinute).
-		Msg("Rate limit updated")
+	slog.Info("Rate limit updated",
+		"pool", p.poolCode,
+		"rateLimit", *newRateLimitPerMinute)
 }
 
 // runGaugeUpdater runs the scheduled gauge update loop (every 500ms like Java)

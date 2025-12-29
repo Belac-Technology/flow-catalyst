@@ -2,9 +2,9 @@ package mongo
 
 import (
 	"context"
+	"log/slog"
 	"time"
 
-	"github.com/rs/zerolog/log"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -33,14 +33,13 @@ func (i *IndexInitializer) Initialize(ctx context.Context) error {
 
 	for _, idx := range indexes {
 		if err := i.createIndex(ctx, idx); err != nil {
-			log.Warn().
-				Err(err).
-				Str("collection", idx.Collection).
-				Msg("Failed to create index (may already exist)")
+			slog.Warn("Failed to create index (may already exist)",
+				"error", err,
+				"collection", idx.Collection)
 		}
 	}
 
-	log.Info().Int("count", len(indexes)).Msg("Index initialization complete")
+	slog.Info("Index initialization complete", "count", len(indexes))
 	return nil
 }
 

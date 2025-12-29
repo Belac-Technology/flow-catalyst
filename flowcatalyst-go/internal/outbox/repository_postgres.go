@@ -192,6 +192,57 @@ func (r *PostgresRepository) IncrementRetryCount(ctx context.Context, itemType O
 	return nil
 }
 
+// FetchRecoverableItems fetches items eligible for periodic recovery.
+func (r *PostgresRepository) FetchRecoverableItems(ctx context.Context, itemType OutboxItemType, timeoutSeconds int, limit int) ([]*OutboxItem, error) {
+	table := r.GetTableName(itemType)
+
+	query := fmt.Sprintf(`
+		SELECT id, type, message_group, payload, status, retry_count, created_at, updated_at, error_message
+		FROM %s
+		WHERE status IN (%d, %d, %d, %d, %d, %d)
+		  AND updated_at < NOW() - INTERVAL '%d seconds'
+		ORDER BY created_at
+		LIMIT $1
+	`, table,
+		StatusInProgress,
+		StatusBadRequest,
+		StatusInternalError,
+		StatusUnauthorized,
+		StatusForbidden,
+		StatusGatewayError,
+		timeoutSeconds)
+
+	rows, err := r.db.QueryContext(ctx, query, limit)
+	if err != nil {
+		return nil, fmt.Errorf("fetch recoverable items: %w", err)
+	}
+	defer rows.Close()
+
+	return r.scanItems(rows)
+}
+
+// ResetRecoverableItems resets recoverable items back to PENDING status.
+func (r *PostgresRepository) ResetRecoverableItems(ctx context.Context, itemType OutboxItemType, ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+
+	table := r.GetTableName(itemType)
+	placeholders, args := r.buildPlaceholders(ids, 0)
+
+	query := fmt.Sprintf(`
+		UPDATE %s
+		SET status = %d, updated_at = NOW()
+		WHERE id IN (%s)
+	`, table, StatusPending, placeholders)
+
+	_, err := r.db.ExecContext(ctx, query, args...)
+	if err != nil {
+		return fmt.Errorf("reset recoverable items: %w", err)
+	}
+	return nil
+}
+
 // CountPending returns the count of pending items.
 func (r *PostgresRepository) CountPending(ctx context.Context, itemType OutboxItemType) (int64, error) {
 	table := r.GetTableName(itemType)

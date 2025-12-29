@@ -38,6 +38,16 @@ type Repository interface {
 	// Used when an item fails but should be retried.
 	IncrementRetryCount(ctx context.Context, itemType OutboxItemType, ids []string) error
 
+	// FetchRecoverableItems fetches items eligible for periodic recovery.
+	// Returns items with error statuses (IN_PROGRESS, BAD_REQUEST, INTERNAL_ERROR,
+	// UNAUTHORIZED, FORBIDDEN, GATEWAY_ERROR) that have been in that status
+	// longer than the specified timeout.
+	FetchRecoverableItems(ctx context.Context, itemType OutboxItemType, timeoutSeconds int, limit int) ([]*OutboxItem, error)
+
+	// ResetRecoverableItems resets recoverable items back to PENDING status for retry.
+	// Does NOT reset retry count - items will be retried with existing count.
+	ResetRecoverableItems(ctx context.Context, itemType OutboxItemType, ids []string) error
+
 	// CountPending returns the count of pending items (for metrics).
 	CountPending(ctx context.Context, itemType OutboxItemType) (int64, error)
 

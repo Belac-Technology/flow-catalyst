@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/rs/zerolog/log"
+	"log/slog"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -194,7 +194,7 @@ func (h *DispatchJobBffHandler) Search(w http.ResponseWriter, r *http.Request) {
 	// Count total
 	totalCount, err := h.dispatchJobsRead.CountDocuments(ctx, filter)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to count dispatch jobs")
+		slog.Error("Failed to count dispatch jobs", "error", err)
 		WriteInternalError(w, "Failed to search dispatch jobs")
 		return
 	}
@@ -207,7 +207,7 @@ func (h *DispatchJobBffHandler) Search(w http.ResponseWriter, r *http.Request) {
 
 	cursor, err := h.dispatchJobsRead.Find(ctx, filter, opts)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to find dispatch jobs")
+		slog.Error("Failed to find dispatch jobs", "error", err)
 		WriteInternalError(w, "Failed to search dispatch jobs")
 		return
 	}
@@ -333,7 +333,7 @@ func (h *DispatchJobBffHandler) Get(w http.ResponseWriter, r *http.Request) {
 			WriteNotFound(w, "Dispatch job not found")
 			return
 		}
-		log.Error().Err(err).Str("id", id).Msg("Failed to get dispatch job")
+		slog.Error("Failed to get dispatch job", "error", err, "id", id)
 		WriteInternalError(w, "Failed to get dispatch job")
 		return
 	}

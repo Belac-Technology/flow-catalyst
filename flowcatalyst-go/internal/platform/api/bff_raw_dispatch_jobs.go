@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/rs/zerolog/log"
+	"log/slog"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -114,7 +114,7 @@ func (h *RawDispatchJobBffHandler) List(w http.ResponseWriter, r *http.Request) 
 	// Count total
 	totalCount, err := h.dispatchJobs.CountDocuments(ctx, bson.M{})
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to count raw dispatch jobs")
+		slog.Error("Failed to count raw dispatch jobs", "error", err)
 		WriteInternalError(w, "Failed to list raw dispatch jobs")
 		return
 	}
@@ -127,7 +127,7 @@ func (h *RawDispatchJobBffHandler) List(w http.ResponseWriter, r *http.Request) 
 
 	cursor, err := h.dispatchJobs.Find(ctx, bson.M{}, opts)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to find raw dispatch jobs")
+		slog.Error("Failed to find raw dispatch jobs", "error", err)
 		WriteInternalError(w, "Failed to list raw dispatch jobs")
 		return
 	}
@@ -185,7 +185,7 @@ func (h *RawDispatchJobBffHandler) Get(w http.ResponseWriter, r *http.Request) {
 			WriteNotFound(w, "Dispatch job not found: "+id)
 			return
 		}
-		log.Error().Err(err).Str("id", id).Msg("Failed to get raw dispatch job")
+		slog.Error("Failed to get raw dispatch job", "error", err, "id", id)
 		WriteInternalError(w, "Failed to get raw dispatch job")
 		return
 	}

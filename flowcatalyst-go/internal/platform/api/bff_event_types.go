@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/rs/zerolog/log"
+	"log/slog"
 
 	"go.flowcatalyst.tech/internal/platform/common"
 	"go.flowcatalyst.tech/internal/platform/events"
@@ -200,7 +200,7 @@ func (h *EventTypeBffHandler) List(w http.ResponseWriter, r *http.Request) {
 	// Get all event types
 	eventTypes, err := h.repo.FindAll(ctx)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to list event types")
+		slog.Error("Failed to list event types", "error", err)
 		WriteInternalError(w, "Failed to list event types")
 		return
 	}
@@ -274,7 +274,7 @@ func (h *EventTypeBffHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 	et, err := h.repo.FindByID(r.Context(), id)
 	if err != nil {
-		log.Error().Err(err).Str("id", id).Msg("Failed to get event type")
+		slog.Error("Failed to get event type", "error", err, "id", id)
 		WriteInternalError(w, "Failed to get event type")
 		return
 	}
@@ -299,7 +299,7 @@ func (h *EventTypeBffHandler) GetApplications(w http.ResponseWriter, r *http.Req
 
 	eventTypes, err := h.repo.FindAll(ctx)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to get applications")
+		slog.Error("Failed to get applications", "error", err)
 		WriteInternalError(w, "Failed to get applications")
 		return
 	}
@@ -336,7 +336,7 @@ func (h *EventTypeBffHandler) GetSubdomains(w http.ResponseWriter, r *http.Reque
 
 	eventTypes, err := h.repo.FindAll(ctx)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to get subdomains")
+		slog.Error("Failed to get subdomains", "error", err)
 		WriteInternalError(w, "Failed to get subdomains")
 		return
 	}
@@ -384,7 +384,7 @@ func (h *EventTypeBffHandler) GetAggregates(w http.ResponseWriter, r *http.Reque
 
 	eventTypes, err := h.repo.FindAll(ctx)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to get aggregates")
+		slog.Error("Failed to get aggregates", "error", err)
 		WriteInternalError(w, "Failed to get aggregates")
 		return
 	}

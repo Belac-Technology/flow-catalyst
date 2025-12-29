@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/rs/zerolog/log"
+	"log/slog"
 )
 
 var (
@@ -141,10 +141,7 @@ func (a *OIDCAdapter) ExchangeCode(ctx context.Context, code, redirectURI, codeV
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		log.Error().
-			Int("status", resp.StatusCode).
-			Str("body", string(body)).
-			Msg("Token exchange failed")
+		slog.Error("Token exchange failed", "status", resp.StatusCode, "body", string(body))
 		return nil, fmt.Errorf("%w: status %d", ErrExchangeFailed, resp.StatusCode)
 	}
 
@@ -438,7 +435,7 @@ func (a *OIDCAdapter) refreshJWKS(ctx context.Context) error {
 		// Parse the JWK into a public key
 		pubKey, err := parseJWK(key)
 		if err != nil {
-			log.Warn().Str("kid", kid).Err(err).Msg("Failed to parse JWK")
+			slog.Warn("Failed to parse JWK", "kid", kid, "error", err)
 			continue
 		}
 		newJWKS[kid] = pubKey

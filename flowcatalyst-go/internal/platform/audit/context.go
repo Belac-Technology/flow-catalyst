@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/rs/zerolog/log"
+	"log/slog"
 
 	"go.flowcatalyst.tech/internal/common/tsid"
 )
@@ -33,7 +33,7 @@ func (s *Service) Log(ctx context.Context, entityType, entityID, operation, prin
 	if operationData != nil {
 		data, err := json.Marshal(operationData)
 		if err != nil {
-			log.Warn().Err(err).Msg("Failed to serialize operation data for audit log")
+			slog.Warn("Failed to serialize operation data for audit log", "error", err)
 		} else {
 			operationJSON = string(data)
 		}
@@ -50,11 +50,7 @@ func (s *Service) Log(ctx context.Context, entityType, entityID, operation, prin
 	}
 
 	if err := s.repo.Insert(ctx, auditLog); err != nil {
-		log.Error().Err(err).
-			Str("entityType", entityType).
-			Str("entityId", entityID).
-			Str("operation", operation).
-			Msg("Failed to insert audit log")
+		slog.Error("Failed to insert audit log", "error", err, "entityType", entityType, "entityId", entityID, "operation", operation)
 	}
 }
 

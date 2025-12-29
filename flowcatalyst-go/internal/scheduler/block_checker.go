@@ -4,7 +4,7 @@ package scheduler
 import (
 	"context"
 
-	"github.com/rs/zerolog/log"
+	"log/slog"
 	"go.flowcatalyst.tech/internal/platform/dispatchjob"
 )
 
@@ -30,17 +30,13 @@ func (c *BlockChecker) IsGroupBlocked(ctx context.Context, messageGroup string) 
 
 	blocked, err := c.jobRepo.HasErrorJobsInGroup(ctx, messageGroup)
 	if err != nil {
-		log.Error().Err(err).
-			Str("messageGroup", messageGroup).
-			Msg("Failed to check if group is blocked")
+		slog.Error("Failed to check if group is blocked", "error", err, "messageGroup", messageGroup)
 		// On error, don't block - fail open to avoid stopping all dispatches
 		return false
 	}
 
 	if blocked {
-		log.Debug().
-			Str("messageGroup", messageGroup).
-			Msg("Message group is blocked due to ERROR jobs")
+		slog.Debug("Message group is blocked due to ERROR jobs", "messageGroup", messageGroup)
 	}
 
 	return blocked
@@ -72,18 +68,13 @@ func (c *BlockChecker) GetBlockedGroups(ctx context.Context, groups []string) ma
 
 	blocked, err := c.jobRepo.GetBlockedMessageGroups(ctx, groupList)
 	if err != nil {
-		log.Error().Err(err).
-			Int("groupCount", len(groupList)).
-			Msg("Failed to get blocked message groups")
+		slog.Error("Failed to get blocked message groups", "error", err, "groupCount", len(groupList))
 		// On error, return empty map - fail open
 		return map[string]bool{}
 	}
 
 	if len(blocked) > 0 {
-		log.Debug().
-			Int("blockedCount", len(blocked)).
-			Int("totalGroups", len(groupList)).
-			Msg("Found blocked message groups")
+		slog.Debug("Found blocked message groups", "blockedCount", len(blocked), "totalGroups", len(groupList))
 	}
 
 	return blocked
@@ -136,10 +127,7 @@ func (c *BlockChecker) FilterBlockedJobs(ctx context.Context, jobs []*dispatchjo
 		// 1. Job has BLOCK_ON_ERROR mode AND
 		// 2. Its message group is in the blocked list
 		if job.Mode == dispatchjob.DispatchModeBlockOnError && blockedGroups[job.MessageGroup] {
-			log.Debug().
-				Str("jobId", job.ID).
-				Str("messageGroup", job.MessageGroup).
-				Msg("Job blocked due to ERROR jobs in group")
+			slog.Debug("Job blocked due to ERROR jobs in group", "jobId", job.ID, "messageGroup", job.MessageGroup)
 			continue
 		}
 		allowed = append(allowed, job)
@@ -147,11 +135,7 @@ func (c *BlockChecker) FilterBlockedJobs(ctx context.Context, jobs []*dispatchjo
 
 	blockedCount := len(jobs) - len(allowed)
 	if blockedCount > 0 {
-		log.Info().
-			Int("blockedJobs", blockedCount).
-			Int("allowedJobs", len(allowed)).
-			Int("blockedGroups", len(blockedGroups)).
-			Msg("Filtered blocked jobs due to BLOCK_ON_ERROR mode")
+		slog.Info("Filtered blocked jobs due to BLOCK_ON_ERROR mode", "blockedJobs", blockedCount, "allowedJobs", len(allowed), "blockedGroups", len(blockedGroups))
 	}
 
 	return allowed, blockedGroups

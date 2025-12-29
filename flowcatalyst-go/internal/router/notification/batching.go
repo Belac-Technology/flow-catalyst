@@ -2,12 +2,12 @@ package notification
 
 import (
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/rs/zerolog/log"
 )
 
 // BatchingConfig holds batching configuration
@@ -43,10 +43,9 @@ func NewBatchingService(delegates []Service, config *BatchingConfig) *BatchingSe
 		config = DefaultBatchingConfig()
 	}
 
-	log.Info().
-		Int("delegates", len(delegates)).
-		Str("minSeverity", config.MinSeverity).
-		Msg("BatchingNotificationService initialized")
+	slog.Info("BatchingNotificationService initialized",
+		"delegates", len(delegates),
+		"minSeverity", config.MinSeverity)
 
 	return &BatchingService{
 		delegates:      delegates,
@@ -126,7 +125,7 @@ func (s *BatchingService) SendBatch() {
 	s.mu.Lock()
 	if len(s.warningBatch) == 0 {
 		s.mu.Unlock()
-		log.Debug().Msg("No warnings to send in this batch period")
+		slog.Debug("No warnings to send in this batch period")
 		return
 	}
 
@@ -142,11 +141,10 @@ func (s *BatchingService) SendBatch() {
 	s.batchStartTime = time.Now()
 	s.mu.Unlock()
 
-	log.Info().
-		Int("count", len(warnings)).
-		Time("startTime", batchStartTime).
-		Time("endTime", batchEndTime).
-		Msg("Sending batched notification")
+	slog.Info("Sending batched notification",
+		"count", len(warnings),
+		"startTime", batchStartTime,
+		"endTime", batchEndTime)
 
 	// Group warnings by severity
 	warningsBySeverity := make(map[string][]*Warning)
@@ -157,7 +155,7 @@ func (s *BatchingService) SendBatch() {
 	// Send summary to all delegates
 	for _, delegate := range s.delegates {
 		if err := s.sendSummaryToDelegate(delegate, warnings, warningsBySeverity, batchStartTime, batchEndTime); err != nil {
-			log.Error().Err(err).Msg("Failed to send notification via delegate")
+			slog.Error("Failed to send notification via delegate", "error", err)
 		}
 	}
 }

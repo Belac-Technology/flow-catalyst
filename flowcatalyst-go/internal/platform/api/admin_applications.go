@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/rs/zerolog/log"
+	"log/slog"
 
 	"go.flowcatalyst.tech/internal/common/tsid"
 	"go.flowcatalyst.tech/internal/platform/application"
@@ -106,7 +106,7 @@ func (h *ApplicationAdminHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	apps, err := h.repo.FindAll(ctx)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to list applications")
+		slog.Error("Failed to list applications", "error", err)
 		WriteInternalError(w, "Failed to list applications")
 		return
 	}
@@ -144,7 +144,7 @@ func (h *ApplicationAdminHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 	app, err := h.repo.FindByID(ctx, id)
 	if err != nil {
-		log.Error().Err(err).Str("id", id).Msg("Failed to get application")
+		slog.Error("Failed to get application", "error", err, "id", id)
 		WriteInternalError(w, "Failed to get application")
 		return
 	}
@@ -163,7 +163,7 @@ func (h *ApplicationAdminHandler) GetByCode(w http.ResponseWriter, r *http.Reque
 
 	app, err := h.repo.FindByCode(ctx, code)
 	if err != nil {
-		log.Error().Err(err).Str("code", code).Msg("Failed to get application")
+		slog.Error("Failed to get application", "error", err, "code", code)
 		WriteInternalError(w, "Failed to get application")
 		return
 	}
@@ -198,7 +198,7 @@ func (h *ApplicationAdminHandler) Create(w http.ResponseWriter, r *http.Request)
 	// Check for duplicate code
 	existing, err := h.repo.FindByCode(ctx, req.Code)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to check for existing application")
+		slog.Error("Failed to check for existing application", "error", err)
 		WriteInternalError(w, "Failed to create application")
 		return
 	}
@@ -231,16 +231,12 @@ func (h *ApplicationAdminHandler) Create(w http.ResponseWriter, r *http.Request)
 	}
 
 	if err := h.repo.Insert(ctx, app); err != nil {
-		log.Error().Err(err).Msg("Failed to create application")
+		slog.Error("Failed to create application", "error", err)
 		WriteInternalError(w, "Failed to create application")
 		return
 	}
 
-	log.Info().
-		Str("id", app.ID).
-		Str("code", app.Code).
-		Str("name", app.Name).
-		Msg("Application created")
+	slog.Info("Application created", "id", app.ID, "code", app.Code, "name", app.Name)
 
 	WriteJSON(w, http.StatusCreated, toApplicationResponse(app))
 }
@@ -252,7 +248,7 @@ func (h *ApplicationAdminHandler) Update(w http.ResponseWriter, r *http.Request)
 
 	app, err := h.repo.FindByID(ctx, id)
 	if err != nil {
-		log.Error().Err(err).Str("id", id).Msg("Failed to get application")
+		slog.Error("Failed to get application", "error", err, "id", id)
 		WriteInternalError(w, "Failed to get application")
 		return
 	}
@@ -282,15 +278,12 @@ func (h *ApplicationAdminHandler) Update(w http.ResponseWriter, r *http.Request)
 	}
 
 	if err := h.repo.Update(ctx, app); err != nil {
-		log.Error().Err(err).Str("id", id).Msg("Failed to update application")
+		slog.Error("Failed to update application", "error", err, "id", id)
 		WriteInternalError(w, "Failed to update application")
 		return
 	}
 
-	log.Info().
-		Str("id", app.ID).
-		Str("code", app.Code).
-		Msg("Application updated")
+	slog.Info("Application updated", "id", app.ID, "code", app.Code)
 
 	WriteJSON(w, http.StatusOK, toApplicationResponse(app))
 }
@@ -302,7 +295,7 @@ func (h *ApplicationAdminHandler) Activate(w http.ResponseWriter, r *http.Reques
 
 	app, err := h.repo.FindByID(ctx, id)
 	if err != nil {
-		log.Error().Err(err).Str("id", id).Msg("Failed to get application")
+		slog.Error("Failed to get application", "error", err, "id", id)
 		WriteInternalError(w, "Failed to get application")
 		return
 	}
@@ -318,15 +311,12 @@ func (h *ApplicationAdminHandler) Activate(w http.ResponseWriter, r *http.Reques
 
 	app.Active = true
 	if err := h.repo.Update(ctx, app); err != nil {
-		log.Error().Err(err).Str("id", id).Msg("Failed to activate application")
+		slog.Error("Failed to activate application", "error", err, "id", id)
 		WriteInternalError(w, "Failed to activate application")
 		return
 	}
 
-	log.Info().
-		Str("id", app.ID).
-		Str("code", app.Code).
-		Msg("Application activated")
+	slog.Info("Application activated", "id", app.ID, "code", app.Code)
 
 	WriteJSON(w, http.StatusOK, map[string]string{"message": "Application activated"})
 }
@@ -338,7 +328,7 @@ func (h *ApplicationAdminHandler) Deactivate(w http.ResponseWriter, r *http.Requ
 
 	app, err := h.repo.FindByID(ctx, id)
 	if err != nil {
-		log.Error().Err(err).Str("id", id).Msg("Failed to get application")
+		slog.Error("Failed to get application", "error", err, "id", id)
 		WriteInternalError(w, "Failed to get application")
 		return
 	}
@@ -354,15 +344,12 @@ func (h *ApplicationAdminHandler) Deactivate(w http.ResponseWriter, r *http.Requ
 
 	app.Active = false
 	if err := h.repo.Update(ctx, app); err != nil {
-		log.Error().Err(err).Str("id", id).Msg("Failed to deactivate application")
+		slog.Error("Failed to deactivate application", "error", err, "id", id)
 		WriteInternalError(w, "Failed to deactivate application")
 		return
 	}
 
-	log.Info().
-		Str("id", app.ID).
-		Str("code", app.Code).
-		Msg("Application deactivated")
+	slog.Info("Application deactivated", "id", app.ID, "code", app.Code)
 
 	WriteJSON(w, http.StatusOK, map[string]string{"message": "Application deactivated"})
 }
@@ -374,7 +361,7 @@ func (h *ApplicationAdminHandler) Delete(w http.ResponseWriter, r *http.Request)
 
 	app, err := h.repo.FindByID(ctx, id)
 	if err != nil {
-		log.Error().Err(err).Str("id", id).Msg("Failed to get application")
+		slog.Error("Failed to get application", "error", err, "id", id)
 		WriteInternalError(w, "Failed to get application")
 		return
 	}
@@ -390,12 +377,12 @@ func (h *ApplicationAdminHandler) Delete(w http.ResponseWriter, r *http.Request)
 	}
 
 	if err := h.repo.Delete(ctx, id); err != nil {
-		log.Error().Err(err).Str("id", id).Msg("Failed to delete application")
+		slog.Error("Failed to delete application", "error", err, "id", id)
 		WriteInternalError(w, "Failed to delete application")
 		return
 	}
 
-	log.Info().Str("id", id).Msg("Application deleted")
+	slog.Info("Application deleted", "id", id)
 
 	w.WriteHeader(http.StatusNoContent)
 }

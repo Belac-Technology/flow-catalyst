@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rs/zerolog/log"
+	"log/slog"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -159,7 +159,7 @@ func (s *Scheduler) Start() {
 	s.runningMu.Lock()
 	if s.running {
 		s.runningMu.Unlock()
-		log.Warn().Msg("Scheduler already running")
+		slog.Warn("Scheduler already running")
 		return
 	}
 	s.running = true
@@ -168,12 +168,9 @@ func (s *Scheduler) Start() {
 	// Start leader election if enabled
 	if s.leaderElector != nil {
 		if err := s.leaderElector.Start(s.ctx); err != nil {
-			log.Error().Err(err).Msg("Failed to start leader election")
+			slog.Error("Failed to start leader election", "error", err)
 		} else {
-			log.Info().
-				Str("instanceId", s.leaderElector.InstanceID()).
-				Bool("leaderElection", true).
-				Msg("Leader election enabled for scheduler")
+			slog.Info("Leader election enabled for scheduler", "instanceId", s.leaderElector.InstanceID(), "leaderElection", true)
 		}
 	}
 
@@ -185,11 +182,7 @@ func (s *Scheduler) Start() {
 	s.wg.Add(1)
 	go s.staleRecoveryLoop()
 
-	log.Info().
-		Dur("pollInterval", s.config.PollInterval).
-		Int("batchSize", s.config.BatchSize).
-		Bool("leaderElection", s.leaderElector != nil).
-		Msg("Dispatch scheduler started")
+	slog.Info("Dispatch scheduler started", "pollInterval", s.config.PollInterval, "batchSize", s.config.BatchSize, "leaderElection", s.leaderElector != nil)
 }
 
 // Stop stops the scheduler
@@ -202,7 +195,7 @@ func (s *Scheduler) Stop() {
 	s.running = false
 	s.runningMu.Unlock()
 
-	log.Info().Msg("Stopping dispatch scheduler")
+	slog.Info("Stopping dispatch scheduler")
 
 	s.cancel()
 	s.wg.Wait()
@@ -212,7 +205,7 @@ func (s *Scheduler) Stop() {
 		s.leaderElector.Stop()
 	}
 
-	log.Info().Msg("Dispatch scheduler stopped")
+	slog.Info("Dispatch scheduler stopped")
 }
 
 // IsRunning returns true if the scheduler is running
@@ -255,7 +248,7 @@ func (s *Scheduler) pollLoop() {
 func (s *Scheduler) pollAndDispatch() {
 	// Skip if not the leader
 	if !s.IsPrimary() {
-		log.Debug().Msg("Skipping poll - not the leader")
+		slog.Debug("Skipping poll - not the leader")
 		return
 	}
 
@@ -278,7 +271,7 @@ func (s *Scheduler) pollAndDispatch() {
 
 	cursor, err := s.collection.Find(ctx, filter, opts)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to poll for pending jobs")
+		slog.Error("Failed to poll for pending jobs", "error", err)
 		return
 	}
 	defer cursor.Close(ctx)
@@ -289,7 +282,7 @@ func (s *Scheduler) pollAndDispatch() {
 	for cursor.Next(ctx) {
 		var job DispatchJob
 		if err := cursor.Decode(&job); err != nil {
-			log.Error().Err(err).Msg("Failed to decode dispatch job")
+			slog.Error("Failed to decode dispatch job", "error", err)
 			continue
 		}
 
@@ -302,7 +295,7 @@ func (s *Scheduler) pollAndDispatch() {
 	}
 
 	if err := cursor.Err(); err != nil {
-		log.Error().Err(err).Msg("Cursor error while polling jobs")
+		slog.Error("Cursor error while polling jobs", "error", err)
 		return
 	}
 
@@ -318,10 +311,7 @@ func (s *Scheduler) pollAndDispatch() {
 	// Record pending jobs metric
 	metrics.SchedulerJobsPending.Set(float64(totalJobs))
 
-	log.Debug().
-		Int("jobCount", totalJobs).
-		Int("poolCount", len(jobsByPool)).
-		Msg("Polled pending dispatch jobs")
+	slog.Debug("Polled pending dispatch jobs", "jobCount", totalJobs, "poolCount", len(jobsByPool))
 
 	// Process pools concurrently with limit
 	sem := make(chan struct{}, s.config.MaxConcurrentPools)
@@ -370,32 +360,20 @@ func (s *Scheduler) dispatchPoolJobs(ctx context.Context, poolCode string, jobs 
 	for _, job := range jobs {
 		// Check if job should be blocked
 		if job.IsBlockOnErrorMode() && blockedGroups[job.MessageGroup] {
-			log.Debug().
-				Str("jobId", job.ID).
-				Str("pool", poolCode).
-				Str("messageGroup", job.MessageGroup).
-				Msg("Job blocked due to ERROR jobs in group")
+			slog.Debug("Job blocked due to ERROR jobs in group", "jobId", job.ID, "pool", poolCode, "messageGroup", job.MessageGroup)
 			blocked++
 			continue
 		}
 
 		if err := s.dispatchJob(ctx, job); err != nil {
-			log.Error().Err(err).
-				Str("jobId", job.ID).
-				Str("pool", poolCode).
-				Msg("Failed to dispatch job")
+			slog.Error("Failed to dispatch job", "error", err, "jobId", job.ID, "pool", poolCode)
 			continue
 		}
 		dispatched++
 	}
 
 	if blocked > 0 {
-		log.Info().
-			Str("pool", poolCode).
-			Int("dispatched", dispatched).
-			Int("blocked", blocked).
-			Int("blockedGroups", len(blockedGroups)).
-			Msg("Dispatched jobs with BLOCK_ON_ERROR filtering")
+		slog.Info("Dispatched jobs with BLOCK_ON_ERROR filtering", "pool", poolCode, "dispatched", dispatched, "blocked", blocked, "blockedGroups", len(blockedGroups))
 	}
 }
 
@@ -404,9 +382,7 @@ func (s *Scheduler) dispatchJob(ctx context.Context, job *DispatchJob) error {
 	// Generate HMAC auth token for this dispatch job
 	authToken, err := s.authService.GenerateAuthToken(job.ID)
 	if err != nil {
-		log.Warn().Err(err).
-			Str("jobId", job.ID).
-			Msg("Failed to generate auth token, using empty token")
+		slog.Warn("Failed to generate auth token, using empty token", "error", err, "jobId", job.ID)
 		authToken = ""
 	}
 
@@ -457,20 +433,14 @@ func (s *Scheduler) dispatchJob(ctx context.Context, job *DispatchJob) error {
 
 	_, err = s.collection.UpdateByID(ctx, job.ID, update)
 	if err != nil {
-		log.Error().Err(err).
-			Str("jobId", job.ID).
-			Msg("Failed to update job status to QUEUED")
+		slog.Error("Failed to update job status to QUEUED", "error", err, "jobId", job.ID)
 		// Job is already in queue, log the error but don't fail
 	}
 
 	// Record metrics
 	metrics.SchedulerJobsScheduled.Inc()
 
-	log.Debug().
-		Str("jobId", job.ID).
-		Str("pool", poolCode).
-		Str("subject", subject).
-		Msg("Dispatched job to queue")
+	slog.Debug("Dispatched job to queue", "jobId", job.ID, "pool", poolCode, "subject", subject)
 
 	return nil
 }
@@ -521,7 +491,7 @@ func (s *Scheduler) recoverStaleJobs() {
 
 	result, err := s.collection.UpdateMany(ctx, filter, update)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to recover stale jobs")
+		slog.Error("Failed to recover stale jobs", "error", err)
 		return
 	}
 
@@ -529,10 +499,7 @@ func (s *Scheduler) recoverStaleJobs() {
 		// Record stale recovery metric
 		metrics.SchedulerStaleJobs.Add(float64(result.ModifiedCount))
 
-		log.Warn().
-			Int64("count", result.ModifiedCount).
-			Dur("threshold", s.config.StaleThreshold).
-			Msg("Recovered stale QUEUED jobs")
+		slog.Warn("Recovered stale QUEUED jobs", "count", result.ModifiedCount, "threshold", s.config.StaleThreshold)
 	}
 }
 
@@ -561,4 +528,3 @@ type DispatchJob struct {
 func (j *DispatchJob) IsBlockOnErrorMode() bool {
 	return j.Mode == string(dispatchjob.DispatchModeBlockOnError)
 }
-

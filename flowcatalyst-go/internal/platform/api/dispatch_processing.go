@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/rs/zerolog/log"
+	"log/slog"
 
 	"go.flowcatalyst.tech/internal/common/tsid"
 	"go.flowcatalyst.tech/internal/platform/dispatchjob"
@@ -63,23 +63,23 @@ func (h *DispatchProcessingHandler) Process(w http.ResponseWriter, r *http.Reque
 	// Parse request
 	var req model.ProcessRequest
 	if err := DecodeJSON(r, &req); err != nil {
-		log.Warn().Err(err).Msg("Failed to parse dispatch process request")
+		slog.Warn("Failed to parse dispatch process request", "error", err)
 		WriteJSON(w, http.StatusBadRequest, model.NewNackResponse("Invalid request body"))
 		return
 	}
 
-	log.Info().Str("messageId", req.MessageID).Msg("Received dispatch job processing request")
+	slog.Info("Received dispatch job processing request", "messageId", req.MessageID)
 
 	// Extract and validate auth token
 	token := extractBearerTokenFromHeader(r.Header.Get("Authorization"))
 	if token == "" {
-		log.Warn().Str("messageId", req.MessageID).Msg("Dispatch process request missing Authorization header")
+		slog.Warn("Dispatch process request missing Authorization header", "messageId", req.MessageID)
 		WriteJSON(w, http.StatusUnauthorized, model.NewNackResponse("Missing Authorization header"))
 		return
 	}
 
 	if err := h.authService.ValidateAuthToken(req.MessageID, token); err != nil {
-		log.Warn().Str("messageId", req.MessageID).Msg("Dispatch process auth failed")
+		slog.Warn("Dispatch process auth failed", "messageId", req.MessageID)
 		WriteJSON(w, http.StatusUnauthorized, model.NewNackResponse("Invalid auth token"))
 		return
 	}
@@ -87,7 +87,7 @@ func (h *DispatchProcessingHandler) Process(w http.ResponseWriter, r *http.Reque
 	// Process the dispatch job
 	result, err := h.processDispatchJob(r.Context(), req.MessageID)
 	if err != nil {
-		log.Error().Err(err).Str("messageId", req.MessageID).Msg("Error processing dispatch job")
+		slog.Error("Error processing dispatch job", "error", err, "messageId", req.MessageID)
 		WriteJSON(w, http.StatusInternalServerError, model.NewNackResponse(err.Error()))
 		return
 	}
@@ -103,7 +103,7 @@ func (h *DispatchProcessingHandler) processDispatchJob(ctx context.Context, disp
 	if err != nil {
 		if err == dispatchjob.ErrNotFound {
 			// Job not found - ACK it since we can't process (similar to Laravel behavior)
-			log.Warn().Str("jobId", dispatchJobID).Msg("Dispatch job not found")
+			slog.Warn("Dispatch job not found", "jobId", dispatchJobID)
 			return model.NewAckResponse("Cannot find record."), nil
 		}
 		return nil, err
@@ -111,16 +111,13 @@ func (h *DispatchProcessingHandler) processDispatchJob(ctx context.Context, disp
 
 	// Check if already completed or cancelled
 	if job.IsTerminal() {
-		log.Info().
-			Str("jobId", dispatchJobID).
-			Str("status", string(job.Status)).
-			Msg("Job already in terminal state")
+		slog.Info("Job already in terminal state", "jobId", dispatchJobID, "status", string(job.Status))
 		return model.NewAckResponse("Job already completed"), nil
 	}
 
 	// Check if expired
 	if job.IsExpired() {
-		log.Info().Str("jobId", dispatchJobID).Msg("Job has expired")
+		slog.Info("Job has expired", "jobId", dispatchJobID)
 		// Update status to cancelled
 		h.repo.UpdateStatus(ctx, dispatchJobID, dispatchjob.DispatchStatusCancelled)
 		return model.NewAckResponse("Job expired"), nil
@@ -136,10 +133,7 @@ func (h *DispatchProcessingHandler) processDispatchJob(ctx context.Context, disp
 		if delaySeconds < 1 {
 			delaySeconds = 1
 		}
-		log.Info().
-			Str("jobId", dispatchJobID).
-			Int("delaySeconds", delaySeconds).
-			Msg("Job not ready yet (notBefore)")
+		slog.Info("Job not ready yet (notBefore)", "jobId", dispatchJobID, "delaySeconds", delaySeconds)
 		return model.NewNackWithDelayResponse("notBefore time not reached", delaySeconds), nil
 	}
 
@@ -171,10 +165,7 @@ func (h *DispatchProcessingHandler) processDispatchJob(ctx context.Context, disp
 		// Max retries reached - mark as error (terminal state)
 		job.Status = dispatchjob.DispatchStatusError
 		h.repo.Update(ctx, job)
-		log.Warn().
-			Str("jobId", dispatchJobID).
-			Int("attempts", job.AttemptCount).
-			Msg("Max retries reached, marking as ERROR")
+		slog.Warn("Max retries reached, marking as ERROR", "jobId", dispatchJobID, "attempts", job.AttemptCount)
 		return model.NewAckResponse("Max retries exceeded"), nil
 	}
 
@@ -183,12 +174,7 @@ func (h *DispatchProcessingHandler) processDispatchJob(ctx context.Context, disp
 	job.Status = dispatchjob.DispatchStatusPending // Reset to pending for retry
 	h.repo.Update(ctx, job)
 
-	log.Info().
-		Str("jobId", dispatchJobID).
-		Int("attempt", job.AttemptCount).
-		Int("maxRetries", job.MaxRetries).
-		Int("delaySeconds", delaySeconds).
-		Msg("Attempt failed, will retry")
+	slog.Info("Attempt failed, will retry", "jobId", dispatchJobID, "attempt", job.AttemptCount, "maxRetries", job.MaxRetries, "delaySeconds", delaySeconds)
 
 	return model.NewNackWithDelayResponse(attempt.ErrorMessage, delaySeconds), nil
 }

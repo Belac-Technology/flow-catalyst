@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/rs/zerolog/log"
+	"log/slog"
 
 	"go.flowcatalyst.tech/internal/common/tsid"
 	"go.flowcatalyst.tech/internal/platform/dispatchjob"
@@ -211,7 +211,7 @@ func (h *DispatchJobHandler) Create(w http.ResponseWriter, r *http.Request) {
 			WriteJSON(w, http.StatusOK, toDispatchJobDTO(job))
 			return
 		}
-		log.Error().Err(err).Msg("Failed to create dispatch job")
+		slog.Error("Failed to create dispatch job", "error", err)
 		WriteInternalError(w, "Failed to create dispatch job")
 		return
 	}
@@ -292,7 +292,7 @@ func (h *DispatchJobHandler) CreateBatch(w http.ResponseWriter, r *http.Request)
 	}
 
 	if err := h.repo.InsertMany(r.Context(), jobs); err != nil {
-		log.Error().Err(err).Msg("Failed to create dispatch jobs batch")
+		slog.Error("Failed to create dispatch jobs batch", "error", err)
 		WriteInternalError(w, "Failed to create dispatch jobs")
 		return
 	}
@@ -325,7 +325,7 @@ func (h *DispatchJobHandler) Search(w http.ResponseWriter, r *http.Request) {
 	// The full search should use the BFF endpoint
 	jobs, err := h.repo.FindPending(r.Context(), int64(size))
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to search dispatch jobs")
+		slog.Error("Failed to search dispatch jobs", "error", err)
 		WriteInternalError(w, "Failed to search dispatch jobs")
 		return
 	}
@@ -366,7 +366,7 @@ func (h *DispatchJobHandler) Get(w http.ResponseWriter, r *http.Request) {
 			WriteNotFound(w, "Dispatch job not found")
 			return
 		}
-		log.Error().Err(err).Str("id", id).Msg("Failed to get dispatch job")
+		slog.Error("Failed to get dispatch job", "error", err, "id", id)
 		WriteInternalError(w, "Failed to get dispatch job")
 		return
 	}
@@ -402,7 +402,7 @@ func (h *DispatchJobHandler) GetAttempts(w http.ResponseWriter, r *http.Request)
 			WriteNotFound(w, "Dispatch job not found")
 			return
 		}
-		log.Error().Err(err).Str("id", id).Msg("Failed to get dispatch job")
+		slog.Error("Failed to get dispatch job", "error", err, "id", id)
 		WriteInternalError(w, "Failed to get dispatch job")
 		return
 	}

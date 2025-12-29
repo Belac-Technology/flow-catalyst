@@ -3,13 +3,13 @@ package leader
 
 import (
 	"context"
+	"log/slog"
 	"os"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/redis/go-redis/v9"
-	"github.com/rs/zerolog/log"
 )
 
 // RedisElectorConfig holds configuration for Redis-based leader election
@@ -92,12 +92,11 @@ func (e *RedisLeaderElector) Start(ctx context.Context) error {
 	e.wg.Add(1)
 	go e.electionLoop()
 
-	log.Info().
-		Str("instanceId", e.config.InstanceID).
-		Str("lockName", e.config.LockName).
-		Dur("ttl", e.config.TTL).
-		Dur("refreshInterval", e.config.RefreshInterval).
-		Msg("Redis leader election started")
+	slog.Info("Redis leader election started",
+		"instanceId", e.config.InstanceID,
+		"lockName", e.config.LockName,
+		"ttl", e.config.TTL,
+		"refreshInterval", e.config.RefreshInterval)
 
 	return nil
 }
@@ -114,9 +113,7 @@ func (e *RedisLeaderElector) Stop() {
 		e.Release(ctx)
 	}
 
-	log.Info().
-		Str("instanceId", e.config.InstanceID).
-		Msg("Redis leader election stopped")
+	slog.Info("Redis leader election stopped", "instanceId", e.config.InstanceID)
 }
 
 // IsPrimary returns true if this instance is currently the leader
@@ -163,10 +160,9 @@ func (e *RedisLeaderElector) tryAcquireOrRefresh() {
 		}
 		// Refresh failed, we lost leadership
 		e.isPrimary.Store(false)
-		log.Warn().
-			Str("instanceId", e.config.InstanceID).
-			Str("lockName", e.config.LockName).
-			Msg("Lost leadership - refresh failed")
+		slog.Warn("Lost leadership - refresh failed",
+			"instanceId", e.config.InstanceID,
+			"lockName", e.config.LockName)
 		if e.onLoseLeadership != nil {
 			e.onLoseLeadership()
 		}
@@ -175,10 +171,9 @@ func (e *RedisLeaderElector) tryAcquireOrRefresh() {
 	// Try to acquire
 	if e.tryAcquire(ctx) {
 		if !wasPrimary {
-			log.Info().
-				Str("instanceId", e.config.InstanceID).
-				Str("lockName", e.config.LockName).
-				Msg("Acquired leadership")
+			slog.Info("Acquired leadership",
+				"instanceId", e.config.InstanceID,
+				"lockName", e.config.LockName)
 			if e.onBecomeLeader != nil {
 				e.onBecomeLeader()
 			}
@@ -200,17 +195,16 @@ func (e *RedisLeaderElector) tryAcquire(ctx context.Context) bool {
 
 	success, err := e.client.SetNX(ctx, e.config.LockName, e.config.InstanceID, e.config.TTL).Result()
 	if err != nil {
-		log.Error().Err(err).
-			Str("lockName", e.config.LockName).
-			Msg("Failed to acquire Redis leader lock")
+		slog.Error("Failed to acquire Redis leader lock",
+			"error", err,
+			"lockName", e.config.LockName)
 		return false
 	}
 
 	if success {
-		log.Debug().
-			Str("instanceId", e.config.InstanceID).
-			Str("lockName", e.config.LockName).
-			Msg("Acquired Redis leader lock")
+		slog.Debug("Acquired Redis leader lock",
+			"instanceId", e.config.InstanceID,
+			"lockName", e.config.LockName)
 		return true
 	}
 
@@ -218,7 +212,7 @@ func (e *RedisLeaderElector) tryAcquire(ctx context.Context) bool {
 	owner, err := e.client.Get(ctx, e.config.LockName).Result()
 	if err != nil {
 		if err != redis.Nil {
-			log.Error().Err(err).Msg("Failed to check lock owner")
+			slog.Error("Failed to check lock owner", "error", err)
 		}
 		return false
 	}
@@ -228,11 +222,10 @@ func (e *RedisLeaderElector) tryAcquire(ctx context.Context) bool {
 		return e.refresh(ctx)
 	}
 
-	log.Debug().
-		Str("instanceId", e.config.InstanceID).
-		Str("owner", owner).
-		Str("lockName", e.config.LockName).
-		Msg("Lock held by another instance")
+	slog.Debug("Lock held by another instance",
+		"instanceId", e.config.InstanceID,
+		"owner", owner,
+		"lockName", e.config.LockName)
 
 	return false
 }
@@ -258,25 +251,23 @@ func (e *RedisLeaderElector) refresh(ctx context.Context) bool {
 
 	result, err := script.Run(ctx, e.client, []string{e.config.LockName}, e.config.InstanceID, ttlSeconds).Int()
 	if err != nil {
-		log.Error().Err(err).
-			Str("lockName", e.config.LockName).
-			Msg("Failed to refresh Redis leader lock")
+		slog.Error("Failed to refresh Redis leader lock",
+			"error", err,
+			"lockName", e.config.LockName)
 		return false
 	}
 
 	if result == 0 {
-		log.Debug().
-			Str("instanceId", e.config.InstanceID).
-			Str("lockName", e.config.LockName).
-			Msg("Lock no longer held by this instance")
+		slog.Debug("Lock no longer held by this instance",
+			"instanceId", e.config.InstanceID,
+			"lockName", e.config.LockName)
 		return false
 	}
 
-	log.Debug().
-		Str("instanceId", e.config.InstanceID).
-		Str("lockName", e.config.LockName).
-		Int("ttlSeconds", ttlSeconds).
-		Msg("Refreshed Redis leader lock")
+	slog.Debug("Refreshed Redis leader lock",
+		"instanceId", e.config.InstanceID,
+		"lockName", e.config.LockName,
+		"ttlSeconds", ttlSeconds)
 
 	return true
 }
@@ -296,17 +287,16 @@ func (e *RedisLeaderElector) Release(ctx context.Context) {
 
 	result, err := script.Run(ctx, e.client, []string{e.config.LockName}, e.config.InstanceID).Int()
 	if err != nil {
-		log.Error().Err(err).
-			Str("lockName", e.config.LockName).
-			Msg("Failed to release Redis leader lock")
+		slog.Error("Failed to release Redis leader lock",
+			"error", err,
+			"lockName", e.config.LockName)
 		return
 	}
 
 	if result > 0 {
-		log.Info().
-			Str("instanceId", e.config.InstanceID).
-			Str("lockName", e.config.LockName).
-			Msg("Released Redis leader lock")
+		slog.Info("Released Redis leader lock",
+			"instanceId", e.config.InstanceID,
+			"lockName", e.config.LockName)
 	}
 
 	e.isPrimary.Store(false)

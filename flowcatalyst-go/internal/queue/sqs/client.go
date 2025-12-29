@@ -13,7 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
-	"github.com/rs/zerolog/log"
+	"log/slog"
 
 	"go.flowcatalyst.tech/internal/queue"
 )
@@ -164,12 +164,7 @@ func (c *Client) CreateConsumer(ctx context.Context, name, filterSubject string)
 	c.consumers[name] = consumer
 	c.mu.Unlock()
 
-	log.Info().
-		Str("name", name).
-		Str("queueURL", c.config.QueueURL).
-		Int32("maxMessages", c.config.MaxNumberOfMessages).
-		Int32("waitTime", c.config.WaitTimeSeconds).
-		Msg("SQS consumer created")
+	slog.Info("SQS consumer created", "name", name, "queueURL", c.config.QueueURL, "maxMessages", c.config.MaxNumberOfMessages, "waitTime", c.config.WaitTimeSeconds)
 
 	return consumer, nil
 }
@@ -212,7 +207,7 @@ func (c *Client) Close() error {
 
 	for name, consumer := range c.consumers {
 		if err := consumer.Close(); err != nil {
-			log.Error().Err(err).Str("consumer", name).Msg("Error closing consumer")
+			slog.Error("Error closing consumer", "error", err, "consumer", name)
 		}
 	}
 	c.consumers = make(map[string]*Consumer)
@@ -337,10 +332,7 @@ func (p *Publisher) PublishBatch(ctx context.Context, messages []*queue.MessageB
 		}
 
 		if len(result.Failed) > 0 {
-			log.Error().
-				Int("failed", len(result.Failed)).
-				Int("successful", len(result.Successful)).
-				Msg("Some messages failed to send")
+			slog.Error("Some messages failed to send", "failed", len(result.Failed), "successful", len(result.Successful))
 			return fmt.Errorf("failed to send %d messages", len(result.Failed))
 		}
 	}
@@ -377,15 +369,12 @@ func (c *Consumer) Consume(ctx context.Context, handler func(queue.Message) erro
 	c.running = true
 	c.mu.Unlock()
 
-	log.Info().
-		Str("consumer", c.name).
-		Str("queueURL", c.queueURL).
-		Msg("Starting SQS consumer")
+	slog.Info("Starting SQS consumer", "consumer", c.name, "queueURL", c.queueURL)
 
 	for {
 		select {
 		case <-ctx.Done():
-			log.Info().Str("consumer", c.name).Msg("SQS consumer context cancelled, stopping")
+			slog.Info("SQS consumer context cancelled, stopping", "consumer", c.name)
 			c.mu.Lock()
 			c.running = false
 			c.mu.Unlock()
@@ -395,7 +384,7 @@ func (c *Consumer) Consume(ctx context.Context, handler func(queue.Message) erro
 			running := c.running
 			c.mu.Unlock()
 			if !running {
-				log.Info().Str("consumer", c.name).Msg("SQS consumer stopped")
+				slog.Info("SQS consumer stopped", "consumer", c.name)
 				return nil
 			}
 
@@ -404,7 +393,7 @@ func (c *Consumer) Consume(ctx context.Context, handler func(queue.Message) erro
 				if ctx.Err() != nil {
 					return ctx.Err()
 				}
-				log.Error().Err(err).Str("consumer", c.name).Msg("Error polling SQS messages")
+				slog.Error("Error polling SQS messages", "error", err, "consumer", c.name)
 				time.Sleep(time.Second) // Back off on error
 				continue
 			}
@@ -449,14 +438,10 @@ func (c *Consumer) pollMessages(ctx context.Context, handler func(queue.Message)
 
 		if isPendingDelete {
 			// This message was already processed - delete it now
-			log.Info().
-				Str("sqsMessageId", sqsMessageID).
-				Msg("SQS message was previously processed - deleting now")
+			slog.Info("SQS message was previously processed - deleting now", "sqsMessageId", sqsMessageID)
 
 			if err := c.deleteMessage(ctx, msg.ReceiptHandle); err != nil {
-				log.Warn().Err(err).
-					Str("sqsMessageId", sqsMessageID).
-					Msg("Failed to delete previously processed message")
+				slog.Warn("Failed to delete previously processed message", "error", err, "sqsMessageId", sqsMessageID)
 			} else {
 				c.pendingDeletesMu.Lock()
 				delete(c.pendingDeletes, sqsMessageID)
@@ -477,11 +462,7 @@ func (c *Consumer) pollMessages(ctx context.Context, handler func(queue.Message)
 		}
 
 		if err := handler(wrapped); err != nil {
-			log.Error().
-				Err(err).
-				Str("messageId", sqsMessageID).
-				Str("consumer", c.name).
-				Msg("Message handler error")
+			slog.Error("Message handler error", "error", err, "messageId", sqsMessageID, "consumer", c.name)
 		}
 
 		processedCount++
@@ -510,9 +491,7 @@ func (c *Consumer) markForDeletion(sqsMessageID string) {
 	c.pendingDeletesMu.Lock()
 	c.pendingDeletes[sqsMessageID] = struct{}{}
 	c.pendingDeletesMu.Unlock()
-	log.Info().
-		Str("sqsMessageId", sqsMessageID).
-		Msg("SQS message marked for deletion on next poll")
+	slog.Info("SQS message marked for deletion on next poll", "sqsMessageId", sqsMessageID)
 }
 
 // Stop stops the consumer
@@ -525,7 +504,7 @@ func (c *Consumer) Stop() {
 // Close closes the consumer
 func (c *Consumer) Close() error {
 	c.Stop()
-	log.Info().Str("consumer", c.name).Msg("SQS consumer closed")
+	slog.Info("SQS consumer closed", "consumer", c.name)
 	return nil
 }
 
@@ -589,24 +568,20 @@ func (m *SQSMessage) Ack() error {
 		if isReceiptHandleExpiredError(err) {
 			// Mark for deletion on next poll
 			m.consumer.markForDeletion(m.sqsMessageID)
-			log.Info().
-				Str("sqsMessageId", m.sqsMessageID).
-				Msg("Receipt handle expired - marked for deletion on next poll")
+			slog.Info("Receipt handle expired - marked for deletion on next poll", "sqsMessageId", m.sqsMessageID)
 			return nil
 		}
 		return fmt.Errorf("failed to delete SQS message: %w", err)
 	}
 
-	log.Debug().Str("sqsMessageId", m.sqsMessageID).Msg("SQS message deleted successfully")
+	slog.Debug("SQS message deleted successfully", "sqsMessageId", m.sqsMessageID)
 	return nil
 }
 
 // Nak signals processing failure - for SQS this is a no-op
 // The message will become visible again after visibility timeout expires
 func (m *SQSMessage) Nak() error {
-	log.Debug().
-		Str("sqsMessageId", m.sqsMessageID).
-		Msg("SQS NACK - message will become visible after visibility timeout")
+	slog.Debug("SQS NACK - message will become visible after visibility timeout", "sqsMessageId", m.sqsMessageID)
 	// No-op for SQS - message visibility timeout handles retry
 	return nil
 }
@@ -668,26 +643,19 @@ func (m *SQSMessage) changeVisibility(timeout int32) error {
 	_, err := m.client.ChangeMessageVisibility(ctx, input)
 	if err != nil {
 		if isReceiptHandleExpiredError(err) {
-			log.Debug().
-				Str("sqsMessageId", m.sqsMessageID).
-				Msg("Receipt handle expired - cannot change visibility")
+			slog.Debug("Receipt handle expired - cannot change visibility", "sqsMessageId", m.sqsMessageID)
 			return nil // Not a fatal error
 		}
 		return fmt.Errorf("failed to change message visibility: %w", err)
 	}
 
-	log.Debug().
-		Str("sqsMessageId", m.sqsMessageID).
-		Int32("timeout", timeout).
-		Msg("Changed message visibility")
+	slog.Debug("Changed message visibility", "sqsMessageId", m.sqsMessageID, "timeout", timeout)
 	return nil
 }
 
 // UpdateReceiptHandle updates the receipt handle (called on redelivery)
 func (m *SQSMessage) UpdateReceiptHandle(newReceiptHandle string) {
-	log.Info().
-		Str("sqsMessageId", m.sqsMessageID).
-		Msg("Updating receipt handle due to redelivery")
+	slog.Info("Updating receipt handle due to redelivery", "sqsMessageId", m.sqsMessageID)
 	m.receiptHandle = newReceiptHandle
 }
 

@@ -1,13 +1,13 @@
 package warning
 
 import (
+	"log/slog"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/rs/zerolog/log"
 )
 
 // Service manages system warnings
@@ -80,12 +80,11 @@ func (s *InMemoryService) AddWarning(category, severity, message, source string)
 
 	s.warnings[warningID] = warning
 
-	log.Info().
-		Str("severity", severity).
-		Str("category", category).
-		Str("source", source).
-		Str("message", message).
-		Msg("Warning added")
+	slog.Info("Warning added",
+		"severity", severity,
+		"category", category,
+		"source", source,
+		"message", message)
 }
 
 // removeOldest removes the oldest warning (must be called with lock held)
@@ -164,7 +163,7 @@ func (s *InMemoryService) AcknowledgeWarning(warningID string) bool {
 	}
 
 	warning.Acknowledged = true
-	log.Info().Str("warningId", warningID).Msg("Warning acknowledged")
+	slog.Info("Warning acknowledged", "warningId", warningID)
 	return true
 }
 
@@ -175,7 +174,7 @@ func (s *InMemoryService) ClearAllWarnings() {
 
 	count := len(s.warnings)
 	s.warnings = make(map[string]*Warning)
-	log.Info().Int("count", count).Msg("Cleared all warnings")
+	slog.Info("Cleared all warnings", "count", count)
 }
 
 // ClearOldWarnings removes warnings older than specified hours
@@ -196,7 +195,7 @@ func (s *InMemoryService) ClearOldWarnings(hoursOld int) {
 		delete(s.warnings, id)
 	}
 
-	log.Info().Int("count", len(toRemove)).Int("hoursOld", hoursOld).Msg("Cleared old warnings")
+	slog.Info("Cleared old warnings", "count", len(toRemove), "hoursOld", hoursOld)
 }
 
 // Count returns the current number of warnings

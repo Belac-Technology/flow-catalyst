@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/rs/zerolog/log"
+	"log/slog"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -179,7 +179,7 @@ func (h *EventBffHandler) Search(w http.ResponseWriter, r *http.Request) {
 	// Count total
 	totalCount, err := h.eventsRead.CountDocuments(ctx, filter)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to count events")
+		slog.Error("Failed to count events", "error", err)
 		WriteInternalError(w, "Failed to search events")
 		return
 	}
@@ -192,7 +192,7 @@ func (h *EventBffHandler) Search(w http.ResponseWriter, r *http.Request) {
 
 	cursor, err := h.eventsRead.Find(ctx, filter, opts)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to find events")
+		slog.Error("Failed to find events", "error", err)
 		WriteInternalError(w, "Failed to search events")
 		return
 	}
@@ -314,7 +314,7 @@ func (h *EventBffHandler) Get(w http.ResponseWriter, r *http.Request) {
 			WriteNotFound(w, "Event not found")
 			return
 		}
-		log.Error().Err(err).Str("id", id).Msg("Failed to get event")
+		slog.Error("Failed to get event", "error", err, "id", id)
 		WriteInternalError(w, "Failed to get event")
 		return
 	}

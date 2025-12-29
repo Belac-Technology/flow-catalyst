@@ -8,7 +8,7 @@ import (
 
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
-	"github.com/rs/zerolog/log"
+	"log/slog"
 
 	"go.flowcatalyst.tech/internal/queue"
 )
@@ -122,7 +122,7 @@ func NewConsumer(consumer jetstream.Consumer, name string) *Consumer {
 
 // Consume starts consuming messages and calls the handler for each
 func (c *Consumer) Consume(ctx context.Context, handler func(queue.Message) error) error {
-	log.Info().Str("consumer", c.name).Msg("Starting NATS consumer")
+	slog.Info("Starting NATS consumer", "consumer", c.name)
 
 	// Create a message channel consumer
 	msgIter, err := c.consumer.Messages()
@@ -134,7 +134,7 @@ func (c *Consumer) Consume(ctx context.Context, handler func(queue.Message) erro
 	for {
 		select {
 		case <-ctx.Done():
-			log.Info().Str("consumer", c.name).Msg("Consumer context cancelled, stopping")
+			slog.Info("Consumer context cancelled, stopping", "consumer", c.name)
 			return ctx.Err()
 		default:
 			// Try to get the next message with a timeout
@@ -143,7 +143,7 @@ func (c *Consumer) Consume(ctx context.Context, handler func(queue.Message) erro
 				if err == context.Canceled || err == context.DeadlineExceeded {
 					return nil
 				}
-				log.Error().Err(err).Str("consumer", c.name).Msg("Error getting next message")
+				slog.Error("Error getting next message", "error", err, "consumer", c.name)
 				continue
 			}
 
@@ -155,11 +155,7 @@ func (c *Consumer) Consume(ctx context.Context, handler func(queue.Message) erro
 
 			// Handle the message
 			if err := handler(wrapped); err != nil {
-				log.Error().
-					Err(err).
-					Str("consumer", c.name).
-					Str("subject", msg.Subject()).
-					Msg("Message handler error")
+				slog.Error("Message handler error", "error", err, "consumer", c.name, "subject", msg.Subject())
 				// The handler should call Nak() on the message if it fails
 			}
 		}
@@ -168,7 +164,7 @@ func (c *Consumer) Consume(ctx context.Context, handler func(queue.Message) erro
 
 // Close closes the consumer
 func (c *Consumer) Close() error {
-	log.Info().Str("consumer", c.name).Msg("Consumer closed")
+	slog.Info("Consumer closed", "consumer", c.name)
 	return nil
 }
 
@@ -257,11 +253,11 @@ func NewClient(cfg *queue.NATSConfig) (*Client, error) {
 		nats.MaxReconnects(-1),
 		nats.DisconnectErrHandler(func(_ *nats.Conn, err error) {
 			if err != nil {
-				log.Warn().Err(err).Msg("NATS disconnected")
+				slog.Warn("NATS disconnected", "error", err)
 			}
 		}),
 		nats.ReconnectHandler(func(_ *nats.Conn) {
-			log.Info().Msg("NATS reconnected")
+			slog.Info("NATS reconnected")
 		}),
 	)
 	if err != nil {

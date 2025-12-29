@@ -32,6 +32,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -42,8 +43,6 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
 	httpSwagger "github.com/swaggo/http-swagger"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -69,21 +68,22 @@ var (
 
 func main() {
 	// Configure logging
-	zerolog.TimeFieldFormat = time.RFC3339
+	logLevel := slog.LevelInfo
 	if os.Getenv("FLOWCATALYST_DEV") == "true" {
-		log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339})
+		logLevel = slog.LevelDebug
 	}
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel})))
 
-	log.Info().
-		Str("version", version).
-		Str("build_time", buildTime).
-		Str("component", "platform").
-		Msg("Starting FlowCatalyst Platform API")
+	slog.Info("Starting FlowCatalyst Platform API",
+		"version", version,
+		"build_time", buildTime,
+		"component", "platform")
 
 	// Load configuration
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatal().Err(err).Msg("Failed to load configuration")
+		slog.Error("Failed to load configuration", "error", err)
+		os.Exit(1)
 	}
 
 	// Create context for graceful shutdown
@@ -94,22 +94,24 @@ func main() {
 	healthChecker := health.NewChecker()
 
 	// Initialize MongoDB connection
-	log.Info().Str("uri", maskURI(cfg.MongoDB.URI)).Msg("Connecting to MongoDB")
+	slog.Info("Connecting to MongoDB", "uri", maskURI(cfg.MongoDB.URI))
 	mongoClient, err := mongo.Connect(ctx, options.Client().ApplyURI(cfg.MongoDB.URI))
 	if err != nil {
-		log.Fatal().Err(err).Msg("Failed to connect to MongoDB")
+		slog.Error("Failed to connect to MongoDB", "error", err)
+		os.Exit(1)
 	}
 	defer func() {
 		if err := mongoClient.Disconnect(ctx); err != nil {
-			log.Error().Err(err).Msg("Error disconnecting from MongoDB")
+			slog.Error("Error disconnecting from MongoDB", "error", err)
 		}
 	}()
 
 	// Ping MongoDB to verify connection
 	if err := mongoClient.Ping(ctx, nil); err != nil {
-		log.Fatal().Err(err).Msg("Failed to ping MongoDB")
+		slog.Error("Failed to ping MongoDB", "error", err)
+		os.Exit(1)
 	}
-	log.Info().Str("database", cfg.MongoDB.Database).Msg("Connected to MongoDB")
+	slog.Info("Connected to MongoDB", "database", cfg.MongoDB.Database)
 
 	// Add MongoDB health check
 	healthChecker.AddReadinessCheck(health.MongoDBCheck(func() error {
@@ -129,7 +131,8 @@ func main() {
 		devKeyDir = "./data"
 	}
 	if err := keyManager.Initialize("", "", devKeyDir+"/keys"); err != nil {
-		log.Fatal().Err(err).Msg("Failed to initialize key manager")
+		slog.Error("Failed to initialize key manager", "error", err)
+		os.Exit(1)
 	}
 
 	tokenService := jwt.NewTokenService(keyManager, jwt.TokenServiceConfig{
@@ -168,7 +171,7 @@ func main() {
 	// Create OIDC discovery handler
 	discoveryHandler := oidc.NewDiscoveryHandler(keyManager, cfg.Auth.JWT.Issuer, cfg.Auth.ExternalBase)
 
-	log.Info().Msg("Auth service initialized")
+	slog.Info("Auth service initialized")
 
 	// Set up HTTP router
 	r := chi.NewRouter()
@@ -432,9 +435,10 @@ func main() {
 	}
 
 	go func() {
-		log.Info().Int("port", cfg.HTTP.Port).Msg("HTTP server starting")
+		slog.Info("HTTP server starting", "port", cfg.HTTP.Port)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatal().Err(err).Msg("HTTP server failed")
+			slog.Error("HTTP server failed", "error", err)
+			os.Exit(1)
 		}
 	}()
 
@@ -443,17 +447,17 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	log.Info().Msg("Shutting down gracefully...")
+	slog.Info("Shutting down gracefully...")
 
 	// Graceful shutdown
 	shutdownCtx, shutdownCancel := context.WithTimeout(ctx, 30*time.Second)
 	defer shutdownCancel()
 
 	if err := server.Shutdown(shutdownCtx); err != nil {
-		log.Error().Err(err).Msg("HTTP server forced to shutdown")
+		slog.Error("HTTP server forced to shutdown", "error", err)
 	}
 
-	log.Info().Msg("FlowCatalyst Platform API stopped")
+	slog.Info("FlowCatalyst Platform API stopped")
 }
 
 // maskURI masks sensitive parts of a MongoDB URI for logging

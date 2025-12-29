@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/rs/zerolog/log"
+	"log/slog"
 
 	"go.flowcatalyst.tech/internal/common/tsid"
 	"go.flowcatalyst.tech/internal/platform/event"
@@ -127,7 +127,7 @@ func (h *EventHandler) Create(w http.ResponseWriter, r *http.Request) {
 			WriteJSON(w, http.StatusOK, toEventDTO(e))
 			return
 		}
-		log.Error().Err(err).Msg("Failed to create event")
+		slog.Error("Failed to create event", "error", err)
 		WriteInternalError(w, "Failed to create event")
 		return
 	}
@@ -191,7 +191,7 @@ func (h *EventHandler) CreateBatch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.repo.InsertEvents(r.Context(), events); err != nil {
-		log.Error().Err(err).Msg("Failed to create events batch")
+		slog.Error("Failed to create events batch", "error", err)
 		WriteInternalError(w, "Failed to create events")
 		return
 	}
@@ -228,7 +228,7 @@ func (h *EventHandler) Get(w http.ResponseWriter, r *http.Request) {
 			WriteNotFound(w, "Event not found")
 			return
 		}
-		log.Error().Err(err).Str("id", id).Msg("Failed to get event")
+		slog.Error("Failed to get event", "error", err, "id", id)
 		WriteInternalError(w, "Failed to get event")
 		return
 	}

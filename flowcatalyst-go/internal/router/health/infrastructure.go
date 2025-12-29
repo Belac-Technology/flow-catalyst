@@ -1,10 +1,9 @@
 package health
 
 import (
+	"log/slog"
 	"sync"
 	"time"
-
-	"github.com/rs/zerolog/log"
 )
 
 const (
@@ -148,10 +147,9 @@ func (s *InfrastructureHealthService) checkForStalledPools(poolActivity map[stri
 		timeSinceActivity := currentTime.Sub(*lastActivity)
 		if timeSinceActivity.Milliseconds() > ActivityTimeoutMs {
 			stalledPools = append(stalledPools, poolCode)
-			log.Warn().
-				Str("poolCode", poolCode).
-				Int64("secondsSinceActivity", int64(timeSinceActivity.Seconds())).
-				Msg("Pool has not processed messages recently")
+			slog.Warn("Pool has not processed messages recently",
+				"poolCode", poolCode,
+				"secondsSinceActivity", int64(timeSinceActivity.Seconds()))
 		}
 	}
 
