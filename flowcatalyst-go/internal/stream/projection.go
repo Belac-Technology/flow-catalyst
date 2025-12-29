@@ -2,6 +2,7 @@
 package stream
 
 import (
+	"strings"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -17,44 +18,54 @@ func NewEventProjectionMapper() *EventProjectionMapper {
 }
 
 // Map maps an event document to a read projection
+// This matches Java's EventProjectionMapper including type parsing for cascading filters
 func (m *EventProjectionMapper) Map(doc bson.M) bson.M {
 	if doc == nil {
 		return nil
 	}
 
-	// Extract fields from source document
 	projection := bson.M{}
 
-	// Copy ID
+	// Use eventId as _id for automatic unique index and idempotency
 	if id, ok := doc["_id"]; ok {
 		projection["_id"] = id
+		projection["eventId"] = id
 	}
 
-	// Copy basic fields
-	copyField(doc, projection, "type")
+	// CloudEvents core fields
+	copyField(doc, projection, "specVersion")
 	copyField(doc, projection, "source")
-	copyField(doc, projection, "specversion")
-	copyField(doc, projection, "datacontenttype")
-	copyField(doc, projection, "dataschema")
 	copyField(doc, projection, "subject")
-	copyField(doc, projection, "data")
-	copyField(doc, projection, "idempotencyKey")
-
-	// Copy time field
 	copyField(doc, projection, "time")
+	copyField(doc, projection, "data")
 
-	// Copy context data
-	if contextData, ok := doc["contextData"].(bson.M); ok {
-		projContext := bson.M{}
-		copyField(contextData, projContext, "clientId")
-		copyField(contextData, projContext, "applicationCode")
-		copyField(contextData, projContext, "principalId")
-		copyField(contextData, projContext, "correlationId")
-		copyField(contextData, projContext, "traceId")
-		projection["contextData"] = projContext
+	// Copy type and parse into denormalized filter fields: {app}:{subdomain}:{aggregate}:{event}
+	// This enables cascading compound index queries (app only, app+subdomain, etc.)
+	if eventType, ok := doc["type"].(string); ok {
+		projection["type"] = eventType
+
+		segments := strings.SplitN(eventType, ":", 4)
+		if len(segments) > 0 {
+			projection["application"] = segments[0]
+		}
+		if len(segments) > 1 {
+			projection["subdomain"] = segments[1]
+		}
+		if len(segments) > 2 {
+			projection["aggregate"] = segments[2]
+		}
 	}
 
-	// Add denormalized fields for efficient querying
+	// Tracing and correlation
+	copyField(doc, projection, "messageGroup")
+	copyField(doc, projection, "correlationId")
+	copyField(doc, projection, "causationId")
+	copyField(doc, projection, "deduplicationId")
+
+	// Context data for filtering
+	copyField(doc, projection, "contextData")
+
+	// Denormalize client context for efficient querying
 	if contextData, ok := doc["contextData"].(bson.M); ok {
 		if clientId, ok := contextData["clientId"]; ok {
 			projection["clientId"] = clientId

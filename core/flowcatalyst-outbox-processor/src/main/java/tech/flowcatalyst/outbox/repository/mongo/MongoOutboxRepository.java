@@ -2,6 +2,7 @@ package tech.flowcatalyst.outbox.repository.mongo;
 
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
+import com.mongodb.client.MongoCursor;
 import com.mongodb.client.model.*;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Alternative;
@@ -22,7 +23,8 @@ import java.util.List;
 
 /**
  * MongoDB implementation of OutboxRepository.
- * Uses findOneAndUpdate for atomic fetch-and-lock operations.
+ * Uses simple find/updateMany with status codes - NO findOneAndUpdate loop.
+ * Safe because only one poller runs (enforced by leader election).
  */
 @ApplicationScoped
 @Alternative
@@ -37,109 +39,215 @@ public class MongoOutboxRepository implements OutboxRepository {
     OutboxProcessorConfig config;
 
     @Override
-    public List<OutboxItem> fetchAndLockPending(OutboxItemType type, int limit) {
+    public List<OutboxItem> fetchPending(OutboxItemType type, int limit) {
         MongoCollection<Document> collection = getCollection(type);
         List<OutboxItem> items = new ArrayList<>();
 
-        // Use findOneAndUpdate in a loop for atomic fetch-and-lock
-        // Sort by messageGroup, createdAt for FIFO ordering
-        Bson filter = Filters.eq("status", "PENDING");
+        Bson filter = Filters.eq("status", OutboxStatus.PENDING.getCode());
         Bson sort = Sorts.ascending("messageGroup", "createdAt");
-        Bson update = Updates.combine(
-            Updates.set("status", "PROCESSING"),
-            Updates.set("processedAt", new Date())
-        );
 
-        FindOneAndUpdateOptions options = new FindOneAndUpdateOptions()
-            .sort(sort)
-            .returnDocument(ReturnDocument.AFTER);
-
-        for (int i = 0; i < limit; i++) {
-            Document doc = collection.findOneAndUpdate(filter, update, options);
-            if (doc == null) {
-                break; // No more pending items
+        try (MongoCursor<Document> cursor = collection.find(filter)
+                .sort(sort)
+                .limit(limit)
+                .iterator()) {
+            while (cursor.hasNext()) {
+                items.add(mapDocument(cursor.next(), type));
             }
-            items.add(mapDocument(doc, type));
         }
 
         return items;
     }
 
     @Override
-    public void markCompleted(OutboxItemType type, List<String> ids) {
+    public void markAsInProgress(OutboxItemType type, List<String> ids) {
         if (ids.isEmpty()) return;
 
         MongoCollection<Document> collection = getCollection(type);
 
         Bson filter = Filters.in("_id", ids);
         Bson update = Updates.combine(
-            Updates.set("status", "COMPLETED"),
-            Updates.set("processedAt", new Date())
+            Updates.set("status", OutboxStatus.IN_PROGRESS.getCode()),
+            Updates.set("updatedAt", new Date())
         );
 
         long updated = collection.updateMany(filter, update).getModifiedCount();
-        LOG.debugf("Marked %d items as COMPLETED in %s", updated, getCollectionName(type));
+        LOG.debugf("Marked %d items as in-progress in %s", updated, getCollectionName(type));
     }
 
     @Override
-    public void markFailed(OutboxItemType type, List<String> ids, String errorMessage) {
+    public void markWithStatus(OutboxItemType type, List<String> ids, OutboxStatus status) {
         if (ids.isEmpty()) return;
 
         MongoCollection<Document> collection = getCollection(type);
 
         Bson filter = Filters.in("_id", ids);
         Bson update = Updates.combine(
-            Updates.set("status", "FAILED"),
+            Updates.set("status", status.getCode()),
+            Updates.set("updatedAt", new Date())
+        );
+
+        long updated = collection.updateMany(filter, update).getModifiedCount();
+        LOG.debugf("Marked %d items with status %s in %s", updated, status, getCollectionName(type));
+    }
+
+    @Override
+    public void markWithStatusAndError(OutboxItemType type, List<String> ids, OutboxStatus status, String errorMessage) {
+        if (ids.isEmpty()) return;
+
+        MongoCollection<Document> collection = getCollection(type);
+
+        Bson filter = Filters.in("_id", ids);
+        Bson update = Updates.combine(
+            Updates.set("status", status.getCode()),
             Updates.set("errorMessage", errorMessage),
-            Updates.set("processedAt", new Date())
+            Updates.set("updatedAt", new Date())
         );
 
         long updated = collection.updateMany(filter, update).getModifiedCount();
-        LOG.debugf("Marked %d items as FAILED in %s", updated, getCollectionName(type));
+        LOG.debugf("Marked %d items with status %s and error in %s", updated, status, getCollectionName(type));
     }
 
     @Override
-    public void scheduleRetry(OutboxItemType type, List<String> ids) {
+    public List<OutboxItem> fetchStuckItems(OutboxItemType type) {
+        MongoCollection<Document> collection = getCollection(type);
+        List<OutboxItem> items = new ArrayList<>();
+
+        Bson filter = Filters.eq("status", OutboxStatus.IN_PROGRESS.getCode());
+        Bson sort = Sorts.ascending("createdAt");
+
+        try (MongoCursor<Document> cursor = collection.find(filter).sort(sort).iterator()) {
+            while (cursor.hasNext()) {
+                items.add(mapDocument(cursor.next(), type));
+            }
+        }
+
+        return items;
+    }
+
+    @Override
+    public void resetStuckItems(OutboxItemType type, List<String> ids) {
         if (ids.isEmpty()) return;
 
         MongoCollection<Document> collection = getCollection(type);
 
-        Bson filter = Filters.and(
-            Filters.in("_id", ids),
-            Filters.lt("retryCount", config.maxRetries())
-        );
+        Bson filter = Filters.in("_id", ids);
         Bson update = Updates.combine(
-            Updates.set("status", "PENDING"),
-            Updates.inc("retryCount", 1),
-            Updates.unset("processedAt")
+            Updates.set("status", OutboxStatus.PENDING.getCode()),
+            Updates.set("updatedAt", new Date())
         );
 
         long updated = collection.updateMany(filter, update).getModifiedCount();
-        LOG.debugf("Scheduled %d items for retry in %s", updated, getCollectionName(type));
+        LOG.debugf("Reset %d stuck items in %s", updated, getCollectionName(type));
     }
 
     @Override
-    public int recoverStuckItems(OutboxItemType type, int timeoutSeconds) {
+    public void incrementRetryCount(OutboxItemType type, List<String> ids) {
+        if (ids.isEmpty()) return;
+
         MongoCollection<Document> collection = getCollection(type);
 
-        // Calculate timeout threshold
-        Date threshold = new Date(System.currentTimeMillis() - (timeoutSeconds * 1000L));
-
-        Bson filter = Filters.and(
-            Filters.eq("status", "PROCESSING"),
-            Filters.lt("processedAt", threshold)
-        );
+        Bson filter = Filters.in("_id", ids);
         Bson update = Updates.combine(
-            Updates.set("status", "PENDING"),
-            Updates.unset("processedAt")
+            Updates.set("status", OutboxStatus.PENDING.getCode()),
+            Updates.inc("retryCount", 1),
+            Updates.set("updatedAt", new Date())
         );
 
-        long recovered = collection.updateMany(filter, update).getModifiedCount();
+        long updated = collection.updateMany(filter, update).getModifiedCount();
+        LOG.debugf("Incremented retry count for %d items in %s", updated, getCollectionName(type));
+    }
 
-        if (recovered > 0) {
-            LOG.infof("Recovered %d stuck items in %s", recovered, getCollectionName(type));
+    @Override
+    public List<OutboxItem> fetchRecoverableItems(OutboxItemType type, int timeoutSeconds, int limit) {
+        MongoCollection<Document> collection = getCollection(type);
+        List<OutboxItem> items = new ArrayList<>();
+
+        // Calculate cutoff time
+        Date cutoff = new Date(System.currentTimeMillis() - (timeoutSeconds * 1000L));
+
+        // Filter for error statuses older than timeout
+        Bson filter = Filters.and(
+            Filters.in("status",
+                OutboxStatus.IN_PROGRESS.getCode(),
+                OutboxStatus.BAD_REQUEST.getCode(),
+                OutboxStatus.INTERNAL_ERROR.getCode(),
+                OutboxStatus.UNAUTHORIZED.getCode(),
+                OutboxStatus.FORBIDDEN.getCode(),
+                OutboxStatus.GATEWAY_ERROR.getCode()
+            ),
+            Filters.lt("updatedAt", cutoff)
+        );
+        Bson sort = Sorts.ascending("createdAt");
+
+        try (MongoCursor<Document> cursor = collection.find(filter)
+                .sort(sort)
+                .limit(limit)
+                .iterator()) {
+            while (cursor.hasNext()) {
+                items.add(mapDocument(cursor.next(), type));
+            }
         }
-        return (int) recovered;
+
+        return items;
+    }
+
+    @Override
+    public void resetRecoverableItems(OutboxItemType type, List<String> ids) {
+        if (ids.isEmpty()) return;
+
+        MongoCollection<Document> collection = getCollection(type);
+
+        Bson filter = Filters.in("_id", ids);
+        Bson update = Updates.combine(
+            Updates.set("status", OutboxStatus.PENDING.getCode()),
+            Updates.set("updatedAt", new Date())
+        );
+
+        long updated = collection.updateMany(filter, update).getModifiedCount();
+        LOG.debugf("Reset %d recoverable items in %s", updated, getCollectionName(type));
+    }
+
+    @Override
+    public long countPending(OutboxItemType type) {
+        MongoCollection<Document> collection = getCollection(type);
+        Bson filter = Filters.eq("status", OutboxStatus.PENDING.getCode());
+        return collection.countDocuments(filter);
+    }
+
+    @Override
+    public String getTableName(OutboxItemType type) {
+        return getCollectionName(type);
+    }
+
+    @Override
+    public void createSchema() {
+        for (OutboxItemType type : OutboxItemType.values()) {
+            MongoCollection<Document> collection = getCollection(type);
+            String collName = getCollectionName(type);
+
+            // Index for fetching pending items (status=0, ordered by messageGroup, createdAt)
+            // MongoDB supports partial indexes via partialFilterExpression
+            IndexOptions pendingIndexOptions = new IndexOptions()
+                .name("idx_pending")
+                .partialFilterExpression(Filters.eq("status", OutboxStatus.PENDING.getCode()));
+
+            collection.createIndex(
+                Indexes.ascending("status", "messageGroup", "createdAt"),
+                pendingIndexOptions
+            );
+
+            // Index for finding stuck items (status=9)
+            IndexOptions stuckIndexOptions = new IndexOptions()
+                .name("idx_stuck")
+                .partialFilterExpression(Filters.eq("status", OutboxStatus.IN_PROGRESS.getCode()));
+
+            collection.createIndex(
+                Indexes.ascending("status", "createdAt"),
+                stuckIndexOptions
+            );
+
+            LOG.infof("Created indexes on %s", collName);
+        }
     }
 
     private MongoCollection<Document> getCollection(OutboxItemType type) {
@@ -153,15 +261,18 @@ public class MongoOutboxRepository implements OutboxRepository {
     }
 
     private OutboxItem mapDocument(Document doc, OutboxItemType type) {
+        // Status is now stored as integer
+        int statusCode = doc.getInteger("status", 0);
+
         return new OutboxItem(
             doc.getString("_id"),
             type,
             doc.getString("messageGroup"),
             doc.getString("payload"),
-            OutboxStatus.valueOf(doc.getString("status")),
+            OutboxStatus.fromCode(statusCode),
             doc.getInteger("retryCount", 0),
             toInstant(doc.getDate("createdAt")),
-            toInstant(doc.getDate("processedAt")),
+            toInstant(doc.getDate("updatedAt")),
             doc.getString("errorMessage")
         );
     }

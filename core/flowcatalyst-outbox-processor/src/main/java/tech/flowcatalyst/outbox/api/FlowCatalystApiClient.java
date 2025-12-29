@@ -8,6 +8,7 @@ import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
 import tech.flowcatalyst.outbox.config.OutboxProcessorConfig;
 import tech.flowcatalyst.outbox.model.OutboxItem;
+import tech.flowcatalyst.outbox.model.OutboxStatus;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -20,6 +21,7 @@ import java.util.concurrent.Executors;
 /**
  * HTTP client for FlowCatalyst batch APIs.
  * Uses Java 21 HttpClient with virtual threads for efficient concurrency.
+ * Returns per-item results with appropriate status codes.
  */
 @ApplicationScoped
 public class FlowCatalystApiClient {
@@ -45,36 +47,39 @@ public class FlowCatalystApiClient {
      * Send a batch of events to FlowCatalyst.
      *
      * @param items List of outbox items containing event payloads
-     * @throws ApiException if the API call fails
+     * @return BatchResult with per-item status information
      */
-    public void createEventsBatch(List<OutboxItem> items) throws ApiException {
+    public BatchResult createEventsBatch(List<OutboxItem> items) {
         List<JsonNode> payloads = items.stream()
             .map(this::parsePayload)
             .toList();
 
-        post("/api/events/batch", payloads);
+        List<String> ids = items.stream().map(OutboxItem::id).toList();
+        return post("/api/events/batch", payloads, ids);
     }
 
     /**
      * Send a batch of dispatch jobs to FlowCatalyst.
      *
      * @param items List of outbox items containing dispatch job payloads
-     * @throws ApiException if the API call fails
+     * @return BatchResult with per-item status information
      */
-    public void createDispatchJobsBatch(List<OutboxItem> items) throws ApiException {
+    public BatchResult createDispatchJobsBatch(List<OutboxItem> items) {
         List<JsonNode> payloads = items.stream()
             .map(this::parsePayload)
             .toList();
 
-        post("/api/dispatch/jobs/batch", payloads);
+        List<String> ids = items.stream().map(OutboxItem::id).toList();
+        return post("/api/dispatch/jobs/batch", payloads, ids);
     }
 
-    private void post(String path, Object body) throws ApiException {
+    private BatchResult post(String path, Object body, List<String> ids) {
         String json;
         try {
             json = objectMapper.writeValueAsString(body);
         } catch (JsonProcessingException e) {
-            throw new ApiException("Failed to serialize request body", e);
+            LOG.errorf(e, "Failed to serialize request body");
+            return BatchResult.allFailed(ids, OutboxStatus.INTERNAL_ERROR, "Failed to serialize request: " + e.getMessage());
         }
 
         String url = config.apiBaseUrl() + path;
@@ -93,19 +98,33 @@ public class FlowCatalystApiClient {
 
         try {
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            int statusCode = response.statusCode();
 
-            if (response.statusCode() >= 400) {
-                LOG.errorf("API error: POST %s returned %d: %s", path, response.statusCode(), response.body());
-                throw new ApiException("API error: " + response.statusCode() + " - " + response.body());
+            if (statusCode >= 200 && statusCode < 300) {
+                LOG.debugf("POST %s returned %d", path, statusCode);
+                return BatchResult.allSuccess(ids.size());
             }
 
-            LOG.debugf("POST %s returned %d", path, response.statusCode());
+            // Map HTTP status codes to OutboxStatus
+            OutboxStatus status = OutboxStatus.fromHttpCode(statusCode);
+            String errorMessage = "API error: " + statusCode + " - " + response.body();
+            LOG.errorf("API error: POST %s returned %d: %s", path, statusCode, response.body());
 
-        } catch (ApiException e) {
-            throw e;
+            return BatchResult.allFailed(ids, status, errorMessage);
+
+        } catch (java.net.http.HttpTimeoutException e) {
+            LOG.errorf(e, "Timeout calling API: POST %s", path);
+            return BatchResult.allFailed(ids, OutboxStatus.GATEWAY_ERROR, "Request timeout: " + e.getMessage());
+        } catch (java.io.IOException e) {
+            LOG.errorf(e, "IO error calling API: POST %s", path);
+            return BatchResult.allFailed(ids, OutboxStatus.GATEWAY_ERROR, "IO error: " + e.getMessage());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            LOG.errorf(e, "Request interrupted: POST %s", path);
+            return BatchResult.allFailed(ids, OutboxStatus.INTERNAL_ERROR, "Request interrupted");
         } catch (Exception e) {
             LOG.errorf(e, "Failed to call API: POST %s", path);
-            throw new ApiException("Failed to call API: " + e.getMessage(), e);
+            return BatchResult.allFailed(ids, OutboxStatus.INTERNAL_ERROR, "Failed to call API: " + e.getMessage());
         }
     }
 
@@ -114,19 +133,6 @@ public class FlowCatalystApiClient {
             return objectMapper.readTree(item.payload());
         } catch (JsonProcessingException e) {
             throw new RuntimeException("Invalid JSON payload for item " + item.id(), e);
-        }
-    }
-
-    /**
-     * Exception thrown when FlowCatalyst API call fails.
-     */
-    public static class ApiException extends Exception {
-        public ApiException(String message) {
-            super(message);
-        }
-
-        public ApiException(String message, Throwable cause) {
-            super(message, cause);
         }
     }
 }

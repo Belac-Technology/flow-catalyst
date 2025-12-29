@@ -7,7 +7,9 @@ import (
 	"time"
 
 	"github.com/rs/zerolog/log"
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 
 	"go.flowcatalyst.tech/internal/common/health"
 )
@@ -265,42 +267,195 @@ func (p *Processor) GetStreamMetrics() []StreamMetrics {
 }
 
 // EnsureIndexes creates necessary indexes on projection collections
+// This matches Java's EventProjectionMapper and DispatchJobProjectionMapper index definitions
 func (p *Processor) EnsureIndexes(ctx context.Context) error {
 	db := p.client.Database(p.config.Database)
 
+	// =========================================================================
 	// Events read projection indexes
+	// Matches Java's EventProjectionMapper.getIndexDefinitions()
+	// =========================================================================
 	eventsReadColl := db.Collection("events_read")
 	eventsIndexes := []mongo.IndexModel{
-		{Keys: map[string]interface{}{"clientId": 1, "createdAt": -1}},
-		{Keys: map[string]interface{}{"applicationCode": 1, "createdAt": -1}},
-		{Keys: map[string]interface{}{"type": 1, "createdAt": -1}},
-		{Keys: map[string]interface{}{"contextData.correlationId": 1}},
-		{Keys: map[string]interface{}{"projectedAt": 1}},
+		// -----------------------------------------------------------------
+		// Global cascading filter indexes (no clientId filter)
+		// Supports: app, app+subdomain, app+subdomain+aggregate, full type
+		// -----------------------------------------------------------------
+
+		// Global cascading filter - covers all non-client-scoped filter combos
+		{
+			Keys: bson.D{
+				{Key: "application", Value: 1},
+				{Key: "subdomain", Value: 1},
+				{Key: "aggregate", Value: 1},
+				{Key: "type", Value: 1},
+				{Key: "time", Value: -1},
+			},
+		},
+
+		// Global subject + time - for aggregate history across all
+		{
+			Keys: bson.D{
+				{Key: "subject", Value: 1},
+				{Key: "time", Value: -1},
+			},
+		},
+
+		// -----------------------------------------------------------------
+		// Client-scoped cascading filter indexes
+		// Supports: client, client+app, client+app+subdomain, etc.
+		// -----------------------------------------------------------------
+
+		// Client-scoped cascading filter - covers all client-scoped filter combos
+		{
+			Keys: bson.D{
+				{Key: "clientId", Value: 1},
+				{Key: "application", Value: 1},
+				{Key: "subdomain", Value: 1},
+				{Key: "aggregate", Value: 1},
+				{Key: "type", Value: 1},
+				{Key: "time", Value: -1},
+			},
+		},
+
+		// Client + subject + time - aggregate history within client
+		{
+			Keys: bson.D{
+				{Key: "clientId", Value: 1},
+				{Key: "subject", Value: 1},
+				{Key: "time", Value: -1},
+			},
+		},
+
+		// -----------------------------------------------------------------
+		// Tracing and monitoring indexes
+		// -----------------------------------------------------------------
+
+		// Correlation ID - for distributed tracing (sparse - truly optional)
+		{
+			Keys:    bson.D{{Key: "correlationId", Value: 1}},
+			Options: options.Index().SetSparse(true),
+		},
+
+		// Client + message group - for ordered processing within client context
+		{
+			Keys: bson.D{
+				{Key: "clientId", Value: 1},
+				{Key: "messageGroup", Value: 1},
+			},
+			Options: options.Index().SetSparse(true),
+		},
+
+		// Context data key/value lookup - multikey index for querying by contextData entries
+		{
+			Keys: bson.D{
+				{Key: "contextData.key", Value: 1},
+				{Key: "contextData.value", Value: 1},
+			},
+			Options: options.Index().SetSparse(true),
+		},
+
+		// Projection lag monitoring
+		{Keys: bson.D{{Key: "projectedAt", Value: -1}}},
 	}
 
 	if _, err := eventsReadColl.Indexes().CreateMany(ctx, eventsIndexes); err != nil {
 		log.Error().Err(err).Msg("Failed to create events_read indexes")
 		return err
 	}
+	log.Info().Int("count", len(eventsIndexes)).Msg("Created events_read indexes")
 
+	// =========================================================================
 	// Dispatch jobs read projection indexes
+	// Matches Java's DispatchJobProjectionMapper.getIndexDefinitions()
+	// =========================================================================
 	dispatchJobsReadColl := db.Collection("dispatch_jobs_read")
 	dispatchJobsIndexes := []mongo.IndexModel{
-		{Keys: map[string]interface{}{"clientId": 1, "createdAt": -1}},
-		{Keys: map[string]interface{}{"applicationCode": 1, "createdAt": -1}},
-		{Keys: map[string]interface{}{"status": 1, "createdAt": -1}},
-		{Keys: map[string]interface{}{"eventId": 1}},
-		{Keys: map[string]interface{}{"subscriptionId": 1, "createdAt": -1}},
-		{Keys: map[string]interface{}{"dispatchPoolId": 1, "status": 1}},
-		{Keys: map[string]interface{}{"metadata.correlationId": 1}},
-		{Keys: map[string]interface{}{"projectedAt": 1}},
+		// -----------------------------------------------------------------
+		// Status-based indexes for job processing and monitoring
+		// -----------------------------------------------------------------
+
+		// Primary job lookup by status with time ordering
+		{
+			Keys: bson.D{
+				{Key: "status", Value: 1},
+				{Key: "scheduledFor", Value: 1},
+			},
+		},
+
+		// Pool + status for pool-level job management
+		{
+			Keys: bson.D{
+				{Key: "dispatchPoolId", Value: 1},
+				{Key: "status", Value: 1},
+				{Key: "scheduledFor", Value: 1},
+			},
+		},
+
+		// Subscription + status for subscription-level monitoring
+		{
+			Keys: bson.D{
+				{Key: "subscriptionId", Value: 1},
+				{Key: "status", Value: 1},
+				{Key: "createdAt", Value: -1},
+			},
+		},
+
+		// -----------------------------------------------------------------
+		// Client-scoped indexes
+		// -----------------------------------------------------------------
+
+		// Client cascading filter
+		{
+			Keys: bson.D{
+				{Key: "clientId", Value: 1},
+				{Key: "status", Value: 1},
+				{Key: "createdAt", Value: -1},
+			},
+		},
+
+		// Client + application for app-level job views
+		{
+			Keys: bson.D{
+				{Key: "clientId", Value: 1},
+				{Key: "applicationCode", Value: 1},
+				{Key: "status", Value: 1},
+				{Key: "createdAt", Value: -1},
+			},
+		},
+
+		// -----------------------------------------------------------------
+		// Lookup indexes
+		// -----------------------------------------------------------------
+
+		// Event ID lookup (find all jobs for an event)
+		{Keys: bson.D{{Key: "eventId", Value: 1}}},
+
+		// Correlation ID for tracing (sparse)
+		{
+			Keys:    bson.D{{Key: "metadata.correlationId", Value: 1}},
+			Options: options.Index().SetSparse(true),
+		},
+
+		// Message group for ordered processing (sparse)
+		{
+			Keys: bson.D{
+				{Key: "clientId", Value: 1},
+				{Key: "messageGroup", Value: 1},
+			},
+			Options: options.Index().SetSparse(true),
+		},
+
+		// Projection lag monitoring
+		{Keys: bson.D{{Key: "projectedAt", Value: -1}}},
 	}
 
 	if _, err := dispatchJobsReadColl.Indexes().CreateMany(ctx, dispatchJobsIndexes); err != nil {
 		log.Error().Err(err).Msg("Failed to create dispatch_jobs_read indexes")
 		return err
 	}
+	log.Info().Int("count", len(dispatchJobsIndexes)).Msg("Created dispatch_jobs_read indexes")
 
-	log.Info().Msg("Projection indexes created")
+	log.Info().Msg("All projection indexes created successfully")
 	return nil
 }

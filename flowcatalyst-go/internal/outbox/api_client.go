@@ -104,10 +104,13 @@ func (c *APIClient) sendBatch(ctx context.Context, endpoint string, items []*Out
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return &BatchResult{
-			FailedIDs: extractIDs(items),
-			Error:     err,
-		}, err
+		result := NewBatchResult()
+		result.Error = err
+		// Mark all as failed with internal error status
+		for _, item := range items {
+			result.FailedItems[item.ID] = StatusInternalError
+		}
+		return result, err
 	}
 	defer resp.Body.Close()
 
@@ -121,10 +124,14 @@ func (c *APIClient) sendBatch(ctx context.Context, endpoint string, items []*Out
 			Str("endpoint", endpoint).
 			Str("response", string(respBody)).
 			Msg("API batch request failed")
-		return &BatchResult{
-			FailedIDs: extractIDs(items),
-			Error:     err,
-		}, err
+		result := NewBatchResult()
+		result.Error = err
+		// Determine status based on HTTP code
+		status := StatusFromHTTPCode(resp.StatusCode)
+		for _, item := range items {
+			result.FailedItems[item.ID] = status
+		}
+		return result, err
 	}
 
 	log.Debug().
@@ -133,9 +140,9 @@ func (c *APIClient) sendBatch(ctx context.Context, endpoint string, items []*Out
 		Int("statusCode", resp.StatusCode).
 		Msg("Batch sent successfully")
 
-	return &BatchResult{
-		SuccessIDs: extractIDs(items),
-	}, nil
+	result := NewBatchResult()
+	result.SuccessIDs = extractIDs(items)
+	return result, nil
 }
 
 // extractIDs extracts IDs from a slice of items

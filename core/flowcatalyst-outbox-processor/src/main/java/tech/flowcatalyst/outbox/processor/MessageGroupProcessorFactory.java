@@ -24,6 +24,9 @@ public class MessageGroupProcessorFactory {
     @Inject
     FlowCatalystApiClient apiClient;
 
+    @Inject
+    OutboxPoller outboxPoller;
+
     /**
      * Create a new MessageGroupProcessor for the given type and message group.
      *
@@ -33,6 +36,6 @@ public class MessageGroupProcessorFactory {
      * @return A new MessageGroupProcessor instance
      */
     public MessageGroupProcessor create(OutboxItemType type, String messageGroup, Semaphore globalSemaphore) {
-        return new MessageGroupProcessor(type, messageGroup, globalSemaphore, config, repository, apiClient);
+        return new MessageGroupProcessor(type, messageGroup, globalSemaphore, config, repository, apiClient, outboxPoller);
     }
 }

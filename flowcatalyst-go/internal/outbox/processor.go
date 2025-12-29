@@ -31,17 +31,12 @@ type ProcessorConfig struct {
 	// MaxConcurrentGroups limits parallel message group processing
 	MaxConcurrentGroups int
 
-	// GlobalBufferSize is the in-memory buffer capacity
-	GlobalBufferSize int
+	// MaxInFlight is the maximum items in the pipeline (buffer + processing queues)
+	// Poller checks this before polling to implement backpressure
+	MaxInFlight int
 
 	// MaxRetries is the maximum retry attempts before marking as failed
 	MaxRetries int
-
-	// ProcessingTimeoutSeconds is how long before stuck items are recovered
-	ProcessingTimeoutSeconds int
-
-	// RecoveryInterval is how often to run crash recovery
-	RecoveryInterval time.Duration
 
 	// LeaderElection enables distributed leader election
 	LeaderElection LeaderElectionConfig
@@ -71,34 +66,39 @@ func DefaultLeaderElectionConfig() LeaderElectionConfig {
 // DefaultProcessorConfig returns sensible defaults
 func DefaultProcessorConfig() *ProcessorConfig {
 	return &ProcessorConfig{
-		Enabled:                  true,
-		PollInterval:             time.Second,
-		PollBatchSize:            500,
-		APIBatchSize:             100,
-		MaxConcurrentGroups:      10,
-		GlobalBufferSize:         1000,
-		MaxRetries:               3,
-		ProcessingTimeoutSeconds: 300,
-		RecoveryInterval:         time.Minute,
+		Enabled:             true,
+		PollInterval:        time.Second,
+		PollBatchSize:       500,
+		APIBatchSize:        100,
+		MaxConcurrentGroups: 10,
+		MaxInFlight:         2500, // 5x PollBatchSize
+		MaxRetries:          3,
 	}
 }
 
 // Processor implements the Outbox Pattern for reliable message publishing.
-// It polls customer databases for pending outbox items and sends them to FlowCatalyst APIs.
+// Uses a single-poller, status-based architecture with NO row locking.
 //
 // Architecture:
+//   1. Single poller fetches items WHERE status = 0 (PENDING)
+//   2. Items are marked status = 9 (IN_PROGRESS) immediately after fetch
+//   3. Distributor routes items to message group processors (maintains FIFO per group)
+//   4. On completion, status is updated to reflect outcome (1=success, 2-6=error types)
+//   5. Crash recovery: on startup, reset status = 9 back to 0
 //
-//	OutboxPoller (scheduled) → GlobalBuffer → GroupDistributor → MessageGroupProcessor → API
-//
-// This matches Java's tech.flowcatalyst.outboxprocessor
+// This approach avoids row locking (FOR UPDATE SKIP LOCKED) and works
+// identically across PostgreSQL, MySQL, and MongoDB.
 type Processor struct {
 	config    *ProcessorConfig
 	repo      Repository
 	apiClient *APIClient
 
-	// Global buffer for backpressure
+	// Global buffer for items waiting to be distributed
 	buffer     chan *OutboxItem
-	bufferSize int32
+	bufferSize int32 // Atomic counter for current buffer occupancy
+
+	// In-flight tracking: buffer + items in message group queues
+	inFlightCount int32 // Atomic counter
 
 	// Group distributor
 	groupProcessors sync.Map // map[groupKey]*MessageGroupProcessor
@@ -110,12 +110,12 @@ type Processor struct {
 	isPrimary          atomic.Bool
 
 	// Lifecycle
-	ctx        context.Context
-	cancel     context.CancelFunc
-	wg         sync.WaitGroup
-	running    bool
-	runningMu  sync.Mutex
-	pollMu     sync.Mutex // Prevent overlapping polls
+	ctx       context.Context
+	cancel    context.CancelFunc
+	wg        sync.WaitGroup
+	running   bool
+	runningMu sync.Mutex
+	pollMu    sync.Mutex // Prevent overlapping polls
 }
 
 // NewProcessor creates a new outbox processor
@@ -130,7 +130,7 @@ func NewProcessor(repo Repository, apiClient *APIClient, config *ProcessorConfig
 		config:         config,
 		repo:           repo,
 		apiClient:      apiClient,
-		buffer:         make(chan *OutboxItem, config.GlobalBufferSize),
+		buffer:         make(chan *OutboxItem, config.MaxInFlight),
 		groupSemaphore: make(chan struct{}, config.MaxConcurrentGroups),
 		ctx:            ctx,
 		cancel:         cancel,
@@ -192,6 +192,9 @@ func (p *Processor) Start() {
 		return
 	}
 
+	// Perform crash recovery FIRST (reset stuck items from previous run)
+	p.doCrashRecovery()
+
 	// Start leader election if configured
 	if p.redisLeaderElector != nil {
 		if err := p.redisLeaderElector.Start(p.ctx); err != nil {
@@ -212,14 +215,11 @@ func (p *Processor) Start() {
 	p.wg.Add(1)
 	go p.runPoller()
 
-	// Start the recovery goroutine
-	p.wg.Add(1)
-	go p.runRecovery()
-
 	log.Info().
 		Dur("pollInterval", p.config.PollInterval).
 		Int("batchSize", p.config.PollBatchSize).
 		Int("maxConcurrentGroups", p.config.MaxConcurrentGroups).
+		Int("maxInFlight", p.config.MaxInFlight).
 		Bool("isPrimary", p.isPrimary.Load()).
 		Msg("Outbox processor started")
 }
@@ -244,6 +244,70 @@ func (p *Processor) Stop() {
 // IsPrimary returns whether this processor is the current leader
 func (p *Processor) IsPrimary() bool {
 	return p.isPrimary.Load()
+}
+
+// GetStats returns current processor statistics
+func (p *Processor) GetStats() ProcessorStats {
+	inFlight := atomic.LoadInt32(&p.inFlightCount)
+	return ProcessorStats{
+		Status:                "UP",
+		Healthy:               p.running && p.isPrimary.Load(),
+		LastPollTime:          time.Now(), // TODO: track actual last poll time
+		ActiveMessageGroups:   p.countActiveGroups(),
+		InFlightPermits:       p.config.MaxInFlight - int(inFlight),
+		TotalInFlightCapacity: p.config.MaxInFlight,
+		BufferedItems:         int(atomic.LoadInt32(&p.bufferSize)),
+	}
+}
+
+// countActiveGroups counts active message group processors
+func (p *Processor) countActiveGroups() int {
+	count := 0
+	p.groupProcessors.Range(func(_, _ interface{}) bool {
+		count++
+		return true
+	})
+	return count
+}
+
+// doCrashRecovery resets stuck items (status=9) back to pending (status=0)
+// This is called on startup to recover from crashes/restarts
+func (p *Processor) doCrashRecovery() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	for _, itemType := range []OutboxItemType{OutboxItemTypeEvent, OutboxItemTypeDispatchJob} {
+		stuckItems, err := p.repo.FetchStuckItems(ctx, itemType)
+		if err != nil {
+			log.Error().Err(err).
+				Str("type", string(itemType)).
+				Msg("Failed to fetch stuck items during crash recovery")
+			continue
+		}
+
+		if len(stuckItems) == 0 {
+			continue
+		}
+
+		ids := make([]string, len(stuckItems))
+		for i, item := range stuckItems {
+			ids[i] = item.ID
+		}
+
+		if err := p.repo.ResetStuckItems(ctx, itemType, ids); err != nil {
+			log.Error().Err(err).
+				Str("type", string(itemType)).
+				Int("count", len(ids)).
+				Msg("Failed to reset stuck items during crash recovery")
+			continue
+		}
+
+		metrics.OutboxRecoveredItems.WithLabelValues(string(itemType)).Add(float64(len(ids)))
+		log.Info().
+			Str("type", string(itemType)).
+			Int("count", len(ids)).
+			Msg("Reset stuck outbox items during crash recovery")
+	}
 }
 
 // runPoller runs the main polling loop
@@ -274,6 +338,19 @@ func (p *Processor) doPoll() {
 	}
 	defer p.pollMu.Unlock()
 
+	// Check if there's sufficient capacity BEFORE polling
+	// We need space for at least a full batch
+	currentInFlight := atomic.LoadInt32(&p.inFlightCount)
+	availableSlots := p.config.MaxInFlight - int(currentInFlight)
+
+	if availableSlots < p.config.PollBatchSize {
+		log.Debug().
+			Int("availableSlots", availableSlots).
+			Int("pollBatchSize", p.config.PollBatchSize).
+			Msg("Skipping poll - insufficient in-flight capacity")
+		return
+	}
+
 	startTime := time.Now()
 	defer func() {
 		metrics.OutboxPollDuration.Observe(time.Since(startTime).Seconds())
@@ -291,7 +368,8 @@ func (p *Processor) doPoll() {
 
 // pollItemType polls for items of a specific type
 func (p *Processor) pollItemType(ctx context.Context, itemType OutboxItemType) {
-	items, err := p.repo.FetchAndLockPending(ctx, itemType, p.config.PollBatchSize)
+	// 1. Fetch pending items (simple SELECT, no locking)
+	items, err := p.repo.FetchPending(ctx, itemType, p.config.PollBatchSize)
 	if err != nil {
 		log.Error().Err(err).
 			Str("type", string(itemType)).
@@ -303,31 +381,41 @@ func (p *Processor) pollItemType(ctx context.Context, itemType OutboxItemType) {
 		return
 	}
 
+	// 2. Mark as in-progress IMMEDIATELY (before buffering)
+	ids := make([]string, len(items))
+	for i, item := range items {
+		ids[i] = item.ID
+	}
+
+	if err := p.repo.MarkAsInProgress(ctx, itemType, ids); err != nil {
+		log.Error().Err(err).
+			Str("type", string(itemType)).
+			Int("count", len(ids)).
+			Msg("Failed to mark items as in-progress")
+		// Don't proceed - items will be picked up on next poll
+		return
+	}
+
+	// 3. Acquire in-flight permits for the actual fetched count
+	atomic.AddInt32(&p.inFlightCount, int32(len(items)))
+	metrics.OutboxInFlightItems.Set(float64(atomic.LoadInt32(&p.inFlightCount)))
+
 	log.Debug().
 		Str("type", string(itemType)).
 		Int("count", len(items)).
-		Msg("Fetched pending outbox items")
+		Msg("Fetched and marked outbox items as in-progress")
 
-	// Add to buffer
-	added := 0
-	rejected := 0
+	// 4. Add to buffer
 	for _, item := range items {
 		select {
 		case p.buffer <- item:
-			added++
-			newSize := atomic.AddInt32(&p.bufferSize, 1)
-			metrics.OutboxBufferSize.Set(float64(newSize))
-		default:
-			// Buffer full - item stays in PROCESSING, will be recovered later
-			rejected++
+			atomic.AddInt32(&p.bufferSize, 1)
+			metrics.OutboxBufferSize.Set(float64(atomic.LoadInt32(&p.bufferSize)))
+		case <-ctx.Done():
+			// Context cancelled, items are already marked in-progress
+			// They will be recovered on next startup
+			return
 		}
-	}
-
-	if rejected > 0 {
-		log.Warn().
-			Int("added", added).
-			Int("rejected", rejected).
-			Msg("Buffer full, some items rejected")
 	}
 }
 
@@ -342,8 +430,8 @@ func (p *Processor) runDistributor() {
 			p.drainBuffer()
 			return
 		case item := <-p.buffer:
-			newSize := atomic.AddInt32(&p.bufferSize, -1)
-			metrics.OutboxBufferSize.Set(float64(newSize))
+			atomic.AddInt32(&p.bufferSize, -1)
+			metrics.OutboxBufferSize.Set(float64(atomic.LoadInt32(&p.bufferSize)))
 			p.distributeItem(item)
 		}
 	}
@@ -357,19 +445,19 @@ func (p *Processor) distributeItem(item *OutboxItem) {
 	processorI, _ := p.groupProcessors.LoadOrStore(groupKey, &MessageGroupProcessor{
 		groupKey:   groupKey,
 		itemType:   item.Type,
-		queue:      make(chan *OutboxItem, 100),
+		queue:      make(chan *OutboxItem, 1000), // Large queue per group
 		processor:  p,
 		processing: false,
 	})
 	processor := processorI.(*MessageGroupProcessor)
 
-	// Add item to group queue
+	// Add item to group queue (maintains FIFO within group)
 	select {
 	case processor.queue <- item:
 		// Try to start processing if not already running
 		processor.tryStart()
 	default:
-		// Group queue full - this shouldn't happen often
+		// Group queue full - this shouldn't happen with 1000 capacity
 		log.Warn().
 			Str("group", groupKey).
 			Str("itemId", item.ID).
@@ -384,57 +472,14 @@ func (p *Processor) drainBuffer() {
 		case item := <-p.buffer:
 			log.Debug().
 				Str("itemId", item.ID).
-				Msg("Draining item during shutdown")
+				Msg("Draining item during shutdown - will be recovered on restart")
 		default:
 			return
 		}
 	}
 }
 
-// runRecovery runs the crash recovery loop
-func (p *Processor) runRecovery() {
-	defer p.wg.Done()
-
-	ticker := time.NewTicker(p.config.RecoveryInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-p.ctx.Done():
-			return
-		case <-ticker.C:
-			if !p.isPrimary.Load() {
-				continue
-			}
-			p.doRecovery()
-		}
-	}
-}
-
-// doRecovery recovers stuck items
-func (p *Processor) doRecovery() {
-	ctx, cancel := context.WithTimeout(p.ctx, 30*time.Second)
-	defer cancel()
-
-	for _, itemType := range []OutboxItemType{OutboxItemTypeEvent, OutboxItemTypeDispatchJob} {
-		recovered, err := p.repo.RecoverStuckItems(ctx, itemType, p.config.ProcessingTimeoutSeconds)
-		if err != nil {
-			log.Error().Err(err).
-				Str("type", string(itemType)).
-				Msg("Failed to recover stuck items")
-			continue
-		}
-		if recovered > 0 {
-			metrics.OutboxRecoveredItems.WithLabelValues(string(itemType)).Add(float64(recovered))
-			log.Info().
-				Str("type", string(itemType)).
-				Int64("count", recovered).
-				Msg("Recovered stuck outbox items")
-		}
-	}
-}
-
-// MessageGroupProcessor processes items for a single message group
+// MessageGroupProcessor processes items for a single message group in FIFO order
 type MessageGroupProcessor struct {
 	groupKey   string
 	itemType   OutboxItemType
@@ -466,7 +511,13 @@ func (m *MessageGroupProcessor) processLoop() {
 	}()
 
 	for {
-		// Acquire semaphore
+		// Collect a batch from this group's queue
+		batch := m.collectBatch()
+		if len(batch) == 0 {
+			return // No more items, exit
+		}
+
+		// Acquire semaphore for concurrent group limit
 		select {
 		case m.processor.groupSemaphore <- struct{}{}:
 			// Got semaphore
@@ -474,15 +525,10 @@ func (m *MessageGroupProcessor) processLoop() {
 			return
 		}
 
-		// Process a batch
-		batch := m.collectBatch()
-		if len(batch) == 0 {
-			<-m.processor.groupSemaphore // Release semaphore
-			return                        // No more items, exit
-		}
-
 		m.processBatch(batch)
-		<-m.processor.groupSemaphore // Release semaphore
+
+		// Release semaphore
+		<-m.processor.groupSemaphore
 	}
 }
 
@@ -502,7 +548,7 @@ func (m *MessageGroupProcessor) collectBatch() []*OutboxItem {
 	return batch
 }
 
-// processBatch sends a batch to the API
+// processBatch sends a batch to the API and updates item statuses
 func (m *MessageGroupProcessor) processBatch(batch []*OutboxItem) {
 	if len(batch) == 0 {
 		return
@@ -511,15 +557,15 @@ func (m *MessageGroupProcessor) processBatch(batch []*OutboxItem) {
 	ctx, cancel := context.WithTimeout(m.processor.ctx, 30*time.Second)
 	defer cancel()
 
-	var result *BatchResult
-	var err error
-
 	// Track active processors
 	metrics.OutboxActiveProcessors.Inc()
 	defer metrics.OutboxActiveProcessors.Dec()
 
 	// Track API call duration
 	apiStartTime := time.Now()
+
+	var result *BatchResult
+	var err error
 
 	switch m.itemType {
 	case OutboxItemTypeEvent:
@@ -530,64 +576,145 @@ func (m *MessageGroupProcessor) processBatch(batch []*OutboxItem) {
 
 	metrics.OutboxAPIDuration.WithLabelValues(string(m.itemType)).Observe(time.Since(apiStartTime).Seconds())
 
+	// Release in-flight permits for this batch
+	atomic.AddInt32(&m.processor.inFlightCount, -int32(len(batch)))
+	metrics.OutboxInFlightItems.Set(float64(atomic.LoadInt32(&m.processor.inFlightCount)))
+
 	if err != nil {
 		log.Error().Err(err).
 			Str("group", m.groupKey).
 			Int("batchSize", len(batch)).
 			Msg("Failed to send batch")
-		m.handleFailure(ctx, batch, err.Error())
+		m.handleAPIError(ctx, batch, err)
 		return
 	}
 
-	// Mark successful items as completed
+	// Mark successful items
 	if len(result.SuccessIDs) > 0 {
-		if err := m.processor.repo.MarkCompleted(ctx, m.itemType, result.SuccessIDs); err != nil {
+		if err := m.processor.repo.MarkWithStatus(ctx, m.itemType, result.SuccessIDs, StatusSuccess); err != nil {
 			log.Error().Err(err).Msg("Failed to mark items as completed")
 		}
 		metrics.OutboxItemsProcessed.WithLabelValues(string(m.itemType), "completed").Add(float64(len(result.SuccessIDs)))
 	}
 
-	// Handle failed items
-	if len(result.FailedIDs) > 0 {
-		m.handleFailure(ctx, batch, "API batch partially failed")
+	// Handle failed items (from result.FailedItems map with per-item status)
+	if result.FailedItems != nil && len(result.FailedItems) > 0 {
+		m.handlePerItemFailures(ctx, batch, result.FailedItems)
 	}
 
 	log.Debug().
 		Str("group", m.groupKey).
 		Int("success", len(result.SuccessIDs)).
-		Int("failed", len(result.FailedIDs)).
+		Int("failed", len(result.FailedItems)).
 		Msg("Batch processed")
 }
 
-// handleFailure handles failed items (retry or mark as failed)
-func (m *MessageGroupProcessor) handleFailure(ctx context.Context, items []*OutboxItem, errorMsg string) {
+// handleAPIError handles an API error for the entire batch
+func (m *MessageGroupProcessor) handleAPIError(ctx context.Context, batch []*OutboxItem, apiErr error) {
+	// Determine status from error (could parse HTTP status from error message)
+	status := StatusInternalError
+	if apiErr != nil {
+		errStr := apiErr.Error()
+		// Simple heuristic - in practice, the API client could return structured errors
+		if contains(errStr, "400") {
+			status = StatusBadRequest
+		} else if contains(errStr, "401") {
+			status = StatusUnauthorized
+		} else if contains(errStr, "403") {
+			status = StatusForbidden
+		} else if contains(errStr, "502") || contains(errStr, "503") || contains(errStr, "504") {
+			status = StatusGatewayError
+		}
+	}
+
+	// Separate items into retry vs failed based on status and retry count
 	retryIDs := make([]string, 0)
 	failIDs := make([]string, 0)
 
-	for _, item := range items {
-		if item.RetryCount < m.processor.config.MaxRetries {
+	for _, item := range batch {
+		if status.IsRetryable() && item.RetryCount < m.processor.config.MaxRetries {
 			retryIDs = append(retryIDs, item.ID)
 		} else {
 			failIDs = append(failIDs, item.ID)
 		}
 	}
 
+	// Schedule retries (increment retry count, reset to pending)
 	if len(retryIDs) > 0 {
-		if err := m.processor.repo.ScheduleRetry(ctx, m.itemType, retryIDs); err != nil {
+		if err := m.processor.repo.IncrementRetryCount(ctx, m.itemType, retryIDs); err != nil {
 			log.Error().Err(err).Msg("Failed to schedule retry")
 		}
 		metrics.OutboxItemsProcessed.WithLabelValues(string(m.itemType), "retried").Add(float64(len(retryIDs)))
 	}
 
+	// Mark permanently failed
 	if len(failIDs) > 0 {
-		if err := m.processor.repo.MarkFailed(ctx, m.itemType, failIDs, errorMsg); err != nil {
+		if err := m.processor.repo.MarkWithStatusAndError(ctx, m.itemType, failIDs, status, apiErr.Error()); err != nil {
 			log.Error().Err(err).Msg("Failed to mark items as failed")
 		}
 		metrics.OutboxItemsProcessed.WithLabelValues(string(m.itemType), "failed").Add(float64(len(failIDs)))
 		log.Warn().
 			Str("group", m.groupKey).
 			Int("count", len(failIDs)).
-			Msg("Items marked as FAILED (max retries exceeded)")
+			Str("status", status.String()).
+			Msg("Items marked as failed")
 	}
 }
 
+// handlePerItemFailures handles failures with per-item status codes
+func (m *MessageGroupProcessor) handlePerItemFailures(ctx context.Context, batch []*OutboxItem, failedItems map[string]OutboxStatus) {
+	// Build lookup for items by ID
+	itemByID := make(map[string]*OutboxItem)
+	for _, item := range batch {
+		itemByID[item.ID] = item
+	}
+
+	// Group failed items by status
+	byStatus := make(map[OutboxStatus][]string)
+	retryIDs := make([]string, 0)
+
+	for id, status := range failedItems {
+		item := itemByID[id]
+		if item == nil {
+			continue
+		}
+
+		if status.IsRetryable() && item.RetryCount < m.processor.config.MaxRetries {
+			retryIDs = append(retryIDs, id)
+		} else {
+			byStatus[status] = append(byStatus[status], id)
+		}
+	}
+
+	// Schedule retries
+	if len(retryIDs) > 0 {
+		if err := m.processor.repo.IncrementRetryCount(ctx, m.itemType, retryIDs); err != nil {
+			log.Error().Err(err).Msg("Failed to schedule retry for failed items")
+		}
+		metrics.OutboxItemsProcessed.WithLabelValues(string(m.itemType), "retried").Add(float64(len(retryIDs)))
+	}
+
+	// Mark failed items by status
+	for status, ids := range byStatus {
+		if err := m.processor.repo.MarkWithStatus(ctx, m.itemType, ids, status); err != nil {
+			log.Error().Err(err).
+				Str("status", status.String()).
+				Msg("Failed to mark items with status")
+		}
+		metrics.OutboxItemsProcessed.WithLabelValues(string(m.itemType), "failed").Add(float64(len(ids)))
+	}
+}
+
+// contains is a simple substring check
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsImpl(s, substr))
+}
+
+func containsImpl(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}

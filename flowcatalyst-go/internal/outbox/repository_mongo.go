@@ -2,6 +2,7 @@ package outbox
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -9,7 +10,9 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-// MongoRepository implements Repository for MongoDB
+// MongoRepository implements Repository for MongoDB.
+// Uses simple find/updateMany with status codes - NO findOneAndUpdate loop.
+// Safe because only one poller runs (enforced by leader election).
 type MongoRepository struct {
 	db     *mongo.Database
 	config *RepositoryConfig
@@ -43,42 +46,27 @@ func (r *MongoRepository) getCollection(itemType OutboxItemType) *mongo.Collecti
 	return r.db.Collection(r.GetTableName(itemType))
 }
 
-// FetchAndLockPending atomically fetches pending items and marks them as PROCESSING.
-// MongoDB uses findOneAndUpdate which is naturally atomic.
-// We loop to fetch multiple items.
-func (r *MongoRepository) FetchAndLockPending(ctx context.Context, itemType OutboxItemType, limit int) ([]*OutboxItem, error) {
+// FetchPending fetches pending items (status=0) ordered by messageGroup, createdAt.
+// Simple find with no atomic update - safe because only one poller runs.
+func (r *MongoRepository) FetchPending(ctx context.Context, itemType OutboxItemType, limit int) ([]*OutboxItem, error) {
 	collection := r.getCollection(itemType)
-	items := make([]*OutboxItem, 0, limit)
 
-	filter := bson.M{"status": OutboxStatusPending}
-	update := bson.M{
-		"$set": bson.M{
-			"status":      OutboxStatusProcessing,
-			"processedAt": time.Now(),
-		},
-	}
-	opts := options.FindOneAndUpdate().
+	filter := bson.M{"status": int(StatusPending)}
+	opts := options.Find().
 		SetSort(bson.D{{Key: "messageGroup", Value: 1}, {Key: "createdAt", Value: 1}}).
-		SetReturnDocument(options.After)
+		SetLimit(int64(limit))
 
-	for i := 0; i < limit; i++ {
-		var item OutboxItem
-		err := collection.FindOneAndUpdate(ctx, filter, update, opts).Decode(&item)
-		if err != nil {
-			if err == mongo.ErrNoDocuments {
-				// No more pending items
-				break
-			}
-			return items, err
-		}
-		items = append(items, &item)
+	cursor, err := collection.Find(ctx, filter, opts)
+	if err != nil {
+		return nil, fmt.Errorf("fetch pending: %w", err)
 	}
+	defer cursor.Close(ctx)
 
-	return items, nil
+	return r.decodeCursor(ctx, cursor)
 }
 
-// MarkCompleted updates items to COMPLETED status
-func (r *MongoRepository) MarkCompleted(ctx context.Context, itemType OutboxItemType, ids []string) error {
+// MarkAsInProgress marks items as in-progress (status=9).
+func (r *MongoRepository) MarkAsInProgress(ctx context.Context, itemType OutboxItemType, ids []string) error {
 	if len(ids) == 0 {
 		return nil
 	}
@@ -87,17 +75,20 @@ func (r *MongoRepository) MarkCompleted(ctx context.Context, itemType OutboxItem
 	filter := bson.M{"_id": bson.M{"$in": ids}}
 	update := bson.M{
 		"$set": bson.M{
-			"status":      OutboxStatusCompleted,
-			"processedAt": time.Now(),
+			"status":    int(StatusInProgress),
+			"updatedAt": time.Now(),
 		},
 	}
 
 	_, err := collection.UpdateMany(ctx, filter, update)
-	return err
+	if err != nil {
+		return fmt.Errorf("mark as in-progress: %w", err)
+	}
+	return nil
 }
 
-// MarkFailed marks items as FAILED with error message
-func (r *MongoRepository) MarkFailed(ctx context.Context, itemType OutboxItemType, ids []string, errorMessage string) error {
+// MarkWithStatus updates items to the specified status code.
+func (r *MongoRepository) MarkWithStatus(ctx context.Context, itemType OutboxItemType, ids []string, status OutboxStatus) error {
 	if len(ids) == 0 {
 		return nil
 	}
@@ -106,18 +97,59 @@ func (r *MongoRepository) MarkFailed(ctx context.Context, itemType OutboxItemTyp
 	filter := bson.M{"_id": bson.M{"$in": ids}}
 	update := bson.M{
 		"$set": bson.M{
-			"status":       OutboxStatusFailed,
+			"status":    int(status),
+			"updatedAt": time.Now(),
+		},
+	}
+
+	_, err := collection.UpdateMany(ctx, filter, update)
+	if err != nil {
+		return fmt.Errorf("mark with status %d: %w", status, err)
+	}
+	return nil
+}
+
+// MarkWithStatusAndError updates items to the specified status with an error message.
+func (r *MongoRepository) MarkWithStatusAndError(ctx context.Context, itemType OutboxItemType, ids []string, status OutboxStatus, errorMessage string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+
+	collection := r.getCollection(itemType)
+	filter := bson.M{"_id": bson.M{"$in": ids}}
+	update := bson.M{
+		"$set": bson.M{
+			"status":       int(status),
 			"errorMessage": errorMessage,
-			"processedAt":  time.Now(),
+			"updatedAt":    time.Now(),
 		},
 	}
 
 	_, err := collection.UpdateMany(ctx, filter, update)
-	return err
+	if err != nil {
+		return fmt.Errorf("mark with status %d and error: %w", status, err)
+	}
+	return nil
 }
 
-// ScheduleRetry increments retryCount and resets to PENDING
-func (r *MongoRepository) ScheduleRetry(ctx context.Context, itemType OutboxItemType, ids []string) error {
+// FetchStuckItems fetches items stuck in in-progress status (status=9).
+func (r *MongoRepository) FetchStuckItems(ctx context.Context, itemType OutboxItemType) ([]*OutboxItem, error) {
+	collection := r.getCollection(itemType)
+
+	filter := bson.M{"status": int(StatusInProgress)}
+	opts := options.Find().SetSort(bson.D{{Key: "createdAt", Value: 1}})
+
+	cursor, err := collection.Find(ctx, filter, opts)
+	if err != nil {
+		return nil, fmt.Errorf("fetch stuck items: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	return r.decodeCursor(ctx, cursor)
+}
+
+// ResetStuckItems resets stuck items back to pending (status=0).
+func (r *MongoRepository) ResetStuckItems(ctx context.Context, itemType OutboxItemType, ids []string) error {
 	if len(ids) == 0 {
 		return nil
 	}
@@ -126,7 +158,30 @@ func (r *MongoRepository) ScheduleRetry(ctx context.Context, itemType OutboxItem
 	filter := bson.M{"_id": bson.M{"$in": ids}}
 	update := bson.M{
 		"$set": bson.M{
-			"status": OutboxStatusPending,
+			"status":    int(StatusPending),
+			"updatedAt": time.Now(),
+		},
+	}
+
+	_, err := collection.UpdateMany(ctx, filter, update)
+	if err != nil {
+		return fmt.Errorf("reset stuck items: %w", err)
+	}
+	return nil
+}
+
+// IncrementRetryCount increments the retry count for items and resets to pending.
+func (r *MongoRepository) IncrementRetryCount(ctx context.Context, itemType OutboxItemType, ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+
+	collection := r.getCollection(itemType)
+	filter := bson.M{"_id": bson.M{"$in": ids}}
+	update := bson.M{
+		"$set": bson.M{
+			"status":    int(StatusPending),
+			"updatedAt": time.Now(),
 		},
 		"$inc": bson.M{
 			"retryCount": 1,
@@ -134,47 +189,134 @@ func (r *MongoRepository) ScheduleRetry(ctx context.Context, itemType OutboxItem
 	}
 
 	_, err := collection.UpdateMany(ctx, filter, update)
-	return err
-}
-
-// RecoverStuckItems resets stuck PROCESSING items to PENDING
-func (r *MongoRepository) RecoverStuckItems(ctx context.Context, itemType OutboxItemType, timeoutSeconds int) (int64, error) {
-	collection := r.getCollection(itemType)
-
-	threshold := time.Now().Add(-time.Duration(timeoutSeconds) * time.Second)
-	filter := bson.M{
-		"status":      OutboxStatusProcessing,
-		"processedAt": bson.M{"$lt": threshold},
-	}
-	update := bson.M{
-		"$set": bson.M{
-			"status": OutboxStatusPending,
-		},
-	}
-
-	result, err := collection.UpdateMany(ctx, filter, update)
 	if err != nil {
-		return 0, err
+		return fmt.Errorf("increment retry count: %w", err)
 	}
-	return result.ModifiedCount, nil
+	return nil
 }
 
-// EnsureIndexes creates the necessary indexes for the outbox collections
-func (r *MongoRepository) EnsureIndexes(ctx context.Context) error {
+// CountPending returns the count of pending items.
+func (r *MongoRepository) CountPending(ctx context.Context, itemType OutboxItemType) (int64, error) {
+	collection := r.getCollection(itemType)
+	filter := bson.M{"status": int(StatusPending)}
+
+	count, err := collection.CountDocuments(ctx, filter)
+	if err != nil {
+		return 0, fmt.Errorf("count pending: %w", err)
+	}
+	return count, nil
+}
+
+// CreateSchema creates indexes on the outbox collections.
+// MongoDB collections are created implicitly, so we only need to create indexes.
+func (r *MongoRepository) CreateSchema(ctx context.Context) error {
 	for _, itemType := range []OutboxItemType{OutboxItemTypeEvent, OutboxItemTypeDispatchJob} {
 		collection := r.getCollection(itemType)
+		collName := r.GetTableName(itemType)
 
-		// Index for fetching pending items in FIFO order
+		// Index for fetching pending items (status=0, ordered by messageGroup, createdAt)
+		// MongoDB supports partial indexes via partialFilterExpression
 		_, err := collection.Indexes().CreateOne(ctx, mongo.IndexModel{
 			Keys: bson.D{
 				{Key: "status", Value: 1},
 				{Key: "messageGroup", Value: 1},
 				{Key: "createdAt", Value: 1},
 			},
+			Options: options.Index().
+				SetName("idx_pending").
+				SetPartialFilterExpression(bson.M{"status": int(StatusPending)}),
 		})
 		if err != nil {
-			return err
+			return fmt.Errorf("create pending index on %s: %w", collName, err)
+		}
+
+		// Index for finding stuck items (status=9)
+		_, err = collection.Indexes().CreateOne(ctx, mongo.IndexModel{
+			Keys: bson.D{
+				{Key: "status", Value: 1},
+				{Key: "createdAt", Value: 1},
+			},
+			Options: options.Index().
+				SetName("idx_stuck").
+				SetPartialFilterExpression(bson.M{"status": int(StatusInProgress)}),
+		})
+		if err != nil {
+			return fmt.Errorf("create stuck index on %s: %w", collName, err)
 		}
 	}
 	return nil
+}
+
+// decodeCursor decodes MongoDB cursor into OutboxItem slice
+func (r *MongoRepository) decodeCursor(ctx context.Context, cursor *mongo.Cursor) ([]*OutboxItem, error) {
+	var items []*OutboxItem
+	for cursor.Next(ctx) {
+		var doc bson.M
+		if err := cursor.Decode(&doc); err != nil {
+			return nil, fmt.Errorf("decode document: %w", err)
+		}
+
+		item := &OutboxItem{}
+
+		// _id
+		if id, ok := doc["_id"].(string); ok {
+			item.ID = id
+		}
+
+		// type
+		if t, ok := doc["type"].(string); ok {
+			item.Type = OutboxItemType(t)
+		}
+
+		// messageGroup
+		if mg, ok := doc["messageGroup"].(string); ok {
+			item.MessageGroup = mg
+		}
+
+		// payload
+		if p, ok := doc["payload"].(string); ok {
+			item.Payload = p
+		}
+
+		// status (stored as int32 in MongoDB)
+		if s, ok := doc["status"].(int32); ok {
+			item.Status = OutboxStatus(s)
+		} else if s, ok := doc["status"].(int64); ok {
+			item.Status = OutboxStatus(s)
+		} else if s, ok := doc["status"].(int); ok {
+			item.Status = OutboxStatus(s)
+		}
+
+		// retryCount
+		if rc, ok := doc["retryCount"].(int32); ok {
+			item.RetryCount = int(rc)
+		} else if rc, ok := doc["retryCount"].(int64); ok {
+			item.RetryCount = int(rc)
+		} else if rc, ok := doc["retryCount"].(int); ok {
+			item.RetryCount = rc
+		}
+
+		// createdAt
+		if ca, ok := doc["createdAt"].(time.Time); ok {
+			item.CreatedAt = ca
+		}
+
+		// updatedAt
+		if ua, ok := doc["updatedAt"].(time.Time); ok {
+			item.UpdatedAt = ua
+		}
+
+		// errorMessage
+		if em, ok := doc["errorMessage"].(string); ok {
+			item.ErrorMessage = em
+		}
+
+		items = append(items, item)
+	}
+
+	if err := cursor.Err(); err != nil {
+		return nil, fmt.Errorf("cursor iteration: %w", err)
+	}
+
+	return items, nil
 }

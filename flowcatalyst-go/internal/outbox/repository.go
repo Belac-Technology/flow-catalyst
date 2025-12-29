@@ -6,28 +6,46 @@ import (
 )
 
 // Repository defines the interface for outbox data access.
-// All implementations must provide atomic fetch-and-lock operations.
+// Uses a single-poller, status-based pattern with NO row locking.
+// This works identically across PostgreSQL, MySQL, and MongoDB.
 type Repository interface {
-	// FetchAndLockPending atomically selects pending items AND marks them as PROCESSING.
-	// Items are ordered by (messageGroup, createdAt) for FIFO within groups.
-	// This MUST be atomic to prevent multiple processors fetching same items.
-	FetchAndLockPending(ctx context.Context, itemType OutboxItemType, limit int) ([]*OutboxItem, error)
+	// FetchPending fetches pending items (status=0) ordered by message_group, created_at.
+	// Does NOT lock or modify the items - caller must call MarkAsInProgress after.
+	// This is safe because only one poller runs (enforced by leader election).
+	FetchPending(ctx context.Context, itemType OutboxItemType, limit int) ([]*OutboxItem, error)
 
-	// MarkCompleted updates items to COMPLETED status
-	MarkCompleted(ctx context.Context, itemType OutboxItemType, ids []string) error
+	// MarkAsInProgress marks items as in-progress (status=9).
+	// Must be called immediately after FetchPending, before distributing to queues.
+	// This prevents re-polling of items that are being processed.
+	MarkAsInProgress(ctx context.Context, itemType OutboxItemType, ids []string) error
 
-	// MarkFailed marks items as FAILED with error message
-	MarkFailed(ctx context.Context, itemType OutboxItemType, ids []string, errorMessage string) error
+	// MarkWithStatus updates items to the specified status code.
+	// Used for both success (status=1) and various error types (status=2-6).
+	MarkWithStatus(ctx context.Context, itemType OutboxItemType, ids []string, status OutboxStatus) error
 
-	// ScheduleRetry increments retryCount and resets to PENDING
-	ScheduleRetry(ctx context.Context, itemType OutboxItemType, ids []string) error
+	// MarkWithStatusAndError updates items to the specified status with an error message.
+	MarkWithStatusAndError(ctx context.Context, itemType OutboxItemType, ids []string, status OutboxStatus, errorMessage string) error
 
-	// RecoverStuckItems resets stuck PROCESSING items to PENDING
-	// Items in PROCESSING longer than timeoutSeconds are considered stuck
-	RecoverStuckItems(ctx context.Context, itemType OutboxItemType, timeoutSeconds int) (int64, error)
+	// FetchStuckItems fetches items stuck in in-progress status (status=9).
+	// Used on startup for crash recovery.
+	FetchStuckItems(ctx context.Context, itemType OutboxItemType) ([]*OutboxItem, error)
 
-	// GetTableName returns the table/collection name for the item type
+	// ResetStuckItems resets stuck items back to pending (status=0).
+	// Used on startup for crash recovery.
+	ResetStuckItems(ctx context.Context, itemType OutboxItemType, ids []string) error
+
+	// IncrementRetryCount increments the retry count for items and resets to pending.
+	// Used when an item fails but should be retried.
+	IncrementRetryCount(ctx context.Context, itemType OutboxItemType, ids []string) error
+
+	// CountPending returns the count of pending items (for metrics).
+	CountPending(ctx context.Context, itemType OutboxItemType) (int64, error)
+
+	// GetTableName returns the table/collection name for the item type.
 	GetTableName(itemType OutboxItemType) string
+
+	// CreateSchema creates the outbox tables/collections if they don't exist.
+	CreateSchema(ctx context.Context) error
 }
 
 // RepositoryConfig holds configuration for the outbox repository
@@ -53,16 +71,53 @@ func DefaultRepositoryConfig() *RepositoryConfig {
 
 // BatchResult represents the result of a batch API call
 type BatchResult struct {
+	// SuccessIDs are the IDs that were successfully processed
 	SuccessIDs []string
-	FailedIDs  []string
-	Error      error
+
+	// FailedItems maps item ID to the status code for that failure
+	FailedItems map[string]OutboxStatus
+
+	// Error is set if the entire batch failed
+	Error error
 }
 
-// ProcessingResult represents the result of processing outbox items
-type ProcessingResult struct {
-	Completed  int
-	Failed     int
-	Retried    int
-	TotalItems int
-	Duration   time.Duration
+// NewBatchResult creates a new BatchResult
+func NewBatchResult() *BatchResult {
+	return &BatchResult{
+		SuccessIDs:  make([]string, 0),
+		FailedItems: make(map[string]OutboxStatus),
+	}
+}
+
+// ProcessorStats represents processing statistics
+type ProcessorStats struct {
+	// Status is "UP" or "DOWN"
+	Status string
+
+	// Healthy indicates if the processor is functioning normally
+	Healthy bool
+
+	// LastPollTime is when the last successful poll occurred
+	LastPollTime time.Time
+
+	// ActiveMessageGroups is the number of active message group queues
+	ActiveMessageGroups int
+
+	// InFlightPermits is the number of available in-flight permits
+	InFlightPermits int
+
+	// TotalInFlightCapacity is the maximum in-flight capacity
+	TotalInFlightCapacity int
+
+	// BufferedItems is the total number of items in message group queues
+	BufferedItems int
+
+	// TotalProcessed is the total number of items processed
+	TotalProcessed int64
+
+	// TotalSuccess is the total number of successful items
+	TotalSuccess int64
+
+	// TotalFailed is the total number of failed items
+	TotalFailed int64
 }

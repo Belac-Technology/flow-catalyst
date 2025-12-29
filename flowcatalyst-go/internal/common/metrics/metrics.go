@@ -359,6 +359,16 @@ var (
 		},
 	)
 
+	// OutboxInFlightItems tracks total items in-flight (buffer + message group queues)
+	OutboxInFlightItems = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Namespace: "flowcatalyst",
+			Subsystem: "outbox",
+			Name:      "in_flight_items",
+			Help:      "Total items in-flight (buffer + processing queues)",
+		},
+	)
+
 	// HTTP API metrics
 
 	// HTTPRequestsTotal tracks HTTP API requests

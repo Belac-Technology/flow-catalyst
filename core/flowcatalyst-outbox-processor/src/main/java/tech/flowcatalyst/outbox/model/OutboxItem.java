@@ -29,7 +29,7 @@ public record OutboxItem(
     String payload,
 
     /**
-     * Current processing status.
+     * Current processing status (integer code).
      */
     OutboxStatus status,
 
@@ -44,9 +44,9 @@ public record OutboxItem(
     Instant createdAt,
 
     /**
-     * When the item was last picked up for processing.
+     * When the item was last updated.
      */
-    Instant processedAt,
+    Instant updatedAt,
 
     /**
      * Error message if the item failed.
@@ -54,23 +54,30 @@ public record OutboxItem(
     String errorMessage
 ) {
     /**
-     * Creates a new OutboxItem with updated status.
+     * Get the effective message group (returns "default" if null or empty).
      */
-    public OutboxItem withStatus(OutboxStatus newStatus) {
-        return new OutboxItem(id, type, messageGroup, payload, newStatus, retryCount, createdAt, processedAt, errorMessage);
+    public String getEffectiveMessageGroup() {
+        return (messageGroup == null || messageGroup.isEmpty()) ? "default" : messageGroup;
     }
 
     /**
-     * Creates a new OutboxItem with incremented retry count.
+     * Check if the item is pending.
      */
-    public OutboxItem withRetry() {
-        return new OutboxItem(id, type, messageGroup, payload, OutboxStatus.PENDING, retryCount + 1, createdAt, null, errorMessage);
+    public boolean isPending() {
+        return status == OutboxStatus.PENDING;
     }
 
     /**
-     * Creates a new OutboxItem marked as failed with error message.
+     * Check if the item is in progress.
      */
-    public OutboxItem withFailure(String error) {
-        return new OutboxItem(id, type, messageGroup, payload, OutboxStatus.FAILED, retryCount, createdAt, processedAt, error);
+    public boolean isInProgress() {
+        return status == OutboxStatus.IN_PROGRESS;
+    }
+
+    /**
+     * Check if the item was successfully processed.
+     */
+    public boolean isSuccess() {
+        return status == OutboxStatus.SUCCESS;
     }
 }

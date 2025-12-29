@@ -77,6 +77,13 @@ public interface OutboxProcessorConfig {
     Optional<String> apiToken();
 
     /**
+     * Maximum number of items that can be in-flight (fetched but not yet processed).
+     * Used for backpressure control.
+     */
+    @WithDefault("5000")
+    int maxInFlight();
+
+    /**
      * Maximum number of retry attempts for failed items.
      */
     @WithDefault("3")
@@ -89,10 +96,18 @@ public interface OutboxProcessorConfig {
     int retryDelaySeconds();
 
     /**
-     * Timeout in seconds for items stuck in PROCESSING status (crash recovery).
+     * Timeout in seconds for items in error status before periodic recovery.
+     * Items older than this will be reset to PENDING for retry.
      */
     @WithDefault("300")
     int processingTimeoutSeconds();
+
+    /**
+     * Interval for periodic recovery of error items.
+     * Supports duration format: 60s, 5m, etc.
+     */
+    @WithDefault("60s")
+    String recoveryInterval();
 
     /**
      * MongoDB database name (only used when databaseType=MONGODB).

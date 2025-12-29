@@ -16,10 +16,12 @@ import java.sql.*;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * MySQL implementation of OutboxRepository.
- * Uses SELECT FOR UPDATE with subquery for locking.
+ * Uses simple SELECT/UPDATE with status codes - NO row locking.
+ * Safe because only one poller runs (enforced by leader election).
  */
 @ApplicationScoped
 @Alternative
@@ -35,81 +37,32 @@ public class MysqlOutboxRepository implements OutboxRepository {
     OutboxProcessorConfig config;
 
     @Override
-    public List<OutboxItem> fetchAndLockPending(OutboxItemType type, int limit) {
+    public List<OutboxItem> fetchPending(OutboxItemType type, int limit) {
         String table = getTableName(type);
-        List<OutboxItem> items = new ArrayList<>();
 
-        // MySQL requires a two-step approach:
-        // 1. Select IDs to lock
-        // 2. Update those IDs
-        String selectSql = """
-            SELECT id FROM %s
-            WHERE status = 'PENDING'
+        String sql = """
+            SELECT id, type, message_group, payload, status, retry_count, created_at, updated_at, error_message
+            FROM %s
+            WHERE status = %d
             ORDER BY message_group, created_at
             LIMIT ?
-            FOR UPDATE SKIP LOCKED
-            """.formatted(table);
+            """.formatted(table, OutboxStatus.PENDING.getCode());
 
-        String updateSql = """
-            UPDATE %s
-            SET status = 'PROCESSING', processed_at = NOW()
-            WHERE id = ?
-            """.formatted(table);
+        List<OutboxItem> items = new ArrayList<>();
 
-        String fetchSql = """
-            SELECT id, message_group, payload, status, retry_count,
-                   created_at, processed_at, error_message
-            FROM %s WHERE id IN (%s)
-            """;
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
 
-        try (Connection conn = dataSource.getConnection()) {
-            conn.setAutoCommit(false);
+            stmt.setInt(1, limit);
 
-            List<String> ids = new ArrayList<>();
-
-            // Step 1: Select and lock IDs
-            try (PreparedStatement selectStmt = conn.prepareStatement(selectSql)) {
-                selectStmt.setInt(1, limit);
-                try (ResultSet rs = selectStmt.executeQuery()) {
-                    while (rs.next()) {
-                        ids.add(rs.getString("id"));
-                    }
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    items.add(mapRow(rs, type));
                 }
             }
-
-            if (ids.isEmpty()) {
-                conn.commit();
-                return items;
-            }
-
-            // Step 2: Update status to PROCESSING
-            try (PreparedStatement updateStmt = conn.prepareStatement(updateSql)) {
-                for (String id : ids) {
-                    updateStmt.setString(1, id);
-                    updateStmt.addBatch();
-                }
-                updateStmt.executeBatch();
-            }
-
-            // Step 3: Fetch the updated rows
-            String placeholders = String.join(",", ids.stream().map(id -> "?").toList());
-            String finalFetchSql = fetchSql.formatted(table, placeholders);
-
-            try (PreparedStatement fetchStmt = conn.prepareStatement(finalFetchSql)) {
-                for (int i = 0; i < ids.size(); i++) {
-                    fetchStmt.setString(i + 1, ids.get(i));
-                }
-                try (ResultSet rs = fetchStmt.executeQuery()) {
-                    while (rs.next()) {
-                        items.add(mapRow(rs, type));
-                    }
-                }
-            }
-
-            conn.commit();
 
         } catch (SQLException e) {
-            LOG.errorf(e, "Failed to fetch and lock pending items from %s", table);
+            LOG.errorf(e, "Failed to fetch pending items from %s", table);
             throw new RuntimeException("Failed to fetch pending items", e);
         }
 
@@ -117,40 +70,49 @@ public class MysqlOutboxRepository implements OutboxRepository {
     }
 
     @Override
-    public void markCompleted(OutboxItemType type, List<String> ids) {
+    public void markAsInProgress(OutboxItemType type, List<String> ids) {
         if (ids.isEmpty()) return;
 
         String table = getTableName(type);
-        String placeholders = String.join(",", ids.stream().map(id -> "?").toList());
+        String placeholders = ids.stream().map(id -> "?").collect(Collectors.joining(","));
 
-        String sql = "UPDATE %s SET status = 'COMPLETED', processed_at = NOW() WHERE id IN (%s)"
-            .formatted(table, placeholders);
+        String sql = """
+            UPDATE %s
+            SET status = %d, updated_at = NOW()
+            WHERE id IN (%s)
+            """.formatted(table, OutboxStatus.IN_PROGRESS.getCode(), placeholders);
 
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
-
-            for (int i = 0; i < ids.size(); i++) {
-                stmt.setString(i + 1, ids.get(i));
-            }
-
-            int updated = stmt.executeUpdate();
-            LOG.debugf("Marked %d items as COMPLETED in %s", updated, table);
-
-        } catch (SQLException e) {
-            LOG.errorf(e, "Failed to mark items as completed in %s", table);
-            throw new RuntimeException("Failed to mark items as completed", e);
-        }
+        executeUpdate(sql, ids, table, "mark as in-progress");
     }
 
     @Override
-    public void markFailed(OutboxItemType type, List<String> ids, String errorMessage) {
+    public void markWithStatus(OutboxItemType type, List<String> ids, OutboxStatus status) {
         if (ids.isEmpty()) return;
 
         String table = getTableName(type);
-        String placeholders = String.join(",", ids.stream().map(id -> "?").toList());
+        String placeholders = ids.stream().map(id -> "?").collect(Collectors.joining(","));
 
-        String sql = "UPDATE %s SET status = 'FAILED', error_message = ?, processed_at = NOW() WHERE id IN (%s)"
-            .formatted(table, placeholders);
+        String sql = """
+            UPDATE %s
+            SET status = %d, updated_at = NOW()
+            WHERE id IN (%s)
+            """.formatted(table, status.getCode(), placeholders);
+
+        executeUpdate(sql, ids, table, "mark with status " + status);
+    }
+
+    @Override
+    public void markWithStatusAndError(OutboxItemType type, List<String> ids, OutboxStatus status, String errorMessage) {
+        if (ids.isEmpty()) return;
+
+        String table = getTableName(type);
+        String placeholders = ids.stream().map(id -> "?").collect(Collectors.joining(","));
+
+        String sql = """
+            UPDATE %s
+            SET status = %d, error_message = ?, updated_at = NOW()
+            WHERE id IN (%s)
+            """.formatted(table, status.getCode(), placeholders);
 
         try (Connection conn = dataSource.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
@@ -161,76 +123,244 @@ public class MysqlOutboxRepository implements OutboxRepository {
             }
 
             int updated = stmt.executeUpdate();
-            LOG.debugf("Marked %d items as FAILED in %s", updated, table);
+            LOG.debugf("Marked %d items with status %s in %s", updated, status, table);
 
         } catch (SQLException e) {
-            LOG.errorf(e, "Failed to mark items as failed in %s", table);
-            throw new RuntimeException("Failed to mark items as failed", e);
+            LOG.errorf(e, "Failed to mark items with status and error in %s", table);
+            throw new RuntimeException("Failed to mark items with status and error", e);
         }
     }
 
     @Override
-    public void scheduleRetry(OutboxItemType type, List<String> ids) {
+    public List<OutboxItem> fetchStuckItems(OutboxItemType type) {
+        String table = getTableName(type);
+
+        String sql = """
+            SELECT id, type, message_group, payload, status, retry_count, created_at, updated_at, error_message
+            FROM %s
+            WHERE status = %d
+            ORDER BY created_at
+            """.formatted(table, OutboxStatus.IN_PROGRESS.getCode());
+
+        List<OutboxItem> items = new ArrayList<>();
+
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql);
+             ResultSet rs = stmt.executeQuery()) {
+
+            while (rs.next()) {
+                items.add(mapRow(rs, type));
+            }
+
+        } catch (SQLException e) {
+            LOG.errorf(e, "Failed to fetch stuck items from %s", table);
+            throw new RuntimeException("Failed to fetch stuck items", e);
+        }
+
+        return items;
+    }
+
+    @Override
+    public void resetStuckItems(OutboxItemType type, List<String> ids) {
         if (ids.isEmpty()) return;
 
         String table = getTableName(type);
-        String placeholders = String.join(",", ids.stream().map(id -> "?").toList());
+        String placeholders = ids.stream().map(id -> "?").collect(Collectors.joining(","));
 
         String sql = """
             UPDATE %s
-            SET status = 'PENDING',
-                retry_count = retry_count + 1,
-                processed_at = NULL
-            WHERE id IN (%s) AND retry_count < ?
-            """.formatted(table, placeholders);
+            SET status = %d, updated_at = NOW()
+            WHERE id IN (%s)
+            """.formatted(table, OutboxStatus.PENDING.getCode(), placeholders);
 
+        executeUpdate(sql, ids, table, "reset stuck items");
+    }
+
+    @Override
+    public void incrementRetryCount(OutboxItemType type, List<String> ids) {
+        if (ids.isEmpty()) return;
+
+        String table = getTableName(type);
+        String placeholders = ids.stream().map(id -> "?").collect(Collectors.joining(","));
+
+        String sql = """
+            UPDATE %s
+            SET status = %d, retry_count = retry_count + 1, updated_at = NOW()
+            WHERE id IN (%s)
+            """.formatted(table, OutboxStatus.PENDING.getCode(), placeholders);
+
+        executeUpdate(sql, ids, table, "increment retry count");
+    }
+
+    @Override
+    public List<OutboxItem> fetchRecoverableItems(OutboxItemType type, int timeoutSeconds, int limit) {
+        String table = getTableName(type);
+
+        // Fetch items with error statuses that are older than timeout
+        String sql = """
+            SELECT id, type, message_group, payload, status, retry_count, created_at, updated_at, error_message
+            FROM %s
+            WHERE status IN (%d, %d, %d, %d, %d, %d)
+              AND updated_at < DATE_SUB(NOW(), INTERVAL %d SECOND)
+            ORDER BY created_at
+            LIMIT ?
+            """.formatted(
+                table,
+                OutboxStatus.IN_PROGRESS.getCode(),
+                OutboxStatus.BAD_REQUEST.getCode(),
+                OutboxStatus.INTERNAL_ERROR.getCode(),
+                OutboxStatus.UNAUTHORIZED.getCode(),
+                OutboxStatus.FORBIDDEN.getCode(),
+                OutboxStatus.GATEWAY_ERROR.getCode(),
+                timeoutSeconds
+            );
+
+        List<OutboxItem> items = new ArrayList<>();
+
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+
+            stmt.setInt(1, limit);
+
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    items.add(mapRow(rs, type));
+                }
+            }
+
+        } catch (SQLException e) {
+            LOG.errorf(e, "Failed to fetch recoverable items from %s", table);
+            throw new RuntimeException("Failed to fetch recoverable items", e);
+        }
+
+        return items;
+    }
+
+    @Override
+    public void resetRecoverableItems(OutboxItemType type, List<String> ids) {
+        if (ids.isEmpty()) return;
+
+        String table = getTableName(type);
+        String placeholders = ids.stream().map(id -> "?").collect(Collectors.joining(","));
+
+        String sql = """
+            UPDATE %s
+            SET status = %d, updated_at = NOW()
+            WHERE id IN (%s)
+            """.formatted(table, OutboxStatus.PENDING.getCode(), placeholders);
+
+        executeUpdate(sql, ids, table, "reset recoverable items");
+    }
+
+    @Override
+    public long countPending(OutboxItemType type) {
+        String table = getTableName(type);
+        String sql = "SELECT COUNT(*) FROM %s WHERE status = %d".formatted(table, OutboxStatus.PENDING.getCode());
+
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql);
+             ResultSet rs = stmt.executeQuery()) {
+
+            if (rs.next()) {
+                return rs.getLong(1);
+            }
+            return 0;
+
+        } catch (SQLException e) {
+            LOG.errorf(e, "Failed to count pending items in %s", table);
+            throw new RuntimeException("Failed to count pending items", e);
+        }
+    }
+
+    @Override
+    public String getTableName(OutboxItemType type) {
+        return type == OutboxItemType.EVENT ? config.eventsTable() : config.dispatchJobsTable();
+    }
+
+    @Override
+    public void createSchema() {
+        for (OutboxItemType type : OutboxItemType.values()) {
+            String table = getTableName(type);
+            createTableIfNotExists(table);
+            createIndexes(table);
+        }
+    }
+
+    private void createTableIfNotExists(String table) {
+        String sql = """
+            CREATE TABLE IF NOT EXISTS %s (
+                id VARCHAR(26) PRIMARY KEY,
+                type VARCHAR(20) NOT NULL,
+                message_group VARCHAR(255),
+                payload TEXT NOT NULL,
+                status SMALLINT NOT NULL DEFAULT 0,
+                retry_count SMALLINT NOT NULL DEFAULT 0,
+                created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+                updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+                error_message TEXT
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            """.formatted(table);
+
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.executeUpdate();
+            LOG.infof("Created table %s if not exists", table);
+        } catch (SQLException e) {
+            LOG.errorf(e, "Failed to create table %s", table);
+            throw new RuntimeException("Failed to create table", e);
+        }
+    }
+
+    private void createIndexes(String table) {
+        // MySQL doesn't support partial indexes, so we create standard composite indexes
+        String pendingIndex = """
+            CREATE INDEX idx_%s_pending
+            ON %s(status, message_group, created_at)
+            """.formatted(table, table);
+
+        String stuckIndex = """
+            CREATE INDEX idx_%s_stuck
+            ON %s(status, created_at)
+            """.formatted(table, table);
+
+        try (Connection conn = dataSource.getConnection()) {
+            // Try to create indexes, ignore if they already exist
+            try (PreparedStatement stmt = conn.prepareStatement(pendingIndex)) {
+                stmt.executeUpdate();
+            } catch (SQLException e) {
+                if (!e.getMessage().contains("Duplicate key name")) {
+                    throw e;
+                }
+            }
+            try (PreparedStatement stmt = conn.prepareStatement(stuckIndex)) {
+                stmt.executeUpdate();
+            } catch (SQLException e) {
+                if (!e.getMessage().contains("Duplicate key name")) {
+                    throw e;
+                }
+            }
+            LOG.debugf("Created indexes on %s", table);
+        } catch (SQLException e) {
+            LOG.errorf(e, "Failed to create indexes on %s", table);
+            throw new RuntimeException("Failed to create indexes", e);
+        }
+    }
+
+    private void executeUpdate(String sql, List<String> ids, String table, String operation) {
         try (Connection conn = dataSource.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
 
             for (int i = 0; i < ids.size(); i++) {
                 stmt.setString(i + 1, ids.get(i));
             }
-            stmt.setInt(ids.size() + 1, config.maxRetries());
 
             int updated = stmt.executeUpdate();
-            LOG.debugf("Scheduled %d items for retry in %s", updated, table);
+            LOG.debugf("%s: %d items in %s", operation, updated, table);
 
         } catch (SQLException e) {
-            LOG.errorf(e, "Failed to schedule retry for items in %s", table);
-            throw new RuntimeException("Failed to schedule retry", e);
+            LOG.errorf(e, "Failed to %s in %s", operation, table);
+            throw new RuntimeException("Failed to " + operation, e);
         }
-    }
-
-    @Override
-    public int recoverStuckItems(OutboxItemType type, int timeoutSeconds) {
-        String table = getTableName(type);
-
-        String sql = """
-            UPDATE %s
-            SET status = 'PENDING', processed_at = NULL
-            WHERE status = 'PROCESSING'
-              AND processed_at < DATE_SUB(NOW(), INTERVAL ? SECOND)
-            """.formatted(table);
-
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
-
-            stmt.setInt(1, timeoutSeconds);
-            int recovered = stmt.executeUpdate();
-
-            if (recovered > 0) {
-                LOG.infof("Recovered %d stuck items in %s", recovered, table);
-            }
-            return recovered;
-
-        } catch (SQLException e) {
-            LOG.errorf(e, "Failed to recover stuck items in %s", table);
-            throw new RuntimeException("Failed to recover stuck items", e);
-        }
-    }
-
-    private String getTableName(OutboxItemType type) {
-        return type == OutboxItemType.EVENT ? config.eventsTable() : config.dispatchJobsTable();
     }
 
     private OutboxItem mapRow(ResultSet rs, OutboxItemType type) throws SQLException {
@@ -239,10 +369,10 @@ public class MysqlOutboxRepository implements OutboxRepository {
             type,
             rs.getString("message_group"),
             rs.getString("payload"),
-            OutboxStatus.valueOf(rs.getString("status")),
+            OutboxStatus.fromCode(rs.getInt("status")),
             rs.getInt("retry_count"),
             toInstant(rs.getTimestamp("created_at")),
-            toInstant(rs.getTimestamp("processed_at")),
+            toInstant(rs.getTimestamp("updated_at")),
             rs.getString("error_message")
         );
     }
