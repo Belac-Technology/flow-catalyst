@@ -6,17 +6,39 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/rs/zerolog/log"
 
+	"go.flowcatalyst.tech/internal/platform/common"
+	"go.flowcatalyst.tech/internal/platform/dispatchpool"
+	dpops "go.flowcatalyst.tech/internal/platform/dispatchpool/operations"
 	"go.flowcatalyst.tech/internal/platform/subscription"
+	"go.flowcatalyst.tech/internal/platform/subscription/operations"
 )
 
-// SubscriptionHandler handles subscription endpoints
+// SubscriptionHandler handles subscription endpoints using UseCases
+// @Description Subscription management API for webhook event delivery
 type SubscriptionHandler struct {
 	repo *subscription.Repository
+
+	// UseCases
+	createUseCase *operations.CreateSubscriptionUseCase
+	updateUseCase *operations.UpdateSubscriptionUseCase
+	pauseUseCase  *operations.PauseSubscriptionUseCase
+	resumeUseCase *operations.ResumeSubscriptionUseCase
+	deleteUseCase *operations.DeleteSubscriptionUseCase
 }
 
-// NewSubscriptionHandler creates a new subscription handler
-func NewSubscriptionHandler(repo *subscription.Repository) *SubscriptionHandler {
-	return &SubscriptionHandler{repo: repo}
+// NewSubscriptionHandler creates a new subscription handler with UseCases
+func NewSubscriptionHandler(
+	repo *subscription.Repository,
+	uow common.UnitOfWork,
+) *SubscriptionHandler {
+	return &SubscriptionHandler{
+		repo:          repo,
+		createUseCase: operations.NewCreateSubscriptionUseCase(repo, uow),
+		updateUseCase: operations.NewUpdateSubscriptionUseCase(repo, uow),
+		pauseUseCase:  operations.NewPauseSubscriptionUseCase(repo, uow),
+		resumeUseCase: operations.NewResumeSubscriptionUseCase(repo, uow),
+		deleteUseCase: operations.NewDeleteSubscriptionUseCase(repo, uow),
+	}
 }
 
 // Routes returns the router for subscription endpoints
@@ -61,6 +83,16 @@ type UpdateSubscriptionRequest struct {
 }
 
 // List handles GET /api/subscriptions
+// @Summary List all subscriptions
+// @Description Returns a list of subscriptions the user has access to
+// @Tags Subscriptions
+// @Accept json
+// @Produce json
+// @Param status query string false "Filter by status (ACTIVE, PAUSED, ARCHIVED)"
+// @Success 200 {array} subscription.Subscription
+// @Failure 500 {object} ErrorResponse
+// @Security BearerAuth
+// @Router /api/v1/subscriptions [get]
 func (h *SubscriptionHandler) List(w http.ResponseWriter, r *http.Request) {
 	// Get client ID from authenticated principal for filtering
 	p := GetPrincipal(r.Context())
@@ -86,6 +118,17 @@ func (h *SubscriptionHandler) List(w http.ResponseWriter, r *http.Request) {
 }
 
 // Get handles GET /api/subscriptions/{id}
+// @Summary Get subscription by ID
+// @Description Returns a single subscription by its ID
+// @Tags Subscriptions
+// @Accept json
+// @Produce json
+// @Param id path string true "Subscription ID"
+// @Success 200 {object} subscription.Subscription
+// @Failure 404 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security BearerAuth
+// @Router /api/v1/subscriptions/{id} [get]
 func (h *SubscriptionHandler) Get(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
@@ -110,28 +153,23 @@ func (h *SubscriptionHandler) Get(w http.ResponseWriter, r *http.Request) {
 	WriteJSON(w, http.StatusOK, sub)
 }
 
-// Create handles POST /api/subscriptions
+// Create handles POST /api/subscriptions (using UseCase)
+// @Summary Create a new subscription
+// @Description Creates a new subscription for event delivery
+// @Tags Subscriptions
+// @Accept json
+// @Produce json
+// @Param request body CreateSubscriptionRequest true "Subscription details"
+// @Success 201 {object} subscription.Subscription
+// @Failure 400 {object} ErrorResponse
+// @Failure 409 {object} ErrorResponse "Subscription with code already exists"
+// @Failure 500 {object} ErrorResponse
+// @Security BearerAuth
+// @Router /api/v1/subscriptions [post]
 func (h *SubscriptionHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var req CreateSubscriptionRequest
 	if err := DecodeJSON(r, &req); err != nil {
 		WriteBadRequest(w, "Invalid request body")
-		return
-	}
-
-	if req.Code == "" {
-		WriteBadRequest(w, "Code is required")
-		return
-	}
-	if req.Name == "" {
-		WriteBadRequest(w, "Name is required")
-		return
-	}
-	if req.Target == "" {
-		WriteBadRequest(w, "Target is required")
-		return
-	}
-	if len(req.EventTypes) == 0 {
-		WriteBadRequest(w, "At least one event type is required")
 		return
 	}
 
@@ -142,45 +180,49 @@ func (h *SubscriptionHandler) Create(w http.ResponseWriter, r *http.Request) {
 		clientID = p.ClientID
 	}
 
-	sub := &subscription.Subscription{
+	// Build event type bindings for the command
+	eventTypeBindings := make([]operations.EventTypeBindingInput, len(req.EventTypes))
+	for i, et := range req.EventTypes {
+		eventTypeBindings[i] = operations.EventTypeBindingInput{
+			EventTypeID:   et.EventTypeID,
+			EventTypeCode: et.EventTypeCode,
+			SpecVersion:   et.SpecVersion,
+		}
+	}
+
+	cmd := operations.CreateSubscriptionCommand{
 		Code:             req.Code,
 		Name:             req.Name,
 		Description:      req.Description,
 		ClientID:         clientID,
-		EventTypes:       req.EventTypes,
 		Target:           req.Target,
-		Queue:            req.Queue,
-		CustomConfig:     req.CustomConfig,
-		Source:           subscription.SubscriptionSourceAPI,
-		Status:           subscription.SubscriptionStatusActive,
+		EventTypes:       eventTypeBindings,
 		DispatchPoolCode: req.DispatchPoolCode,
-		DelaySeconds:     req.DelaySeconds,
-		Mode:             req.Mode,
+		Mode:             string(req.Mode),
 		TimeoutSeconds:   req.TimeoutSeconds,
 		DataOnly:         req.DataOnly,
 	}
 
-	if sub.Mode == "" {
-		sub.Mode = subscription.DispatchModeImmediate
-	}
-	if sub.TimeoutSeconds == 0 {
-		sub.TimeoutSeconds = 30
-	}
+	execCtx := common.ExecutionContextFromRequest(r, getPrincipalID(r))
+	result := h.createUseCase.Execute(r.Context(), cmd, execCtx)
 
-	if err := h.repo.InsertSubscription(r.Context(), sub); err != nil {
-		if err == subscription.ErrDuplicateCode {
-			WriteConflict(w, "Subscription code already exists")
-			return
-		}
-		log.Error().Err(err).Msg("Failed to create subscription")
-		WriteInternalError(w, "Failed to create subscription")
-		return
-	}
-
-	WriteJSON(w, http.StatusCreated, sub)
+	WriteUseCaseResult(w, result, http.StatusCreated)
 }
 
-// Update handles PUT /api/subscriptions/{id}
+// Update handles PUT /api/subscriptions/{id} (using UseCase)
+// @Summary Update a subscription
+// @Description Updates an existing subscription
+// @Tags Subscriptions
+// @Accept json
+// @Produce json
+// @Param id path string true "Subscription ID"
+// @Param request body UpdateSubscriptionRequest true "Updated subscription details"
+// @Success 200 {object} subscription.Subscription
+// @Failure 400 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security BearerAuth
+// @Router /api/v1/subscriptions/{id} [put]
 func (h *SubscriptionHandler) Update(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
@@ -190,157 +232,122 @@ func (h *SubscriptionHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sub, err := h.repo.FindSubscriptionByID(r.Context(), id)
-	if err != nil {
-		if err == subscription.ErrNotFound {
-			WriteNotFound(w, "Subscription not found")
-			return
-		}
-		log.Error().Err(err).Str("id", id).Msg("Failed to get subscription")
-		WriteInternalError(w, "Failed to get subscription")
-		return
+	cmd := operations.UpdateSubscriptionCommand{
+		ID:             id,
+		Name:           req.Name,
+		Description:    req.Description,
+		Target:         req.Target,
+		TimeoutSeconds: req.TimeoutSeconds,
 	}
 
-	// Check access
-	p := GetPrincipal(r.Context())
-	if p != nil && !p.IsAnchor() && sub.ClientID != p.ClientID {
-		WriteNotFound(w, "Subscription not found")
-		return
-	}
+	execCtx := common.ExecutionContextFromRequest(r, getPrincipalID(r))
+	result := h.updateUseCase.Execute(r.Context(), cmd, execCtx)
 
-	if req.Name != "" {
-		sub.Name = req.Name
-	}
-	if req.Description != "" {
-		sub.Description = req.Description
-	}
-	if req.Target != "" {
-		sub.Target = req.Target
-	}
-	if req.CustomConfig != nil {
-		sub.CustomConfig = req.CustomConfig
-	}
-	if req.DelaySeconds > 0 {
-		sub.DelaySeconds = req.DelaySeconds
-	}
-	if req.TimeoutSeconds > 0 {
-		sub.TimeoutSeconds = req.TimeoutSeconds
-	}
-
-	if err := h.repo.UpdateSubscription(r.Context(), sub); err != nil {
-		log.Error().Err(err).Str("id", id).Msg("Failed to update subscription")
-		WriteInternalError(w, "Failed to update subscription")
-		return
-	}
-
-	WriteJSON(w, http.StatusOK, sub)
+	WriteUseCaseResult(w, result, http.StatusOK)
 }
 
-// Delete handles DELETE /api/subscriptions/{id}
+// Delete handles DELETE /api/subscriptions/{id} (using UseCase)
+// @Summary Delete a subscription
+// @Description Permanently deletes a subscription
+// @Tags Subscriptions
+// @Accept json
+// @Produce json
+// @Param id path string true "Subscription ID"
+// @Success 204 "No Content"
+// @Failure 404 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security BearerAuth
+// @Router /api/v1/subscriptions/{id} [delete]
 func (h *SubscriptionHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
-	// Check access first
-	sub, err := h.repo.FindSubscriptionByID(r.Context(), id)
-	if err != nil {
-		if err == subscription.ErrNotFound {
-			WriteNotFound(w, "Subscription not found")
-			return
-		}
-		log.Error().Err(err).Str("id", id).Msg("Failed to get subscription")
-		WriteInternalError(w, "Failed to get subscription")
-		return
-	}
+	cmd := operations.DeleteSubscriptionCommand{ID: id}
 
-	p := GetPrincipal(r.Context())
-	if p != nil && !p.IsAnchor() && sub.ClientID != p.ClientID {
-		WriteNotFound(w, "Subscription not found")
-		return
-	}
+	execCtx := common.ExecutionContextFromRequest(r, getPrincipalID(r))
+	result := h.deleteUseCase.Execute(r.Context(), cmd, execCtx)
 
-	if err := h.repo.DeleteSubscription(r.Context(), id); err != nil {
-		log.Error().Err(err).Str("id", id).Msg("Failed to delete subscription")
-		WriteInternalError(w, "Failed to delete subscription")
+	if result.IsFailure() {
+		WriteUseCaseError(w, result.Error())
 		return
 	}
 
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// Pause handles POST /api/subscriptions/{id}/pause
+// Pause handles POST /api/subscriptions/{id}/pause (using UseCase)
+// @Summary Pause a subscription
+// @Description Pauses event delivery for a subscription
+// @Tags Subscriptions
+// @Accept json
+// @Produce json
+// @Param id path string true "Subscription ID"
+// @Success 200 {object} subscription.Subscription
+// @Failure 404 {object} ErrorResponse
+// @Failure 409 {object} ErrorResponse "Already paused"
+// @Failure 500 {object} ErrorResponse
+// @Security BearerAuth
+// @Router /api/v1/subscriptions/{id}/pause [post]
 func (h *SubscriptionHandler) Pause(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
-	// Check access first
-	sub, err := h.repo.FindSubscriptionByID(r.Context(), id)
-	if err != nil {
-		if err == subscription.ErrNotFound {
-			WriteNotFound(w, "Subscription not found")
-			return
-		}
-		log.Error().Err(err).Str("id", id).Msg("Failed to get subscription")
-		WriteInternalError(w, "Failed to get subscription")
-		return
-	}
+	cmd := operations.PauseSubscriptionCommand{ID: id}
 
-	p := GetPrincipal(r.Context())
-	if p != nil && !p.IsAnchor() && sub.ClientID != p.ClientID {
-		WriteNotFound(w, "Subscription not found")
-		return
-	}
+	execCtx := common.ExecutionContextFromRequest(r, getPrincipalID(r))
+	result := h.pauseUseCase.Execute(r.Context(), cmd, execCtx)
 
-	if err := h.repo.UpdateSubscriptionStatus(r.Context(), id, subscription.SubscriptionStatusPaused); err != nil {
-		log.Error().Err(err).Str("id", id).Msg("Failed to pause subscription")
-		WriteInternalError(w, "Failed to pause subscription")
-		return
-	}
-
-	sub.Status = subscription.SubscriptionStatusPaused
-	WriteJSON(w, http.StatusOK, sub)
+	WriteUseCaseResult(w, result, http.StatusOK)
 }
 
-// Resume handles POST /api/subscriptions/{id}/resume
+// Resume handles POST /api/subscriptions/{id}/resume (using UseCase)
+// @Summary Resume a subscription
+// @Description Resumes event delivery for a paused subscription
+// @Tags Subscriptions
+// @Accept json
+// @Produce json
+// @Param id path string true "Subscription ID"
+// @Success 200 {object} subscription.Subscription
+// @Failure 404 {object} ErrorResponse
+// @Failure 409 {object} ErrorResponse "Not paused"
+// @Failure 500 {object} ErrorResponse
+// @Security BearerAuth
+// @Router /api/v1/subscriptions/{id}/resume [post]
 func (h *SubscriptionHandler) Resume(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
-	// Check access first
-	sub, err := h.repo.FindSubscriptionByID(r.Context(), id)
-	if err != nil {
-		if err == subscription.ErrNotFound {
-			WriteNotFound(w, "Subscription not found")
-			return
-		}
-		log.Error().Err(err).Str("id", id).Msg("Failed to get subscription")
-		WriteInternalError(w, "Failed to get subscription")
-		return
-	}
+	cmd := operations.ResumeSubscriptionCommand{ID: id}
 
-	p := GetPrincipal(r.Context())
-	if p != nil && !p.IsAnchor() && sub.ClientID != p.ClientID {
-		WriteNotFound(w, "Subscription not found")
-		return
-	}
+	execCtx := common.ExecutionContextFromRequest(r, getPrincipalID(r))
+	result := h.resumeUseCase.Execute(r.Context(), cmd, execCtx)
 
-	if err := h.repo.UpdateSubscriptionStatus(r.Context(), id, subscription.SubscriptionStatusActive); err != nil {
-		log.Error().Err(err).Str("id", id).Msg("Failed to resume subscription")
-		WriteInternalError(w, "Failed to resume subscription")
-		return
-	}
-
-	sub.Status = subscription.SubscriptionStatusActive
-	WriteJSON(w, http.StatusOK, sub)
+	WriteUseCaseResult(w, result, http.StatusOK)
 }
 
 // === Dispatch Pool Handler ===
 
-// DispatchPoolHandler handles dispatch pool endpoints
+// DispatchPoolHandler handles dispatch pool endpoints using UseCases
+// @Description Dispatch pool management API for rate limiting and concurrency control
 type DispatchPoolHandler struct {
-	repo *subscription.Repository
+	repo *dispatchpool.Repository
+
+	// UseCases
+	createUseCase  *dpops.CreateDispatchPoolUseCase
+	updateUseCase  *dpops.UpdateDispatchPoolUseCase
+	suspendUseCase *dpops.SuspendDispatchPoolUseCase
+	archiveUseCase *dpops.ArchiveDispatchPoolUseCase
 }
 
-// NewDispatchPoolHandler creates a new dispatch pool handler
-func NewDispatchPoolHandler(repo *subscription.Repository) *DispatchPoolHandler {
-	return &DispatchPoolHandler{repo: repo}
+// NewDispatchPoolHandler creates a new dispatch pool handler with UseCases
+func NewDispatchPoolHandler(
+	repo *dispatchpool.Repository,
+	uow common.UnitOfWork,
+) *DispatchPoolHandler {
+	return &DispatchPoolHandler{
+		repo:           repo,
+		createUseCase:  dpops.NewCreateDispatchPoolUseCase(repo, uow),
+		updateUseCase:  dpops.NewUpdateDispatchPoolUseCase(repo, uow),
+		suspendUseCase: dpops.NewSuspendDispatchPoolUseCase(repo, uow),
+		archiveUseCase: dpops.NewArchiveDispatchPoolUseCase(repo, uow),
+	}
 }
 
 // Routes returns the router for dispatch pool endpoints
@@ -352,6 +359,9 @@ func (h *DispatchPoolHandler) Routes() chi.Router {
 	r.Get("/{id}", h.Get)
 	r.Put("/{id}", h.Update)
 	r.Delete("/{id}", h.Delete)
+	r.Post("/{id}/suspend", h.Suspend)
+	r.Post("/{id}/archive", h.Archive)
+	r.Post("/{id}/activate", h.Activate)
 
 	return r
 }
@@ -374,16 +384,26 @@ type UpdateDispatchPoolRequest struct {
 }
 
 // List handles GET /api/dispatch-pools
+// @Summary List all dispatch pools
+// @Description Returns a list of dispatch pools the user has access to
+// @Tags Dispatch Pools
+// @Accept json
+// @Produce json
+// @Param status query string false "Filter by status (ACTIVE, SUSPENDED, ARCHIVED)"
+// @Success 200 {array} dispatchpool.DispatchPool
+// @Failure 500 {object} ErrorResponse
+// @Security BearerAuth
+// @Router /api/v1/dispatch-pools [get]
 func (h *DispatchPoolHandler) List(w http.ResponseWriter, r *http.Request) {
 	p := GetPrincipal(r.Context())
 
-	var pools []*subscription.DispatchPool
+	var pools []*dispatchpool.DispatchPool
 	var err error
 
 	if p != nil && !p.IsAnchor() {
-		pools, err = h.repo.FindDispatchPoolsByClient(r.Context(), p.ClientID)
+		pools, err = h.repo.FindByClientID(r.Context(), p.ClientID)
 	} else {
-		pools, err = h.repo.FindAllDispatchPools(r.Context())
+		pools, err = h.repo.FindAll(r.Context())
 	}
 
 	if err != nil {
@@ -396,12 +416,23 @@ func (h *DispatchPoolHandler) List(w http.ResponseWriter, r *http.Request) {
 }
 
 // Get handles GET /api/dispatch-pools/{id}
+// @Summary Get dispatch pool by ID
+// @Description Returns a single dispatch pool by its ID
+// @Tags Dispatch Pools
+// @Accept json
+// @Produce json
+// @Param id path string true "Dispatch Pool ID"
+// @Success 200 {object} dispatchpool.DispatchPool
+// @Failure 404 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security BearerAuth
+// @Router /api/v1/dispatch-pools/{id} [get]
 func (h *DispatchPoolHandler) Get(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
-	pool, err := h.repo.FindDispatchPoolByID(r.Context(), id)
+	pool, err := h.repo.FindByID(r.Context(), id)
 	if err != nil {
-		if err == subscription.ErrNotFound {
+		if err == dispatchpool.ErrNotFound {
 			WriteNotFound(w, "Dispatch pool not found")
 			return
 		}
@@ -419,7 +450,19 @@ func (h *DispatchPoolHandler) Get(w http.ResponseWriter, r *http.Request) {
 	WriteJSON(w, http.StatusOK, pool)
 }
 
-// Create handles POST /api/dispatch-pools
+// Create handles POST /api/dispatch-pools (using UseCase)
+// @Summary Create a new dispatch pool
+// @Description Creates a new dispatch pool for rate limiting and concurrency control
+// @Tags Dispatch Pools
+// @Accept json
+// @Produce json
+// @Param request body CreateDispatchPoolRequest true "Dispatch pool details"
+// @Success 201 {object} dispatchpool.DispatchPool
+// @Failure 400 {object} ErrorResponse
+// @Failure 409 {object} ErrorResponse "Dispatch pool with code already exists"
+// @Failure 500 {object} ErrorResponse
+// @Security BearerAuth
+// @Router /api/v1/dispatch-pools [post]
 func (h *DispatchPoolHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var req CreateDispatchPoolRequest
 	if err := DecodeJSON(r, &req); err != nil {
@@ -427,48 +470,50 @@ func (h *DispatchPoolHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Code == "" {
-		WriteBadRequest(w, "Code is required")
-		return
-	}
-	if req.Name == "" {
-		WriteBadRequest(w, "Name is required")
-		return
-	}
-	if req.Concurrency <= 0 {
-		req.Concurrency = 10
-	}
-
+	// Get client ID from authenticated principal
 	p := GetPrincipal(r.Context())
 	clientID := ""
 	if p != nil {
 		clientID = p.ClientID
 	}
 
-	pool := &subscription.DispatchPool{
-		Code:        req.Code,
-		Name:        req.Name,
-		Description: req.Description,
-		RateLimit:   req.RateLimit,
-		Concurrency: req.Concurrency,
-		ClientID:    clientID,
-		Status:      subscription.DispatchPoolStatusActive,
+	// Set defaults
+	concurrency := req.Concurrency
+	if concurrency <= 0 {
+		concurrency = 10
 	}
 
-	if err := h.repo.InsertDispatchPool(r.Context(), pool); err != nil {
-		if err == subscription.ErrDuplicateCode {
-			WriteConflict(w, "Dispatch pool code already exists")
-			return
-		}
-		log.Error().Err(err).Msg("Failed to create dispatch pool")
-		WriteInternalError(w, "Failed to create dispatch pool")
-		return
+	cmd := dpops.CreateDispatchPoolCommand{
+		Code:            req.Code,
+		Name:            req.Name,
+		Description:     req.Description,
+		ClientID:        clientID,
+		MediatorType:    string(dispatchpool.MediatorTypeHTTPWebhook),
+		Concurrency:     concurrency,
+		QueueCapacity:   500,
+		RateLimitPerMin: req.RateLimit,
 	}
 
-	WriteJSON(w, http.StatusCreated, pool)
+	execCtx := common.ExecutionContextFromRequest(r, getPrincipalID(r))
+	result := h.createUseCase.Execute(r.Context(), cmd, execCtx)
+
+	WriteUseCaseResult(w, result, http.StatusCreated)
 }
 
-// Update handles PUT /api/dispatch-pools/{id}
+// Update handles PUT /api/dispatch-pools/{id} (using UseCase)
+// @Summary Update a dispatch pool
+// @Description Updates an existing dispatch pool
+// @Tags Dispatch Pools
+// @Accept json
+// @Produce json
+// @Param id path string true "Dispatch Pool ID"
+// @Param request body UpdateDispatchPoolRequest true "Updated dispatch pool details"
+// @Success 200 {object} dispatchpool.DispatchPool
+// @Failure 400 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security BearerAuth
+// @Router /api/v1/dispatch-pools/{id} [put]
 func (h *DispatchPoolHandler) Update(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
@@ -478,52 +523,39 @@ func (h *DispatchPoolHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pool, err := h.repo.FindDispatchPoolByID(r.Context(), id)
-	if err != nil {
-		if err == subscription.ErrNotFound {
-			WriteNotFound(w, "Dispatch pool not found")
-			return
-		}
-		log.Error().Err(err).Str("id", id).Msg("Failed to get dispatch pool")
-		WriteInternalError(w, "Failed to get dispatch pool")
-		return
+	cmd := dpops.UpdateDispatchPoolCommand{
+		ID:              id,
+		Name:            req.Name,
+		Description:     req.Description,
+		Concurrency:     req.Concurrency,
+		RateLimitPerMin: req.RateLimit,
 	}
 
-	p := GetPrincipal(r.Context())
-	if p != nil && !p.IsAnchor() && pool.ClientID != p.ClientID {
-		WriteNotFound(w, "Dispatch pool not found")
-		return
-	}
+	execCtx := common.ExecutionContextFromRequest(r, getPrincipalID(r))
+	result := h.updateUseCase.Execute(r.Context(), cmd, execCtx)
 
-	if req.Name != "" {
-		pool.Name = req.Name
-	}
-	if req.Description != "" {
-		pool.Description = req.Description
-	}
-	if req.RateLimit != nil {
-		pool.RateLimit = req.RateLimit
-	}
-	if req.Concurrency > 0 {
-		pool.Concurrency = req.Concurrency
-	}
-
-	if err := h.repo.UpdateDispatchPool(r.Context(), pool); err != nil {
-		log.Error().Err(err).Str("id", id).Msg("Failed to update dispatch pool")
-		WriteInternalError(w, "Failed to update dispatch pool")
-		return
-	}
-
-	WriteJSON(w, http.StatusOK, pool)
+	WriteUseCaseResult(w, result, http.StatusOK)
 }
 
 // Delete handles DELETE /api/dispatch-pools/{id}
+// @Summary Delete a dispatch pool
+// @Description Permanently deletes a dispatch pool
+// @Tags Dispatch Pools
+// @Accept json
+// @Produce json
+// @Param id path string true "Dispatch Pool ID"
+// @Success 204 "No Content"
+// @Failure 404 {object} ErrorResponse
+// @Failure 409 {object} ErrorResponse "Pool is in use"
+// @Failure 500 {object} ErrorResponse
+// @Security BearerAuth
+// @Router /api/v1/dispatch-pools/{id} [delete]
 func (h *DispatchPoolHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
-	pool, err := h.repo.FindDispatchPoolByID(r.Context(), id)
+	pool, err := h.repo.FindByID(r.Context(), id)
 	if err != nil {
-		if err == subscription.ErrNotFound {
+		if err == dispatchpool.ErrNotFound {
 			WriteNotFound(w, "Dispatch pool not found")
 			return
 		}
@@ -538,11 +570,77 @@ func (h *DispatchPoolHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.repo.DeleteDispatchPool(r.Context(), id); err != nil {
+	if err := h.repo.Delete(r.Context(), id); err != nil {
 		log.Error().Err(err).Str("id", id).Msg("Failed to delete dispatch pool")
 		WriteInternalError(w, "Failed to delete dispatch pool")
 		return
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// Suspend handles POST /api/dispatch-pools/{id}/suspend (using UseCase)
+// @Summary Suspend a dispatch pool
+// @Description Suspends a dispatch pool, stopping all event processing
+// @Tags Dispatch Pools
+// @Accept json
+// @Produce json
+// @Param id path string true "Dispatch Pool ID"
+// @Success 200 {object} dispatchpool.DispatchPool
+// @Failure 404 {object} ErrorResponse
+// @Failure 409 {object} ErrorResponse "Already suspended"
+// @Failure 500 {object} ErrorResponse
+// @Security BearerAuth
+// @Router /api/v1/dispatch-pools/{id}/suspend [post]
+func (h *DispatchPoolHandler) Suspend(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	cmd := dpops.SuspendDispatchPoolCommand{ID: id}
+
+	execCtx := common.ExecutionContextFromRequest(r, getPrincipalID(r))
+	result := h.suspendUseCase.Execute(r.Context(), cmd, execCtx)
+
+	WriteUseCaseResult(w, result, http.StatusOK)
+}
+
+// Archive handles POST /api/dispatch-pools/{id}/archive (using UseCase)
+// @Summary Archive a dispatch pool
+// @Description Archives a dispatch pool (soft delete)
+// @Tags Dispatch Pools
+// @Accept json
+// @Produce json
+// @Param id path string true "Dispatch Pool ID"
+// @Success 200 {object} dispatchpool.DispatchPool
+// @Failure 404 {object} ErrorResponse
+// @Failure 409 {object} ErrorResponse "Pool is in use"
+// @Failure 500 {object} ErrorResponse
+// @Security BearerAuth
+// @Router /api/v1/dispatch-pools/{id}/archive [post]
+func (h *DispatchPoolHandler) Archive(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	cmd := dpops.ArchiveDispatchPoolCommand{ID: id}
+
+	execCtx := common.ExecutionContextFromRequest(r, getPrincipalID(r))
+	result := h.archiveUseCase.Execute(r.Context(), cmd, execCtx)
+
+	WriteUseCaseResult(w, result, http.StatusOK)
+}
+
+// Activate handles POST /api/dispatch-pools/{id}/activate
+// @Summary Activate a dispatch pool
+// @Description Activates a suspended or archived dispatch pool
+// @Tags Dispatch Pools
+// @Accept json
+// @Produce json
+// @Param id path string true "Dispatch Pool ID"
+// @Success 200 {object} dispatchpool.DispatchPool
+// @Failure 404 {object} ErrorResponse
+// @Failure 409 {object} ErrorResponse "Already active"
+// @Failure 500 {object} ErrorResponse
+// @Security BearerAuth
+// @Router /api/v1/dispatch-pools/{id}/activate [post]
+func (h *DispatchPoolHandler) Activate(w http.ResponseWriter, r *http.Request) {
+	// Delegate to repository handler for now (no UseCase)
+	h.repo.ActivateHandler(w, r)
 }

@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/fc-common",
+    "crates/fc-config",
     "crates/fc-queue",
     "crates/fc-router",
     "crates/fc-standby",
@@ -8,11 +9,14 @@ members = [
     "crates/fc-outbox",
     "crates/fc-stream",
     "crates/fc-platform",
+    "crates/fc-scheduler",
+    "crates/fc-secrets",
     "bin/fc-dev",
     "bin/fc-router",
     "bin/fc-platform-server",
     "bin/fc-outbox-processor",
     "bin/fc-stream-processor",
+    "bin/fc-scheduler-server",
 ]
 resolver = "2"
 
@@ -44,6 +48,10 @@ nonzero_ext = "0.3"
 redis = { version = "0.24", features = ["tokio-comp", "connection-manager"] }
 parking_lot = "0.12"
 futures = "0.3"
+hmac = "0.12"
+sha2 = "0.10"
+subtle = "2.5"
+hex = "0.4"
 pin-project-lite = "0.2"
 lapin = "2.3"
 regex = "1.10"

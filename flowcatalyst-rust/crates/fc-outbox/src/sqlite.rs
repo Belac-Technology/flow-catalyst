@@ -4,6 +4,8 @@ use crate::repository::OutboxRepository;
 use anyhow::Result;
 use sqlx::{SqlitePool, Row};
 use chrono::{Utc, DateTime};
+use std::time::Duration;
+use tracing::info;
 
 pub struct SqliteOutboxRepository {
     pool: SqlitePool,
@@ -103,5 +105,23 @@ impl OutboxRepository for SqliteOutboxRepository {
             .execute(&self.pool)
             .await?;
         Ok(())
+    }
+
+    async fn recover_stuck_items(&self, timeout: Duration) -> Result<u64> {
+        let timeout_ms = timeout.as_millis() as i64;
+        let cutoff = Utc::now().timestamp_millis() - timeout_ms;
+
+        let result = sqlx::query(
+            "UPDATE outbox_items SET status = 'PENDING', processed_at = NULL WHERE status = 'PROCESSING' AND processed_at < ?"
+        )
+        .bind(cutoff)
+        .execute(&self.pool)
+        .await?;
+
+        let recovered = result.rows_affected();
+        if recovered > 0 {
+            info!("Recovered {} stuck outbox items (SQLite)", recovered);
+        }
+        Ok(recovered)
     }
 }

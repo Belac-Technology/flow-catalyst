@@ -28,7 +28,7 @@ use tracing::{info, error};
 use tracing_subscriber::EnvFilter;
 use tokio::signal;
 
-use fc_platform::service::{AuthService, AuthConfig, AuthorizationService};
+use fc_platform::service::{AuthService, AuthConfig, AuthorizationService, AuditService};
 use fc_platform::api::{
     AppState,
     EventsState, events_router,
@@ -149,7 +149,11 @@ async fn main() -> Result<()> {
         application_repo: application_repo.clone(),
     };
     let clients_state = ClientsState { client_repo };
-    let principals_state = PrincipalsState { principal_repo };
+    let audit_service = Arc::new(AuditService::new(audit_log_repo.clone()));
+    let principals_state = PrincipalsState {
+        principal_repo,
+        audit_service: Some(audit_service),
+    };
     let roles_state = RolesState { role_repo };
     let subscriptions_state = SubscriptionsState { subscription_repo };
     let oauth_clients_state = OAuthClientsState { oauth_client_repo };

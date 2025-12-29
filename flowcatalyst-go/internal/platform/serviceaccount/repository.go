@@ -54,6 +54,19 @@ func (r *Repository) FindByID(ctx context.Context, id string) (*ServiceAccount, 
 	return &account, nil
 }
 
+// FindByCode finds a service account by code
+func (r *Repository) FindByCode(ctx context.Context, code string) (*ServiceAccount, error) {
+	var account ServiceAccount
+	err := r.collection.FindOne(ctx, bson.M{"code": code}).Decode(&account)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &account, nil
+}
+
 // FindByCredentialID finds a service account by credential ID
 func (r *Repository) FindByCredentialID(ctx context.Context, credentialID string) (*ServiceAccount, error) {
 	var account ServiceAccount

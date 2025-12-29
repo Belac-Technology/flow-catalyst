@@ -17,6 +17,7 @@ use crate::repository::PrincipalRepository;
 use crate::error::PlatformError;
 use crate::api::common::{ApiResult, PaginationParams, CreatedResponse, SuccessResponse};
 use crate::api::middleware::Authenticated;
+use crate::service::AuditService;
 
 /// Create user request
 #[derive(Debug, Deserialize, ToSchema)]
@@ -187,6 +188,7 @@ pub struct PrincipalsQuery {
 #[derive(Clone)]
 pub struct PrincipalsState {
     pub principal_repo: Arc<PrincipalRepository>,
+    pub audit_service: Option<Arc<AuditService>>,
 }
 
 fn parse_scope(s: &str) -> Result<UserScope, PlatformError> {
@@ -245,6 +247,11 @@ pub async fn create_user(
 
     let id = principal.id.clone();
     state.principal_repo.insert(&principal).await?;
+
+    // Audit log
+    if let Some(ref audit) = state.audit_service {
+        let _ = audit.log_create(&auth, "Principal", &id, format!("Created user {}", req.email)).await;
+    }
 
     Ok(Json(CreatedResponse::new(id)))
 }
@@ -357,6 +364,11 @@ pub async fn update_principal(
     principal.updated_at = chrono::Utc::now();
     state.principal_repo.update(&principal).await?;
 
+    // Audit log
+    if let Some(ref audit) = state.audit_service {
+        let _ = audit.log_update(&auth, "Principal", &id, format!("Updated principal {}", principal.name)).await;
+    }
+
     Ok(Json(principal.into()))
 }
 
@@ -372,13 +384,21 @@ pub async fn assign_role(
     let mut principal = state.principal_repo.find_by_id(&id).await?
         .ok_or_else(|| PlatformError::not_found("Principal", &id))?;
 
-    if let Some(client_id) = req.client_id {
-        principal.assign_role_for_client(req.role, client_id);
+    let role = req.role.clone();
+    let client_id = req.client_id.clone();
+
+    if let Some(cid) = req.client_id {
+        principal.assign_role_for_client(req.role, cid);
     } else {
         principal.assign_role(req.role);
     }
 
     state.principal_repo.update(&principal).await?;
+
+    // Audit log
+    if let Some(ref audit) = state.audit_service {
+        let _ = audit.log_role_assigned(&auth, &id, &role, client_id.as_deref()).await;
+    }
 
     Ok(Json(principal.into()))
 }
@@ -399,6 +419,11 @@ pub async fn remove_role(
 
     state.principal_repo.update(&principal).await?;
 
+    // Audit log
+    if let Some(ref audit) = state.audit_service {
+        let _ = audit.log_role_unassigned(&auth, &id, &role).await;
+    }
+
     Ok(Json(principal.into()))
 }
 
@@ -414,8 +439,14 @@ pub async fn grant_client_access(
     let mut principal = state.principal_repo.find_by_id(&id).await?
         .ok_or_else(|| PlatformError::not_found("Principal", &id))?;
 
+    let client_id = req.client_id.clone();
     principal.grant_client_access(req.client_id);
     state.principal_repo.update(&principal).await?;
+
+    // Audit log
+    if let Some(ref audit) = state.audit_service {
+        let _ = audit.log_client_access_granted(&auth, &id, &client_id).await;
+    }
 
     Ok(Json(principal.into()))
 }
@@ -434,6 +465,11 @@ pub async fn revoke_client_access(
     principal.revoke_client_access(&client_id);
     state.principal_repo.update(&principal).await?;
 
+    // Audit log
+    if let Some(ref audit) = state.audit_service {
+        let _ = audit.log_client_access_revoked(&auth, &id, &client_id).await;
+    }
+
     Ok(Json(principal.into()))
 }
 
@@ -450,6 +486,11 @@ pub async fn delete_principal(
 
     principal.deactivate();
     state.principal_repo.update(&principal).await?;
+
+    // Audit log
+    if let Some(ref audit) = state.audit_service {
+        let _ = audit.log_archive(&auth, "Principal", &id, format!("Deactivated principal {}", principal.name)).await;
+    }
 
     Ok(Json(SuccessResponse::ok()))
 }

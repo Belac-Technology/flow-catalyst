@@ -55,3 +55,4 @@ utoipa = { workspace = true }
 
 [dev-dependencies]
 tokio-test = { workspace = true }
+axum-test = "16"

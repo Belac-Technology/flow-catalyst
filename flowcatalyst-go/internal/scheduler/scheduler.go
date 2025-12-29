@@ -13,6 +13,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 
 	"go.flowcatalyst.tech/internal/common/leader"
+	"go.flowcatalyst.tech/internal/common/metrics"
 	"go.flowcatalyst.tech/internal/platform/dispatchjob"
 	"go.flowcatalyst.tech/internal/queue"
 	"go.flowcatalyst.tech/internal/router/model"
@@ -314,6 +315,9 @@ func (s *Scheduler) pollAndDispatch() {
 		totalJobs += len(jobs)
 	}
 
+	// Record pending jobs metric
+	metrics.SchedulerJobsPending.Set(float64(totalJobs))
+
 	log.Debug().
 		Int("jobCount", totalJobs).
 		Int("poolCount", len(jobsByPool)).
@@ -459,6 +463,9 @@ func (s *Scheduler) dispatchJob(ctx context.Context, job *DispatchJob) error {
 		// Job is already in queue, log the error but don't fail
 	}
 
+	// Record metrics
+	metrics.SchedulerJobsScheduled.Inc()
+
 	log.Debug().
 		Str("jobId", job.ID).
 		Str("pool", poolCode).
@@ -519,6 +526,9 @@ func (s *Scheduler) recoverStaleJobs() {
 	}
 
 	if result.ModifiedCount > 0 {
+		// Record stale recovery metric
+		metrics.SchedulerStaleJobs.Add(float64(result.ModifiedCount))
+
 		log.Warn().
 			Int64("count", result.ModifiedCount).
 			Dur("threshold", s.config.StaleThreshold).

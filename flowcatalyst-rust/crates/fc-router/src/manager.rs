@@ -667,7 +667,7 @@ impl QueueManager {
         // Extend visibility when message has been processing for 50+ seconds
         // This matches SQS visibility timeout minus a safety buffer
         let threshold_seconds = 50;
-        let extension_seconds = 60; // Extend by 60 seconds
+        let extension_seconds = 120; // Extend by 120 seconds (matches Java)
 
         // Collect messages that need visibility extension
         let mut extensions = Vec::new();

@@ -7,6 +7,8 @@ use mongodb::bson::{doc, Document};
 use mongodb::options::FindOptions;
 use chrono::{Utc, DateTime};
 use futures::stream::TryStreamExt;
+use std::time::Duration;
+use tracing::info;
 
 pub struct MongoOutboxRepository {
     collection: Collection<Document>,
@@ -97,7 +99,7 @@ impl OutboxRepository for MongoOutboxRepository {
 
         let filter = doc! { "id": id };
         let mut set_doc = doc! { "status": status_str };
-        
+
         if let Some(err) = error {
             set_doc.insert("error_message", err);
         }
@@ -105,5 +107,28 @@ impl OutboxRepository for MongoOutboxRepository {
         let update = doc! { "$set": set_doc };
         self.collection.update_one(filter, update, None).await?;
         Ok(())
+    }
+
+    async fn recover_stuck_items(&self, timeout: Duration) -> Result<u64> {
+        let timeout_ms = timeout.as_millis() as i64;
+        let cutoff = Utc::now().timestamp_millis() - timeout_ms;
+
+        let filter = doc! {
+            "status": "PROCESSING",
+            "processed_at": { "$lt": cutoff }
+        };
+
+        let update = doc! {
+            "$set": { "status": "PENDING" },
+            "$unset": { "processed_at": "" }
+        };
+
+        let result = self.collection.update_many(filter, update, None).await?;
+        let recovered = result.modified_count;
+
+        if recovered > 0 {
+            info!("Recovered {} stuck outbox items (MongoDB)", recovered);
+        }
+        Ok(recovered)
     }
 }

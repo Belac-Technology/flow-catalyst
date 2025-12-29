@@ -33,6 +33,16 @@ public interface CheckpointStore {
     void saveCheckpoint(String checkpointKey, BsonDocument resumeToken);
 
     /**
+     * Clear a checkpoint (for recovery from stale resume token).
+     * The default implementation does nothing - durable stores should override.
+     *
+     * @param checkpointKey unique key identifying the stream's checkpoint
+     */
+    default void clearCheckpoint(String checkpointKey) {
+        // Default no-op for in-memory stores
+    }
+
+    /**
      * Exception thrown when the checkpoint store cannot be reached.
      * This is distinct from "no checkpoint exists" - it means we cannot
      * determine if a checkpoint exists or not.

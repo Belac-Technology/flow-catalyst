@@ -321,6 +321,99 @@ impl MongoProjectionStore {
             dispatch_jobs_read: db.collection("dispatch_jobs_read"),
         }
     }
+
+    /// Ensure all required indexes exist on the projection collections.
+    /// Should be called on startup.
+    pub async fn ensure_indexes(&self) -> Result<(), String> {
+        use mongodb::bson::doc;
+        use mongodb::options::IndexOptions;
+        use mongodb::IndexModel;
+        use tracing::info;
+
+        // Events read collection indexes
+        let event_indexes = vec![
+            // Query by client and time (UI list view)
+            IndexModel::builder()
+                .keys(doc! { "clientId": 1, "createdAt": -1 })
+                .options(IndexOptions::builder().name("idx_client_time".to_string()).build())
+                .build(),
+            // Query by event type
+            IndexModel::builder()
+                .keys(doc! { "eventTypeCode": 1, "createdAt": -1 })
+                .options(IndexOptions::builder().name("idx_event_type".to_string()).build())
+                .build(),
+            // Query by correlation ID (tracing)
+            IndexModel::builder()
+                .keys(doc! { "correlationId": 1 })
+                .options(IndexOptions::builder().name("idx_correlation".to_string()).sparse(true).build())
+                .build(),
+            // Query by source (entity-specific views)
+            IndexModel::builder()
+                .keys(doc! { "sourceType": 1, "sourceId": 1, "createdAt": -1 })
+                .options(IndexOptions::builder().name("idx_source".to_string()).sparse(true).build())
+                .build(),
+            // Full-text search on data summary
+            IndexModel::builder()
+                .keys(doc! { "dataSummary": "text" })
+                .options(IndexOptions::builder().name("idx_data_search".to_string()).build())
+                .build(),
+        ];
+
+        self.events_read
+            .create_indexes(event_indexes, None)
+            .await
+            .map_err(|e| format!("Failed to create event indexes: {}", e))?;
+
+        info!("Created indexes on events_read collection");
+
+        // Dispatch jobs read collection indexes
+        let job_indexes = vec![
+            // Query by client and time (UI list view)
+            IndexModel::builder()
+                .keys(doc! { "clientId": 1, "createdAt": -1 })
+                .options(IndexOptions::builder().name("idx_client_time".to_string()).build())
+                .build(),
+            // Query by status (filter by pending, failed, etc.)
+            IndexModel::builder()
+                .keys(doc! { "status": 1, "createdAt": -1 })
+                .options(IndexOptions::builder().name("idx_status".to_string()).build())
+                .build(),
+            // Query by event ID (show dispatch jobs for an event)
+            IndexModel::builder()
+                .keys(doc! { "eventId": 1 })
+                .options(IndexOptions::builder().name("idx_event".to_string()).build())
+                .build(),
+            // Query by subscription (analytics)
+            IndexModel::builder()
+                .keys(doc! { "subscriptionId": 1, "createdAt": -1 })
+                .options(IndexOptions::builder().name("idx_subscription".to_string()).build())
+                .build(),
+            // Query by correlation ID (tracing)
+            IndexModel::builder()
+                .keys(doc! { "correlationId": 1 })
+                .options(IndexOptions::builder().name("idx_correlation".to_string()).sparse(true).build())
+                .build(),
+            // Query pending retries (scheduler)
+            IndexModel::builder()
+                .keys(doc! { "status": 1, "nextRetryAt": 1 })
+                .options(IndexOptions::builder().name("idx_pending_retry".to_string()).build())
+                .build(),
+            // Query by dispatch pool (analytics)
+            IndexModel::builder()
+                .keys(doc! { "dispatchPoolId": 1, "createdAt": -1 })
+                .options(IndexOptions::builder().name("idx_pool".to_string()).sparse(true).build())
+                .build(),
+        ];
+
+        self.dispatch_jobs_read
+            .create_indexes(job_indexes, None)
+            .await
+            .map_err(|e| format!("Failed to create dispatch job indexes: {}", e))?;
+
+        info!("Created indexes on dispatch_jobs_read collection");
+
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -386,6 +479,7 @@ impl ProjectionStore for MongoProjectionStore {
 }
 
 /// In-memory implementation for testing
+#[derive(Clone)]
 pub struct InMemoryProjectionStore {
     events: Arc<tokio::sync::RwLock<std::collections::HashMap<String, EventReadProjection>>>,
     jobs: Arc<tokio::sync::RwLock<std::collections::HashMap<String, DispatchJobReadProjection>>>,

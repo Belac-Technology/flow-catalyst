@@ -356,6 +356,34 @@ func extractApplicationCodes(roles []string) []string {
 	return result
 }
 
+// checkUserApplicationAccess verifies the user has access to at least one
+// of the applications the OAuth client is restricted to.
+// This matches Java's AuthorizationResource.checkUserApplicationAccess()
+func (s *AuthService) checkUserApplicationAccess(p *principal.Principal, oauthClient *oidc.OAuthClient) bool {
+	if !oauthClient.HasApplicationRestrictions() {
+		return true // No restrictions
+	}
+
+	// Anchor users (admin users) have access to all applications
+	if p.IsAnchor() {
+		return true
+	}
+
+	// Get the applications the user has access to via their roles
+	userApps := extractApplicationCodes(p.GetRoleNames())
+
+	// Check if any user application matches the client's allowed applications
+	for _, userApp := range userApps {
+		for _, allowedApp := range oauthClient.ApplicationIDs {
+			if userApp == allowedApp {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -521,6 +549,20 @@ func (s *AuthService) HandleAuthorize(w http.ResponseWriter, r *http.Request) {
 		log.Warn().Str("principalId", principalID).Msg("Inactive principal in authorize request")
 		s.redirectToLogin(w, r, responseType, clientID, redirectURI, scope, state, codeChallenge, codeChallengeMethod, nonce)
 		return
+	}
+
+	// Check application access restrictions (matching Java's AuthorizationResource)
+	if oauthClient.HasApplicationRestrictions() {
+		hasAccess := s.checkUserApplicationAccess(p, oauthClient)
+		if !hasAccess {
+			log.Warn().
+				Str("principalId", principalID).
+				Str("clientId", clientID).
+				Strs("requiredApps", oauthClient.ApplicationIDs).
+				Msg("User denied access - no application access")
+			s.authorizeErrorRedirect(w, redirectURI, "access_denied", "You don't have access to this application", state)
+			return
+		}
 	}
 
 	// Generate authorization code

@@ -120,7 +120,7 @@ func main() {
 	db := mongoClient.Database(cfg.MongoDB.Database)
 
 	// Initialize API handlers
-	apiHandlers := api.NewHandlers(db, cfg)
+	apiHandlers := api.NewHandlers(mongoClient, db, cfg)
 
 	// Initialize Auth Service
 	keyManager := jwt.NewKeyManager()
@@ -253,13 +253,50 @@ func main() {
 
 		// BFF APIs (read projections)
 		r.Route("/bff", func(r chi.Router) {
+			// Events BFF (read projections)
 			r.Get("/events", apiHandlers.BFFSearchEvents)
 			r.Get("/events/filter-options", apiHandlers.BFFEventFilterOptions)
 			r.Get("/events/{id}", apiHandlers.BFFGetEvent)
 
+			// Dispatch Jobs BFF (read projections)
 			r.Get("/dispatch-jobs", apiHandlers.BFFSearchDispatchJobs)
 			r.Get("/dispatch-jobs/filter-options", apiHandlers.BFFDispatchJobFilterOptions)
 			r.Get("/dispatch-jobs/{id}", apiHandlers.BFFGetDispatchJob)
+
+			// Event Types BFF
+			r.Route("/event-types", func(r chi.Router) {
+				r.Get("/", apiHandlers.BFFListEventTypes)
+				r.Post("/", apiHandlers.BFFCreateEventType)
+				r.Get("/filters/applications", apiHandlers.BFFEventTypeApplications)
+				r.Get("/filters/subdomains", apiHandlers.BFFEventTypeSubdomains)
+				r.Get("/filters/aggregates", apiHandlers.BFFEventTypeAggregates)
+				r.Get("/{id}", apiHandlers.BFFGetEventType)
+				r.Patch("/{id}", apiHandlers.BFFUpdateEventType)
+				r.Post("/{id}/archive", apiHandlers.BFFArchiveEventType)
+				r.Post("/{id}/schemas", apiHandlers.BFFAddEventTypeSchema)
+				r.Post("/{id}/schemas/{version}/finalise", apiHandlers.BFFFinaliseEventTypeSchema)
+				r.Post("/{id}/schemas/{version}/deprecate", apiHandlers.BFFDeprecateEventTypeSchema)
+			})
+
+			// Roles BFF
+			r.Route("/roles", func(r chi.Router) {
+				r.Get("/", apiHandlers.BFFListRoles)
+				r.Post("/", apiHandlers.BFFCreateRole)
+				r.Get("/filters/applications", apiHandlers.BFFRoleApplications)
+				r.Get("/permissions", apiHandlers.BFFListPermissions)
+				r.Get("/permissions/{code}", apiHandlers.BFFGetPermission)
+				r.Get("/{id}", apiHandlers.BFFGetRole)
+				r.Put("/{id}", apiHandlers.BFFUpdateRole)
+				r.Delete("/{id}", apiHandlers.BFFDeleteRole)
+			})
+
+			// Debug endpoints (raw collections)
+			r.Route("/debug", func(r chi.Router) {
+				r.Get("/events", apiHandlers.BFFListRawEvents)
+				r.Get("/events/{id}", apiHandlers.BFFGetRawEvent)
+				r.Get("/dispatch-jobs", apiHandlers.BFFListRawDispatchJobs)
+				r.Get("/dispatch-jobs/{id}", apiHandlers.BFFGetRawDispatchJob)
+			})
 		})
 	})
 
@@ -268,6 +305,8 @@ func main() {
 		// Clients
 		r.Route("/clients", func(r chi.Router) {
 			r.Get("/", apiHandlers.ListClients)
+			r.Get("/search", apiHandlers.SearchClients)
+			r.Get("/by-identifier/{identifier}", apiHandlers.GetClientByIdentifier)
 			r.Post("/", apiHandlers.CreateClient)
 			r.Get("/{id}", apiHandlers.GetClient)
 			r.Put("/{id}", apiHandlers.UpdateClient)
@@ -289,6 +328,9 @@ func main() {
 		r.Route("/roles", func(r chi.Router) {
 			r.Get("/", apiHandlers.ListRoles)
 			r.Post("/", apiHandlers.CreateRole)
+			// Nested permissions endpoints (matching Java reference API)
+			r.Get("/permissions", apiHandlers.ListPermissions)
+			r.Get("/permissions/{code}", apiHandlers.GetPermission)
 			r.Get("/{id}", apiHandlers.GetRole)
 			r.Put("/{id}", apiHandlers.UpdateRole)
 			r.Delete("/{id}", apiHandlers.DeleteRole)
@@ -303,8 +345,11 @@ func main() {
 		r.Route("/applications", func(r chi.Router) {
 			r.Get("/", apiHandlers.ListApplications)
 			r.Post("/", apiHandlers.CreateApplication)
+			r.Get("/by-code/{code}", apiHandlers.GetApplicationByCode)
 			r.Get("/{id}", apiHandlers.GetApplication)
 			r.Put("/{id}", apiHandlers.UpdateApplication)
+			r.Post("/{id}/activate", apiHandlers.ActivateApplication)
+			r.Post("/{id}/deactivate", apiHandlers.DeactivateApplication)
 			r.Delete("/{id}", apiHandlers.DeleteApplication)
 		})
 
@@ -322,8 +367,12 @@ func main() {
 		r.Route("/oauth-clients", func(r chi.Router) {
 			r.Get("/", apiHandlers.ListOAuthClients)
 			r.Post("/", apiHandlers.CreateOAuthClient)
+			r.Get("/by-client-id/{clientId}", apiHandlers.GetOAuthClientByClientID)
 			r.Get("/{id}", apiHandlers.GetOAuthClient)
 			r.Put("/{id}", apiHandlers.UpdateOAuthClient)
+			r.Post("/{id}/rotate-secret", apiHandlers.RotateOAuthClientSecret)
+			r.Post("/{id}/activate", apiHandlers.ActivateOAuthClient)
+			r.Post("/{id}/deactivate", apiHandlers.DeactivateOAuthClient)
 			r.Delete("/{id}", apiHandlers.DeleteOAuthClient)
 		})
 

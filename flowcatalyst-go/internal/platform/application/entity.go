@@ -103,24 +103,3 @@ type AuthPermission struct {
 	Source        PermissionSource `bson:"source" json:"source"`
 	CreatedAt     time.Time        `bson:"createdAt" json:"createdAt"`
 }
-
-// IdpRoleMapping maps external IDP roles to internal roles
-// Collection: idp_role_mappings
-type IdpRoleMapping struct {
-	ID               string    `bson:"_id" json:"id"`
-	IdpRoleName      string    `bson:"idpRoleName" json:"idpRoleName"`
-	InternalRoleName string    `bson:"internalRoleName" json:"internalRoleName"`
-	CreatedAt        time.Time `bson:"createdAt" json:"createdAt"`
-}
-
-// AuditLog represents an audit log entry
-// Collection: audit_logs
-type AuditLog struct {
-	ID            string    `bson:"_id" json:"id"`
-	EntityType    string    `bson:"entityType" json:"entityType"`
-	EntityID      string    `bson:"entityId" json:"entityId"`
-	Operation     string    `bson:"operation" json:"operation"`
-	OperationJSON string    `bson:"operationJson,omitempty" json:"operationJson,omitempty"`
-	PrincipalID   string    `bson:"principalId" json:"principalId"`
-	PerformedAt   time.Time `bson:"performedAt" json:"performedAt"`
-}

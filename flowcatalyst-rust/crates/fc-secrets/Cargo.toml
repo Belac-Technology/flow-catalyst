@@ -1,0 +1,32 @@
+[package]
+name = "fc-secrets"
+version = "0.1.0"
+edition = "2021"
+description = "FlowCatalyst secrets management with multiple provider backends"
+
+[dependencies]
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+async-trait = { workspace = true }
+
+# Encryption
+aes-gcm = "0.10"
+base64 = "0.21"
+rand = "0.8"
+
+# AWS Secrets Manager (optional)
+aws-config = { workspace = true, optional = true }
+aws-sdk-secretsmanager = { version = "1.14", optional = true }
+
+# HashiCorp Vault (optional)
+reqwest = { workspace = true, optional = true }
+
+[features]
+default = []
+aws = ["aws-config", "aws-sdk-secretsmanager"]
+vault = ["reqwest"]
+all = ["aws", "vault"]

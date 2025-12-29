@@ -3,6 +3,7 @@
 //! Business logic services for the platform.
 //! Includes authentication, authorization, event processing, and dispatch services.
 
+pub mod audit;
 pub mod auth;
 pub mod authorization;
 pub mod dispatch;
@@ -10,6 +11,7 @@ pub mod projections;
 pub mod oidc;
 pub mod password;
 
+pub use audit::AuditService;
 pub use auth::{AuthService, AuthConfig, AccessTokenClaims, extract_bearer_token};
 pub use authorization::{AuthorizationService, AuthContext, checks};
 pub use dispatch::{

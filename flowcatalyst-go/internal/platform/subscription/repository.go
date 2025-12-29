@@ -17,17 +17,15 @@ var (
 	ErrDuplicateCode = errors.New("duplicate code")
 )
 
-// Repository provides access to subscription and dispatch pool data
+// Repository provides access to subscription data
 type Repository struct {
 	subscriptions *mongo.Collection
-	dispatchPools *mongo.Collection
 }
 
 // NewRepository creates a new subscription repository
 func NewRepository(db *mongo.Database) *Repository {
 	return &Repository{
 		subscriptions: db.Collection("subscriptions"),
-		dispatchPools: db.Collection("dispatch_pools"),
 	}
 }
 
@@ -180,139 +178,6 @@ func (r *Repository) UpdateSubscriptionStatus(ctx context.Context, id string, st
 // DeleteSubscription removes a subscription
 func (r *Repository) DeleteSubscription(ctx context.Context, id string) error {
 	result, err := r.subscriptions.DeleteOne(ctx, bson.M{"_id": id})
-	if err != nil {
-		return err
-	}
-	if result.DeletedCount == 0 {
-		return ErrNotFound
-	}
-	return nil
-}
-
-// === Dispatch Pool operations ===
-
-// FindDispatchPoolByID finds a dispatch pool by ID
-func (r *Repository) FindDispatchPoolByID(ctx context.Context, id string) (*DispatchPool, error) {
-	var pool DispatchPool
-	err := r.dispatchPools.FindOne(ctx, bson.M{"_id": id}).Decode(&pool)
-	if err != nil {
-		if errors.Is(err, mongo.ErrNoDocuments) {
-			return nil, ErrNotFound
-		}
-		return nil, err
-	}
-	return &pool, nil
-}
-
-// FindDispatchPoolByCode finds a dispatch pool by code
-func (r *Repository) FindDispatchPoolByCode(ctx context.Context, code string) (*DispatchPool, error) {
-	var pool DispatchPool
-	err := r.dispatchPools.FindOne(ctx, bson.M{"code": code}).Decode(&pool)
-	if err != nil {
-		if errors.Is(err, mongo.ErrNoDocuments) {
-			return nil, ErrNotFound
-		}
-		return nil, err
-	}
-	return &pool, nil
-}
-
-// FindDispatchPoolsByClient finds all dispatch pools for a client
-func (r *Repository) FindDispatchPoolsByClient(ctx context.Context, clientID string) ([]*DispatchPool, error) {
-	cursor, err := r.dispatchPools.Find(ctx, bson.M{"clientId": clientID})
-	if err != nil {
-		return nil, err
-	}
-	defer cursor.Close(ctx)
-
-	var pools []*DispatchPool
-	if err := cursor.All(ctx, &pools); err != nil {
-		return nil, err
-	}
-	return pools, nil
-}
-
-// FindActiveDispatchPools finds all active dispatch pools
-func (r *Repository) FindActiveDispatchPools(ctx context.Context) ([]*DispatchPool, error) {
-	cursor, err := r.dispatchPools.Find(ctx, bson.M{"status": DispatchPoolStatusActive})
-	if err != nil {
-		return nil, err
-	}
-	defer cursor.Close(ctx)
-
-	var pools []*DispatchPool
-	if err := cursor.All(ctx, &pools); err != nil {
-		return nil, err
-	}
-	return pools, nil
-}
-
-// FindAllDispatchPools returns all dispatch pools
-func (r *Repository) FindAllDispatchPools(ctx context.Context) ([]*DispatchPool, error) {
-	cursor, err := r.dispatchPools.Find(ctx, bson.M{})
-	if err != nil {
-		return nil, err
-	}
-	defer cursor.Close(ctx)
-
-	var pools []*DispatchPool
-	if err := cursor.All(ctx, &pools); err != nil {
-		return nil, err
-	}
-	return pools, nil
-}
-
-// InsertDispatchPool creates a new dispatch pool
-func (r *Repository) InsertDispatchPool(ctx context.Context, pool *DispatchPool) error {
-	if pool.ID == "" {
-		pool.ID = tsid.Generate()
-	}
-	now := time.Now()
-	pool.CreatedAt = now
-	pool.UpdatedAt = now
-
-	_, err := r.dispatchPools.InsertOne(ctx, pool)
-	if mongo.IsDuplicateKeyError(err) {
-		return ErrDuplicateCode
-	}
-	return err
-}
-
-// UpdateDispatchPool updates an existing dispatch pool
-func (r *Repository) UpdateDispatchPool(ctx context.Context, pool *DispatchPool) error {
-	pool.UpdatedAt = time.Now()
-
-	result, err := r.dispatchPools.ReplaceOne(ctx, bson.M{"_id": pool.ID}, pool)
-	if err != nil {
-		return err
-	}
-	if result.MatchedCount == 0 {
-		return ErrNotFound
-	}
-	return nil
-}
-
-// ArchiveDispatchPool archives a dispatch pool
-func (r *Repository) ArchiveDispatchPool(ctx context.Context, id string) error {
-	result, err := r.dispatchPools.UpdateOne(ctx,
-		bson.M{"_id": id},
-		bson.M{"$set": bson.M{
-			"status":    DispatchPoolStatusArchived,
-			"updatedAt": time.Now(),
-		}},
-	)
-	if err != nil {
-		return err
-	}
-	if result.MatchedCount == 0 {
-		return ErrNotFound
-	}
-	return nil
-}
-
-// DeleteDispatchPool removes a dispatch pool
-func (r *Repository) DeleteDispatchPool(ctx context.Context, id string) error {
-	result, err := r.dispatchPools.DeleteOne(ctx, bson.M{"_id": id})
 	if err != nil {
 		return err
 	}

@@ -5,6 +5,7 @@ pub mod mock;
 pub mod subscription_matcher;
 pub mod batch_dispatcher;
 pub mod projection;
+pub mod health;
 
 use async_trait::async_trait;
 use anyhow::Result;
@@ -23,6 +24,9 @@ pub use projection::{
     EventReadProjection, DispatchJobReadProjection, ProjectionBuilder,
     ProjectionLookup, ProjectionStore, EventData, DispatchJobData,
     MongoProjectionStore, InMemoryProjectionStore, InMemoryLookup,
+};
+pub use health::{
+    StreamHealth, StreamHealthStatus, StreamProcessorHealth, StreamHealthService,
 };
 
 #[async_trait]

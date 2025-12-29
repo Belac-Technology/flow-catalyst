@@ -8,7 +8,9 @@ import (
 	"go.flowcatalyst.tech/internal/config"
 	"go.flowcatalyst.tech/internal/platform/application"
 	"go.flowcatalyst.tech/internal/platform/audit"
+	"go.flowcatalyst.tech/internal/platform/auth/oidc"
 	"go.flowcatalyst.tech/internal/platform/client"
+	"go.flowcatalyst.tech/internal/platform/common"
 	"go.flowcatalyst.tech/internal/platform/dispatchjob"
 	"go.flowcatalyst.tech/internal/platform/dispatchpool"
 	"go.flowcatalyst.tech/internal/platform/event"
@@ -25,6 +27,9 @@ type Handlers struct {
 	db     *mongo.Database
 	config *config.Config
 
+	// UnitOfWork for atomic operations
+	unitOfWork common.UnitOfWork
+
 	// Repositories
 	eventRepo          *event.Repository
 	eventTypeRepo      *eventtype.Repository
@@ -38,29 +43,43 @@ type Handlers struct {
 	applicationRepo    *application.Repository
 	serviceAccountRepo *serviceaccount.Repository
 	auditRepo          *audit.Repository
+	oidcRepo           *oidc.Repository
 
 	// Services
 	auditService *audit.Service
 
 	// Individual handlers
-	eventHandler        *EventHandler
-	subscriptionHandler *SubscriptionHandler
-	clientHandler       *ClientAdminHandler
-	principalHandler    *PrincipalAdminHandler
-	bffEventHandler     *EventBffHandler
-	bffDispatchHandler  *DispatchJobBffHandler
-	dispatchJobHandler  *DispatchJobHandler
-	auditLogHandler     *AuditLogHandler
-	authConfigHandler   *AuthConfigHandler
-	anchorDomainHandler *AnchorDomainHandler
+	eventHandler            *EventHandler
+	eventTypeHandler        *EventTypeHandler        // Uses UseCases
+	subscriptionHandler     *SubscriptionHandler     // Uses UseCases
+	dispatchPoolHandler     *DispatchPoolHandler     // Uses UseCases
+	clientHandler           *ClientAdminHandler      // Uses UseCases
+	principalHandler        *PrincipalAdminHandler   // Uses UseCases
+	roleHandler             *RoleHandler             // Uses UseCases
+	serviceAccountHandler   *ServiceAccountHandler   // Uses UseCases
+	bffEventHandler         *EventBffHandler
+	bffDispatchHandler      *DispatchJobBffHandler
+	bffEventTypeHandler     *EventTypeBffHandler     // BFF for EventTypes
+	bffRoleHandler          *RoleBffHandler          // BFF for Roles
+	bffRawEventHandler      *RawEventBffHandler      // Debug BFF for raw events
+	bffRawDispatchHandler   *RawDispatchJobBffHandler // Debug BFF for raw dispatch jobs
+	dispatchJobHandler      *DispatchJobHandler
+	auditLogHandler         *AuditLogHandler
+	authConfigHandler       *AuthConfigHandler
+	anchorDomainHandler     *AnchorDomainHandler
+	oauthClientHandler      *OAuthClientAdminHandler
+	applicationAdminHandler *ApplicationAdminHandler // Uses UseCases
 }
 
 // NewHandlers creates all API handlers
-func NewHandlers(db *mongo.Database, cfg *config.Config) *Handlers {
+func NewHandlers(mongoClient *mongo.Client, db *mongo.Database, cfg *config.Config) *Handlers {
 	h := &Handlers{
 		db:     db,
 		config: cfg,
 	}
+
+	// Initialize UnitOfWork for atomic operations
+	h.unitOfWork = common.NewMongoUnitOfWork(mongoClient, db)
 
 	// Initialize repositories
 	h.eventRepo = event.NewRepository(db)
@@ -75,21 +94,32 @@ func NewHandlers(db *mongo.Database, cfg *config.Config) *Handlers {
 	h.applicationRepo = application.NewRepository(db)
 	h.serviceAccountRepo = serviceaccount.NewRepository(db)
 	h.auditRepo = audit.NewRepository(db)
+	h.oidcRepo = oidc.NewRepository(db)
 
 	// Initialize services
 	h.auditService = audit.NewService(h.auditRepo)
 
-	// Initialize handlers
+	// Initialize handlers (with UseCases where applicable)
 	h.eventHandler = NewEventHandler(h.eventRepo)
-	h.subscriptionHandler = NewSubscriptionHandler(h.subscriptionRepo)
-	h.clientHandler = NewClientAdminHandler(h.clientRepo)
-	h.principalHandler = NewPrincipalAdminHandler(h.principalRepo, h.clientRepo)
+	h.eventTypeHandler = NewEventTypeHandler(h.eventTypeRepo, h.unitOfWork)
+	h.subscriptionHandler = NewSubscriptionHandler(h.subscriptionRepo, h.unitOfWork)
+	h.dispatchPoolHandler = NewDispatchPoolHandler(h.dispatchPoolRepo, h.unitOfWork)
+	h.clientHandler = NewClientAdminHandler(h.clientRepo, h.unitOfWork)
+	h.principalHandler = NewPrincipalAdminHandler(h.principalRepo, h.clientRepo, h.unitOfWork)
+	h.roleHandler = NewRoleHandler(h.roleRepo, h.unitOfWork)
+	h.serviceAccountHandler = NewServiceAccountHandler(h.serviceAccountRepo, h.unitOfWork)
 	h.bffEventHandler = NewEventBffHandler(db)
 	h.bffDispatchHandler = NewDispatchJobBffHandler(db)
+	h.bffEventTypeHandler = NewEventTypeBffHandler(h.eventTypeRepo, h.unitOfWork)
+	h.bffRoleHandler = NewRoleBffHandler(h.roleRepo, h.permissionRepo, h.applicationRepo, h.unitOfWork)
+	h.bffRawEventHandler = NewRawEventBffHandler(db)
+	h.bffRawDispatchHandler = NewRawDispatchJobBffHandler(db)
 	h.dispatchJobHandler = NewDispatchJobHandler(h.dispatchJobRepo)
 	h.auditLogHandler = NewAuditLogHandler(h.auditRepo, h.principalRepo)
 	h.authConfigHandler = NewAuthConfigHandler(h.clientRepo)
 	h.anchorDomainHandler = NewAnchorDomainHandler(h.clientRepo)
+	h.oauthClientHandler = NewOAuthClientAdminHandler(h.oidcRepo)
+	h.applicationAdminHandler = NewApplicationAdminHandler(h.applicationRepo, h.unitOfWork)
 
 	return h
 }
@@ -130,6 +160,36 @@ func (h *Handlers) DeleteEventType(w http.ResponseWriter, r *http.Request) {
 	h.eventTypeRepo.DeleteHandler(w, r)
 }
 
+func (h *Handlers) ArchiveEventType(w http.ResponseWriter, r *http.Request) {
+	h.eventTypeRepo.ArchiveHandler(w, r)
+}
+
+// Event Type Schema handlers
+
+func (h *Handlers) ListEventTypeSchemas(w http.ResponseWriter, r *http.Request) {
+	h.eventTypeRepo.ListSchemasHandler(w, r)
+}
+
+func (h *Handlers) GetEventTypeSchema(w http.ResponseWriter, r *http.Request) {
+	h.eventTypeRepo.GetSchemaHandler(w, r)
+}
+
+func (h *Handlers) AddEventTypeSchema(w http.ResponseWriter, r *http.Request) {
+	h.eventTypeRepo.AddSchemaHandler(w, r)
+}
+
+func (h *Handlers) FinaliseEventTypeSchema(w http.ResponseWriter, r *http.Request) {
+	h.eventTypeRepo.FinaliseSchemaHandler(w, r)
+}
+
+func (h *Handlers) DeprecateEventTypeSchema(w http.ResponseWriter, r *http.Request) {
+	h.eventTypeRepo.DeprecateSchemaHandler(w, r)
+}
+
+func (h *Handlers) DeleteEventTypeSchema(w http.ResponseWriter, r *http.Request) {
+	h.eventTypeRepo.DeleteSchemaHandler(w, r)
+}
+
 // Subscription handlers
 
 func (h *Handlers) ListSubscriptions(w http.ResponseWriter, r *http.Request) {
@@ -160,26 +220,38 @@ func (h *Handlers) ResumeSubscription(w http.ResponseWriter, r *http.Request) {
 	h.subscriptionHandler.Resume(w, r)
 }
 
-// Dispatch Pool handlers
+// Dispatch Pool handlers (using UseCases)
 
 func (h *Handlers) ListDispatchPools(w http.ResponseWriter, r *http.Request) {
-	h.dispatchPoolRepo.ListHandler(w, r)
+	h.dispatchPoolHandler.List(w, r)
 }
 
 func (h *Handlers) CreateDispatchPool(w http.ResponseWriter, r *http.Request) {
-	h.dispatchPoolRepo.CreateHandler(w, r)
+	h.dispatchPoolHandler.Create(w, r)
 }
 
 func (h *Handlers) GetDispatchPool(w http.ResponseWriter, r *http.Request) {
-	h.dispatchPoolRepo.GetHandler(w, r)
+	h.dispatchPoolHandler.Get(w, r)
 }
 
 func (h *Handlers) UpdateDispatchPool(w http.ResponseWriter, r *http.Request) {
-	h.dispatchPoolRepo.UpdateHandler(w, r)
+	h.dispatchPoolHandler.Update(w, r)
 }
 
 func (h *Handlers) DeleteDispatchPool(w http.ResponseWriter, r *http.Request) {
-	h.dispatchPoolRepo.DeleteHandler(w, r)
+	h.dispatchPoolHandler.Delete(w, r)
+}
+
+func (h *Handlers) SuspendDispatchPool(w http.ResponseWriter, r *http.Request) {
+	h.dispatchPoolHandler.Suspend(w, r)
+}
+
+func (h *Handlers) ArchiveDispatchPool(w http.ResponseWriter, r *http.Request) {
+	h.dispatchPoolHandler.Archive(w, r)
+}
+
+func (h *Handlers) ActivateDispatchPool(w http.ResponseWriter, r *http.Request) {
+	h.dispatchPoolHandler.Activate(w, r)
 }
 
 // Dispatch Job handlers
@@ -230,6 +302,104 @@ func (h *Handlers) BFFGetDispatchJob(w http.ResponseWriter, r *http.Request) {
 	h.bffDispatchHandler.Get(w, r)
 }
 
+// BFF EventType handlers
+
+func (h *Handlers) BFFListEventTypes(w http.ResponseWriter, r *http.Request) {
+	h.bffEventTypeHandler.List(w, r)
+}
+
+func (h *Handlers) BFFCreateEventType(w http.ResponseWriter, r *http.Request) {
+	h.bffEventTypeHandler.Create(w, r)
+}
+
+func (h *Handlers) BFFGetEventType(w http.ResponseWriter, r *http.Request) {
+	h.bffEventTypeHandler.Get(w, r)
+}
+
+func (h *Handlers) BFFUpdateEventType(w http.ResponseWriter, r *http.Request) {
+	h.bffEventTypeHandler.Update(w, r)
+}
+
+func (h *Handlers) BFFArchiveEventType(w http.ResponseWriter, r *http.Request) {
+	h.bffEventTypeHandler.Archive(w, r)
+}
+
+func (h *Handlers) BFFEventTypeApplications(w http.ResponseWriter, r *http.Request) {
+	h.bffEventTypeHandler.GetApplications(w, r)
+}
+
+func (h *Handlers) BFFEventTypeSubdomains(w http.ResponseWriter, r *http.Request) {
+	h.bffEventTypeHandler.GetSubdomains(w, r)
+}
+
+func (h *Handlers) BFFEventTypeAggregates(w http.ResponseWriter, r *http.Request) {
+	h.bffEventTypeHandler.GetAggregates(w, r)
+}
+
+func (h *Handlers) BFFAddEventTypeSchema(w http.ResponseWriter, r *http.Request) {
+	h.bffEventTypeHandler.AddSchema(w, r)
+}
+
+func (h *Handlers) BFFFinaliseEventTypeSchema(w http.ResponseWriter, r *http.Request) {
+	h.bffEventTypeHandler.FinaliseSchema(w, r)
+}
+
+func (h *Handlers) BFFDeprecateEventTypeSchema(w http.ResponseWriter, r *http.Request) {
+	h.bffEventTypeHandler.DeprecateSchema(w, r)
+}
+
+// BFF Role handlers
+
+func (h *Handlers) BFFListRoles(w http.ResponseWriter, r *http.Request) {
+	h.bffRoleHandler.List(w, r)
+}
+
+func (h *Handlers) BFFCreateRole(w http.ResponseWriter, r *http.Request) {
+	h.bffRoleHandler.Create(w, r)
+}
+
+func (h *Handlers) BFFGetRole(w http.ResponseWriter, r *http.Request) {
+	h.bffRoleHandler.Get(w, r)
+}
+
+func (h *Handlers) BFFUpdateRole(w http.ResponseWriter, r *http.Request) {
+	h.bffRoleHandler.Update(w, r)
+}
+
+func (h *Handlers) BFFDeleteRole(w http.ResponseWriter, r *http.Request) {
+	h.bffRoleHandler.Delete(w, r)
+}
+
+func (h *Handlers) BFFRoleApplications(w http.ResponseWriter, r *http.Request) {
+	h.bffRoleHandler.GetApplications(w, r)
+}
+
+func (h *Handlers) BFFListPermissions(w http.ResponseWriter, r *http.Request) {
+	h.bffRoleHandler.ListPermissions(w, r)
+}
+
+func (h *Handlers) BFFGetPermission(w http.ResponseWriter, r *http.Request) {
+	h.bffRoleHandler.GetPermission(w, r)
+}
+
+// BFF Debug handlers (Raw Event/DispatchJob)
+
+func (h *Handlers) BFFListRawEvents(w http.ResponseWriter, r *http.Request) {
+	h.bffRawEventHandler.List(w, r)
+}
+
+func (h *Handlers) BFFGetRawEvent(w http.ResponseWriter, r *http.Request) {
+	h.bffRawEventHandler.Get(w, r)
+}
+
+func (h *Handlers) BFFListRawDispatchJobs(w http.ResponseWriter, r *http.Request) {
+	h.bffRawDispatchHandler.List(w, r)
+}
+
+func (h *Handlers) BFFGetRawDispatchJob(w http.ResponseWriter, r *http.Request) {
+	h.bffRawDispatchHandler.Get(w, r)
+}
+
 // Client handlers
 
 func (h *Handlers) ListClients(w http.ResponseWriter, r *http.Request) {
@@ -254,6 +424,14 @@ func (h *Handlers) SuspendClient(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handlers) ActivateClient(w http.ResponseWriter, r *http.Request) {
 	h.clientHandler.Activate(w, r)
+}
+
+func (h *Handlers) SearchClients(w http.ResponseWriter, r *http.Request) {
+	h.clientHandler.Search(w, r)
+}
+
+func (h *Handlers) GetClientByIdentifier(w http.ResponseWriter, r *http.Request) {
+	h.clientHandler.GetByIdentifier(w, r)
 }
 
 // Principal handlers
@@ -282,26 +460,46 @@ func (h *Handlers) DeactivatePrincipal(w http.ResponseWriter, r *http.Request) {
 	h.principalHandler.Deactivate(w, r)
 }
 
-// Role handlers
+func (h *Handlers) AssignPrincipalRoles(w http.ResponseWriter, r *http.Request) {
+	h.principalHandler.AssignRoles(w, r)
+}
+
+func (h *Handlers) RemovePrincipalRole(w http.ResponseWriter, r *http.Request) {
+	h.principalHandler.RemoveRole(w, r)
+}
+
+func (h *Handlers) GrantPrincipalClientAccess(w http.ResponseWriter, r *http.Request) {
+	h.principalHandler.GrantClientAccess(w, r)
+}
+
+func (h *Handlers) RevokePrincipalClientAccess(w http.ResponseWriter, r *http.Request) {
+	h.principalHandler.RevokeClientAccess(w, r)
+}
+
+func (h *Handlers) ResetPrincipalPassword(w http.ResponseWriter, r *http.Request) {
+	h.principalHandler.ResetPassword(w, r)
+}
+
+// Role handlers (using UseCases)
 
 func (h *Handlers) ListRoles(w http.ResponseWriter, r *http.Request) {
-	h.roleRepo.ListHandler(w, r)
+	h.roleHandler.List(w, r)
 }
 
 func (h *Handlers) CreateRole(w http.ResponseWriter, r *http.Request) {
-	h.roleRepo.CreateHandler(w, r)
+	h.roleHandler.Create(w, r)
 }
 
 func (h *Handlers) GetRole(w http.ResponseWriter, r *http.Request) {
-	h.roleRepo.GetHandler(w, r)
+	h.roleHandler.Get(w, r)
 }
 
 func (h *Handlers) UpdateRole(w http.ResponseWriter, r *http.Request) {
-	h.roleRepo.UpdateHandler(w, r)
+	h.roleHandler.Update(w, r)
 }
 
 func (h *Handlers) DeleteRole(w http.ResponseWriter, r *http.Request) {
-	h.roleRepo.DeleteHandler(w, r)
+	h.roleHandler.Delete(w, r)
 }
 
 // Permission handlers
@@ -310,74 +508,107 @@ func (h *Handlers) ListPermissions(w http.ResponseWriter, r *http.Request) {
 	h.permissionRepo.ListHandler(w, r)
 }
 
+func (h *Handlers) GetPermission(w http.ResponseWriter, r *http.Request) {
+	h.permissionRepo.GetHandler(w, r)
+}
+
 // Application handlers
 
 func (h *Handlers) ListApplications(w http.ResponseWriter, r *http.Request) {
-	h.applicationRepo.ListHandler(w, r)
+	h.applicationAdminHandler.List(w, r)
 }
 
 func (h *Handlers) CreateApplication(w http.ResponseWriter, r *http.Request) {
-	h.applicationRepo.CreateHandler(w, r)
+	h.applicationAdminHandler.Create(w, r)
 }
 
 func (h *Handlers) GetApplication(w http.ResponseWriter, r *http.Request) {
-	h.applicationRepo.GetHandler(w, r)
+	h.applicationAdminHandler.Get(w, r)
+}
+
+func (h *Handlers) GetApplicationByCode(w http.ResponseWriter, r *http.Request) {
+	h.applicationAdminHandler.GetByCode(w, r)
 }
 
 func (h *Handlers) UpdateApplication(w http.ResponseWriter, r *http.Request) {
-	h.applicationRepo.UpdateHandler(w, r)
+	h.applicationAdminHandler.Update(w, r)
+}
+
+func (h *Handlers) ActivateApplication(w http.ResponseWriter, r *http.Request) {
+	h.applicationAdminHandler.Activate(w, r)
+}
+
+func (h *Handlers) DeactivateApplication(w http.ResponseWriter, r *http.Request) {
+	h.applicationAdminHandler.Deactivate(w, r)
 }
 
 func (h *Handlers) DeleteApplication(w http.ResponseWriter, r *http.Request) {
-	h.applicationRepo.DeleteHandler(w, r)
+	h.applicationAdminHandler.Delete(w, r)
 }
 
-// Service Account handlers
+// Service Account handlers (using UseCases)
 
 func (h *Handlers) ListServiceAccounts(w http.ResponseWriter, r *http.Request) {
-	h.serviceAccountRepo.ListHandler(w, r)
+	h.serviceAccountHandler.List(w, r)
 }
 
 func (h *Handlers) CreateServiceAccount(w http.ResponseWriter, r *http.Request) {
-	h.serviceAccountRepo.CreateHandler(w, r)
+	h.serviceAccountHandler.Create(w, r)
 }
 
 func (h *Handlers) GetServiceAccount(w http.ResponseWriter, r *http.Request) {
-	h.serviceAccountRepo.GetHandler(w, r)
+	h.serviceAccountHandler.Get(w, r)
 }
 
 func (h *Handlers) UpdateServiceAccount(w http.ResponseWriter, r *http.Request) {
+	// No UpdateUseCase - delegate to repo for now
 	h.serviceAccountRepo.UpdateHandler(w, r)
 }
 
 func (h *Handlers) DeleteServiceAccount(w http.ResponseWriter, r *http.Request) {
-	h.serviceAccountRepo.DeleteHandler(w, r)
+	h.serviceAccountHandler.Delete(w, r)
 }
 
 func (h *Handlers) RegenerateServiceAccountCredentials(w http.ResponseWriter, r *http.Request) {
-	h.serviceAccountRepo.RegenerateHandler(w, r)
+	h.serviceAccountHandler.RotateCredentials(w, r)
 }
 
-// OAuth Client handlers (placeholder for now)
+// OAuth Client handlers
 
 func (h *Handlers) ListOAuthClients(w http.ResponseWriter, r *http.Request) {
-	WriteJSON(w, http.StatusOK, []interface{}{})
+	h.oauthClientHandler.List(w, r)
 }
 
 func (h *Handlers) CreateOAuthClient(w http.ResponseWriter, r *http.Request) {
-	WriteJSON(w, http.StatusCreated, map[string]string{"id": "placeholder"})
+	h.oauthClientHandler.Create(w, r)
 }
 
 func (h *Handlers) GetOAuthClient(w http.ResponseWriter, r *http.Request) {
-	WriteNotFound(w, "OAuth client not found")
+	h.oauthClientHandler.Get(w, r)
+}
+
+func (h *Handlers) GetOAuthClientByClientID(w http.ResponseWriter, r *http.Request) {
+	h.oauthClientHandler.GetByClientID(w, r)
 }
 
 func (h *Handlers) UpdateOAuthClient(w http.ResponseWriter, r *http.Request) {
-	WriteNotFound(w, "OAuth client not found")
+	h.oauthClientHandler.Update(w, r)
+}
+
+func (h *Handlers) RotateOAuthClientSecret(w http.ResponseWriter, r *http.Request) {
+	h.oauthClientHandler.RotateSecret(w, r)
+}
+
+func (h *Handlers) ActivateOAuthClient(w http.ResponseWriter, r *http.Request) {
+	h.oauthClientHandler.Activate(w, r)
+}
+
+func (h *Handlers) DeactivateOAuthClient(w http.ResponseWriter, r *http.Request) {
+	h.oauthClientHandler.Deactivate(w, r)
 }
 
 func (h *Handlers) DeleteOAuthClient(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusNoContent)
+	h.oauthClientHandler.Delete(w, r)
 }
 
 // Auth handlers (placeholder - will be expanded)

@@ -1,0 +1,25 @@
+[package]
+name = "fc-scheduler-server"
+version = "0.1.0"
+edition = "2021"
+description = "FlowCatalyst Dispatch Scheduler Server"
+
+[[bin]]
+name = "fc-scheduler-server"
+path = "src/main.rs"
+
+[dependencies]
+fc-scheduler = { path = "../../crates/fc-scheduler" }
+fc-config = { path = "../../crates/fc-config" }
+fc-standby = { path = "../../crates/fc-standby" }
+
+tokio = { workspace = true }
+mongodb = { workspace = true }
+axum = { workspace = true }
+tower-http = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+async-trait = { workspace = true }

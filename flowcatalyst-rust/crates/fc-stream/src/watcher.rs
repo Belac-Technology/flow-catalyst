@@ -11,6 +11,11 @@ use tracing::{info, warn, error};
 use std::sync::Arc;
 use tokio::time::{timeout, Duration};
 
+/// Reconnection settings
+const INITIAL_BACKOFF_MS: u64 = 5000;    // 5 seconds
+const MAX_BACKOFF_MS: u64 = 60000;       // 60 seconds
+const BACKOFF_MULTIPLIER: f64 = 2.0;
+
 pub struct MongoStreamWatcher {
     client: Client,
     config: StreamConfig,
@@ -62,58 +67,136 @@ impl MongoStreamWatcher {
 
 #[async_trait]
 impl StreamWatcher for MongoStreamWatcher {
+    /// Watch the change stream with automatic reconnection on failure.
+    ///
+    /// This method wraps the stream consumption in a retry loop with exponential backoff.
+    /// It handles:
+    /// - Connection failures (retries with backoff)
+    /// - Stream errors (retries with backoff)
+    /// - Stale resume tokens (clears checkpoint and starts fresh)
     async fn watch(&self) -> Result<()> {
         let db = self.client.database(&self.config.source_database);
         let collection: Collection<Document> = db.collection(&self.config.source_collection);
-        
-        // 1. Load Checkpoint
         let checkpoint_key = format!("checkpoint:{}", self.config.name);
-        let resume_token_doc = self.checkpoint_store.get_checkpoint(&checkpoint_key).await?;
-        
-        let mut options = ChangeStreamOptions::builder()
-            .full_document(Some(mongodb::options::FullDocumentType::UpdateLookup))
-            .build();
-            
-        if let Some(doc) = resume_token_doc {
-            info!("[{}] Resuming from checkpoint", self.config.name);
-            // Deserialize Document back to ResumeToken
-            if let Ok(token) = mongodb::bson::from_document::<ResumeToken>(doc) {
-                options.resume_after = Some(token);
+
+        let mut consecutive_failures = 0u32;
+        let mut backoff_ms = INITIAL_BACKOFF_MS;
+
+        // Outer reconnection loop
+        loop {
+            // Load checkpoint for this connection attempt
+            let resume_token_doc = match self.checkpoint_store.get_checkpoint(&checkpoint_key).await {
+                Ok(doc) => doc,
+                Err(e) => {
+                    warn!("[{}] Failed to load checkpoint, starting from current: {}", self.config.name, e);
+                    None
+                }
+            };
+
+            let mut options = ChangeStreamOptions::builder()
+                .full_document(Some(mongodb::options::FullDocumentType::UpdateLookup))
+                .build();
+
+            if let Some(doc) = resume_token_doc {
+                info!("[{}] Resuming from checkpoint", self.config.name);
+                if let Ok(token) = mongodb::bson::from_document::<ResumeToken>(doc) {
+                    options.resume_after = Some(token);
+                }
+            } else {
+                info!("[{}] Starting from current position (no checkpoint)", self.config.name);
             }
-        } else {
-            info!("[{}] Starting from beginning (no checkpoint)", self.config.name);
+
+            let pipeline = vec![
+                doc! { "$match": { "operationType": { "$in": &self.config.watch_operations } } }
+            ];
+
+            // Try to open the change stream
+            let stream_result = collection.watch(pipeline, options).await;
+            let mut stream = match stream_result {
+                Ok(s) => {
+                    // Reset backoff on successful connection
+                    consecutive_failures = 0;
+                    backoff_ms = INITIAL_BACKOFF_MS;
+                    info!("[{}] Change stream opened on {}.{}",
+                        self.config.name, self.config.source_database, self.config.source_collection);
+                    s
+                }
+                Err(e) => {
+                    consecutive_failures += 1;
+
+                    // Check for stale resume token
+                    if is_stale_resume_token_error(&e) {
+                        error!("[{}] Resume token expired - clearing checkpoint. EVENTS MAY BE MISSED.", self.config.name);
+                        let _ = self.checkpoint_store.clear_checkpoint(&checkpoint_key).await;
+                        backoff_ms = INITIAL_BACKOFF_MS;
+                        continue;
+                    }
+
+                    error!("[{}] Failed to open change stream (attempt {}), retrying in {}ms: {}",
+                        self.config.name, consecutive_failures, backoff_ms, e);
+
+                    tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
+                    backoff_ms = (backoff_ms as f64 * BACKOFF_MULTIPLIER) as u64;
+                    if backoff_ms > MAX_BACKOFF_MS {
+                        backoff_ms = MAX_BACKOFF_MS;
+                    }
+                    continue;
+                }
+            };
+
+            // Process stream events
+            let stream_error = self.process_stream_events(&mut stream, &checkpoint_key).await;
+
+            // Handle stream exit
+            match stream_error {
+                Ok(()) => {
+                    // Clean exit (shouldn't happen normally)
+                    info!("[{}] Change stream ended cleanly", self.config.name);
+                    return Ok(());
+                }
+                Err(e) => {
+                    consecutive_failures += 1;
+
+                    // Check for stale resume token
+                    if is_stale_resume_token_error(&e) {
+                        error!("[{}] Resume token expired - clearing checkpoint. EVENTS MAY BE MISSED.", self.config.name);
+                        let _ = self.checkpoint_store.clear_checkpoint(&checkpoint_key).await;
+                        backoff_ms = INITIAL_BACKOFF_MS;
+                        continue;
+                    }
+
+                    warn!("[{}] Change stream error (attempt {}), reconnecting in {}ms: {}",
+                        self.config.name, consecutive_failures, backoff_ms, e);
+
+                    tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
+                    backoff_ms = (backoff_ms as f64 * BACKOFF_MULTIPLIER) as u64;
+                    if backoff_ms > MAX_BACKOFF_MS {
+                        backoff_ms = MAX_BACKOFF_MS;
+                    }
+                }
+            }
         }
+    }
+}
 
-        // 2. Build Pipeline
-        let pipeline = vec![
-            doc! { "$match": { "operationType": { "$in": &self.config.watch_operations } } }
-        ];
-
-        // 3. Start Watch
-        let mut stream = collection.watch(pipeline, options).await?;
-        info!("[{}] Change stream opened on {}.{}", self.config.name, self.config.source_database, self.config.source_collection);
-
+impl MongoStreamWatcher {
+    /// Process events from an active change stream until an error occurs
+    async fn process_stream_events(
+        &self,
+        stream: &mut mongodb::change_stream::ChangeStream<mongodb::change_stream::event::ChangeStreamEvent<Document>>,
+        _checkpoint_key: &str,
+    ) -> Result<()> {
         let mut batch = Vec::new();
         let mut last_token = None;
         let batch_timeout = Duration::from_millis(self.config.batch_max_wait_ms);
-        
-        // 4. Consume Loop
+
         loop {
-            // We use a timeout on the stream next() to force batch flushes
             let event_result = timeout(batch_timeout, stream.next()).await;
 
             match event_result {
                 Ok(Some(Ok(event))) => {
                     if let Some(doc) = event.full_document {
                         batch.push(doc);
-                        // The resume token for the *next* resume is the `_id` of the change stream event.
-                        // The driver exposes this via `resume_token()` method on the stream usually, 
-                        // or `event.resume_token()` if available. 
-                        // In 2.x, `ChangeStreamEvent` HAS a `id` field which IS the resume token.
-                        // However, the `ChangeStream` itself tracks the latest resume token.
-                        // Let's use `stream.resume_token()` if possible, or construct it from the event.
-                        
-                        // NOTE: In mongodb 2.8, `stream.resume_token()` returns `Option<ResumeToken>`.
                         last_token = stream.resume_token();
                     }
 
@@ -122,22 +205,36 @@ impl StreamWatcher for MongoStreamWatcher {
                     }
                 }
                 Ok(Some(Err(e))) => {
-                    error!("[{}] Change stream error: {}", self.config.name, e);
-                    tokio::time::sleep(Duration::from_secs(5)).await;
+                    // Stream error - flush batch and return error for reconnection
+                    if !batch.is_empty() {
+                        let _ = self.process_batch(batch.drain(..).collect(), last_token.clone()).await;
+                    }
+                    return Err(e.into());
                 }
                 Ok(None) => {
-                    warn!("[{}] Change stream closed unexpectedly", self.config.name);
-                    break;
+                    // Stream closed - flush batch and return error for reconnection
+                    if !batch.is_empty() {
+                        let _ = self.process_batch(batch.drain(..).collect(), last_token.clone()).await;
+                    }
+                    return Err(anyhow::anyhow!("Change stream closed unexpectedly"));
                 }
                 Err(_) => {
-                    // Timeout reached - flush batch if any
+                    // Timeout - flush batch if any
                     if !batch.is_empty() {
                         self.process_batch(batch.drain(..).collect(), last_token.clone()).await?;
                     }
                 }
             }
         }
-
-        Ok(())
     }
+}
+
+/// Check if an error is due to a stale/expired resume token
+/// Works with any error type that implements Display
+fn is_stale_resume_token_error<E: std::fmt::Display>(e: &E) -> bool {
+    let err_str = e.to_string().to_lowercase();
+    err_str.contains("changestream") && err_str.contains("history") ||
+    err_str.contains("resume token") ||
+    err_str.contains("oplog") ||
+    err_str.contains("invalidate")
 }

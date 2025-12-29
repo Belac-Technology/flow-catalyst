@@ -23,6 +23,7 @@ pub mod audit_logs;
 pub mod applications;
 pub mod dispatch_pools;
 pub mod monitoring;
+pub mod oauth;
 
 pub use common::*;
 pub use middleware::{AppState, Authenticated, OptionalAuth};
@@ -52,3 +53,4 @@ pub use monitoring::{
     MonitoringState, monitoring_router,
     LeaderState, CircuitBreakerRegistry, InFlightTracker,
 };
+pub use oauth::{OAuthState, oauth_router, issue_code};

@@ -1,17 +1,44 @@
 //! Global Buffer
 //!
 //! A thread-safe buffer that collects messages from multiple sources before distribution.
+//!
+//! When the buffer is full, messages are rejected (not dropped). The message remains
+//! in its PROCESSING state in the database and will be recovered by the crash recovery
+//! task after the configured timeout.
 
 use std::collections::VecDeque;
 use std::sync::Arc;
+use std::fmt;
 use tokio::sync::{Mutex, mpsc};
 use fc_common::Message;
 use tracing::{debug, warn};
 
+/// Error returned when the buffer is full.
+///
+/// This is NOT a data loss scenario - the message remains in PROCESSING state
+/// in the database and will be recovered by the crash recovery task.
+#[derive(Debug, Clone)]
+pub struct BufferFullError {
+    pub message_id: String,
+}
+
+impl fmt::Display for BufferFullError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "Buffer full, message {} rejected (will be recovered from PROCESSING state)",
+            self.message_id
+        )
+    }
+}
+
+impl std::error::Error for BufferFullError {}
+
 /// Global buffer configuration
 #[derive(Debug, Clone)]
 pub struct GlobalBufferConfig {
-    /// Maximum buffer size (messages will be dropped if exceeded)
+    /// Maximum buffer size. When exceeded, new messages are rejected (not dropped).
+    /// Rejected messages remain in PROCESSING state and are recovered by crash recovery.
     pub max_size: usize,
     /// Batch size for draining
     pub batch_size: usize,
@@ -50,12 +77,22 @@ impl GlobalBuffer {
         self.sender.clone()
     }
 
-    /// Push a message to the buffer
-    pub async fn push(&self, message: Message) -> Result<(), String> {
+    /// Push a message to the buffer.
+    ///
+    /// Returns `BufferFullError` if the buffer is at capacity. This is NOT a data loss
+    /// scenario - the message remains in PROCESSING state in the database and will be
+    /// recovered by the crash recovery task after the configured timeout.
+    pub async fn push(&self, message: Message) -> Result<(), BufferFullError> {
         let mut buffer = self.buffer.lock().await;
         if buffer.len() >= self.config.max_size {
-            warn!("Global buffer full, dropping message {}", message.id);
-            return Err("Buffer full".to_string());
+            warn!(
+                "Global buffer full (capacity: {}), message {} rejected - will be recovered from PROCESSING state",
+                self.config.max_size,
+                message.id
+            );
+            return Err(BufferFullError {
+                message_id: message.id,
+            });
         }
         buffer.push_back(message);
         debug!("Message added to global buffer, size: {}", buffer.len());
@@ -111,7 +148,7 @@ mod tests {
             mediation_type: MediationType::HTTP,
             mediation_target: "http://localhost".to_string(),
             message_group_id: None,
-            payload: "{}".to_string(),
+            payload: serde_json::json!({}),
             created_at: Utc::now(),
         }
     }

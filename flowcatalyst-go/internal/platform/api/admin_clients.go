@@ -8,16 +8,33 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"go.flowcatalyst.tech/internal/platform/client"
+	"go.flowcatalyst.tech/internal/platform/client/operations"
+	"go.flowcatalyst.tech/internal/platform/common"
 )
 
-// ClientAdminHandler handles client administration endpoints
+// ClientAdminHandler handles client administration endpoints using UseCases
 type ClientAdminHandler struct {
 	repo *client.Repository
+
+	// UseCases
+	createUseCase   *operations.CreateClientUseCase
+	updateUseCase   *operations.UpdateClientUseCase
+	suspendUseCase  *operations.SuspendClientUseCase
+	activateUseCase *operations.ActivateClientUseCase
 }
 
-// NewClientAdminHandler creates a new client admin handler
-func NewClientAdminHandler(repo *client.Repository) *ClientAdminHandler {
-	return &ClientAdminHandler{repo: repo}
+// NewClientAdminHandler creates a new client admin handler with UseCases
+func NewClientAdminHandler(
+	repo *client.Repository,
+	uow common.UnitOfWork,
+) *ClientAdminHandler {
+	return &ClientAdminHandler{
+		repo:            repo,
+		createUseCase:   operations.NewCreateClientUseCase(repo, uow),
+		updateUseCase:   operations.NewUpdateClientUseCase(repo, uow),
+		suspendUseCase:  operations.NewSuspendClientUseCase(repo, uow),
+		activateUseCase: operations.NewActivateClientUseCase(repo, uow),
+	}
 }
 
 // Routes returns the router for client admin endpoints
@@ -70,6 +87,48 @@ type AddNoteRequest struct {
 	Category string `json:"category,omitempty"`
 }
 
+// Search handles GET /api/admin/platform/clients/search
+func (h *ClientAdminHandler) Search(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query().Get("q")
+	if query == "" {
+		WriteBadRequest(w, "Query parameter 'q' is required")
+		return
+	}
+
+	clients, err := h.repo.Search(r.Context(), query)
+	if err != nil {
+		log.Error().Err(err).Str("query", query).Msg("Failed to search clients")
+		WriteInternalError(w, "Failed to search clients")
+		return
+	}
+
+	// Convert to DTOs
+	dtos := make([]ClientDTO, len(clients))
+	for i, c := range clients {
+		dtos[i] = toClientDTO(c)
+	}
+
+	WriteJSON(w, http.StatusOK, dtos)
+}
+
+// GetByIdentifier handles GET /api/admin/platform/clients/by-identifier/{identifier}
+func (h *ClientAdminHandler) GetByIdentifier(w http.ResponseWriter, r *http.Request) {
+	identifier := chi.URLParam(r, "identifier")
+
+	c, err := h.repo.FindByIdentifier(r.Context(), identifier)
+	if err != nil {
+		log.Error().Err(err).Str("identifier", identifier).Msg("Failed to get client by identifier")
+		WriteInternalError(w, "Failed to get client")
+		return
+	}
+	if c == nil {
+		WriteNotFound(w, "Client not found")
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, toClientDTO(c))
+}
+
 // List handles GET /api/admin/platform/clients
 func (h *ClientAdminHandler) List(w http.ResponseWriter, r *http.Request) {
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
@@ -116,7 +175,7 @@ func (h *ClientAdminHandler) Get(w http.ResponseWriter, r *http.Request) {
 	WriteJSON(w, http.StatusOK, toClientDTO(c))
 }
 
-// Create handles POST /api/admin/platform/clients
+// Create handles POST /api/admin/platform/clients (using UseCase)
 func (h *ClientAdminHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var req CreateClientRequest
 	if err := DecodeJSON(r, &req); err != nil {
@@ -124,35 +183,18 @@ func (h *ClientAdminHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Name == "" {
-		WriteBadRequest(w, "Name is required")
-		return
-	}
-	if req.Identifier == "" {
-		WriteBadRequest(w, "Identifier is required")
-		return
-	}
-
-	c := &client.Client{
+	cmd := operations.CreateClientCommand{
 		Name:       req.Name,
 		Identifier: req.Identifier,
-		Status:     client.ClientStatusActive,
 	}
 
-	if err := h.repo.Insert(r.Context(), c); err != nil {
-		if err == client.ErrDuplicateIdentifier {
-			WriteConflict(w, "Identifier already exists")
-			return
-		}
-		log.Error().Err(err).Msg("Failed to create client")
-		WriteInternalError(w, "Failed to create client")
-		return
-	}
+	execCtx := common.ExecutionContextFromRequest(r, getPrincipalID(r))
+	result := h.createUseCase.Execute(r.Context(), cmd, execCtx)
 
-	WriteJSON(w, http.StatusCreated, toClientDTO(c))
+	WriteUseCaseResult(w, result, http.StatusCreated)
 }
 
-// Update handles PUT /api/admin/platform/clients/{id}
+// Update handles PUT /api/admin/platform/clients/{id} (using UseCase)
 func (h *ClientAdminHandler) Update(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
@@ -162,28 +204,15 @@ func (h *ClientAdminHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	c, err := h.repo.FindByID(r.Context(), id)
-	if err != nil {
-		if err == client.ErrNotFound {
-			WriteNotFound(w, "Client not found")
-			return
-		}
-		log.Error().Err(err).Str("id", id).Msg("Failed to get client")
-		WriteInternalError(w, "Failed to get client")
-		return
+	cmd := operations.UpdateClientCommand{
+		ID:   id,
+		Name: req.Name,
 	}
 
-	if req.Name != "" {
-		c.Name = req.Name
-	}
+	execCtx := common.ExecutionContextFromRequest(r, getPrincipalID(r))
+	result := h.updateUseCase.Execute(r.Context(), cmd, execCtx)
 
-	if err := h.repo.Update(r.Context(), c); err != nil {
-		log.Error().Err(err).Str("id", id).Msg("Failed to update client")
-		WriteInternalError(w, "Failed to update client")
-		return
-	}
-
-	WriteJSON(w, http.StatusOK, toClientDTO(c))
+	WriteUseCaseResult(w, result, http.StatusOK)
 }
 
 // Delete handles DELETE /api/admin/platform/clients/{id}
@@ -203,7 +232,7 @@ func (h *ClientAdminHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// Suspend handles POST /api/admin/platform/clients/{id}/suspend
+// Suspend handles POST /api/admin/platform/clients/{id}/suspend (using UseCase)
 func (h *ClientAdminHandler) Suspend(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
@@ -213,36 +242,27 @@ func (h *ClientAdminHandler) Suspend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.repo.UpdateStatus(r.Context(), id, client.ClientStatusSuspended, req.Reason); err != nil {
-		if err == client.ErrNotFound {
-			WriteNotFound(w, "Client not found")
-			return
-		}
-		log.Error().Err(err).Str("id", id).Msg("Failed to suspend client")
-		WriteInternalError(w, "Failed to suspend client")
-		return
+	cmd := operations.SuspendClientCommand{
+		ID:     id,
+		Reason: req.Reason,
 	}
 
-	c, _ := h.repo.FindByID(r.Context(), id)
-	WriteJSON(w, http.StatusOK, toClientDTO(c))
+	execCtx := common.ExecutionContextFromRequest(r, getPrincipalID(r))
+	result := h.suspendUseCase.Execute(r.Context(), cmd, execCtx)
+
+	WriteUseCaseResult(w, result, http.StatusOK)
 }
 
-// Activate handles POST /api/admin/platform/clients/{id}/activate
+// Activate handles POST /api/admin/platform/clients/{id}/activate (using UseCase)
 func (h *ClientAdminHandler) Activate(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
-	if err := h.repo.UpdateStatus(r.Context(), id, client.ClientStatusActive, ""); err != nil {
-		if err == client.ErrNotFound {
-			WriteNotFound(w, "Client not found")
-			return
-		}
-		log.Error().Err(err).Str("id", id).Msg("Failed to activate client")
-		WriteInternalError(w, "Failed to activate client")
-		return
-	}
+	cmd := operations.ActivateClientCommand{ID: id}
 
-	c, _ := h.repo.FindByID(r.Context(), id)
-	WriteJSON(w, http.StatusOK, toClientDTO(c))
+	execCtx := common.ExecutionContextFromRequest(r, getPrincipalID(r))
+	result := h.activateUseCase.Execute(r.Context(), cmd, execCtx)
+
+	WriteUseCaseResult(w, result, http.StatusOK)
 }
 
 // AddNote handles POST /api/admin/platform/clients/{id}/notes

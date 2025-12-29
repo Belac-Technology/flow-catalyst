@@ -7,9 +7,11 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog/log"
 
 	"go.flowcatalyst.tech/internal/common/leader"
+	"go.flowcatalyst.tech/internal/common/metrics"
 )
 
 // ProcessorConfig holds configuration for the outbox processor
@@ -51,6 +53,19 @@ type LeaderElectionConfig struct {
 	LockName        string
 	LeaseDuration   time.Duration
 	RefreshInterval time.Duration
+	// RedisURL is the Redis connection URL (e.g., "redis://localhost:6379")
+	// If empty, leader election is disabled even if Enabled is true
+	RedisURL string
+}
+
+// DefaultLeaderElectionConfig returns sensible defaults for leader election
+func DefaultLeaderElectionConfig() LeaderElectionConfig {
+	return LeaderElectionConfig{
+		Enabled:         false, // Disabled by default (single-instance mode)
+		LockName:        "outbox-processor-leader",
+		LeaseDuration:   30 * time.Second,
+		RefreshInterval: 10 * time.Second,
+	}
 }
 
 // DefaultProcessorConfig returns sensible defaults
@@ -89,9 +104,10 @@ type Processor struct {
 	groupProcessors sync.Map // map[groupKey]*MessageGroupProcessor
 	groupSemaphore  chan struct{}
 
-	// Leader election
-	leaderElector *leader.LeaderElector
-	isPrimary     atomic.Bool
+	// Leader election (Redis-based for multi-instance deployments)
+	redisLeaderElector *leader.RedisLeaderElector
+	mongoLeaderElector *leader.LeaderElector
+	isPrimary          atomic.Bool
 
 	// Lifecycle
 	ctx        context.Context
@@ -120,14 +136,43 @@ func NewProcessor(repo Repository, apiClient *APIClient, config *ProcessorConfig
 		cancel:         cancel,
 	}
 
-	// Initialize leader elector if enabled
-	if config.LeaderElection.Enabled {
-		// Note: In a real implementation, you'd pass the MongoDB client here
-		// For now, we assume single-instance deployment
-		p.isPrimary.Store(true)
-	} else {
-		p.isPrimary.Store(true)
+	// Default to primary if leader election is disabled
+	p.isPrimary.Store(true)
+
+	return p
+}
+
+// WithRedisLeaderElection enables Redis-based leader election for multi-instance deployments.
+// The Redis client is used for distributed lock acquisition.
+func (p *Processor) WithRedisLeaderElection(redisClient *redis.Client) *Processor {
+	if redisClient == nil || !p.config.LeaderElection.Enabled {
+		return p
 	}
+
+	cfg := leader.DefaultRedisElectorConfig(p.config.LeaderElection.LockName)
+	if p.config.LeaderElection.LeaseDuration > 0 {
+		cfg.TTL = p.config.LeaderElection.LeaseDuration
+	}
+	if p.config.LeaderElection.RefreshInterval > 0 {
+		cfg.RefreshInterval = p.config.LeaderElection.RefreshInterval
+	}
+
+	p.redisLeaderElector = leader.NewRedisLeaderElector(redisClient, cfg)
+
+	// Set up callbacks to update isPrimary
+	p.redisLeaderElector.OnBecomeLeader(func() {
+		p.isPrimary.Store(true)
+		metrics.OutboxLeaderElectionState.Set(1) // Leader
+		log.Info().Msg("Outbox processor became primary via Redis leader election")
+	})
+	p.redisLeaderElector.OnLoseLeadership(func() {
+		p.isPrimary.Store(false)
+		metrics.OutboxLeaderElectionState.Set(0) // Follower
+		log.Warn().Msg("Outbox processor lost primary status via Redis leader election")
+	})
+
+	// Start with non-primary until we acquire leadership
+	p.isPrimary.Store(false)
 
 	return p
 }
@@ -147,6 +192,18 @@ func (p *Processor) Start() {
 		return
 	}
 
+	// Start leader election if configured
+	if p.redisLeaderElector != nil {
+		if err := p.redisLeaderElector.Start(p.ctx); err != nil {
+			log.Error().Err(err).Msg("Failed to start Redis leader election")
+		} else {
+			log.Info().
+				Bool("leaderElectionEnabled", true).
+				Str("lockName", p.config.LeaderElection.LockName).
+				Msg("Redis leader election started for outbox processor")
+		}
+	}
+
 	// Start the distributor goroutine
 	p.wg.Add(1)
 	go p.runDistributor()
@@ -163,6 +220,7 @@ func (p *Processor) Start() {
 		Dur("pollInterval", p.config.PollInterval).
 		Int("batchSize", p.config.PollBatchSize).
 		Int("maxConcurrentGroups", p.config.MaxConcurrentGroups).
+		Bool("isPrimary", p.isPrimary.Load()).
 		Msg("Outbox processor started")
 }
 
@@ -175,7 +233,17 @@ func (p *Processor) Stop() {
 	p.cancel()
 	p.wg.Wait()
 
+	// Stop leader election if running
+	if p.redisLeaderElector != nil {
+		p.redisLeaderElector.Stop()
+	}
+
 	log.Info().Msg("Outbox processor stopped")
+}
+
+// IsPrimary returns whether this processor is the current leader
+func (p *Processor) IsPrimary() bool {
+	return p.isPrimary.Load()
 }
 
 // runPoller runs the main polling loop
@@ -205,6 +273,11 @@ func (p *Processor) doPoll() {
 		return
 	}
 	defer p.pollMu.Unlock()
+
+	startTime := time.Now()
+	defer func() {
+		metrics.OutboxPollDuration.Observe(time.Since(startTime).Seconds())
+	}()
 
 	ctx, cancel := context.WithTimeout(p.ctx, 30*time.Second)
 	defer cancel()
@@ -242,7 +315,8 @@ func (p *Processor) pollItemType(ctx context.Context, itemType OutboxItemType) {
 		select {
 		case p.buffer <- item:
 			added++
-			atomic.AddInt32(&p.bufferSize, 1)
+			newSize := atomic.AddInt32(&p.bufferSize, 1)
+			metrics.OutboxBufferSize.Set(float64(newSize))
 		default:
 			// Buffer full - item stays in PROCESSING, will be recovered later
 			rejected++
@@ -268,7 +342,8 @@ func (p *Processor) runDistributor() {
 			p.drainBuffer()
 			return
 		case item := <-p.buffer:
-			atomic.AddInt32(&p.bufferSize, -1)
+			newSize := atomic.AddInt32(&p.bufferSize, -1)
+			metrics.OutboxBufferSize.Set(float64(newSize))
 			p.distributeItem(item)
 		}
 	}
@@ -350,6 +425,7 @@ func (p *Processor) doRecovery() {
 			continue
 		}
 		if recovered > 0 {
+			metrics.OutboxRecoveredItems.WithLabelValues(string(itemType)).Add(float64(recovered))
 			log.Info().
 				Str("type", string(itemType)).
 				Int64("count", recovered).
@@ -438,12 +514,21 @@ func (m *MessageGroupProcessor) processBatch(batch []*OutboxItem) {
 	var result *BatchResult
 	var err error
 
+	// Track active processors
+	metrics.OutboxActiveProcessors.Inc()
+	defer metrics.OutboxActiveProcessors.Dec()
+
+	// Track API call duration
+	apiStartTime := time.Now()
+
 	switch m.itemType {
 	case OutboxItemTypeEvent:
 		result, err = m.processor.apiClient.SendEventBatch(ctx, batch)
 	case OutboxItemTypeDispatchJob:
 		result, err = m.processor.apiClient.SendDispatchJobBatch(ctx, batch)
 	}
+
+	metrics.OutboxAPIDuration.WithLabelValues(string(m.itemType)).Observe(time.Since(apiStartTime).Seconds())
 
 	if err != nil {
 		log.Error().Err(err).
@@ -459,6 +544,7 @@ func (m *MessageGroupProcessor) processBatch(batch []*OutboxItem) {
 		if err := m.processor.repo.MarkCompleted(ctx, m.itemType, result.SuccessIDs); err != nil {
 			log.Error().Err(err).Msg("Failed to mark items as completed")
 		}
+		metrics.OutboxItemsProcessed.WithLabelValues(string(m.itemType), "completed").Add(float64(len(result.SuccessIDs)))
 	}
 
 	// Handle failed items
@@ -490,12 +576,14 @@ func (m *MessageGroupProcessor) handleFailure(ctx context.Context, items []*Outb
 		if err := m.processor.repo.ScheduleRetry(ctx, m.itemType, retryIDs); err != nil {
 			log.Error().Err(err).Msg("Failed to schedule retry")
 		}
+		metrics.OutboxItemsProcessed.WithLabelValues(string(m.itemType), "retried").Add(float64(len(retryIDs)))
 	}
 
 	if len(failIDs) > 0 {
 		if err := m.processor.repo.MarkFailed(ctx, m.itemType, failIDs, errorMsg); err != nil {
 			log.Error().Err(err).Msg("Failed to mark items as failed")
 		}
+		metrics.OutboxItemsProcessed.WithLabelValues(string(m.itemType), "failed").Add(float64(len(failIDs)))
 		log.Warn().
 			Str("group", m.groupKey).
 			Int("count", len(failIDs)).

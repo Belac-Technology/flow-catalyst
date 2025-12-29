@@ -436,6 +436,103 @@ func (r *Repository) DeleteHandler(w http.ResponseWriter, req *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// SuspendHandler handles POST /dispatch-pools/{id}/suspend
+func (r *Repository) SuspendHandler(w http.ResponseWriter, req *http.Request) {
+	id := chi.URLParam(req, "id")
+	if id == "" {
+		http.Error(w, "Missing pool ID", http.StatusBadRequest)
+		return
+	}
+
+	// Get pool first to return updated state
+	pool, err := r.FindByID(req.Context(), id)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			http.Error(w, "Pool not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if pool.Status == DispatchPoolStatusArchived {
+		http.Error(w, "Cannot suspend archived pool", http.StatusConflict)
+		return
+	}
+
+	if err := r.SetStatus(req.Context(), id, DispatchPoolStatusSuspended); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	pool.Status = DispatchPoolStatusSuspended
+	pool.Enabled = false
+	writeJSON(w, http.StatusOK, pool)
+}
+
+// ArchiveHandler handles POST /dispatch-pools/{id}/archive
+func (r *Repository) ArchiveHandler(w http.ResponseWriter, req *http.Request) {
+	id := chi.URLParam(req, "id")
+	if id == "" {
+		http.Error(w, "Missing pool ID", http.StatusBadRequest)
+		return
+	}
+
+	// Get pool first to return updated state
+	pool, err := r.FindByID(req.Context(), id)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			http.Error(w, "Pool not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if err := r.SetStatus(req.Context(), id, DispatchPoolStatusArchived); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	pool.Status = DispatchPoolStatusArchived
+	pool.Enabled = false
+	writeJSON(w, http.StatusOK, pool)
+}
+
+// ActivateHandler handles POST /dispatch-pools/{id}/activate
+func (r *Repository) ActivateHandler(w http.ResponseWriter, req *http.Request) {
+	id := chi.URLParam(req, "id")
+	if id == "" {
+		http.Error(w, "Missing pool ID", http.StatusBadRequest)
+		return
+	}
+
+	// Get pool first to return updated state
+	pool, err := r.FindByID(req.Context(), id)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			http.Error(w, "Pool not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if pool.Status == DispatchPoolStatusArchived {
+		http.Error(w, "Cannot activate archived pool", http.StatusConflict)
+		return
+	}
+
+	if err := r.SetStatus(req.Context(), id, DispatchPoolStatusActive); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	pool.Status = DispatchPoolStatusActive
+	pool.Enabled = true
+	writeJSON(w, http.StatusOK, pool)
+}
+
 // writeJSON writes JSON response
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")

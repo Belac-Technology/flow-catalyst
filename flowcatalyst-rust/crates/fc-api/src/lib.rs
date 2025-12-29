@@ -192,10 +192,17 @@ pub fn create_router(
 
         // Basic health
         .route("/health", get(health_handler))
+        .route("/q/health", get(health_handler))
 
         // Kubernetes probes
         .route("/health/live", get(liveness_probe))
         .route("/health/ready", get(readiness_probe))
+        .route("/q/health/live", get(liveness_probe))
+        .route("/q/health/ready", get(readiness_probe))
+
+        // Prometheus metrics
+        .route("/metrics", get(metrics_handler))
+        .route("/q/metrics", get(metrics_handler))
 
         // Detailed monitoring
         .route("/monitoring", get(monitoring_handler))
@@ -336,6 +343,20 @@ async fn readiness_probe(State(state): State<AppState>) -> impl IntoResponse {
             (StatusCode::SERVICE_UNAVAILABLE, Json(ProbeResponse { status: "NOT_READY".to_string() }))
         }
     }
+}
+
+/// Prometheus metrics endpoint
+async fn metrics_handler() -> impl IntoResponse {
+    // Return metrics in Prometheus format
+    // In production, you'd use a global metrics recorder
+    let output = "# HELP fc_requests_total Total number of requests
+# TYPE fc_requests_total counter
+fc_requests_total 0
+# HELP fc_active_pools Number of active processing pools
+# TYPE fc_active_pools gauge
+fc_active_pools 1
+";
+    (StatusCode::OK, [(axum::http::header::CONTENT_TYPE, "text/plain; charset=utf-8")], output)
 }
 
 // ============================================================================

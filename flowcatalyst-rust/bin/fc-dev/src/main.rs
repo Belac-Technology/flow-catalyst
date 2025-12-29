@@ -28,7 +28,7 @@ use fc_api::create_router as create_api_router;
 use fc_outbox::{OutboxProcessor, repository::OutboxRepository};
 
 // Platform imports
-use fc_platform::service::{AuthService, AuthConfig, AuthorizationService};
+use fc_platform::service::{AuthService, AuthConfig, AuthorizationService, AuditService};
 use fc_platform::api::{
     AppState,
     EventsState, events_router,
@@ -272,7 +272,11 @@ async fn main() -> Result<()> {
         application_repo: application_repo.clone(),
     };
     let clients_state = ClientsState { client_repo: client_repo.clone() };
-    let principals_state = PrincipalsState { principal_repo: principal_repo.clone() };
+    let audit_service = Arc::new(AuditService::new(audit_log_repo.clone()));
+    let principals_state = PrincipalsState {
+        principal_repo: principal_repo.clone(),
+        audit_service: Some(audit_service),
+    };
     let roles_state = RolesState { role_repo: role_repo.clone() };
     let subscriptions_state = SubscriptionsState { subscription_repo: subscription_repo.clone() };
     let oauth_clients_state = OAuthClientsState { oauth_client_repo: oauth_client_repo.clone() };

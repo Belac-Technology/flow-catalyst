@@ -16,13 +16,15 @@ import (
 
 // Repository handles application persistence
 type Repository struct {
-	collection *mongo.Collection
+	collection       *mongo.Collection
+	configCollection *mongo.Collection
 }
 
 // NewRepository creates a new application repository
 func NewRepository(db *mongo.Database) *Repository {
 	return &Repository{
-		collection: db.Collection("auth_applications"),
+		collection:       db.Collection("auth_applications"),
+		configCollection: db.Collection("application_client_config"),
 	}
 }
 
@@ -86,6 +88,31 @@ func (r *Repository) Update(ctx context.Context, app *Application) error {
 // Delete deletes an application
 func (r *Repository) Delete(ctx context.Context, id string) error {
 	_, err := r.collection.DeleteOne(ctx, bson.M{"_id": id})
+	return err
+}
+
+// FindClientConfig finds client configuration for an application and client
+func (r *Repository) FindClientConfig(ctx context.Context, applicationID, clientID string) (*ApplicationClientConfig, error) {
+	var config ApplicationClientConfig
+	err := r.configCollection.FindOne(ctx, bson.M{
+		"applicationId": applicationID,
+		"clientId":      clientID,
+	}).Decode(&config)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &config, nil
+}
+
+// InsertClientConfig inserts a new client configuration
+func (r *Repository) InsertClientConfig(ctx context.Context, config *ApplicationClientConfig) error {
+	config.ID = tsid.Generate()
+	config.CreatedAt = time.Now()
+	config.UpdatedAt = time.Now()
+	_, err := r.configCollection.InsertOne(ctx, config)
 	return err
 }
 

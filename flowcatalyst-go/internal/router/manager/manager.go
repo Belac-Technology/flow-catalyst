@@ -4,12 +4,15 @@ package manager
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/rs/zerolog/log"
 	"go.mongodb.org/mongo-driver/mongo"
 
+	"go.flowcatalyst.tech/internal/common/metrics"
 	"go.flowcatalyst.tech/internal/common/tsid"
 	"go.flowcatalyst.tech/internal/platform/dispatchpool"
 	"go.flowcatalyst.tech/internal/queue"
@@ -17,6 +20,21 @@ import (
 	"go.flowcatalyst.tech/internal/router/model"
 	"go.flowcatalyst.tech/internal/router/pool"
 )
+
+// Default pool configuration constants (matching Java)
+const (
+	DefaultPoolConcurrency     = 20  // Java: DEFAULT_POOL_CONCURRENCY = 20
+	DefaultQueueCapacityMultiplier = 2   // Java: QUEUE_CAPACITY_MULTIPLIER = 2
+	MinQueueCapacity           = 50  // Java: MIN_QUEUE_CAPACITY = 50
+	DefaultPoolCode            = "DEFAULT-POOL"
+)
+
+// StandbyChecker interface for checking if this instance is the primary
+// This matches Java's StandbyService.isPrimary() check
+type StandbyChecker interface {
+	// IsPrimary returns true if this instance is the active leader
+	IsPrimary() bool
+}
 
 // PoolConfig holds configuration for a processing pool
 type PoolConfig struct {
@@ -32,13 +50,22 @@ type ConfigSyncConfig struct {
 	Enabled bool
 	// Interval is how often to sync pool configs from database
 	Interval time.Duration
+	// InitialRetryAttempts is how many times to retry initial config sync (matching Java: 12)
+	InitialRetryAttempts int
+	// InitialRetryDelay is the delay between initial retry attempts (matching Java: 5s)
+	InitialRetryDelay time.Duration
+	// FailOnInitialSyncError if true, will panic if initial sync fails after all retries
+	FailOnInitialSyncError bool
 }
 
-// DefaultConfigSyncConfig returns sensible defaults
+// DefaultConfigSyncConfig returns sensible defaults matching Java
 func DefaultConfigSyncConfig() *ConfigSyncConfig {
 	return &ConfigSyncConfig{
-		Enabled:  false,
-		Interval: 5 * time.Minute,
+		Enabled:                false,
+		Interval:               5 * time.Minute,
+		InitialRetryAttempts:   12,                // Java: 12 attempts
+		InitialRetryDelay:      5 * time.Second,   // Java: 5s delay
+		FailOnInitialSyncError: true,              // Java: fails hard on initial sync
 	}
 }
 
@@ -61,6 +88,74 @@ func DefaultPipelineCleanupConfig() *PipelineCleanupConfig {
 	}
 }
 
+// VisibilityExtenderConfig holds configuration for visibility timeout extension
+type VisibilityExtenderConfig struct {
+	// Enabled controls whether visibility extension is active
+	Enabled bool
+	// Interval is how often to check for messages needing extension (default 55s)
+	Interval time.Duration
+	// Threshold is how long a message must be processing before we extend (default 50s)
+	Threshold time.Duration
+	// ExtensionSeconds is how many seconds to extend visibility (default 120s)
+	ExtensionSeconds int32
+}
+
+// DefaultVisibilityExtenderConfig returns sensible defaults matching Java implementation
+func DefaultVisibilityExtenderConfig() *VisibilityExtenderConfig {
+	return &VisibilityExtenderConfig{
+		Enabled:          true,
+		Interval:         55 * time.Second,  // Run every 55 seconds (like Java)
+		Threshold:        50 * time.Second,  // Extend messages processing >50s
+		ExtensionSeconds: 120,               // Extend by 120 seconds
+	}
+}
+
+// ConsumerHealthConfig holds configuration for consumer health monitoring
+type ConsumerHealthConfig struct {
+	// Enabled controls whether consumer health monitoring is active
+	Enabled bool
+	// CheckInterval is how often to check consumer health (default 60s)
+	CheckInterval time.Duration
+	// StallThreshold is how long without activity before considering stalled (default 60s)
+	StallThreshold time.Duration
+	// MaxRestartAttempts is the maximum restart attempts before giving up (default 3)
+	MaxRestartAttempts int
+	// RestartDelay is the delay between restart attempts (default 5s)
+	RestartDelay time.Duration
+}
+
+// DefaultConsumerHealthConfig returns sensible defaults matching Java implementation
+func DefaultConsumerHealthConfig() *ConsumerHealthConfig {
+	return &ConsumerHealthConfig{
+		Enabled:            true,
+		CheckInterval:      60 * time.Second,
+		StallThreshold:     60 * time.Second,
+		MaxRestartAttempts: 3,
+		RestartDelay:       5 * time.Second,
+	}
+}
+
+// LeakDetectionConfig holds configuration for memory leak detection
+type LeakDetectionConfig struct {
+	// Enabled controls whether leak detection is active
+	Enabled bool
+	// Interval is how often to check for leaks (matching Java: 30s)
+	Interval time.Duration
+}
+
+// DefaultLeakDetectionConfig returns sensible defaults matching Java
+func DefaultLeakDetectionConfig() *LeakDetectionConfig {
+	return &LeakDetectionConfig{
+		Enabled:  true,
+		Interval: 30 * time.Second, // Java: every 30s
+	}
+}
+
+// WarningService interface for adding warnings (matches Java's WarningService)
+type WarningService interface {
+	AddWarning(category, severity, message, source string)
+}
+
 // QueueManager manages message routing to processing pools
 type QueueManager struct {
 	pools          map[string]*pool.ProcessPool
@@ -76,6 +171,10 @@ type QueueManager struct {
 	messageCallback *MessageCallbackImpl
 	running        bool
 	runningMu      sync.Mutex
+	initialized    bool // Tracks whether initial config sync has completed
+
+	// Standby mode integration (matching Java's StandbyService)
+	standbyChecker StandbyChecker
 
 	// Config sync
 	poolRepo       *dispatchpool.Repository
@@ -89,6 +188,19 @@ type QueueManager struct {
 	cleanupCtx    context.Context
 	cleanupCancel context.CancelFunc
 	cleanupWg     sync.WaitGroup
+
+	// Visibility extender (for long-running messages)
+	visibilityConfig *VisibilityExtenderConfig
+	visibilityCtx    context.Context
+	visibilityCancel context.CancelFunc
+	visibilityWg     sync.WaitGroup
+
+	// Memory leak detection (matching Java's checkForMapLeaks)
+	leakDetectionConfig *LeakDetectionConfig
+	leakDetectionCtx    context.Context
+	leakDetectionCancel context.CancelFunc
+	leakDetectionWg     sync.WaitGroup
+	warningService      WarningService
 }
 
 // NewQueueManager creates a new queue manager
@@ -96,16 +208,27 @@ func NewQueueManager(mediatorCfg *mediator.HTTPMediatorConfig) *QueueManager {
 	httpMediator := mediator.NewHTTPMediator(mediatorCfg)
 
 	qm := &QueueManager{
-		pools:         make(map[string]*pool.ProcessPool),
-		mediator:      httpMediator,
-		syncConfig:    DefaultConfigSyncConfig(),
-		cleanupConfig: DefaultPipelineCleanupConfig(),
+		pools:               make(map[string]*pool.ProcessPool),
+		mediator:            httpMediator,
+		syncConfig:          DefaultConfigSyncConfig(),
+		cleanupConfig:       DefaultPipelineCleanupConfig(),
+		visibilityConfig:    DefaultVisibilityExtenderConfig(),
+		leakDetectionConfig: DefaultLeakDetectionConfig(),
 	}
 
 	// Create message callback that references the manager
 	qm.messageCallback = &MessageCallbackImpl{manager: qm}
 
 	return qm
+}
+
+// WithVisibilityExtender configures visibility timeout extension for long-running messages
+func (m *QueueManager) WithVisibilityExtender(cfg *VisibilityExtenderConfig) *QueueManager {
+	if cfg == nil {
+		cfg = DefaultVisibilityExtenderConfig()
+	}
+	m.visibilityConfig = cfg
+	return m
 }
 
 // WithPipelineCleanup configures stale pipeline entry cleanup
@@ -124,6 +247,28 @@ func (m *QueueManager) WithConfigSync(db *mongo.Database, cfg *ConfigSyncConfig)
 	}
 	m.poolRepo = dispatchpool.NewRepository(db)
 	m.syncConfig = cfg
+	return m
+}
+
+// WithStandbyChecker sets the standby checker for HA mode
+// When set, config sync will only run if this instance is the primary
+func (m *QueueManager) WithStandbyChecker(checker StandbyChecker) *QueueManager {
+	m.standbyChecker = checker
+	return m
+}
+
+// WithLeakDetection configures memory leak detection
+func (m *QueueManager) WithLeakDetection(cfg *LeakDetectionConfig) *QueueManager {
+	if cfg == nil {
+		cfg = DefaultLeakDetectionConfig()
+	}
+	m.leakDetectionConfig = cfg
+	return m
+}
+
+// WithWarningService sets the warning service for reporting issues
+func (m *QueueManager) WithWarningService(ws WarningService) *QueueManager {
+	m.warningService = ws
 	return m
 }
 
@@ -155,6 +300,28 @@ func (m *QueueManager) Start() {
 			Msg("Pipeline cleanup started")
 	}
 
+	// Start visibility extender if enabled (extends SQS visibility for long-running messages)
+	if m.visibilityConfig.Enabled {
+		m.visibilityCtx, m.visibilityCancel = context.WithCancel(context.Background())
+		m.visibilityWg.Add(1)
+		go m.runVisibilityExtender()
+		log.Info().
+			Dur("interval", m.visibilityConfig.Interval).
+			Dur("threshold", m.visibilityConfig.Threshold).
+			Int32("extensionSeconds", m.visibilityConfig.ExtensionSeconds).
+			Msg("Visibility extender started")
+	}
+
+	// Start memory leak detection if enabled (matching Java's checkForMapLeaks)
+	if m.leakDetectionConfig.Enabled {
+		m.leakDetectionCtx, m.leakDetectionCancel = context.WithCancel(context.Background())
+		m.leakDetectionWg.Add(1)
+		go m.runLeakDetection()
+		log.Info().
+			Dur("interval", m.leakDetectionConfig.Interval).
+			Msg("Memory leak detection started")
+	}
+
 	log.Info().Msg("Queue manager started")
 }
 
@@ -174,6 +341,18 @@ func (m *QueueManager) Stop() {
 	if m.cleanupCancel != nil {
 		m.cleanupCancel()
 		m.cleanupWg.Wait()
+	}
+
+	// Stop visibility extender
+	if m.visibilityCancel != nil {
+		m.visibilityCancel()
+		m.visibilityWg.Wait()
+	}
+
+	// Stop leak detection
+	if m.leakDetectionCancel != nil {
+		m.leakDetectionCancel()
+		m.leakDetectionWg.Wait()
 	}
 
 	m.poolsMu.Lock()
@@ -313,11 +492,11 @@ func (m *QueueManager) RouteMessage(msg *DispatchMessage) bool {
 	m.inPipelineTimestamps.Store(pipelineKey, time.Now().UnixMilli())
 	m.appIdToPipelineKey.Store(msg.JobID, pipelineKey)
 
-	// Get or create pool
+	// Get or create pool (defaults match Java)
 	poolCfg := &PoolConfig{
 		Code:          msg.DispatchPoolID,
-		Concurrency:   10, // Default
-		QueueCapacity: 500,
+		Concurrency:   DefaultPoolConcurrency,
+		QueueCapacity: max(DefaultPoolConcurrency*DefaultQueueCapacityMultiplier, MinQueueCapacity),
 	}
 
 	p := m.GetOrCreatePool(poolCfg)
@@ -502,11 +681,11 @@ func (m *QueueManager) RouteMessageBatch(ctx context.Context, messages []*Dispat
 			continue // Already rejected
 		}
 
-		// Get or create pool
+		// Get or create pool (defaults match Java)
 		poolCfg := &PoolConfig{
 			Code:          poolCode,
-			Concurrency:   10, // Default
-			QueueCapacity: 500,
+			Concurrency:   DefaultPoolConcurrency,
+			QueueCapacity: max(DefaultPoolConcurrency*DefaultQueueCapacityMultiplier, MinQueueCapacity),
 		}
 		p := m.GetOrCreatePool(poolCfg)
 
@@ -797,17 +976,63 @@ type Consumer struct {
 	ctx       context.Context
 	cancel    context.CancelFunc
 	wg        sync.WaitGroup
+
+	// Health monitoring
+	lastActivity   atomic.Int64 // Unix timestamp of last activity (poll or message)
+	restartCount   int          // Number of restart attempts
+	restartCountMu sync.Mutex
+	stalled        atomic.Bool  // Whether consumer is considered stalled
 }
 
 // NewConsumer creates a new consumer
 func NewConsumer(manager *QueueManager, queueConsumer queue.Consumer) *Consumer {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Consumer{
+	c := &Consumer{
 		manager:  manager,
 		consumer: queueConsumer,
 		ctx:      ctx,
 		cancel:   cancel,
 	}
+	// Initialize last activity to now
+	c.lastActivity.Store(time.Now().Unix())
+	return c
+}
+
+// updateActivity updates the last activity timestamp
+func (c *Consumer) updateActivity() {
+	c.lastActivity.Store(time.Now().Unix())
+}
+
+// GetLastActivity returns the last activity timestamp
+func (c *Consumer) GetLastActivity() time.Time {
+	return time.Unix(c.lastActivity.Load(), 0)
+}
+
+// IsStalled returns whether the consumer is considered stalled
+func (c *Consumer) IsStalled() bool {
+	return c.stalled.Load()
+}
+
+// GetRestartCount returns the number of restart attempts
+func (c *Consumer) GetRestartCount() int {
+	c.restartCountMu.Lock()
+	defer c.restartCountMu.Unlock()
+	return c.restartCount
+}
+
+// incrementRestartCount increments and returns the new restart count
+func (c *Consumer) incrementRestartCount() int {
+	c.restartCountMu.Lock()
+	defer c.restartCountMu.Unlock()
+	c.restartCount++
+	return c.restartCount
+}
+
+// resetRestartCount resets the restart count to zero
+func (c *Consumer) resetRestartCount() {
+	c.restartCountMu.Lock()
+	defer c.restartCountMu.Unlock()
+	c.restartCount = 0
 }
 
 // Start starts consuming messages
@@ -841,6 +1066,9 @@ func WireReceiptHandleCallbacks(dispatchMsg *DispatchMessage, queueMsg queue.Mes
 // consume processes messages from the queue
 func (c *Consumer) consume() {
 	err := c.consumer.Consume(c.ctx, func(msg queue.Message) error {
+		// Update activity timestamp on every message received
+		c.updateActivity()
+
 		// Parse MessagePointer (Java-compatible format)
 		var pointer model.MessagePointer
 		if err := json.Unmarshal(msg.Data(), &pointer); err != nil {
@@ -889,10 +1117,21 @@ func (c *Consumer) consume() {
 	}
 }
 
+// ConsumerFactory creates new queue consumers for restart
+type ConsumerFactory func() queue.Consumer
+
 // Router ties together all message router components
 type Router struct {
-	manager  *QueueManager
-	consumer *Consumer
+	manager         *QueueManager
+	consumer        *Consumer
+	consumerMu      sync.Mutex
+	consumerFactory ConsumerFactory
+
+	// Health monitoring
+	healthConfig   *ConsumerHealthConfig
+	healthCtx      context.Context
+	healthCancel   context.CancelFunc
+	healthWg       sync.WaitGroup
 }
 
 // NewRouter creates a new message router
@@ -905,9 +1144,25 @@ func NewRouter(queueConsumer queue.Consumer, mediatorCfg *mediator.HTTPMediatorC
 	}
 
 	return &Router{
-		manager:  manager,
-		consumer: consumer,
+		manager:      manager,
+		consumer:     consumer,
+		healthConfig: DefaultConsumerHealthConfig(),
 	}
+}
+
+// WithConsumerFactory sets a factory for creating new consumers on restart
+func (r *Router) WithConsumerFactory(factory ConsumerFactory) *Router {
+	r.consumerFactory = factory
+	return r
+}
+
+// WithConsumerHealthConfig configures consumer health monitoring
+func (r *Router) WithConsumerHealthConfig(cfg *ConsumerHealthConfig) *Router {
+	if cfg == nil {
+		cfg = DefaultConsumerHealthConfig()
+	}
+	r.healthConfig = cfg
+	return r
 }
 
 // Start starts the router
@@ -916,13 +1171,36 @@ func (r *Router) Start() {
 	if r.consumer != nil {
 		r.consumer.Start()
 	}
+
+	// Start consumer health monitor if enabled
+	if r.healthConfig.Enabled && r.consumer != nil {
+		r.healthCtx, r.healthCancel = context.WithCancel(context.Background())
+		r.healthWg.Add(1)
+		go r.runConsumerHealthMonitor()
+		log.Info().
+			Dur("checkInterval", r.healthConfig.CheckInterval).
+			Dur("stallThreshold", r.healthConfig.StallThreshold).
+			Int("maxRestarts", r.healthConfig.MaxRestartAttempts).
+			Msg("Consumer health monitor started")
+	}
+
 	log.Info().Msg("Message router started")
 }
 
 // Stop stops the router
 func (r *Router) Stop() {
-	if r.consumer != nil {
-		r.consumer.Stop()
+	// Stop health monitor first
+	if r.healthCancel != nil {
+		r.healthCancel()
+		r.healthWg.Wait()
+	}
+
+	r.consumerMu.Lock()
+	consumer := r.consumer
+	r.consumerMu.Unlock()
+
+	if consumer != nil {
+		consumer.Stop()
 	}
 	r.manager.Stop()
 	log.Info().Msg("Message router stopped")
@@ -931,6 +1209,132 @@ func (r *Router) Stop() {
 // Manager returns the queue manager
 func (r *Router) Manager() *QueueManager {
 	return r.manager
+}
+
+// Consumer returns the current consumer (for health checks)
+func (r *Router) Consumer() *Consumer {
+	r.consumerMu.Lock()
+	defer r.consumerMu.Unlock()
+	return r.consumer
+}
+
+// runConsumerHealthMonitor monitors consumer health and auto-restarts if stalled
+func (r *Router) runConsumerHealthMonitor() {
+	defer r.healthWg.Done()
+
+	ticker := time.NewTicker(r.healthConfig.CheckInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-r.healthCtx.Done():
+			log.Info().Msg("Consumer health monitor stopped")
+			return
+		case <-ticker.C:
+			r.checkConsumerHealth()
+		}
+	}
+}
+
+// checkConsumerHealth checks if the consumer is stalled and restarts if needed
+func (r *Router) checkConsumerHealth() {
+	r.consumerMu.Lock()
+	consumer := r.consumer
+	r.consumerMu.Unlock()
+
+	if consumer == nil {
+		return
+	}
+
+	// Check if consumer has been inactive for too long
+	lastActivity := consumer.GetLastActivity()
+	stalledDuration := time.Since(lastActivity)
+
+	if stalledDuration < r.healthConfig.StallThreshold {
+		// Consumer is healthy - reset stalled flag and restart count
+		if consumer.IsStalled() {
+			consumer.stalled.Store(false)
+			consumer.resetRestartCount()
+			log.Info().Msg("Consumer recovered from stalled state")
+		}
+		return
+	}
+
+	// Consumer appears stalled
+	consumer.stalled.Store(true)
+	restartCount := consumer.GetRestartCount()
+
+	// Record stall event metric
+	metrics.ConsumerStallEvents.Inc()
+
+	log.Warn().
+		Dur("stalledFor", stalledDuration).
+		Int("restartAttempts", restartCount).
+		Int("maxAttempts", r.healthConfig.MaxRestartAttempts).
+		Msg("Consumer appears stalled")
+
+	// Check if we've exceeded max restart attempts
+	if restartCount >= r.healthConfig.MaxRestartAttempts {
+		log.Error().
+			Int("attempts", restartCount).
+			Msg("Consumer exceeded max restart attempts - requires manual intervention")
+		return
+	}
+
+	// Attempt restart
+	r.restartConsumer()
+}
+
+// restartConsumer stops the current consumer and creates a new one
+func (r *Router) restartConsumer() {
+	r.consumerMu.Lock()
+	defer r.consumerMu.Unlock()
+
+	oldConsumer := r.consumer
+	if oldConsumer == nil {
+		return
+	}
+
+	attempt := oldConsumer.incrementRestartCount()
+
+	// Record restart attempt metric
+	metrics.ConsumerRestarts.Inc()
+
+	log.Info().
+		Int("attempt", attempt).
+		Int("maxAttempts", r.healthConfig.MaxRestartAttempts).
+		Msg("Restarting stalled consumer")
+
+	// Stop old consumer
+	oldConsumer.Stop()
+
+	// Wait between restart attempts
+	time.Sleep(r.healthConfig.RestartDelay)
+
+	// Create new consumer if we have a factory
+	if r.consumerFactory != nil {
+		newQueueConsumer := r.consumerFactory()
+		if newQueueConsumer != nil {
+			newConsumer := NewConsumer(r.manager, newQueueConsumer)
+			// Preserve restart count from old consumer
+			newConsumer.restartCount = attempt
+			newConsumer.Start()
+			r.consumer = newConsumer
+
+			log.Info().
+				Int("attempt", attempt).
+				Msg("Consumer restarted successfully")
+			return
+		}
+	}
+
+	// No factory or factory returned nil - try to restart with existing queue consumer
+	// This is a fallback that may not work if the underlying connection is broken
+	log.Warn().Msg("No consumer factory available, attempting restart with existing consumer")
+	newConsumer := NewConsumer(r.manager, oldConsumer.consumer)
+	newConsumer.restartCount = attempt
+	newConsumer.Start()
+	r.consumer = newConsumer
 }
 
 // GenerateBatchID generates a new batch ID
@@ -942,8 +1346,13 @@ func GenerateBatchID() string {
 func (m *QueueManager) runConfigSync() {
 	defer m.syncWg.Done()
 
-	// Do initial sync immediately
-	m.syncPoolConfig()
+	// Do initial sync with retry logic (matching Java: 12 attempts × 5s)
+	if !m.doInitialSyncWithRetry() {
+		if m.syncConfig.FailOnInitialSyncError {
+			log.Fatal().Msg("Initial pool config sync failed after all retries - shutting down")
+		}
+		log.Error().Msg("Initial pool config sync failed - continuing with empty config")
+	}
 
 	ticker := time.NewTicker(m.syncConfig.Interval)
 	defer ticker.Stop()
@@ -959,15 +1368,71 @@ func (m *QueueManager) runConfigSync() {
 	}
 }
 
+// doInitialSyncWithRetry performs initial config sync with retry logic
+// Matches Java's 12 attempts × 5s delay pattern
+func (m *QueueManager) doInitialSyncWithRetry() bool {
+	maxAttempts := m.syncConfig.InitialRetryAttempts
+	if maxAttempts <= 0 {
+		maxAttempts = 1
+	}
+
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		// Check standby status before syncing (matching Java)
+		if m.standbyChecker != nil && !m.standbyChecker.IsPrimary() {
+			log.Info().
+				Int("attempt", attempt).
+				Msg("In standby mode, waiting for primary lock before initial sync...")
+			time.Sleep(m.syncConfig.InitialRetryDelay)
+			continue
+		}
+
+		if m.syncPoolConfigWithResult() {
+			m.initialized = true
+			log.Info().
+				Int("attempt", attempt).
+				Msg("Initial pool config sync completed successfully")
+			return true
+		}
+
+		if attempt < maxAttempts {
+			log.Warn().
+				Int("attempt", attempt).
+				Int("maxAttempts", maxAttempts).
+				Dur("retryDelay", m.syncConfig.InitialRetryDelay).
+				Msg("Initial pool config sync failed, retrying...")
+			time.Sleep(m.syncConfig.InitialRetryDelay)
+		}
+	}
+
+	log.Error().
+		Int("attempts", maxAttempts).
+		Msg("Initial pool config sync failed after all retry attempts")
+	return false
+}
+
 // syncPoolConfig syncs pool configurations from the database
 func (m *QueueManager) syncPoolConfig() {
+	// Check standby status before syncing (matching Java)
+	if m.standbyChecker != nil && !m.standbyChecker.IsPrimary() {
+		if !m.initialized {
+			log.Info().Msg("In standby mode, waiting for primary lock...")
+			m.initialized = true // Only log once
+		}
+		return
+	}
+
+	m.syncPoolConfigWithResult()
+}
+
+// syncPoolConfigWithResult syncs pool configs and returns success/failure
+func (m *QueueManager) syncPoolConfigWithResult() bool {
 	ctx, cancel := context.WithTimeout(m.syncCtx, 30*time.Second)
 	defer cancel()
 
 	configs, err := m.poolRepo.FindAllEnabled(ctx)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to fetch pool configs from database")
-		return
+		return false
 	}
 
 	// Track which pools we've seen in this sync
@@ -1000,11 +1465,11 @@ func (m *QueueManager) syncPoolConfig() {
 					Msg("Updated pool configuration")
 			}
 		} else {
-			// Create new pool from database config
+			// Create new pool from database config (defaults match Java)
 			poolCfg := &PoolConfig{
 				Code:               cfg.Code,
-				Concurrency:        cfg.GetConcurrencyOrDefault(10),
-				QueueCapacity:      cfg.GetQueueCapacityOrDefault(500),
+				Concurrency:        cfg.GetConcurrencyOrDefault(DefaultPoolConcurrency),
+				QueueCapacity:      cfg.GetQueueCapacityOrDefault(DefaultPoolConcurrency * DefaultQueueCapacityMultiplier),
 				RateLimitPerMinute: cfg.RateLimitPerMin,
 			}
 
@@ -1038,6 +1503,8 @@ func (m *QueueManager) syncPoolConfig() {
 			Int("removedCount", len(poolsToRemove)).
 			Msg("Pool config sync completed")
 	}
+
+	return true
 }
 
 // drainPool gracefully drains and removes a pool
@@ -1129,4 +1596,175 @@ func (m *QueueManager) cleanupStalePipelineEntries() {
 			Dur("ttl", m.cleanupConfig.TTL).
 			Msg("Cleaned up stale pipeline entries - messages may have been stuck")
 	}
+}
+
+// runVisibilityExtender runs the visibility extension loop
+// This extends SQS visibility timeout for long-running messages to prevent
+// them from timing out and being redelivered while still processing.
+// Runs every 55 seconds (like Java's SqsQueueConsumer) and extends messages
+// that have been processing for >50 seconds.
+func (m *QueueManager) runVisibilityExtender() {
+	defer m.visibilityWg.Done()
+
+	ticker := time.NewTicker(m.visibilityConfig.Interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-m.visibilityCtx.Done():
+			log.Info().Msg("Visibility extender stopped")
+			return
+		case <-ticker.C:
+			m.extendLongRunningVisibility()
+		}
+	}
+}
+
+// extendLongRunningVisibility extends visibility for messages processing longer than threshold
+func (m *QueueManager) extendLongRunningVisibility() {
+	now := time.Now().UnixMilli()
+	thresholdMillis := m.visibilityConfig.Threshold.Milliseconds()
+	extendedCount := 0
+
+	m.inPipelineTimestamps.Range(func(key, value interface{}) bool {
+		pipelineKey := key.(string)
+		startTime := value.(int64)
+		elapsedMillis := now - startTime
+
+		// Only extend if message has been processing longer than threshold
+		if elapsedMillis < thresholdMillis {
+			return true
+		}
+
+		// Get the message from the pipeline
+		msgValue, exists := m.inPipelineMap.Load(pipelineKey)
+		if !exists {
+			return true
+		}
+
+		msg, ok := msgValue.(*DispatchMessage)
+		if !ok || msg.InProgressFunc == nil {
+			return true
+		}
+
+		// Extend visibility by calling InProgress
+		if err := msg.InProgressFunc(); err != nil {
+			log.Warn().
+				Err(err).
+				Str("messageId", msg.JobID).
+				Int64("elapsedMs", elapsedMillis).
+				Msg("Failed to extend visibility for long-running message")
+		} else {
+			extendedCount++
+			log.Debug().
+				Str("messageId", msg.JobID).
+				Int64("elapsedMs", elapsedMillis).
+				Msg("Extended visibility for long-running message")
+		}
+
+		return true
+	})
+
+	if extendedCount > 0 {
+		log.Info().
+			Int("count", extendedCount).
+			Dur("threshold", m.visibilityConfig.Threshold).
+			Msg("Extended visibility for long-running messages")
+	}
+}
+
+// runLeakDetection runs the memory leak detection loop
+// Matches Java's checkForMapLeaks scheduled task (every 30s)
+func (m *QueueManager) runLeakDetection() {
+	defer m.leakDetectionWg.Done()
+
+	ticker := time.NewTicker(m.leakDetectionConfig.Interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-m.leakDetectionCtx.Done():
+			log.Info().Msg("Memory leak detection stopped")
+			return
+		case <-ticker.C:
+			m.checkForMapLeaks()
+		}
+	}
+}
+
+// checkForMapLeaks detects potential memory leaks in pipeline maps
+// Matches Java's checkForMapLeaks implementation:
+// - Warns if pipeline map size exceeds total pool capacity
+// - This indicates messages are not being removed after processing
+func (m *QueueManager) checkForMapLeaks() {
+	// Skip if not initialized or shutting down
+	m.runningMu.Lock()
+	running := m.running
+	initialized := m.initialized
+	m.runningMu.Unlock()
+
+	if !running || !initialized {
+		return
+	}
+
+	// Count pipeline map size
+	pipelineSize := 0
+	m.inPipelineMap.Range(func(_, _ interface{}) bool {
+		pipelineSize++
+		return true
+	})
+
+	// Calculate total pool capacity
+	m.poolsMu.RLock()
+	totalCapacity := 0
+	for _, p := range m.pools {
+		totalCapacity += p.GetQueueCapacity()
+	}
+	m.poolsMu.RUnlock()
+
+	// Add minimum capacity for default pool that might be created
+	if totalCapacity == 0 {
+		totalCapacity = MinQueueCapacity
+	}
+
+	// WARNING: Pipeline map size exceeds total pool capacity
+	// This indicates messages are not being removed from the map
+	if pipelineSize > totalCapacity {
+		message := fmt.Sprintf("inPipelineMap size (%d) exceeds total pool capacity (%d) - possible memory leak",
+			pipelineSize, totalCapacity)
+
+		log.Warn().
+			Int("pipelineSize", pipelineSize).
+			Int("totalCapacity", totalCapacity).
+			Msg("LEAK DETECTION: " + message)
+
+		if m.warningService != nil {
+			m.warningService.AddWarning("PIPELINE_MAP_LEAK", "WARN", message, "QueueManager")
+		}
+	}
+
+	// Update pipeline size gauge metric
+	metrics.PipelineMapSize.Set(float64(pipelineSize))
+}
+
+// GetPipelineSize returns the current size of the pipeline map (for monitoring)
+func (m *QueueManager) GetPipelineSize() int {
+	size := 0
+	m.inPipelineMap.Range(func(_, _ interface{}) bool {
+		size++
+		return true
+	})
+	return size
+}
+
+// GetTotalPoolCapacity returns the total capacity across all pools (for monitoring)
+func (m *QueueManager) GetTotalPoolCapacity() int {
+	m.poolsMu.RLock()
+	defer m.poolsMu.RUnlock()
+
+	total := 0
+	for _, p := range m.pools {
+		total += p.GetQueueCapacity()
+	}
+	return total
 }

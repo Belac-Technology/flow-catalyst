@@ -4,6 +4,8 @@ use crate::repository::OutboxRepository;
 use anyhow::Result;
 use sqlx::{PgPool, Row};
 use chrono::{Utc, DateTime};
+use std::time::Duration;
+use tracing::info;
 
 pub struct PostgresOutboxRepository {
     pool: PgPool,
@@ -100,5 +102,28 @@ impl OutboxRepository for PostgresOutboxRepository {
             .execute(&self.pool)
             .await?;
         Ok(())
+    }
+
+    async fn recover_stuck_items(&self, timeout: Duration) -> Result<u64> {
+        let timeout_ms = timeout.as_millis() as i64;
+        let cutoff = Utc::now().timestamp_millis() - timeout_ms;
+
+        let result = sqlx::query(
+            r#"
+            UPDATE outbox_items
+            SET status = 'PENDING', processed_at = NULL
+            WHERE status = 'PROCESSING'
+            AND processed_at < $1
+            "#
+        )
+        .bind(cutoff)
+        .execute(&self.pool)
+        .await?;
+
+        let recovered = result.rows_affected();
+        if recovered > 0 {
+            info!("Recovered {} stuck outbox items (PostgreSQL)", recovered);
+        }
+        Ok(recovered)
     }
 }

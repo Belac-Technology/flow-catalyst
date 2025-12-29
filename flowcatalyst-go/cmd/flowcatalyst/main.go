@@ -270,7 +270,7 @@ func main() {
 	defer messageRouter.Stop()
 
 	// Initialize API handlers
-	apiHandlers := api.NewHandlers(db, cfg)
+	apiHandlers := api.NewHandlers(mongoClient, db, cfg)
 
 	// Initialize Auth Service
 	keyManager := jwt.NewKeyManager()

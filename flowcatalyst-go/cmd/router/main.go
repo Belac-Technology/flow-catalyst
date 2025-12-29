@@ -28,6 +28,7 @@ import (
 	"go.flowcatalyst.tech/internal/router/manager"
 	"go.flowcatalyst.tech/internal/router/mediator"
 	"go.flowcatalyst.tech/internal/router/standby"
+	"go.flowcatalyst.tech/internal/router/warning"
 )
 
 var (
@@ -202,6 +203,11 @@ func main() {
 		fmt.Fprintf(w, `{"role":"%s","instanceId":"%s","standbyEnabled":%v}`,
 			standbyService.GetRole(), standbyService.GetInstanceID(), status.StandbyEnabled)
 	})
+
+	// Initialize warning service and handler
+	warningService := warning.NewInMemoryService()
+	warningHandler := warning.NewHandler(warningService)
+	warningHandler.RegisterRoutes(r)
 
 	// Start HTTP server
 	server := &http.Server{

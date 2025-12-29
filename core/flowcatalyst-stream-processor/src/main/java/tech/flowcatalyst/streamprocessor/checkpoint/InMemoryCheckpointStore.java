@@ -1,6 +1,6 @@
 package tech.flowcatalyst.streamprocessor.checkpoint;
 
-import io.quarkus.arc.DefaultBean;
+import io.quarkus.arc.properties.IfBuildProperty;
 import jakarta.enterprise.context.ApplicationScoped;
 import org.bson.BsonDocument;
 
@@ -16,13 +16,12 @@ import java.util.logging.Logger;
  * from the beginning each time. This is fine for dev/test but not
  * suitable for production.</p>
  *
- * <p>This is the default implementation - Redis implementation takes
- * priority when available.</p>
+ * <p>Only activated when stream-processor.checkpoint.mongo.enabled=false</p>
  *
  * <p>Supports multiple streams via a concurrent map keyed by checkpoint key.</p>
  */
 @ApplicationScoped
-@DefaultBean
+@IfBuildProperty(name = "stream-processor.checkpoint.mongo.enabled", stringValue = "false")
 public class InMemoryCheckpointStore implements CheckpointStore {
 
     private static final Logger LOG = Logger.getLogger(InMemoryCheckpointStore.class.getName());

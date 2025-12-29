@@ -405,6 +405,30 @@ impl HttpMediator {
                         "Endpoint not found"
                     );
                     MediationOutcome::error_config(status_code, "HTTP 404: Not found".to_string())
+                } else if status_code == 429 {
+                    // Too Many Requests - TRANSIENT error, respect Retry-After
+                    // Don't count as circuit breaker failure (it's rate limiting, not a real error)
+                    self.circuit_breaker.record_success();
+
+                    // Parse Retry-After header if present, default to 30 seconds
+                    let retry_after = response.headers()
+                        .get("Retry-After")
+                        .and_then(|v| v.to_str().ok())
+                        .and_then(|s| s.parse::<u32>().ok())
+                        .unwrap_or(30);
+
+                    warn!(
+                        message_id = %message.id,
+                        status_code = status_code,
+                        retry_after = retry_after,
+                        "Rate limited (429) - will retry"
+                    );
+                    MediationOutcome {
+                        result: MediationResult::ErrorProcess,
+                        delay_seconds: Some(retry_after),
+                        status_code: Some(status_code),
+                        error_message: Some("HTTP 429: Too Many Requests".to_string()),
+                    }
                 } else if status_code == 501 {
                     // Not implemented - configuration error
                     self.circuit_breaker.record_success();
@@ -415,7 +439,7 @@ impl HttpMediator {
                     );
                     MediationOutcome::error_config(status_code, "HTTP 501: Not implemented".to_string())
                 } else if status.is_client_error() {
-                    // Other 4xx - treat as config error
+                    // Other 4xx - treat as config error (but NOT 429 which is handled above)
                     self.circuit_breaker.record_success();
                     warn!(
                         message_id = %message.id,

@@ -237,6 +237,128 @@ var (
 		[]string{"queue_type"},
 	)
 
+	// Consumer health metrics
+
+	// ConsumerRestarts tracks consumer restart attempts
+	ConsumerRestarts = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Namespace: "flowcatalyst",
+			Subsystem: "consumer",
+			Name:      "restarts_total",
+			Help:      "Total consumer restart attempts due to stall detection",
+		},
+	)
+
+	// ConsumerStallEvents tracks consumer stall events
+	ConsumerStallEvents = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Namespace: "flowcatalyst",
+			Subsystem: "consumer",
+			Name:      "stall_events_total",
+			Help:      "Total consumer stall events detected",
+		},
+	)
+
+	// Pipeline metrics (for leak detection, matching Java gauges)
+
+	// PipelineMapSize tracks the size of the in-pipeline map
+	PipelineMapSize = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Namespace: "flowcatalyst",
+			Subsystem: "pipeline",
+			Name:      "map_size",
+			Help:      "Number of messages currently in the processing pipeline",
+		},
+	)
+
+	// PipelineTotalCapacity tracks total pool capacity
+	PipelineTotalCapacity = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Namespace: "flowcatalyst",
+			Subsystem: "pipeline",
+			Name:      "total_capacity",
+			Help:      "Total capacity across all processing pools",
+		},
+	)
+
+	// Outbox processor metrics
+
+	// OutboxItemsProcessed tracks total outbox items processed
+	OutboxItemsProcessed = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: "flowcatalyst",
+			Subsystem: "outbox",
+			Name:      "items_processed_total",
+			Help:      "Total outbox items processed",
+		},
+		[]string{"type", "status"}, // type: event, dispatch_job; status: completed, failed, retried
+	)
+
+	// OutboxBufferSize tracks current buffer size
+	OutboxBufferSize = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Namespace: "flowcatalyst",
+			Subsystem: "outbox",
+			Name:      "buffer_size",
+			Help:      "Current size of the outbox buffer",
+		},
+	)
+
+	// OutboxActiveProcessors tracks active message group processors
+	OutboxActiveProcessors = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Namespace: "flowcatalyst",
+			Subsystem: "outbox",
+			Name:      "active_processors",
+			Help:      "Number of active message group processors",
+		},
+	)
+
+	// OutboxPollDuration tracks outbox polling duration
+	OutboxPollDuration = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Namespace: "flowcatalyst",
+			Subsystem: "outbox",
+			Name:      "poll_duration_seconds",
+			Help:      "Time to poll and process an outbox batch",
+			Buckets:   prometheus.DefBuckets,
+		},
+	)
+
+	// OutboxAPIDuration tracks API call duration for outbox item delivery
+	OutboxAPIDuration = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace: "flowcatalyst",
+			Subsystem: "outbox",
+			Name:      "api_duration_seconds",
+			Help:      "Time to deliver outbox items via API",
+			Buckets:   []float64{0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30},
+		},
+		[]string{"type"}, // event, dispatch_job
+	)
+
+	// OutboxRecoveredItems tracks items recovered from stuck PROCESSING state
+	OutboxRecoveredItems = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: "flowcatalyst",
+			Subsystem: "outbox",
+			Name:      "recovered_items_total",
+			Help:      "Total items recovered from stuck PROCESSING state",
+		},
+		[]string{"type"}, // event, dispatch_job
+	)
+
+	// OutboxLeaderElectionState tracks leader election status
+	// 0 = follower, 1 = leader
+	OutboxLeaderElectionState = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Namespace: "flowcatalyst",
+			Subsystem: "outbox",
+			Name:      "leader_election_state",
+			Help:      "Leader election state (0=follower, 1=leader)",
+		},
+	)
+
 	// HTTP API metrics
 
 	// HTTPRequestsTotal tracks HTTP API requests

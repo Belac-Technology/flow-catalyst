@@ -10,37 +10,21 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-const (
-	// MaxWarnings is the maximum number of warnings to store
-	MaxWarnings = 1000
-)
-
-// Warning represents a system warning
-type Warning struct {
-	ID           string    `json:"id"`
-	Category     string    `json:"category"`
-	Severity     string    `json:"severity"`
-	Message      string    `json:"message"`
-	Timestamp    time.Time `json:"timestamp"`
-	Source       string    `json:"source"`
-	Acknowledged bool      `json:"acknowledged"`
-}
-
-// Service defines the warning service interface
+// Service manages system warnings
 type Service interface {
 	// AddWarning adds a new warning
 	AddWarning(category, severity, message, source string)
 
 	// GetAllWarnings returns all warnings
-	GetAllWarnings() []*Warning
+	GetAllWarnings() []Warning
 
 	// GetWarningsBySeverity returns warnings filtered by severity
-	GetWarningsBySeverity(severity string) []*Warning
+	GetWarningsBySeverity(severity string) []Warning
 
-	// GetUnacknowledgedWarnings returns all unacknowledged warnings
-	GetUnacknowledgedWarnings() []*Warning
+	// GetUnacknowledgedWarnings returns unacknowledged warnings
+	GetUnacknowledgedWarnings() []Warning
 
-	// AcknowledgeWarning marks a warning as acknowledged
+	// AcknowledgeWarning acknowledges a warning by ID
 	AcknowledgeWarning(warningID string) bool
 
 	// ClearAllWarnings removes all warnings
@@ -50,16 +34,26 @@ type Service interface {
 	ClearOldWarnings(hoursOld int)
 }
 
-// InMemoryService is an in-memory implementation of the warning service
+// InMemoryService stores warnings in memory
 type InMemoryService struct {
-	mu       sync.RWMutex
-	warnings map[string]*Warning
+	mu          sync.RWMutex
+	warnings    map[string]*Warning
+	maxWarnings int
 }
 
 // NewInMemoryService creates a new in-memory warning service
 func NewInMemoryService() *InMemoryService {
 	return &InMemoryService{
-		warnings: make(map[string]*Warning),
+		warnings:    make(map[string]*Warning),
+		maxWarnings: 1000,
+	}
+}
+
+// NewInMemoryServiceWithLimit creates a new in-memory warning service with custom limit
+func NewInMemoryServiceWithLimit(maxWarnings int) *InMemoryService {
+	return &InMemoryService{
+		warnings:    make(map[string]*Warning),
+		maxWarnings: maxWarnings,
 	}
 }
 
@@ -68,20 +62,9 @@ func (s *InMemoryService) AddWarning(category, severity, message, source string)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Limit warning storage
-	if len(s.warnings) >= MaxWarnings {
-		// Remove oldest warning
-		var oldestID string
-		var oldestTime time.Time
-		for id, w := range s.warnings {
-			if oldestID == "" || w.Timestamp.Before(oldestTime) {
-				oldestID = id
-				oldestTime = w.Timestamp
-			}
-		}
-		if oldestID != "" {
-			delete(s.warnings, oldestID)
-		}
+	// Limit warning storage by removing oldest if at capacity
+	if len(s.warnings) >= s.maxWarnings {
+		s.removeOldest()
 	}
 
 	warningID := uuid.New().String()
@@ -96,6 +79,7 @@ func (s *InMemoryService) AddWarning(category, severity, message, source string)
 	}
 
 	s.warnings[warningID] = warning
+
 	log.Info().
 		Str("severity", severity).
 		Str("category", category).
@@ -104,14 +88,61 @@ func (s *InMemoryService) AddWarning(category, severity, message, source string)
 		Msg("Warning added")
 }
 
+// removeOldest removes the oldest warning (must be called with lock held)
+func (s *InMemoryService) removeOldest() {
+	var oldestID string
+	var oldestTime time.Time
+
+	for id, w := range s.warnings {
+		if oldestID == "" || w.Timestamp.Before(oldestTime) {
+			oldestID = id
+			oldestTime = w.Timestamp
+		}
+	}
+
+	if oldestID != "" {
+		delete(s.warnings, oldestID)
+	}
+}
+
 // GetAllWarnings returns all warnings sorted by timestamp (newest first)
-func (s *InMemoryService) GetAllWarnings() []*Warning {
+func (s *InMemoryService) GetAllWarnings() []Warning {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	result := make([]*Warning, 0, len(s.warnings))
+	return s.sortedWarnings(nil)
+}
+
+// GetWarningsBySeverity returns warnings filtered by severity
+func (s *InMemoryService) GetWarningsBySeverity(severity string) []Warning {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	filter := func(w *Warning) bool {
+		return strings.EqualFold(w.Severity, severity)
+	}
+	return s.sortedWarnings(filter)
+}
+
+// GetUnacknowledgedWarnings returns unacknowledged warnings
+func (s *InMemoryService) GetUnacknowledgedWarnings() []Warning {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	filter := func(w *Warning) bool {
+		return !w.Acknowledged
+	}
+	return s.sortedWarnings(filter)
+}
+
+// sortedWarnings returns warnings sorted by timestamp (newest first) with optional filter
+func (s *InMemoryService) sortedWarnings(filter func(*Warning) bool) []Warning {
+	result := make([]Warning, 0, len(s.warnings))
+
 	for _, w := range s.warnings {
-		result = append(result, w)
+		if filter == nil || filter(w) {
+			result = append(result, *w)
+		}
 	}
 
 	// Sort by timestamp descending (newest first)
@@ -122,68 +153,17 @@ func (s *InMemoryService) GetAllWarnings() []*Warning {
 	return result
 }
 
-// GetWarningsBySeverity returns warnings filtered by severity
-func (s *InMemoryService) GetWarningsBySeverity(severity string) []*Warning {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	var result []*Warning
-	for _, w := range s.warnings {
-		if strings.EqualFold(w.Severity, severity) {
-			result = append(result, w)
-		}
-	}
-
-	// Sort by timestamp descending
-	sort.Slice(result, func(i, j int) bool {
-		return result[i].Timestamp.After(result[j].Timestamp)
-	})
-
-	return result
-}
-
-// GetUnacknowledgedWarnings returns all unacknowledged warnings
-func (s *InMemoryService) GetUnacknowledgedWarnings() []*Warning {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	var result []*Warning
-	for _, w := range s.warnings {
-		if !w.Acknowledged {
-			result = append(result, w)
-		}
-	}
-
-	// Sort by timestamp descending
-	sort.Slice(result, func(i, j int) bool {
-		return result[i].Timestamp.After(result[j].Timestamp)
-	})
-
-	return result
-}
-
-// AcknowledgeWarning marks a warning as acknowledged
+// AcknowledgeWarning acknowledges a warning by ID
 func (s *InMemoryService) AcknowledgeWarning(warningID string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	existing, ok := s.warnings[warningID]
-	if !ok {
+	warning, exists := s.warnings[warningID]
+	if !exists {
 		return false
 	}
 
-	// Create new warning with acknowledged flag
-	acknowledged := &Warning{
-		ID:           existing.ID,
-		Category:     existing.Category,
-		Severity:     existing.Severity,
-		Message:      existing.Message,
-		Timestamp:    existing.Timestamp,
-		Source:       existing.Source,
-		Acknowledged: true,
-	}
-
-	s.warnings[warningID] = acknowledged
+	warning.Acknowledged = true
 	log.Info().Str("warningId", warningID).Msg("Warning acknowledged")
 	return true
 }
@@ -217,4 +197,11 @@ func (s *InMemoryService) ClearOldWarnings(hoursOld int) {
 	}
 
 	log.Info().Int("count", len(toRemove)).Int("hoursOld", hoursOld).Msg("Cleared old warnings")
+}
+
+// Count returns the current number of warnings
+func (s *InMemoryService) Count() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return len(s.warnings)
 }

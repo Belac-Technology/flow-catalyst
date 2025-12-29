@@ -9,9 +9,10 @@ import (
 
 	"github.com/rs/zerolog/log"
 	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+
+	"go.flowcatalyst.tech/internal/common/metrics"
 )
 
 // StreamConfig holds configuration for a single stream
@@ -45,7 +46,10 @@ type ProjectionMapper interface {
 
 // CheckpointStore stores and retrieves resume tokens
 type CheckpointStore interface {
-	GetCheckpoint(key string) (*primitive.ObjectID, error)
+	// GetCheckpoint retrieves the resume token for the given key.
+	// Returns nil if no checkpoint exists.
+	GetCheckpoint(key string) (bson.Raw, error)
+	// SaveCheckpoint saves the resume token for the given key.
 	SaveCheckpoint(key string, token bson.Raw) error
 }
 
@@ -180,7 +184,14 @@ func (w *Watcher) setFatalError(err error) {
 	w.runningMu.Unlock()
 }
 
-// watchLoop is the main watch loop
+// Reconnection settings
+const (
+	initialBackoff = 5 * time.Second
+	maxBackoff     = 60 * time.Second
+	backoffMultiplier = 2.0
+)
+
+// watchLoop is the main watch loop with automatic reconnection
 func (w *Watcher) watchLoop() {
 	defer w.wg.Done()
 	defer func() {
@@ -198,39 +209,123 @@ func (w *Watcher) watchLoop() {
 		}}},
 	}
 
-	// Configure change stream options
-	opts := options.ChangeStream().
-		SetFullDocument(options.UpdateLookup).
-		SetBatchSize(int32(w.config.BatchMaxSize))
+	consecutiveFailures := 0
+	backoff := initialBackoff
 
-	// Resume from checkpoint if available
-	if w.checkpointStore != nil {
-		if checkpoint, err := w.checkpointStore.GetCheckpoint(w.config.CheckpointKey); err == nil && checkpoint != nil {
-			// Note: Resume token handling would need the actual BSON token
-			// For simplicity, we start fresh if no proper token
-			log.Info().Str("stream", w.name).Msg("Resuming from checkpoint")
+	// Outer loop for reconnection
+	for {
+		// Check if we should stop
+		select {
+		case <-w.ctx.Done():
+			return
+		default:
+		}
+
+		// Configure change stream options
+		opts := options.ChangeStream().
+			SetFullDocument(options.UpdateLookup).
+			SetBatchSize(int32(w.config.BatchMaxSize))
+
+		// Resume from checkpoint if available
+		if w.checkpointStore != nil {
+			if resumeToken, err := w.checkpointStore.GetCheckpoint(w.config.CheckpointKey); err == nil && resumeToken != nil {
+				opts.SetResumeAfter(resumeToken)
+				log.Info().Str("stream", w.name).Msg("Resuming from checkpoint")
+			} else if err != nil {
+				log.Warn().Err(err).Str("stream", w.name).Msg("Failed to load checkpoint, starting from current position")
+			} else {
+				log.Info().Str("stream", w.name).Msg("No checkpoint found, starting from current position")
+			}
+		}
+
+		log.Info().
+			Str("stream", w.name).
+			Str("source", w.config.SourceCollection).
+			Str("target", w.config.TargetCollection).
+			Strs("operations", w.config.WatchOperations).
+			Msg("Opening change stream")
+
+		// Open change stream
+		stream, err := sourceCollection.Watch(w.ctx, pipeline, opts)
+		if err != nil {
+			consecutiveFailures++
+			log.Error().
+				Err(err).
+				Str("stream", w.name).
+				Int("attempt", consecutiveFailures).
+				Dur("backoff", backoff).
+				Msg("Failed to open change stream, will retry")
+
+			// Wait before retry
+			select {
+			case <-w.ctx.Done():
+				return
+			case <-time.After(backoff):
+			}
+
+			// Increase backoff for next attempt
+			backoff = time.Duration(float64(backoff) * backoffMultiplier)
+			if backoff > maxBackoff {
+				backoff = maxBackoff
+			}
+			continue
+		}
+
+		// Reset backoff on successful connection
+		consecutiveFailures = 0
+		backoff = initialBackoff
+
+		log.Info().Str("stream", w.name).Msg("Change stream opened - waiting for documents")
+
+		// Process the stream (inner loop)
+		streamErr := w.processStream(stream)
+		stream.Close(w.ctx)
+
+		// Check why we exited
+		if w.ctx.Err() != nil {
+			// Context cancelled - clean shutdown
+			return
+		}
+
+		if streamErr != nil {
+			consecutiveFailures++
+			log.Warn().
+				Err(streamErr).
+				Str("stream", w.name).
+				Int("attempt", consecutiveFailures).
+				Dur("backoff", backoff).
+				Msg("Change stream error, reconnecting")
+
+			// Check for stale resume token error
+			if isStaleResumeTokenError(streamErr) {
+				log.Error().
+					Str("stream", w.name).
+					Msg("Resume token expired - clearing checkpoint and starting from current position. EVENTS MAY BE MISSED.")
+				if w.checkpointStore != nil {
+					w.clearCheckpoint()
+				}
+				backoff = initialBackoff // Don't backoff for stale token
+				continue
+			}
+
+			// Wait before retry
+			select {
+			case <-w.ctx.Done():
+				return
+			case <-time.After(backoff):
+			}
+
+			// Increase backoff for next attempt
+			backoff = time.Duration(float64(backoff) * backoffMultiplier)
+			if backoff > maxBackoff {
+				backoff = maxBackoff
+			}
 		}
 	}
+}
 
-	log.Info().
-		Str("stream", w.name).
-		Str("source", w.config.SourceCollection).
-		Str("target", w.config.TargetCollection).
-		Strs("operations", w.config.WatchOperations).
-		Msg("Opening change stream")
-
-	// Open change stream
-	stream, err := sourceCollection.Watch(w.ctx, pipeline, opts)
-	if err != nil {
-		log.Error().Err(err).Str("stream", w.name).Msg("Failed to open change stream")
-		w.setFatalError(err)
-		return
-	}
-	defer stream.Close(w.ctx)
-
-	log.Info().Str("stream", w.name).Msg("Change stream opened - waiting for documents")
-
-	// Batch accumulation
+// processStream processes events from the change stream until an error or context cancellation
+func (w *Watcher) processStream(stream *mongo.ChangeStream) error {
 	batch := make([]bson.M, 0, w.config.BatchMaxSize)
 	var lastToken bson.Raw
 	batchStartTime := time.Now()
@@ -242,13 +337,22 @@ func (w *Watcher) watchLoop() {
 			if len(batch) > 0 {
 				w.processBatch(batch, lastToken)
 			}
-			return
+			return nil
 
 		default:
 			// Check for next event with timeout
 			ctx, cancel := context.WithTimeout(w.ctx, 100*time.Millisecond)
 			hasNext := stream.TryNext(ctx)
 			cancel()
+
+			// Check for stream errors
+			if err := stream.Err(); err != nil {
+				// Flush batch before returning error
+				if len(batch) > 0 {
+					w.processBatch(batch, lastToken)
+				}
+				return err
+			}
 
 			if hasNext {
 				var event bson.M
@@ -277,11 +381,54 @@ func (w *Watcher) watchLoop() {
 	}
 }
 
+// isStaleResumeTokenError checks if the error is due to a stale/expired resume token
+func isStaleResumeTokenError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errStr := err.Error()
+	// MongoDB error code 286 is ChangeStreamHistoryLost
+	return contains(errStr, "ChangeStreamHistoryLost") ||
+		contains(errStr, "resume token") ||
+		contains(errStr, "oplog") ||
+		contains(errStr, "invalidate")
+}
+
+// contains checks if s contains substr
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || (len(s) > 0 && findSubstring(s, substr)))
+}
+
+func findSubstring(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
+
+// clearCheckpoint clears the checkpoint (for stale resume token recovery)
+func (w *Watcher) clearCheckpoint() {
+	if store, ok := w.checkpointStore.(*MongoCheckpointStore); ok {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_, err := store.collection.DeleteOne(ctx, bson.M{"_id": w.config.CheckpointKey})
+		if err != nil {
+			log.Warn().Err(err).Str("stream", w.name).Msg("Failed to clear checkpoint")
+		} else {
+			log.Info().Str("stream", w.name).Msg("Checkpoint cleared")
+		}
+	}
+}
+
 // processBatch processes a batch of documents
 func (w *Watcher) processBatch(batch []bson.M, resumeToken bson.Raw) {
 	if len(batch) == 0 {
 		return
 	}
+
+	batchStartTime := time.Now()
 
 	// Track batch metrics (like Java's StreamContext)
 	currentSeq := w.batchSequence.Add(1)
@@ -298,8 +445,14 @@ func (w *Watcher) processBatch(batch []bson.M, resumeToken bson.Raw) {
 		Int64("batchSeq", currentSeq).
 		Msg("Processing batch")
 
+	// Track success/failure counts for metrics
+	successCount := 0
+	failureCount := 0
+
 	// Map and upsert documents
 	for _, doc := range batch {
+		docStartTime := time.Now()
+
 		projected := w.mapper.Map(doc)
 		if projected == nil {
 			continue
@@ -309,6 +462,8 @@ func (w *Watcher) processBatch(batch []bson.M, resumeToken bson.Raw) {
 		id, ok := projected["_id"]
 		if !ok {
 			log.Warn().Str("stream", w.name).Msg("Projected document has no _id")
+			failureCount++
+			metrics.StreamEventsProcessed.WithLabelValues(w.name, "failed").Inc()
 			continue
 		}
 
@@ -323,7 +478,15 @@ func (w *Watcher) processBatch(batch []bson.M, resumeToken bson.Raw) {
 				Str("stream", w.name).
 				Interface("id", id).
 				Msg("Failed to upsert projection")
+			failureCount++
+			metrics.StreamEventsProcessed.WithLabelValues(w.name, "failed").Inc()
+		} else {
+			successCount++
+			metrics.StreamEventsProcessed.WithLabelValues(w.name, "success").Inc()
 		}
+
+		// Record per-document processing duration
+		metrics.StreamProcessingDuration.WithLabelValues(w.name).Observe(time.Since(docStartTime).Seconds())
 	}
 
 	// Save checkpoint and update checkpointed sequence
@@ -335,10 +498,17 @@ func (w *Watcher) processBatch(batch []bson.M, resumeToken bson.Raw) {
 		}
 	}
 
+	// Update stream lag metric (difference between current and checkpointed sequence)
+	lag := currentSeq - w.checkpointedSeq.Load()
+	metrics.StreamLag.WithLabelValues(w.name).Set(float64(lag))
+
 	log.Debug().
 		Str("stream", w.name).
 		Int("processed", len(batch)).
+		Int("success", successCount).
+		Int("failed", failureCount).
 		Int64("batchSeq", currentSeq).
+		Dur("duration", time.Since(batchStartTime)).
 		Msg("Batch processed")
 }
 
@@ -354,8 +524,8 @@ func NewMongoCheckpointStore(db *mongo.Database) *MongoCheckpointStore {
 	}
 }
 
-// GetCheckpoint retrieves a checkpoint
-func (s *MongoCheckpointStore) GetCheckpoint(key string) (*primitive.ObjectID, error) {
+// GetCheckpoint retrieves a checkpoint (resume token)
+func (s *MongoCheckpointStore) GetCheckpoint(key string) (bson.Raw, error) {
 	var doc struct {
 		ResumeToken bson.Raw `bson:"resumeToken"`
 	}
@@ -368,7 +538,12 @@ func (s *MongoCheckpointStore) GetCheckpoint(key string) (*primitive.ObjectID, e
 		return nil, err
 	}
 
-	return nil, nil // Return the raw token in a real implementation
+	// Return nil if no token stored (empty bson.Raw)
+	if len(doc.ResumeToken) == 0 {
+		return nil, nil
+	}
+
+	return doc.ResumeToken, nil
 }
 
 // SaveCheckpoint saves a checkpoint

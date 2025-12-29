@@ -10,25 +10,46 @@ import (
 
 	"go.flowcatalyst.tech/internal/platform/auth/local"
 	"go.flowcatalyst.tech/internal/platform/client"
+	"go.flowcatalyst.tech/internal/platform/common"
 	"go.flowcatalyst.tech/internal/platform/principal"
+	"go.flowcatalyst.tech/internal/platform/principal/operations"
 )
 
-// PrincipalAdminHandler handles principal administration endpoints
+// PrincipalAdminHandler handles principal administration endpoints using UseCases
 type PrincipalAdminHandler struct {
 	principalRepo   *principal.Repository
 	clientRepo      *client.Repository
 	passwordService *local.PasswordService
+
+	// UseCases
+	createUserUseCase         *operations.CreateUserUseCase
+	updateUserUseCase         *operations.UpdateUserUseCase
+	activateUserUseCase       *operations.ActivateUserUseCase
+	deactivateUserUseCase     *operations.DeactivateUserUseCase
+	deleteUserUseCase         *operations.DeleteUserUseCase
+	assignRolesUseCase        *operations.AssignRolesUseCase
+	grantClientAccessUseCase  *operations.GrantClientAccessUseCase
+	revokeClientAccessUseCase *operations.RevokeClientAccessUseCase
 }
 
-// NewPrincipalAdminHandler creates a new principal admin handler
+// NewPrincipalAdminHandler creates a new principal admin handler with UseCases
 func NewPrincipalAdminHandler(
 	principalRepo *principal.Repository,
 	clientRepo *client.Repository,
+	uow common.UnitOfWork,
 ) *PrincipalAdminHandler {
 	return &PrincipalAdminHandler{
-		principalRepo:   principalRepo,
-		clientRepo:      clientRepo,
-		passwordService: local.NewPasswordService(),
+		principalRepo:             principalRepo,
+		clientRepo:                clientRepo,
+		passwordService:           local.NewPasswordService(),
+		createUserUseCase:         operations.NewCreateUserUseCase(principalRepo, uow),
+		updateUserUseCase:         operations.NewUpdateUserUseCase(principalRepo, uow),
+		activateUserUseCase:       operations.NewActivateUserUseCase(principalRepo, uow),
+		deactivateUserUseCase:     operations.NewDeactivateUserUseCase(principalRepo, uow),
+		deleteUserUseCase:         operations.NewDeleteUserUseCase(principalRepo, uow),
+		assignRolesUseCase:        operations.NewAssignRolesUseCase(principalRepo, uow),
+		grantClientAccessUseCase:  operations.NewGrantClientAccessUseCase(principalRepo, clientRepo, uow),
+		revokeClientAccessUseCase: operations.NewRevokeClientAccessUseCase(principalRepo, clientRepo, uow),
 	}
 }
 

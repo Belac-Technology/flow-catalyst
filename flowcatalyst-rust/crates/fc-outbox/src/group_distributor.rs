@@ -350,7 +350,7 @@ mod tests {
             mediation_type: MediationType::HTTP,
             mediation_target: "http://localhost".to_string(),
             message_group_id: group.map(String::from),
-            payload: "{}".to_string(),
+            payload: serde_json::json!({}),
             created_at: Utc::now(),
         }
     }

@@ -14,19 +14,6 @@ import (
 	"go.flowcatalyst.tech/internal/common/tsid"
 )
 
-// EventType represents an event type
-type EventType struct {
-	ID          string    `bson:"_id"`
-	Code        string    `bson:"code"`
-	Name        string    `bson:"name"`
-	Description string    `bson:"description,omitempty"`
-	Category    string    `bson:"category,omitempty"`
-	SchemaID    string    `bson:"schemaId,omitempty"`
-	Active      bool      `bson:"active"`
-	CreatedAt   time.Time `bson:"createdAt"`
-	UpdatedAt   time.Time `bson:"updatedAt"`
-}
-
 // Repository handles event type persistence
 type Repository struct {
 	collection *mongo.Collection
@@ -58,6 +45,19 @@ func (r *Repository) FindAll(ctx context.Context) ([]*EventType, error) {
 func (r *Repository) FindByID(ctx context.Context, id string) (*EventType, error) {
 	var et EventType
 	err := r.collection.FindOne(ctx, bson.M{"_id": id}).Decode(&et)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &et, nil
+}
+
+// FindByCode finds an event type by code
+func (r *Repository) FindByCode(ctx context.Context, code string) (*EventType, error) {
+	var et EventType
+	err := r.collection.FindOne(ctx, bson.M{"code": code}).Decode(&et)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
 			return nil, nil
@@ -106,7 +106,7 @@ func (r *Repository) CreateHandler(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
-	et.Active = true
+	et.Status = EventTypeStatusCurrent
 	if err := r.Insert(req.Context(), &et); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -160,6 +160,276 @@ func (r *Repository) DeleteHandler(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ArchiveHandler handles POST /event-types/{id}/archive
+func (r *Repository) ArchiveHandler(w http.ResponseWriter, req *http.Request) {
+	id := chi.URLParam(req, "id")
+	et, err := r.FindByID(req.Context(), id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if et == nil {
+		http.Error(w, "Event type not found", http.StatusNotFound)
+		return
+	}
+
+	et.Status = EventTypeStatusArchived
+	if err := r.Update(req.Context(), et); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, et)
+}
+
+// === Schema Management Handlers ===
+
+// AddSchemaRequest represents a request to add a schema version
+type AddSchemaRequest struct {
+	Version    string     `json:"version"`
+	MimeType   string     `json:"mimeType"`
+	Schema     string     `json:"schema"`
+	SchemaType SchemaType `json:"schemaType"`
+}
+
+// ListSchemasHandler handles GET /event-types/{id}/schemas
+func (r *Repository) ListSchemasHandler(w http.ResponseWriter, req *http.Request) {
+	id := chi.URLParam(req, "id")
+	et, err := r.FindByID(req.Context(), id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if et == nil {
+		http.Error(w, "Event type not found", http.StatusNotFound)
+		return
+	}
+
+	schemas := et.SpecVersions
+	if schemas == nil {
+		schemas = []SpecVersion{}
+	}
+	writeJSON(w, http.StatusOK, schemas)
+}
+
+// GetSchemaHandler handles GET /event-types/{id}/schemas/{version}
+func (r *Repository) GetSchemaHandler(w http.ResponseWriter, req *http.Request) {
+	id := chi.URLParam(req, "id")
+	version := chi.URLParam(req, "version")
+
+	et, err := r.FindByID(req.Context(), id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if et == nil {
+		http.Error(w, "Event type not found", http.StatusNotFound)
+		return
+	}
+
+	sv := et.FindSpecVersion(version)
+	if sv == nil {
+		http.Error(w, "Schema version not found", http.StatusNotFound)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, sv)
+}
+
+// AddSchemaHandler handles POST /event-types/{id}/schemas
+func (r *Repository) AddSchemaHandler(w http.ResponseWriter, req *http.Request) {
+	id := chi.URLParam(req, "id")
+
+	var addReq AddSchemaRequest
+	if err := decodeJSON(req, &addReq); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if addReq.Version == "" {
+		http.Error(w, "Version is required", http.StatusBadRequest)
+		return
+	}
+	if addReq.Schema == "" {
+		http.Error(w, "Schema is required", http.StatusBadRequest)
+		return
+	}
+	if addReq.SchemaType == "" {
+		addReq.SchemaType = SchemaTypeJSONSchema
+	}
+	if addReq.MimeType == "" {
+		addReq.MimeType = "application/json"
+	}
+
+	et, err := r.FindByID(req.Context(), id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if et == nil {
+		http.Error(w, "Event type not found", http.StatusNotFound)
+		return
+	}
+
+	// Check if event type is archived
+	if et.IsArchived() {
+		http.Error(w, "Cannot add schema to archived event type", http.StatusConflict)
+		return
+	}
+
+	// Check for duplicate version
+	if et.HasVersion(addReq.Version) {
+		http.Error(w, "Schema version already exists", http.StatusConflict)
+		return
+	}
+
+	// Create new spec version
+	now := time.Now()
+	sv := SpecVersion{
+		Version:    addReq.Version,
+		MimeType:   addReq.MimeType,
+		Schema:     addReq.Schema,
+		SchemaType: addReq.SchemaType,
+		Status:     SpecVersionStatusFinalising,
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	}
+
+	et.AddSpecVersion(sv)
+	if err := r.Update(req.Context(), et); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, sv)
+}
+
+// FinaliseSchemaHandler handles POST /event-types/{id}/schemas/{version}/finalise
+func (r *Repository) FinaliseSchemaHandler(w http.ResponseWriter, req *http.Request) {
+	id := chi.URLParam(req, "id")
+	version := chi.URLParam(req, "version")
+
+	et, err := r.FindByID(req.Context(), id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if et == nil {
+		http.Error(w, "Event type not found", http.StatusNotFound)
+		return
+	}
+
+	sv := et.FindSpecVersion(version)
+	if sv == nil {
+		http.Error(w, "Schema version not found", http.StatusNotFound)
+		return
+	}
+
+	if sv.Status != SpecVersionStatusFinalising {
+		http.Error(w, "Only finalising schemas can be finalised", http.StatusConflict)
+		return
+	}
+
+	// Deprecate any existing current version
+	for i := range et.SpecVersions {
+		if et.SpecVersions[i].Status == SpecVersionStatusCurrent {
+			et.SpecVersions[i].Status = SpecVersionStatusDeprecated
+			et.SpecVersions[i].UpdatedAt = time.Now()
+		}
+	}
+
+	// Mark this version as current
+	sv.Status = SpecVersionStatusCurrent
+	sv.UpdatedAt = time.Now()
+
+	if err := r.Update(req.Context(), et); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, sv)
+}
+
+// DeprecateSchemaHandler handles POST /event-types/{id}/schemas/{version}/deprecate
+func (r *Repository) DeprecateSchemaHandler(w http.ResponseWriter, req *http.Request) {
+	id := chi.URLParam(req, "id")
+	version := chi.URLParam(req, "version")
+
+	et, err := r.FindByID(req.Context(), id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if et == nil {
+		http.Error(w, "Event type not found", http.StatusNotFound)
+		return
+	}
+
+	sv := et.FindSpecVersion(version)
+	if sv == nil {
+		http.Error(w, "Schema version not found", http.StatusNotFound)
+		return
+	}
+
+	if sv.Status == SpecVersionStatusDeprecated {
+		http.Error(w, "Schema is already deprecated", http.StatusConflict)
+		return
+	}
+
+	sv.Status = SpecVersionStatusDeprecated
+	sv.UpdatedAt = time.Now()
+
+	if err := r.Update(req.Context(), et); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, sv)
+}
+
+// DeleteSchemaHandler handles DELETE /event-types/{id}/schemas/{version}
+func (r *Repository) DeleteSchemaHandler(w http.ResponseWriter, req *http.Request) {
+	id := chi.URLParam(req, "id")
+	version := chi.URLParam(req, "version")
+
+	et, err := r.FindByID(req.Context(), id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if et == nil {
+		http.Error(w, "Event type not found", http.StatusNotFound)
+		return
+	}
+
+	sv := et.FindSpecVersion(version)
+	if sv == nil {
+		http.Error(w, "Schema version not found", http.StatusNotFound)
+		return
+	}
+
+	// Only allow deletion of finalising (draft) schemas
+	if sv.Status != SpecVersionStatusFinalising {
+		http.Error(w, "Only draft (finalising) schemas can be deleted", http.StatusConflict)
+		return
+	}
+
+	// Remove the version from the array
+	newVersions := make([]SpecVersion, 0, len(et.SpecVersions)-1)
+	for _, v := range et.SpecVersions {
+		if v.Version != version {
+			newVersions = append(newVersions, v)
+		}
+	}
+	et.SpecVersions = newVersions
+
+	if err := r.Update(req.Context(), et); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
 	w.WriteHeader(http.StatusNoContent)
 }
 

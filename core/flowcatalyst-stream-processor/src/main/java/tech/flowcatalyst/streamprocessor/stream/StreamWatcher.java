@@ -1,5 +1,6 @@
 package tech.flowcatalyst.streamprocessor.stream;
 
+import com.mongodb.MongoCommandException;
 import com.mongodb.client.ChangeStreamIterable;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
@@ -20,6 +21,7 @@ import tech.flowcatalyst.streamprocessor.dispatch.CheckpointTracker;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
@@ -118,111 +120,183 @@ public class StreamWatcher {
         return streamName;
     }
 
+    // MongoDB error code for stale resume token (change stream history lost)
+    private static final int CHANGE_STREAM_HISTORY_LOST = 286;
+
+    // Reconnection settings
+    private static final long INITIAL_BACKOFF_MS = 5000;      // 5 seconds
+    private static final long MAX_BACKOFF_MS = 60000;         // 60 seconds
+    private static final double BACKOFF_MULTIPLIER = 2.0;
+
     /**
-     * Main watch loop - reads from change stream and accumulates batches.
+     * Main watch loop with automatic reconnection.
+     *
+     * <p>This loop wraps cursor creation in a retry mechanism that handles:
+     * <ul>
+     *   <li>Connection failures - exponential backoff with automatic reconnection</li>
+     *   <li>Stale resume tokens - clears checkpoint and starts from current position</li>
+     *   <li>Other transient errors - logs and retries with backoff</li>
+     * </ul>
      */
     private void watchLoop() {
         MongoCollection<Document> sourceCollection = mongoClient
                 .getDatabase(rootConfig.database())
                 .getCollection(streamConfig.sourceCollection());
 
-        // Resume from checkpoint if available
-        BsonDocument resumeToken;
-        try {
-            resumeToken = checkpointStore.getCheckpoint(checkpointKey).orElse(null);
-        } catch (CheckpointStore.CheckpointUnavailableException e) {
-            LOG.severe("[" + streamName + "] Cannot start - checkpoint store unavailable: " + e.getMessage());
-            handleFatalError(e);
-            return;
-        }
-
-        // Build pipeline to filter by operation types
         List<String> operations = streamConfig.watchOperations();
         List<Bson> pipeline = List.of(
                 Aggregates.match(Filters.in("operationType", operations))
         );
 
-        ChangeStreamIterable<Document> stream = sourceCollection
-                .watch(pipeline)
-                .fullDocument(FullDocument.UPDATE_LOOKUP);  // Include full document for updates
+        int consecutiveFailures = 0;
+        long backoffMs = INITIAL_BACKOFF_MS;
 
-        if (resumeToken != null) {
-            stream = stream.resumeAfter(resumeToken);
-            LOG.info("[" + streamName + "] Resuming from checkpoint");
-        } else {
-            LOG.info("[" + streamName + "] Starting from beginning");
+        while (running) {
+            BsonDocument resumeToken = null;
+
+            // Try to get resume token from checkpoint
+            try {
+                resumeToken = checkpointStore.getCheckpoint(checkpointKey).orElse(null);
+            } catch (CheckpointStore.CheckpointUnavailableException e) {
+                LOG.warning("[" + streamName + "] Checkpoint store unavailable, starting from current position: " + e.getMessage());
+                // Continue without resume token - better than not starting at all
+            }
+
+            try {
+                // Create change stream
+                ChangeStreamIterable<Document> stream = sourceCollection
+                        .watch(pipeline)
+                        .fullDocument(FullDocument.UPDATE_LOOKUP);
+
+                if (resumeToken != null) {
+                    stream = stream.resumeAfter(resumeToken);
+                    LOG.info("[" + streamName + "] Resuming from checkpoint");
+                } else {
+                    LOG.info("[" + streamName + "] Starting from current position");
+                }
+
+                LOG.info("[" + streamName + "] Opening change stream cursor on " +
+                        rootConfig.database() + "." + streamConfig.sourceCollection() +
+                        " (operations: " + operations + ")");
+
+                // Process the change stream
+                try (MongoCursor<ChangeStreamDocument<Document>> cursor = stream.iterator()) {
+                    LOG.info("[" + streamName + "] Change stream cursor opened - waiting for documents...");
+
+                    // Reset backoff on successful connection
+                    consecutiveFailures = 0;
+                    backoffMs = INITIAL_BACKOFF_MS;
+
+                    processCursor(cursor);
+                }
+
+            } catch (MongoCommandException e) {
+                if (!running) break;
+
+                if (e.getErrorCode() == CHANGE_STREAM_HISTORY_LOST) {
+                    // Resume token is stale - clear checkpoint and start fresh
+                    LOG.severe("[" + streamName + "] Resume token expired (change stream history lost). " +
+                            "Clearing checkpoint and starting from current position. SOME EVENTS MAY HAVE BEEN MISSED.");
+                    checkpointStore.clearCheckpoint(checkpointKey);
+                    // Don't backoff - try immediately with fresh start
+                    continue;
+                }
+
+                // Other MongoDB errors - log and retry with backoff
+                consecutiveFailures++;
+                LOG.log(Level.WARNING, "[" + streamName + "] MongoDB command error (attempt " +
+                        consecutiveFailures + "), reconnecting in " + backoffMs + "ms: " + e.getMessage(), e);
+                sleepWithBackoff(backoffMs);
+                backoffMs = Math.min((long) (backoffMs * BACKOFF_MULTIPLIER), MAX_BACKOFF_MS);
+
+            } catch (Exception e) {
+                if (!running) break;
+
+                consecutiveFailures++;
+                LOG.log(Level.WARNING, "[" + streamName + "] Change stream error (attempt " +
+                        consecutiveFailures + "), reconnecting in " + backoffMs + "ms: " + e.getMessage(), e);
+                sleepWithBackoff(backoffMs);
+                backoffMs = Math.min((long) (backoffMs * BACKOFF_MULTIPLIER), MAX_BACKOFF_MS);
+            }
         }
 
-        LOG.info("[" + streamName + "] Opening change stream cursor on " +
-                rootConfig.database() + "." + streamConfig.sourceCollection() +
-                " (operations: " + operations + ")");
+        running = false;
+        LOG.info("[" + streamName + "] StreamWatcher stopped");
+    }
 
-        try (MongoCursor<ChangeStreamDocument<Document>> cursor = stream.iterator()) {
-            LOG.info("[" + streamName + "] Change stream cursor opened - waiting for documents...");
-            List<Document> batch = new ArrayList<>(streamConfig.batchMaxSize());
-            BsonDocument lastToken = null;
-            String lastOperationType = null;
-            long batchStartTime = System.currentTimeMillis();
+    /**
+     * Process events from the change stream cursor.
+     *
+     * @param cursor the change stream cursor
+     */
+    private void processCursor(MongoCursor<ChangeStreamDocument<Document>> cursor) {
+        List<Document> batch = new ArrayList<>(streamConfig.batchMaxSize());
+        BsonDocument lastToken = null;
+        String lastOperationType = null;
+        long batchStartTime = System.currentTimeMillis();
 
-            while (running) {
-                // Check for fatal errors in batch processing
-                if (checkpointTracker.hasFatalError()) {
-                    LOG.severe("[" + streamName + "] Fatal error detected - stopping watcher");
-                    break;
+        while (running) {
+            // Check for fatal errors in batch processing
+            if (checkpointTracker.hasFatalError()) {
+                LOG.severe("[" + streamName + "] Fatal error detected in batch processing - stopping watcher");
+                handleFatalError(checkpointTracker.getFatalError());
+                return;
+            }
+
+            // Non-blocking check for next event
+            ChangeStreamDocument<Document> change = null;
+            try {
+                change = cursor.tryNext();
+            } catch (Exception e) {
+                if (!running) {
+                    return; // Expected during shutdown
                 }
+                throw e; // Let outer loop handle reconnection
+            }
 
-                // Non-blocking check for next event
-                ChangeStreamDocument<Document> change = null;
+            if (change != null && change.getFullDocument() != null) {
+                batch.add(change.getFullDocument());
+                lastToken = change.getResumeToken();
+                lastOperationType = change.getOperationType().getValue();
+            }
+
+            // Check if we should flush the batch
+            boolean batchFull = batch.size() >= streamConfig.batchMaxSize();
+            boolean timeoutReached = (System.currentTimeMillis() - batchStartTime) >= streamConfig.batchMaxWaitMs();
+
+            if (!batch.isEmpty() && (batchFull || timeoutReached)) {
+                // Dispatch the batch
+                dispatcher.dispatch(new ArrayList<>(batch), lastToken, lastOperationType);
+                batch.clear();
+                batchStartTime = System.currentTimeMillis();
+            }
+
+            // Small sleep if no events to prevent tight loop
+            if (change == null) {
                 try {
-                    change = cursor.tryNext();
-                } catch (Exception e) {
-                    if (!running) {
-                        break; // Expected during shutdown
-                    }
-                    throw e;
-                }
-
-                if (change != null && change.getFullDocument() != null) {
-                    batch.add(change.getFullDocument());
-                    lastToken = change.getResumeToken();
-                    lastOperationType = change.getOperationType().getValue();
-                }
-
-                // Check if we should flush the batch
-                boolean batchFull = batch.size() >= streamConfig.batchMaxSize();
-                boolean timeoutReached = (System.currentTimeMillis() - batchStartTime) >= streamConfig.batchMaxWaitMs();
-
-                if (!batch.isEmpty() && (batchFull || timeoutReached)) {
-                    // Dispatch the batch
-                    dispatcher.dispatch(new ArrayList<>(batch), lastToken, lastOperationType);
-                    batch.clear();
-                    batchStartTime = System.currentTimeMillis();
-                }
-
-                // Small sleep if no events to prevent tight loop
-                if (change == null) {
-                    try {
-                        Thread.sleep(10);
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                        break;
-                    }
+                    Thread.sleep(10);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return;
                 }
             }
-        } catch (Exception e) {
-            if (running) {
-                LOG.severe("[" + streamName + "] Change stream watcher failed: " + e.getMessage());
-                e.printStackTrace();
-                handleFatalError(e);
-            }
-        } finally {
-            running = false;
-            LOG.info("[" + streamName + "] StreamWatcher stopped");
+        }
+    }
+
+    /**
+     * Sleep for the backoff period, handling interruption.
+     */
+    private void sleepWithBackoff(long ms) {
+        try {
+            Thread.sleep(ms);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         }
     }
 
     /**
      * Handle a fatal error by triggering shutdown.
+     * Only called for truly unrecoverable errors (e.g., batch processing failures).
      */
     private void handleFatalError(Exception e) {
         LOG.severe("[" + streamName + "] FATAL: Stream watcher encountered unrecoverable error - triggering shutdown");

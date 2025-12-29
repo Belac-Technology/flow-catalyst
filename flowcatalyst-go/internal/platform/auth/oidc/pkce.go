@@ -3,6 +3,7 @@ package oidc
 import (
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"errors"
 	"io"
@@ -77,7 +78,8 @@ func (s *PKCEService) VerifyCodeChallenge(verifier, challenge, method string) er
 		return ErrInvalidCodeChallenge
 	}
 
-	if expectedChallenge != challenge {
+	// Use constant-time comparison to prevent timing attacks
+	if subtle.ConstantTimeCompare([]byte(expectedChallenge), []byte(challenge)) != 1 {
 		return ErrPKCEMismatch
 	}
 

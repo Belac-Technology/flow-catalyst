@@ -3,6 +3,7 @@ package mediator
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -28,10 +29,24 @@ type HTTPMediator struct {
 	baseBackoff    time.Duration
 }
 
+// HTTPVersion represents the HTTP protocol version to use
+type HTTPVersion string
+
+const (
+	// HTTPVersion1 forces HTTP/1.1
+	HTTPVersion1 HTTPVersion = "HTTP_1_1"
+	// HTTPVersion2 enables HTTP/2 (default for production)
+	HTTPVersion2 HTTPVersion = "HTTP_2"
+)
+
 // HTTPMediatorConfig configures the HTTP mediator
 type HTTPMediatorConfig struct {
 	// Timeout for HTTP requests
 	Timeout time.Duration
+
+	// HTTPVersion controls which HTTP version to use
+	// HTTP_2 (default for production) or HTTP_1_1 (recommended for dev)
+	HTTPVersion HTTPVersion
 
 	// MaxRetries for transient errors
 	MaxRetries int
@@ -48,10 +63,13 @@ type HTTPMediatorConfig struct {
 	CircuitBreakerMinRequests uint32        // Min requests before evaluating ratio
 }
 
-// DefaultHTTPMediatorConfig returns sensible defaults
+// DefaultHTTPMediatorConfig returns sensible defaults for production
+// Note: Timeout is 900s (15 minutes) to support long-running webhooks
+// Note: Uses HTTP/2 by default (matching Java's mediator.http.version=HTTP_2)
 func DefaultHTTPMediatorConfig() *HTTPMediatorConfig {
 	return &HTTPMediatorConfig{
-		Timeout:                   30 * time.Second,
+		Timeout:                   900 * time.Second, // 15 minutes - matches Java default
+		HTTPVersion:               HTTPVersion2,      // HTTP/2 for production (Java default)
 		MaxRetries:                3,
 		BaseBackoff:               time.Second,
 		CircuitBreakerEnabled:     true,
@@ -63,24 +81,47 @@ func DefaultHTTPMediatorConfig() *HTTPMediatorConfig {
 	}
 }
 
+// DevHTTPMediatorConfig returns config suitable for development
+// Uses HTTP/1.1 (matching Java's %dev.mediator.http.version=HTTP_1_1)
+func DevHTTPMediatorConfig() *HTTPMediatorConfig {
+	cfg := DefaultHTTPMediatorConfig()
+	cfg.HTTPVersion = HTTPVersion1 // HTTP/1.1 for dev mode
+	return cfg
+}
+
 // NewHTTPMediator creates a new HTTP mediator
 func NewHTTPMediator(cfg *HTTPMediatorConfig) *HTTPMediator {
 	if cfg == nil {
 		cfg = DefaultHTTPMediatorConfig()
 	}
 
+	// Create transport with base settings
+	transport := &http.Transport{
+		MaxIdleConns:        100,
+		MaxIdleConnsPerHost: 10,
+		IdleConnTimeout:     90 * time.Second,
+		DialContext: (&net.Dialer{
+			Timeout:   10 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
+	}
+
+	// Configure HTTP version (matching Java's mediator.http.version)
+	if cfg.HTTPVersion == HTTPVersion1 {
+		// Force HTTP/1.1 by disabling HTTP/2
+		transport.ForceAttemptHTTP2 = false
+		transport.TLSNextProto = make(map[string]func(authority string, c *tls.Conn) http.RoundTripper)
+		log.Info().Str("version", "HTTP/1.1").Msg("HTTP mediator configured")
+	} else {
+		// Enable HTTP/2 (default for production)
+		transport.ForceAttemptHTTP2 = true
+		log.Info().Str("version", "HTTP/2").Msg("HTTP mediator configured")
+	}
+
 	// Create HTTP client with timeout
 	client := &http.Client{
-		Timeout: cfg.Timeout,
-		Transport: &http.Transport{
-			MaxIdleConns:        100,
-			MaxIdleConnsPerHost: 10,
-			IdleConnTimeout:     90 * time.Second,
-			DialContext: (&net.Dialer{
-				Timeout:   10 * time.Second,
-				KeepAlive: 30 * time.Second,
-			}).DialContext,
-		},
+		Timeout:   cfg.Timeout,
+		Transport: transport,
 	}
 
 	mediator := &HTTPMediator{
@@ -222,8 +263,8 @@ func (m *HTTPMediator) executeWithRetry(msg *pool.MessagePointer) (*pool.Mediati
 func (m *HTTPMediator) executeOnce(msg *pool.MessagePointer, attempt int) *pool.MediationOutcome {
 	targetURL := msg.MediationTarget
 
-	// Determine timeout
-	timeout := 30 * time.Second
+	// Determine timeout (default 900s / 15 minutes for long-running webhooks)
+	timeout := 900 * time.Second
 	if msg.TimeoutSeconds > 0 {
 		timeout = time.Duration(msg.TimeoutSeconds) * time.Second
 	}

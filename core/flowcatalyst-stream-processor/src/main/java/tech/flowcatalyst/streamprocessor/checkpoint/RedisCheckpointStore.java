@@ -79,4 +79,21 @@ public class RedisCheckpointStore implements CheckpointStore {
             LOG.warning("[" + checkpointKey + "] Failed to save checkpoint to Redis: " + e.getMessage());
         }
     }
+
+    @Override
+    public void clearCheckpoint(String checkpointKey) {
+        if (!redissonClient.isResolvable()) {
+            LOG.warning("[" + checkpointKey + "] Redis not available - checkpoint not cleared");
+            return;
+        }
+
+        try {
+            RBucket<String> bucket = redissonClient.get()
+                    .getBucket(CHECKPOINT_PREFIX + checkpointKey);
+            bucket.delete();
+            LOG.info("[" + checkpointKey + "] Checkpoint cleared from Redis");
+        } catch (Exception e) {
+            LOG.warning("[" + checkpointKey + "] Failed to clear checkpoint from Redis: " + e.getMessage());
+        }
+    }
 }

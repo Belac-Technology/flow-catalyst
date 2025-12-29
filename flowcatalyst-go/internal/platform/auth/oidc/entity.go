@@ -61,6 +61,24 @@ func (c *OAuthClient) HasRedirectURI(uri string) bool {
 	return false
 }
 
+// HasApplicationRestrictions returns true if this client is restricted to specific applications
+func (c *OAuthClient) HasApplicationRestrictions() bool {
+	return len(c.ApplicationIDs) > 0
+}
+
+// HasApplicationAccess checks if access to a specific application is allowed
+func (c *OAuthClient) HasApplicationAccess(applicationID string) bool {
+	if !c.HasApplicationRestrictions() {
+		return true // No restrictions means access to all
+	}
+	for _, id := range c.ApplicationIDs {
+		if id == applicationID {
+			return true
+		}
+	}
+	return false
+}
+
 // AuthorizationCode represents an OAuth2 authorization code
 // Collection: authorization_codes
 type AuthorizationCode struct {

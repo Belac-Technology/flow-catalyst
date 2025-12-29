@@ -110,37 +110,3 @@ func (s *Subscription) MatchesEventType(eventTypeCode string) bool {
 	}
 	return false
 }
-
-// DispatchPoolStatus defines the status of a dispatch pool
-type DispatchPoolStatus string
-
-const (
-	DispatchPoolStatusActive   DispatchPoolStatus = "ACTIVE"
-	DispatchPoolStatusArchived DispatchPoolStatus = "ARCHIVED"
-)
-
-// DispatchPool represents a pool for dispatching messages
-// Collection: dispatch_pools
-type DispatchPool struct {
-	ID               string             `bson:"_id" json:"id"`
-	Code             string             `bson:"code" json:"code"` // Unique pool code
-	Name             string             `bson:"name" json:"name"`
-	Description      string             `bson:"description,omitempty" json:"description,omitempty"`
-	RateLimit        *int               `bson:"rateLimit,omitempty" json:"rateLimit,omitempty"` // Messages per minute
-	Concurrency      int                `bson:"concurrency" json:"concurrency"`
-	ClientID         string             `bson:"clientId,omitempty" json:"clientId,omitempty"` // Tenant isolation
-	ClientIdentifier string             `bson:"clientIdentifier,omitempty" json:"clientIdentifier,omitempty"`
-	Status           DispatchPoolStatus `bson:"status" json:"status"`
-	CreatedAt        time.Time          `bson:"createdAt" json:"createdAt"`
-	UpdatedAt        time.Time          `bson:"updatedAt" json:"updatedAt"`
-}
-
-// IsActive returns true if the pool is active
-func (p *DispatchPool) IsActive() bool {
-	return p.Status == DispatchPoolStatusActive
-}
-
-// HasRateLimit returns true if the pool has a rate limit configured
-func (p *DispatchPool) HasRateLimit() bool {
-	return p.RateLimit != nil && *p.RateLimit > 0
-}
