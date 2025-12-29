@@ -35,8 +35,6 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"os/signal"
-	"syscall"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -44,13 +42,11 @@ import (
 	"github.com/go-chi/cors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	httpSwagger "github.com/swaggo/http-swagger"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
 
 	_ "go.flowcatalyst.tech/docs" // Swagger docs
 
 	"go.flowcatalyst.tech/internal/common/health"
-	"go.flowcatalyst.tech/internal/config"
+	"go.flowcatalyst.tech/internal/common/lifecycle"
 	"go.flowcatalyst.tech/internal/platform/api"
 	"go.flowcatalyst.tech/internal/platform/auth"
 	"go.flowcatalyst.tech/internal/platform/auth/federation"
@@ -68,73 +64,103 @@ var (
 
 func main() {
 	// Configure logging
-	logLevel := slog.LevelInfo
-	if os.Getenv("FLOWCATALYST_DEV") == "true" {
-		logLevel = slog.LevelDebug
-	}
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel})))
+	setupLogging()
 
 	slog.Info("Starting FlowCatalyst Platform API",
 		"version", version,
 		"build_time", buildTime,
 		"component", "platform")
 
-	// Load configuration
-	cfg, err := config.Load()
+	ctx := context.Background()
+
+	// ========================================
+	// 1. INFRASTRUCTURE INITIALIZATION
+	// ========================================
+	// Platform needs MongoDB for all storage
+	app, cleanup, err := lifecycle.Initialize(ctx, lifecycle.AppOptions{
+		NeedsMongoDB: true,
+	})
 	if err != nil {
-		slog.Error("Failed to load configuration", "error", err)
+		slog.Error("Failed to initialize", "error", err)
 		os.Exit(1)
 	}
+	defer cleanup()
 
-	// Create context for graceful shutdown
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	// ========================================
+	// 2. COMPONENT WIRING
+	// ========================================
+	// Create components by passing ready infrastructure
 
-	// Initialize health checker
+	// Health checker
 	healthChecker := health.NewChecker()
-
-	// Initialize MongoDB connection
-	slog.Info("Connecting to MongoDB", "uri", maskURI(cfg.MongoDB.URI))
-	mongoClient, err := mongo.Connect(ctx, options.Client().ApplyURI(cfg.MongoDB.URI))
-	if err != nil {
-		slog.Error("Failed to connect to MongoDB", "error", err)
-		os.Exit(1)
-	}
-	defer func() {
-		if err := mongoClient.Disconnect(ctx); err != nil {
-			slog.Error("Error disconnecting from MongoDB", "error", err)
-		}
-	}()
-
-	// Ping MongoDB to verify connection
-	if err := mongoClient.Ping(ctx, nil); err != nil {
-		slog.Error("Failed to ping MongoDB", "error", err)
-		os.Exit(1)
-	}
-	slog.Info("Connected to MongoDB", "database", cfg.MongoDB.Database)
-
-	// Add MongoDB health check
 	healthChecker.AddReadinessCheck(health.MongoDBCheck(func() error {
-		return mongoClient.Ping(ctx, nil)
+		return app.MongoClient.Ping(ctx, nil)
 	}))
 
-	// Initialize database reference
-	db := mongoClient.Database(cfg.MongoDB.Database)
+	// API handlers
+	apiHandlers := api.NewHandlers(app.MongoClient, app.DB, app.Config)
 
-	// Initialize API handlers
-	apiHandlers := api.NewHandlers(mongoClient, db, cfg)
+	// Auth services
+	authService, discoveryHandler, err := setupAuthServices(app)
+	if err != nil {
+		slog.Error("Failed to initialize auth services", "error", err)
+		os.Exit(1)
+	}
 
-	// Initialize Auth Service
+	// HTTP Router
+	httpRouter := setupHTTPRouter(app, healthChecker, apiHandlers, authService, discoveryHandler)
+
+	// HTTP Server
+	httpServer := &http.Server{
+		Addr:         fmt.Sprintf(":%d", app.Config.HTTP.Port),
+		Handler:      httpRouter,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 15 * time.Second,
+		IdleTimeout:  60 * time.Second,
+	}
+
+	// ========================================
+	// 3. SERVICE STARTUP
+	// ========================================
+	httpService := lifecycle.NewHTTPService("platform-api", httpServer)
+
+	slog.Info("Platform API ready", "port", app.Config.HTTP.Port)
+
+	// ========================================
+	// 4. RUN UNTIL SHUTDOWN
+	// ========================================
+	if err := lifecycle.Run(ctx, httpService); err != nil {
+		slog.Error("Service error", "error", err)
+		os.Exit(1)
+	}
+
+	slog.Info("FlowCatalyst Platform API stopped")
+}
+
+// setupLogging configures the slog default logger.
+func setupLogging() {
+	logLevel := slog.LevelInfo
+	if os.Getenv("FLOWCATALYST_DEV") == "true" {
+		logLevel = slog.LevelDebug
+	}
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel})))
+}
+
+// setupAuthServices initializes all authentication-related services.
+func setupAuthServices(app *lifecycle.App) (*auth.AuthService, *oidc.DiscoveryHandler, error) {
+	cfg := app.Config
+
+	// Key manager
 	keyManager := jwt.NewKeyManager()
 	devKeyDir := cfg.DataDir
 	if devKeyDir == "" {
 		devKeyDir = "./data"
 	}
 	if err := keyManager.Initialize("", "", devKeyDir+"/keys"); err != nil {
-		slog.Error("Failed to initialize key manager", "error", err)
-		os.Exit(1)
+		return nil, nil, fmt.Errorf("failed to initialize key manager: %w", err)
 	}
 
+	// Token service
 	tokenService := jwt.NewTokenService(keyManager, jwt.TokenServiceConfig{
 		Issuer:             cfg.Auth.JWT.Issuer,
 		AccessTokenExpiry:  cfg.Auth.JWT.AccessTokenExpiry,
@@ -143,6 +169,7 @@ func main() {
 		AuthCodeExpiry:     cfg.Auth.JWT.AuthorizationCodeExpiry,
 	})
 
+	// Session manager
 	sessionManager := session.NewManager(session.Config{
 		CookieName: cfg.Auth.Session.CookieName,
 		Path:       "/",
@@ -152,12 +179,15 @@ func main() {
 		SameSite:   http.SameSiteStrictMode,
 	})
 
+	// Federation service
 	federationService := federation.NewService()
 
-	principalRepo := principal.NewRepository(db)
-	clientRepo := client.NewRepository(db)
-	oidcRepo := oidc.NewRepository(db)
+	// Repositories
+	principalRepo := principal.NewRepository(app.DB)
+	clientRepo := client.NewRepository(app.DB)
+	oidcRepo := oidc.NewRepository(app.DB)
 
+	// Auth service
 	authService := auth.NewAuthService(
 		principalRepo,
 		clientRepo,
@@ -168,12 +198,22 @@ func main() {
 		cfg.Auth.ExternalBase,
 	)
 
-	// Create OIDC discovery handler
+	// OIDC discovery handler
 	discoveryHandler := oidc.NewDiscoveryHandler(keyManager, cfg.Auth.JWT.Issuer, cfg.Auth.ExternalBase)
 
 	slog.Info("Auth service initialized")
 
-	// Set up HTTP router
+	return authService, discoveryHandler, nil
+}
+
+// setupHTTPRouter creates the HTTP router with all routes and middleware.
+func setupHTTPRouter(
+	app *lifecycle.App,
+	healthChecker *health.Checker,
+	apiHandlers *api.Handlers,
+	authService *auth.AuthService,
+	discoveryHandler *oidc.DiscoveryHandler,
+) http.Handler {
 	r := chi.NewRouter()
 
 	// Middleware stack
@@ -185,7 +225,7 @@ func main() {
 
 	// CORS configuration
 	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   cfg.HTTP.CORSOrigins,
+		AllowedOrigins:   app.Config.HTTP.CORSOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-Request-ID"},
 		ExposedHeaders:   []string{"Link", "X-Request-ID"},
@@ -208,6 +248,36 @@ func main() {
 	r.Handle("/q/metrics", promhttp.Handler())
 
 	// Mount API routes
+	mountAPIRoutes(r, apiHandlers)
+
+	// Mount Admin routes
+	mountAdminRoutes(r, apiHandlers)
+
+	// Auth endpoints
+	r.Route("/auth", func(r chi.Router) {
+		r.Post("/login", authService.HandleLogin)
+		r.Post("/logout", authService.HandleLogout)
+		r.Get("/me", authService.HandleMe)
+		r.Post("/check-domain", authService.HandleCheckDomain)
+
+		// OIDC Federation endpoints
+		r.Get("/oidc/login", authService.HandleOIDCLogin)
+		r.Get("/oidc/callback", authService.HandleOIDCCallback)
+	})
+
+	// OAuth/OIDC endpoints
+	r.Get("/oauth/authorize", authService.HandleAuthorize)
+	r.Post("/oauth/token", authService.HandleToken)
+
+	// OIDC discovery endpoints
+	r.Get("/.well-known/openid-configuration", discoveryHandler.HandleDiscovery)
+	r.Get("/.well-known/jwks.json", discoveryHandler.HandleJWKS)
+
+	return r
+}
+
+// mountAPIRoutes mounts the main API routes.
+func mountAPIRoutes(r chi.Router, apiHandlers *api.Handlers) {
 	r.Route("/api", func(r chi.Router) {
 		// Events API
 		r.Route("/events", func(r chi.Router) {
@@ -302,8 +372,10 @@ func main() {
 			})
 		})
 	})
+}
 
-	// Admin API routes
+// mountAdminRoutes mounts the admin API routes.
+func mountAdminRoutes(r chi.Router, apiHandlers *api.Handlers) {
 	r.Route("/api/admin/platform", func(r chi.Router) {
 		// Clients
 		r.Route("/clients", func(r chi.Router) {
@@ -404,66 +476,4 @@ func main() {
 			r.Delete("/{domain}", apiHandlers.DeleteAnchorDomain)
 		})
 	})
-
-	// Auth endpoints
-	r.Route("/auth", func(r chi.Router) {
-		r.Post("/login", authService.HandleLogin)
-		r.Post("/logout", authService.HandleLogout)
-		r.Get("/me", authService.HandleMe)
-		r.Post("/check-domain", authService.HandleCheckDomain)
-
-		// OIDC Federation endpoints
-		r.Get("/oidc/login", authService.HandleOIDCLogin)
-		r.Get("/oidc/callback", authService.HandleOIDCCallback)
-	})
-
-	// OAuth/OIDC endpoints
-	r.Get("/oauth/authorize", authService.HandleAuthorize)
-	r.Post("/oauth/token", authService.HandleToken)
-
-	// OIDC discovery endpoints
-	r.Get("/.well-known/openid-configuration", discoveryHandler.HandleDiscovery)
-	r.Get("/.well-known/jwks.json", discoveryHandler.HandleJWKS)
-
-	// Start HTTP server
-	server := &http.Server{
-		Addr:         fmt.Sprintf(":%d", cfg.HTTP.Port),
-		Handler:      r,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
-		IdleTimeout:  60 * time.Second,
-	}
-
-	go func() {
-		slog.Info("HTTP server starting", "port", cfg.HTTP.Port)
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			slog.Error("HTTP server failed", "error", err)
-			os.Exit(1)
-		}
-	}()
-
-	// Wait for interrupt signal
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
-
-	slog.Info("Shutting down gracefully...")
-
-	// Graceful shutdown
-	shutdownCtx, shutdownCancel := context.WithTimeout(ctx, 30*time.Second)
-	defer shutdownCancel()
-
-	if err := server.Shutdown(shutdownCtx); err != nil {
-		slog.Error("HTTP server forced to shutdown", "error", err)
-	}
-
-	slog.Info("FlowCatalyst Platform API stopped")
-}
-
-// maskURI masks sensitive parts of a MongoDB URI for logging
-func maskURI(uri string) string {
-	if len(uri) > 20 {
-		return uri[:20] + "..."
-	}
-	return uri
 }
