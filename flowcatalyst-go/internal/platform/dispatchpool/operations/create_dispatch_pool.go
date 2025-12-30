@@ -26,12 +26,12 @@ type CreateDispatchPoolCommand struct {
 
 // CreateDispatchPoolUseCase handles creating a new dispatch pool
 type CreateDispatchPoolUseCase struct {
-	repo       *dispatchpool.Repository
+	repo       dispatchpool.Repository
 	unitOfWork common.UnitOfWork
 }
 
 // NewCreateDispatchPoolUseCase creates a new CreateDispatchPoolUseCase
-func NewCreateDispatchPoolUseCase(repo *dispatchpool.Repository, uow common.UnitOfWork) *CreateDispatchPoolUseCase {
+func NewCreateDispatchPoolUseCase(repo dispatchpool.Repository, uow common.UnitOfWork) *CreateDispatchPoolUseCase {
 	return &CreateDispatchPoolUseCase{
 		repo:       repo,
 		unitOfWork: uow,

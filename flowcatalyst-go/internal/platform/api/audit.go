@@ -15,11 +15,11 @@ import (
 // AuditLogHandler handles audit log admin API requests
 type AuditLogHandler struct {
 	auditRepo     *audit.Repository
-	principalRepo *principal.Repository
+	principalRepo principal.Repository
 }
 
 // NewAuditLogHandler creates a new audit log handler
-func NewAuditLogHandler(auditRepo *audit.Repository, principalRepo *principal.Repository) *AuditLogHandler {
+func NewAuditLogHandler(auditRepo *audit.Repository, principalRepo principal.Repository) *AuditLogHandler {
 	return &AuditLogHandler{
 		auditRepo:     auditRepo,
 		principalRepo: principalRepo,

@@ -20,12 +20,12 @@ type UpdateDispatchPoolCommand struct {
 
 // UpdateDispatchPoolUseCase handles updating a dispatch pool
 type UpdateDispatchPoolUseCase struct {
-	repo       *dispatchpool.Repository
+	repo       dispatchpool.Repository
 	unitOfWork common.UnitOfWork
 }
 
 // NewUpdateDispatchPoolUseCase creates a new UpdateDispatchPoolUseCase
-func NewUpdateDispatchPoolUseCase(repo *dispatchpool.Repository, uow common.UnitOfWork) *UpdateDispatchPoolUseCase {
+func NewUpdateDispatchPoolUseCase(repo dispatchpool.Repository, uow common.UnitOfWork) *UpdateDispatchPoolUseCase {
 	return &UpdateDispatchPoolUseCase{
 		repo:       repo,
 		unitOfWork: uow,

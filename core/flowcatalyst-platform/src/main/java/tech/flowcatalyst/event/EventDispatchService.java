@@ -135,7 +135,7 @@ public class EventDispatchService {
         }
 
         // Bulk insert dispatch jobs with status QUEUED
-        dispatchJobRepository.persist(allJobs);
+        dispatchJobRepository.persistAll(allJobs);
         LOG.infof("Persisted %d dispatch jobs", allJobs.size());
 
         // Batch send to queue

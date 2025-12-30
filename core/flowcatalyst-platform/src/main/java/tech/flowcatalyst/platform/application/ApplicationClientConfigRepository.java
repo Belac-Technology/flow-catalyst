@@ -1,41 +1,30 @@
 package tech.flowcatalyst.platform.application;
 
-import io.quarkus.mongodb.panache.PanacheMongoRepositoryBase;
-import jakarta.enterprise.context.ApplicationScoped;
 import java.util.List;
 import java.util.Optional;
 
 /**
- * Repository for ApplicationClientConfig entities.
+ * Repository interface for ApplicationClientConfig entities.
+ * Exposes only approved data access methods - Panache internals are hidden.
  */
-@ApplicationScoped
-public class ApplicationClientConfigRepository implements PanacheMongoRepositoryBase<ApplicationClientConfig, String> {
+public interface ApplicationClientConfigRepository {
 
-    public Optional<ApplicationClientConfig> findByApplicationAndClient(String applicationId, String clientId) {
-        return find("applicationId = ?1 and clientId = ?2", applicationId, clientId).firstResultOptional();
-    }
+    // Read operations
+    ApplicationClientConfig findById(String id);
+    Optional<ApplicationClientConfig> findByIdOptional(String id);
+    Optional<ApplicationClientConfig> findByApplicationAndClient(String applicationId, String clientId);
+    List<ApplicationClientConfig> findByApplication(String applicationId);
+    List<ApplicationClientConfig> findByClient(String clientId);
+    List<ApplicationClientConfig> findEnabledByClient(String clientId);
+    List<ApplicationClientConfig> listAll();
+    long count();
+    long countByApplication(String applicationId);
+    boolean isApplicationEnabledForClient(String applicationId, String clientId);
 
-    public List<ApplicationClientConfig> findByApplication(String applicationId) {
-        return list("applicationId", applicationId);
-    }
-
-    public List<ApplicationClientConfig> findByClient(String clientId) {
-        return list("clientId", clientId);
-    }
-
-    public List<ApplicationClientConfig> findEnabledByClient(String clientId) {
-        return list("clientId = ?1 and enabled = true", clientId);
-    }
-
-    public boolean isApplicationEnabledForClient(String applicationId, String clientId) {
-        return count("applicationId = ?1 and clientId = ?2 and enabled = true", applicationId, clientId) > 0;
-    }
-
-    public void deleteByApplicationAndClient(String applicationId, String clientId) {
-        delete("applicationId = ?1 and clientId = ?2", applicationId, clientId);
-    }
-
-    public long countByApplication(String applicationId) {
-        return count("applicationId", applicationId);
-    }
+    // Write operations
+    void persist(ApplicationClientConfig config);
+    void update(ApplicationClientConfig config);
+    void delete(ApplicationClientConfig config);
+    boolean deleteById(String id);
+    void deleteByApplicationAndClient(String applicationId, String clientId);
 }

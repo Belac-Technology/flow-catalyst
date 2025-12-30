@@ -299,8 +299,7 @@ public class DevDataSeeder {
     }
 
     private void createGrantIfNotExists(String principalId, String clientId) {
-        long count = grantRepo.count("principalId = ?1 AND clientId = ?2", principalId, clientId);
-        if (count > 0) {
+        if (grantRepo.existsByPrincipalIdAndClientId(principalId, clientId)) {
             return;
         }
 

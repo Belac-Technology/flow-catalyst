@@ -17,8 +17,8 @@ import (
 
 // PrincipalAdminHandler handles principal administration endpoints using UseCases
 type PrincipalAdminHandler struct {
-	principalRepo   *principal.Repository
-	clientRepo      *client.Repository
+	principalRepo   principal.Repository
+	clientRepo      client.Repository
 	passwordService *local.PasswordService
 
 	// UseCases
@@ -34,8 +34,8 @@ type PrincipalAdminHandler struct {
 
 // NewPrincipalAdminHandler creates a new principal admin handler with UseCases
 func NewPrincipalAdminHandler(
-	principalRepo *principal.Repository,
-	clientRepo *client.Repository,
+	principalRepo principal.Repository,
+	clientRepo client.Repository,
 	uow common.UnitOfWork,
 ) *PrincipalAdminHandler {
 	return &PrincipalAdminHandler{

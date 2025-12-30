@@ -16,12 +16,12 @@ type UpdateClientCommand struct {
 
 // UpdateClientUseCase handles updating a client
 type UpdateClientUseCase struct {
-	repo       *client.Repository
+	repo       client.Repository
 	unitOfWork common.UnitOfWork
 }
 
 // NewUpdateClientUseCase creates a new UpdateClientUseCase
-func NewUpdateClientUseCase(repo *client.Repository, uow common.UnitOfWork) *UpdateClientUseCase {
+func NewUpdateClientUseCase(repo client.Repository, uow common.UnitOfWork) *UpdateClientUseCase {
 	return &UpdateClientUseCase{
 		repo:       repo,
 		unitOfWork: uow,

@@ -15,12 +15,12 @@ type DeleteRoleCommand struct {
 
 // DeleteRoleUseCase handles deleting a role
 type DeleteRoleUseCase struct {
-	repo       *role.Repository
+	repo       role.Repository
 	unitOfWork common.UnitOfWork
 }
 
 // NewDeleteRoleUseCase creates a new DeleteRoleUseCase
-func NewDeleteRoleUseCase(repo *role.Repository, uow common.UnitOfWork) *DeleteRoleUseCase {
+func NewDeleteRoleUseCase(repo role.Repository, uow common.UnitOfWork) *DeleteRoleUseCase {
 	return &DeleteRoleUseCase{
 		repo:       repo,
 		unitOfWork: uow,

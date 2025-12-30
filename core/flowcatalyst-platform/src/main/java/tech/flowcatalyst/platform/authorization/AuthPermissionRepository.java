@@ -1,38 +1,29 @@
 package tech.flowcatalyst.platform.authorization;
 
-import io.quarkus.mongodb.panache.PanacheMongoRepositoryBase;
-import jakarta.enterprise.context.ApplicationScoped;
-
 import java.util.List;
 import java.util.Optional;
 
 /**
- * Repository for AuthPermission entities.
+ * Repository interface for AuthPermission entities.
+ * Exposes only approved data access methods - Panache internals are hidden.
  */
-@ApplicationScoped
-public class AuthPermissionRepository implements PanacheMongoRepositoryBase<AuthPermission, String> {
+public interface AuthPermissionRepository {
 
-    public Optional<AuthPermission> findByName(String name) {
-        return find("name", name).firstResultOptional();
-    }
+    // Read operations
+    AuthPermission findById(String id);
+    Optional<AuthPermission> findByIdOptional(String id);
+    Optional<AuthPermission> findByName(String name);
+    List<AuthPermission> findByApplicationId(String applicationId);
+    List<AuthPermission> findByApplicationCode(String applicationCode);
+    List<AuthPermission> listAll();
+    long count();
+    boolean existsByName(String name);
 
-    public List<AuthPermission> findByApplicationId(String applicationId) {
-        return find("applicationId", applicationId).list();
-    }
-
-    public List<AuthPermission> findByApplicationCode(String applicationCode) {
-        return find("applicationCode", applicationCode).list();
-    }
-
-    public boolean existsByName(String name) {
-        return count("name", name) > 0;
-    }
-
-    public long deleteByName(String name) {
-        return delete("name", name);
-    }
-
-    public long deleteByApplicationId(String applicationId) {
-        return delete("applicationId", applicationId);
-    }
+    // Write operations
+    void persist(AuthPermission permission);
+    void update(AuthPermission permission);
+    void delete(AuthPermission permission);
+    boolean deleteById(String id);
+    long deleteByName(String name);
+    long deleteByApplicationId(String applicationId);
 }

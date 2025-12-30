@@ -145,7 +145,7 @@ public class AnchorDomainAdminResource {
         boolean isAnchor = anchorDomainRepo.existsByDomain(normalizedDomain);
 
         // Count users from this domain
-        long userCount = principalRepo.find("userIdentity.emailDomain", normalizedDomain).count();
+        long userCount = principalRepo.countByEmailDomain(normalizedDomain);
 
         return Response.ok(new DomainCheckResponse(normalizedDomain, isAnchor, userCount)).build();
     }
@@ -198,7 +198,7 @@ public class AnchorDomainAdminResource {
         LOG.infof("Created anchor domain: %s by principal %s", normalizedDomain, principalId);
 
         // Count affected users
-        long affectedUsers = principalRepo.find("userIdentity.emailDomain", normalizedDomain).count();
+        long affectedUsers = principalRepo.countByEmailDomain(normalizedDomain);
         if (affectedUsers > 0) {
             LOG.infof("Anchor domain %s affects %d existing users who now have global access",
                 normalizedDomain, affectedUsers);
@@ -248,7 +248,7 @@ public class AnchorDomainAdminResource {
         String deletedDomain = domain.domain;
 
         // Count affected users before deletion
-        long affectedUsers = principalRepo.find("userIdentity.emailDomain", deletedDomain).count();
+        long affectedUsers = principalRepo.countByEmailDomain(deletedDomain);
 
         anchorDomainRepo.delete(domain);
 
@@ -266,7 +266,7 @@ public class AnchorDomainAdminResource {
 
     private AnchorDomainDto toDto(AnchorDomain domain) {
         // Count users from this domain
-        long userCount = principalRepo.find("userIdentity.emailDomain", domain.domain).count();
+        long userCount = principalRepo.countByEmailDomain(domain.domain);
 
         return new AnchorDomainDto(
             domain.id != null ? domain.id.toString() : null,

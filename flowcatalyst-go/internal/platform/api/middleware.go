@@ -27,14 +27,14 @@ const (
 type AuthMiddleware struct {
 	tokenService   *jwt.TokenService
 	sessionManager *session.Manager
-	principalRepo  *principal.Repository
+	principalRepo  principal.Repository
 }
 
 // NewAuthMiddleware creates a new auth middleware
 func NewAuthMiddleware(
 	tokenService *jwt.TokenService,
 	sessionManager *session.Manager,
-	principalRepo *principal.Repository,
+	principalRepo principal.Repository,
 ) *AuthMiddleware {
 	return &AuthMiddleware{
 		tokenService:   tokenService,

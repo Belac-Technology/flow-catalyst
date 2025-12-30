@@ -407,8 +407,11 @@ async fn test_fifo_large_group() {
 }
 
 #[tokio::test]
-async fn test_fifo_no_group_parallel() {
-    // Messages without group IDs should be processed in parallel
+async fn test_fifo_unique_groups_parallel() {
+    // Messages in DIFFERENT groups should be processed in parallel.
+    // Note: Messages without a group ID go to __DEFAULT__ group and are processed
+    // sequentially (correct FIFO behavior matching Java). To get parallel processing,
+    // messages must have different group IDs.
     let mediator = Arc::new(OrderTrackingMediator::new(50));
     let manager = Arc::new(QueueManager::new(mediator.clone()));
 
@@ -424,12 +427,13 @@ async fn test_fifo_no_group_parallel() {
 
     let consumer = Arc::new(TestQueueConsumer::new("test-queue"));
 
-    // Add 10 ungrouped messages
+    // Add 10 messages, each in its own group (allows parallel processing)
+    let group_ids: Vec<String> = (0..10).map(|i| format!("unique-group-{}", i)).collect();
     for i in 0..10 {
         consumer.add_message(create_queued_message_with_group(
             &format!("msg-{}", i),
             "DEFAULT",
-            None,
+            Some(group_ids[i].as_str()),  // Each message in its own group
         ));
     }
 
@@ -442,11 +446,11 @@ async fn test_fifo_no_group_parallel() {
 
     let elapsed = start.elapsed();
 
-    // With parallel processing and 50ms delay,
-    // should complete faster than sequential (500ms)
+    // With parallel processing across 10 different groups and 50ms delay,
+    // all 10 should complete in ~50ms (parallel), well under 300ms
     assert!(
         elapsed < Duration::from_millis(300),
-        "Expected parallel processing, took {:?}",
+        "Expected parallel processing across unique groups, took {:?}",
         elapsed
     );
 

@@ -1,27 +1,31 @@
 package tech.flowcatalyst.platform.authentication.oauth;
 
-import io.quarkus.mongodb.panache.PanacheMongoRepositoryBase;
-import jakarta.enterprise.context.ApplicationScoped;
-
 import java.util.List;
 import java.util.Optional;
 
-@ApplicationScoped
-public class OAuthClientRepository implements PanacheMongoRepositoryBase<OAuthClient, String> {
+/**
+ * Repository interface for OAuthClient entities.
+ * Exposes only approved data access methods - Panache internals are hidden.
+ */
+public interface OAuthClientRepository {
 
-    public Optional<OAuthClient> findByClientId(String clientId) {
-        return find("clientId = ?1 and active = true", clientId).firstResultOptional();
-    }
+    // Read operations
+    OAuthClient findById(String id);
+    Optional<OAuthClient> findByIdOptional(String id);
+    Optional<OAuthClient> findByClientId(String clientId);
+    Optional<OAuthClient> findByClientIdIncludingInactive(String clientId);
+    List<OAuthClient> findByTenantId(Long tenantId);
+    List<OAuthClient> findAllActive();
+    List<OAuthClient> findByApplicationIdAndActive(String applicationId, boolean active);
+    List<OAuthClient> findByApplicationId(String applicationId);
+    List<OAuthClient> findByActive(boolean active);
+    List<OAuthClient> listAll();
+    long count();
 
-    public Optional<OAuthClient> findByClientIdIncludingInactive(String clientId) {
-        return find("clientId", clientId).firstResultOptional();
-    }
-
-    public List<OAuthClient> findByTenantId(Long tenantId) {
-        return find("tenantId = ?1 and active = true", tenantId).list();
-    }
-
-    public List<OAuthClient> findAllActive() {
-        return find("active", true).list();
-    }
+    // Write operations
+    void persist(OAuthClient client);
+    void update(OAuthClient client);
+    void delete(OAuthClient client);
+    boolean deleteById(String id);
+    long deleteByServiceAccountPrincipalId(String principalId);
 }

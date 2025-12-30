@@ -133,18 +133,17 @@ public class PrincipalAdminResource {
 
         // Build query based on filters
         if (clientId != null && type != null && active != null) {
-            principals = principalRepo.find("clientId = ?1 AND type = ?2 AND active = ?3",
-                clientId, type, active).list();
+            principals = principalRepo.findByClientIdAndTypeAndActive(clientId, type, active);
         } else if (clientId != null && type != null) {
-            principals = principalRepo.find("clientId = ?1 AND type = ?2", clientId, type).list();
+            principals = principalRepo.findByClientIdAndType(clientId, type);
         } else if (clientId != null && active != null) {
-            principals = principalRepo.find("clientId = ?1 AND active = ?2", clientId, active).list();
+            principals = principalRepo.findByClientIdAndActive(clientId, active);
         } else if (clientId != null) {
-            principals = principalRepo.find("clientId", clientId).list();
+            principals = principalRepo.findByClientId(clientId);
         } else if (type != null) {
-            principals = principalRepo.find("type", type).list();
+            principals = principalRepo.findByType(type);
         } else if (active != null) {
-            principals = principalRepo.find("active", active).list();
+            principals = principalRepo.findByActive(active);
         } else {
             principals = principalRepo.listAll();
         }

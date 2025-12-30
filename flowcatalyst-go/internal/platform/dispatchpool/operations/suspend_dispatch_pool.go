@@ -15,12 +15,12 @@ type SuspendDispatchPoolCommand struct {
 
 // SuspendDispatchPoolUseCase handles suspending a dispatch pool
 type SuspendDispatchPoolUseCase struct {
-	repo       *dispatchpool.Repository
+	repo       dispatchpool.Repository
 	unitOfWork common.UnitOfWork
 }
 
 // NewSuspendDispatchPoolUseCase creates a new SuspendDispatchPoolUseCase
-func NewSuspendDispatchPoolUseCase(repo *dispatchpool.Repository, uow common.UnitOfWork) *SuspendDispatchPoolUseCase {
+func NewSuspendDispatchPoolUseCase(repo dispatchpool.Repository, uow common.UnitOfWork) *SuspendDispatchPoolUseCase {
 	return &SuspendDispatchPoolUseCase{
 		repo:       repo,
 		unitOfWork: uow,

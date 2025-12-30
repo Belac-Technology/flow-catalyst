@@ -31,15 +31,6 @@ public class TsidGenerator {
     }
 
     /**
-     * Generate a new TSID as Long.
-     * @deprecated Use {@link #generate()} for string format instead.
-     */
-    @Deprecated
-    public static Long generateLong() {
-        return TsidCreator.getTsid().toLong();
-    }
-
-    /**
      * Convert a TSID string to Long.
      * Useful for database queries on legacy Long fields.
      */

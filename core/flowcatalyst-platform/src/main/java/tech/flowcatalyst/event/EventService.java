@@ -148,7 +148,7 @@ public class EventService {
 
         // Bulk insert new events
         if (!newEvents.isEmpty()) {
-            eventRepository.persist(newEvents);
+            eventRepository.persistAll(newEvents);
             LOG.infof("Bulk inserted %d events", newEvents.size());
         }
 

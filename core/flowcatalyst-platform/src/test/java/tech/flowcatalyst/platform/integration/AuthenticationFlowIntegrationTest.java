@@ -10,6 +10,7 @@ import tech.flowcatalyst.platform.authorization.RoleService;
 import tech.flowcatalyst.platform.principal.PasswordService;
 import tech.flowcatalyst.platform.principal.Principal;
 import tech.flowcatalyst.platform.principal.UserService;
+import tech.flowcatalyst.platform.principal.UserScope;
 
 import static org.assertj.core.api.Assertions.*;
 
@@ -48,7 +49,7 @@ class AuthenticationFlowIntegrationTest {
             email,
             password,
             "John Doe",
-            null
+            null, UserScope.ANCHOR
         );
 
         // Act: Simulate login - verify password
@@ -71,7 +72,7 @@ class AuthenticationFlowIntegrationTest {
             "john@acme.com",
             "CorrectPass123!",
             "John Doe",
-            null
+            null, UserScope.ANCHOR
         );
 
         // Act: Try to authenticate with wrong password
@@ -92,7 +93,7 @@ class AuthenticationFlowIntegrationTest {
             "john@acme.com",
             "SecurePass123!",
             "John Doe",
-            null
+            null, UserScope.ANCHOR
         );
 
         userService.deactivateUser(user.id);
@@ -124,7 +125,7 @@ class AuthenticationFlowIntegrationTest {
             "operator@acme.com",
             "SecurePass123!",
             "Operator User",
-            null
+            null, UserScope.ANCHOR
         );
 
         // Act: Assign test editor role (has create, view, update permissions)
@@ -145,7 +146,7 @@ class AuthenticationFlowIntegrationTest {
             "poweruser@acme.com",
             "SecurePass123!",
             "Power User",
-            null
+            null, UserScope.ANCHOR
         );
 
         // Act: Assign multiple roles - editor (create, view, update) and viewer (view only)
@@ -168,7 +169,7 @@ class AuthenticationFlowIntegrationTest {
             "operator@acme.com",
             "SecurePass123!",
             "Operator",
-            null
+            null, UserScope.ANCHOR
         );
 
         roleService.assignRole(user.id, "test:editor", "MANUAL");
@@ -198,7 +199,7 @@ class AuthenticationFlowIntegrationTest {
             "john@acme.com",
             oldPassword,
             "John Doe",
-            null
+            null, UserScope.ANCHOR
         );
 
         // Act: Change password
@@ -222,7 +223,7 @@ class AuthenticationFlowIntegrationTest {
             "john@acme.com",
             "CorrectPass123!",
             "John Doe",
-            null
+            null, UserScope.ANCHOR
         );
 
         // Act & Assert: Attempt password change with wrong old password
@@ -240,7 +241,7 @@ class AuthenticationFlowIntegrationTest {
             "john@acme.com",
             "OldPass123!x",
             "John Doe",
-            null
+            null, UserScope.ANCHOR
         );
 
         // Act: Admin resets password (doesn't need old password)
@@ -341,7 +342,7 @@ class AuthenticationFlowIntegrationTest {
             "newuser@acme.com",
             "SecurePass123!",
             "New User",
-            null
+            null, UserScope.ANCHOR
         );
 
         // Step 2: Authenticate (login)
@@ -371,7 +372,7 @@ class AuthenticationFlowIntegrationTest {
             "john@acme.com",
             "SecurePass123!",
             "John Doe",
-            null
+            null, UserScope.ANCHOR
         );
 
         roleService.assignRole(user.id, "test:viewer", "MANUAL");

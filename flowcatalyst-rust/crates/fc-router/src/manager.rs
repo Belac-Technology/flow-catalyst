@@ -90,7 +90,7 @@ impl QueueManager {
             consumers: RwLock::new(HashMap::new()),
             pool_configs: RwLock::new(HashMap::new()),
             mediator,
-            default_pool_code: "DEFAULT".to_string(),
+            default_pool_code: "DEFAULT-POOL".to_string(),  // Java: DEFAULT_POOL_CODE
             running: AtomicBool::new(true),
             shutdown_tx,
             batch_counter: std::sync::atomic::AtomicU64::new(0),
@@ -268,7 +268,7 @@ impl QueueManager {
 
         let pool_config = config.unwrap_or_else(|| PoolConfig {
             code: code.to_string(),
-            concurrency: 10,
+            concurrency: 20,  // Java: DEFAULT_POOL_CONCURRENCY = 20
             rate_limit_per_minute: None,
         });
 

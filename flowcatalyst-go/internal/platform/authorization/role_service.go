@@ -58,13 +58,13 @@ const (
 // Role format: {application}:{role-name}
 // Example: "platform:tenant-admin", "logistics:dispatcher"
 type RoleService struct {
-	principalRepo *principal.Repository
-	roleRepo      *role.Repository
+	principalRepo principal.Repository
+	roleRepo      role.Repository
 	registry      *PermissionRegistry
 }
 
 // NewRoleService creates a new role service.
-func NewRoleService(principalRepo *principal.Repository, roleRepo *role.Repository, registry *PermissionRegistry) *RoleService {
+func NewRoleService(principalRepo principal.Repository, roleRepo role.Repository, registry *PermissionRegistry) *RoleService {
 	if registry == nil {
 		registry = DefaultRegistry
 	}

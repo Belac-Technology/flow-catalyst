@@ -60,14 +60,14 @@ public class ClientAuthConfigService {
      */
     public List<ClientAuthConfig> findByClientId(String clientId) {
         // Search both primaryClientId and legacy clientId for backwards compatibility
-        return repository.find("primaryClientId = ?1 or clientId = ?1", clientId).list();
+        return repository.findByClientId(clientId);
     }
 
     /**
      * List auth configs by config type.
      */
     public List<ClientAuthConfig> findByConfigType(AuthConfigType configType) {
-        return repository.find("configType", configType).list();
+        return repository.findByConfigType(configType);
     }
 
     /**
@@ -81,22 +81,6 @@ public class ClientAuthConfigService {
     @Transactional
     public ClientAuthConfig createInternal(String emailDomain, AuthConfigType configType, String primaryClientId) {
         return create(emailDomain, configType, primaryClientId, AuthProvider.INTERNAL, null, null, null, false, null);
-    }
-
-    /**
-     * Create a new auth config with INTERNAL authentication (backwards compatible).
-     *
-     * @param emailDomain The email domain
-     * @param clientId The client ID (nullable for platform-wide configs)
-     * @return The created config
-     * @deprecated Use {@link #createInternal(String, AuthConfigType, String)} instead
-     */
-    @Deprecated
-    @Transactional
-    public ClientAuthConfig createInternal(String emailDomain, String clientId) {
-        // Backwards compatible: derive type from clientId
-        AuthConfigType configType = clientId != null ? AuthConfigType.CLIENT : AuthConfigType.ANCHOR;
-        return create(emailDomain, configType, clientId, AuthProvider.INTERNAL, null, null, null, false, null);
     }
 
     /**
@@ -145,43 +129,6 @@ public class ClientAuthConfigService {
             boolean oidcMultiTenant,
             String oidcIssuerPattern) {
         return create(emailDomain, configType, primaryClientId, AuthProvider.OIDC, oidcIssuerUrl, oidcClientId,
-                oidcClientSecretRef, oidcMultiTenant, oidcIssuerPattern);
-    }
-
-    /**
-     * Create a new auth config with OIDC authentication (backwards compatible).
-     *
-     * @deprecated Use {@link #createOidc(String, AuthConfigType, String, String, String, String)} instead
-     */
-    @Deprecated
-    @Transactional
-    public ClientAuthConfig createOidc(
-            String emailDomain,
-            String clientId,
-            String oidcIssuerUrl,
-            String oidcClientId,
-            String oidcClientSecretRef) {
-        AuthConfigType configType = clientId != null ? AuthConfigType.CLIENT : AuthConfigType.ANCHOR;
-        return createOidc(emailDomain, configType, clientId, oidcIssuerUrl, oidcClientId, oidcClientSecretRef, false, null);
-    }
-
-    /**
-     * Create a new auth config with OIDC authentication (backwards compatible, with multi-tenant).
-     *
-     * @deprecated Use {@link #createOidc(String, AuthConfigType, String, String, String, String, boolean, String)} instead
-     */
-    @Deprecated
-    @Transactional
-    public ClientAuthConfig createOidc(
-            String emailDomain,
-            String clientId,
-            String oidcIssuerUrl,
-            String oidcClientId,
-            String oidcClientSecretRef,
-            boolean oidcMultiTenant,
-            String oidcIssuerPattern) {
-        AuthConfigType configType = clientId != null ? AuthConfigType.CLIENT : AuthConfigType.ANCHOR;
-        return create(emailDomain, configType, clientId, AuthProvider.OIDC, oidcIssuerUrl, oidcClientId,
                 oidcClientSecretRef, oidcMultiTenant, oidcIssuerPattern);
     }
 

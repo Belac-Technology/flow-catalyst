@@ -25,12 +25,12 @@ var (
 // Role format: {application}:{role-name}
 // Example: "platform:tenant-admin"
 type AuthorizationService struct {
-	principalRepo *principal.Repository
+	principalRepo principal.Repository
 	registry      *PermissionRegistry
 }
 
 // NewAuthorizationService creates a new authorization service.
-func NewAuthorizationService(principalRepo *principal.Repository, registry *PermissionRegistry) *AuthorizationService {
+func NewAuthorizationService(principalRepo principal.Repository, registry *PermissionRegistry) *AuthorizationService {
 	if registry == nil {
 		registry = DefaultRegistry
 	}

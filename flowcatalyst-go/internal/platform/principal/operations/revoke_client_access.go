@@ -17,15 +17,15 @@ type RevokeClientAccessCommand struct {
 
 // RevokeClientAccessUseCase handles revoking a principal's access to a client
 type RevokeClientAccessUseCase struct {
-	principalRepo *principal.Repository
-	clientRepo    *client.Repository
+	principalRepo principal.Repository
+	clientRepo    client.Repository
 	unitOfWork    common.UnitOfWork
 }
 
 // NewRevokeClientAccessUseCase creates a new RevokeClientAccessUseCase
 func NewRevokeClientAccessUseCase(
-	principalRepo *principal.Repository,
-	clientRepo *client.Repository,
+	principalRepo principal.Repository,
+	clientRepo client.Repository,
 	uow common.UnitOfWork,
 ) *RevokeClientAccessUseCase {
 	return &RevokeClientAccessUseCase{

@@ -23,12 +23,12 @@ type AssignRolesCommand struct {
 
 // AssignRolesUseCase handles assigning roles to a principal
 type AssignRolesUseCase struct {
-	repo       *principal.Repository
+	repo       principal.Repository
 	unitOfWork common.UnitOfWork
 }
 
 // NewAssignRolesUseCase creates a new AssignRolesUseCase
-func NewAssignRolesUseCase(repo *principal.Repository, uow common.UnitOfWork) *AssignRolesUseCase {
+func NewAssignRolesUseCase(repo principal.Repository, uow common.UnitOfWork) *AssignRolesUseCase {
 	return &AssignRolesUseCase{
 		repo:       repo,
 		unitOfWork: uow,

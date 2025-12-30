@@ -15,12 +15,12 @@ type ArchiveDispatchPoolCommand struct {
 
 // ArchiveDispatchPoolUseCase handles archiving a dispatch pool
 type ArchiveDispatchPoolUseCase struct {
-	repo       *dispatchpool.Repository
+	repo       dispatchpool.Repository
 	unitOfWork common.UnitOfWork
 }
 
 // NewArchiveDispatchPoolUseCase creates a new ArchiveDispatchPoolUseCase
-func NewArchiveDispatchPoolUseCase(repo *dispatchpool.Repository, uow common.UnitOfWork) *ArchiveDispatchPoolUseCase {
+func NewArchiveDispatchPoolUseCase(repo dispatchpool.Repository, uow common.UnitOfWork) *ArchiveDispatchPoolUseCase {
 	return &ArchiveDispatchPoolUseCase{
 		repo:       repo,
 		unitOfWork: uow,

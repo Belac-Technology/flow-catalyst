@@ -17,12 +17,12 @@ type FinaliseSchemaCommand struct {
 
 // FinaliseSchemaUseCase handles finalising a schema version (making it current)
 type FinaliseSchemaUseCase struct {
-	repo       *eventtype.Repository
+	repo       eventtype.Repository
 	unitOfWork common.UnitOfWork
 }
 
 // NewFinaliseSchemaUseCase creates a new FinaliseSchemaUseCase
-func NewFinaliseSchemaUseCase(repo *eventtype.Repository, uow common.UnitOfWork) *FinaliseSchemaUseCase {
+func NewFinaliseSchemaUseCase(repo eventtype.Repository, uow common.UnitOfWork) *FinaliseSchemaUseCase {
 	return &FinaliseSchemaUseCase{
 		repo:       repo,
 		unitOfWork: uow,

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -58,7 +59,13 @@ func (h *ServiceAccountHandler) Routes() chi.Router {
 // @Security BearerAuth
 // @Router /api/admin/platform/service-accounts [get]
 func (h *ServiceAccountHandler) List(w http.ResponseWriter, r *http.Request) {
-	h.repo.ListHandler(w, r)
+	accounts, err := h.repo.FindAll(r.Context())
+	if err != nil {
+		slog.Error("Failed to list service accounts", "error", err)
+		WriteInternalError(w, "Failed to list service accounts")
+		return
+	}
+	WriteJSON(w, http.StatusOK, accounts)
 }
 
 // Get handles GET /api/admin/platform/service-accounts/{id}
@@ -74,7 +81,19 @@ func (h *ServiceAccountHandler) List(w http.ResponseWriter, r *http.Request) {
 // @Security BearerAuth
 // @Router /api/admin/platform/service-accounts/{id} [get]
 func (h *ServiceAccountHandler) Get(w http.ResponseWriter, r *http.Request) {
-	h.repo.GetHandler(w, r)
+	id := chi.URLParam(r, "id")
+
+	account, err := h.repo.FindByID(r.Context(), id)
+	if err != nil {
+		slog.Error("Failed to get service account", "error", err, "id", id)
+		WriteInternalError(w, "Failed to get service account")
+		return
+	}
+	if account == nil {
+		WriteNotFound(w, "Service account not found")
+		return
+	}
+	WriteJSON(w, http.StatusOK, account)
 }
 
 // Create handles POST /api/admin/platform/service-accounts (using UseCase)

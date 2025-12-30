@@ -21,12 +21,12 @@ type CreateRoleCommand struct {
 
 // CreateRoleUseCase handles creating a new role
 type CreateRoleUseCase struct {
-	repo       *role.Repository
+	repo       role.Repository
 	unitOfWork common.UnitOfWork
 }
 
 // NewCreateRoleUseCase creates a new CreateRoleUseCase
-func NewCreateRoleUseCase(repo *role.Repository, uow common.UnitOfWork) *CreateRoleUseCase {
+func NewCreateRoleUseCase(repo role.Repository, uow common.UnitOfWork) *CreateRoleUseCase {
 	return &CreateRoleUseCase{
 		repo:       repo,
 		unitOfWork: uow,

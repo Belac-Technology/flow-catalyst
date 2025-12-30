@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import tech.flowcatalyst.platform.principal.Principal;
 import tech.flowcatalyst.platform.principal.PasswordService;
 import tech.flowcatalyst.platform.principal.UserService;
+import tech.flowcatalyst.platform.principal.UserScope;
 
 import static org.assertj.core.api.Assertions.*;
 
@@ -66,7 +67,8 @@ class PasswordSecurityTest {
                     "user@example.com",
                     weakPassword,
                     "User",
-                    null
+                    null,
+                    UserScope.ANCHOR
                 )
             )
             .isInstanceOf(IllegalArgumentException.class)
@@ -96,7 +98,8 @@ class PasswordSecurityTest {
                     "user" + finalUserCount + "@example.com",
                     strongPassword,
                     "User " + finalUserCount,
-                    null
+                    null,
+                    UserScope.ANCHOR
                 )
             ).doesNotThrowAnyException();
 
@@ -133,14 +136,14 @@ class PasswordSecurityTest {
             "user1@example.com",
             "SamePass123!",
             "User 1",
-            null
+            null, UserScope.ANCHOR
         );
 
         Principal user2 = userService.createInternalUser(
             "user2@example.com",
             "SamePass123!",
             "User 2",
-            null
+            null, UserScope.ANCHOR
         );
 
         // Assert: Password hashes are DIFFERENT (due to random salt)
@@ -213,7 +216,7 @@ class PasswordSecurityTest {
             "user@example.com",
             "CurrentPass123!",
             "User",
-            null
+            null, UserScope.ANCHOR
         );
 
         String oldHash = user.userIdentity.passwordHash;
@@ -242,7 +245,7 @@ class PasswordSecurityTest {
             "user@example.com",
             oldPassword,
             "User",
-            null
+            null, UserScope.ANCHOR
         );
 
         // Act: Change password with correct old password
@@ -274,7 +277,7 @@ class PasswordSecurityTest {
             "user@example.com",
             "StrongOldPass123!",
             "User",
-            null
+            null, UserScope.ANCHOR
         );
 
         // Act & Assert: Weak new password rejected
@@ -298,7 +301,7 @@ class PasswordSecurityTest {
             "user@example.com",
             "OldPass123!x",
             "User",
-            null
+            null, UserScope.ANCHOR
         );
 
         String oldHash = user.userIdentity.passwordHash;
@@ -328,7 +331,7 @@ class PasswordSecurityTest {
             "user@example.com",
             "OldPass123!x",
             "User",
-            null
+            null, UserScope.ANCHOR
         );
 
         // Act & Assert: Weak password rejected
@@ -417,7 +420,7 @@ class PasswordSecurityTest {
             "user@example.com",
             password,
             "User",
-            null
+            null, UserScope.ANCHOR
         );
 
         String hash = user.userIdentity.passwordHash;
@@ -476,7 +479,7 @@ class PasswordSecurityTest {
                 "user@example.com",
                 veryLongPassword,
                 "User",
-                null
+                null, UserScope.ANCHOR
             );
 
             // Should verify correctly (up to BCrypt's limit)
@@ -508,7 +511,7 @@ class PasswordSecurityTest {
                     "user" + finalUserCount + "@example.com",
                     unicodePassword,
                     "User " + finalUserCount,
-                    null
+                    null, UserScope.ANCHOR
                 );
 
                 assertThat(passwordService.verifyPassword(
@@ -532,7 +535,7 @@ class PasswordSecurityTest {
             "user@example.com",
             passwordWithSpaces,
             "User",
-            null
+            null, UserScope.ANCHOR
         );
 
         // Exact match required (spaces matter)

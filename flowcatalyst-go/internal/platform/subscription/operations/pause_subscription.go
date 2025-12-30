@@ -15,12 +15,12 @@ type PauseSubscriptionCommand struct {
 
 // PauseSubscriptionUseCase handles pausing a subscription
 type PauseSubscriptionUseCase struct {
-	repo       *subscription.Repository
+	repo       subscription.Repository
 	unitOfWork common.UnitOfWork
 }
 
 // NewPauseSubscriptionUseCase creates a new PauseSubscriptionUseCase
-func NewPauseSubscriptionUseCase(repo *subscription.Repository, uow common.UnitOfWork) *PauseSubscriptionUseCase {
+func NewPauseSubscriptionUseCase(repo subscription.Repository, uow common.UnitOfWork) *PauseSubscriptionUseCase {
 	return &PauseSubscriptionUseCase{
 		repo:       repo,
 		unitOfWork: uow,

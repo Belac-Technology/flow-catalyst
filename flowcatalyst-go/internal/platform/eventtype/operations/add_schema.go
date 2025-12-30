@@ -20,12 +20,12 @@ type AddSchemaCommand struct {
 
 // AddSchemaUseCase handles adding a new schema version to an event type
 type AddSchemaUseCase struct {
-	repo       *eventtype.Repository
+	repo       eventtype.Repository
 	unitOfWork common.UnitOfWork
 }
 
 // NewAddSchemaUseCase creates a new AddSchemaUseCase
-func NewAddSchemaUseCase(repo *eventtype.Repository, uow common.UnitOfWork) *AddSchemaUseCase {
+func NewAddSchemaUseCase(repo eventtype.Repository, uow common.UnitOfWork) *AddSchemaUseCase {
 	return &AddSchemaUseCase{
 		repo:       repo,
 		unitOfWork: uow,

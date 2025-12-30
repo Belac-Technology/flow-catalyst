@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 
+	"github.com/go-chi/chi/v5"
 	"go.mongodb.org/mongo-driver/mongo"
 
 	"go.flowcatalyst.tech/internal/config"
@@ -31,15 +32,15 @@ type Handlers struct {
 	unitOfWork common.UnitOfWork
 
 	// Repositories
-	eventRepo          *event.Repository
-	eventTypeRepo      *eventtype.Repository
-	subscriptionRepo   *subscription.Repository
-	dispatchPoolRepo   *dispatchpool.Repository
-	dispatchJobRepo    *dispatchjob.Repository
-	clientRepo         *client.Repository
-	principalRepo      *principal.Repository
-	roleRepo           *role.Repository
-	permissionRepo     *permission.Repository
+	eventRepo          event.Repository
+	eventTypeRepo      eventtype.Repository
+	subscriptionRepo   subscription.Repository
+	dispatchPoolRepo   dispatchpool.Repository
+	dispatchJobRepo    dispatchjob.Repository
+	clientRepo         client.Repository
+	principalRepo      principal.Repository
+	roleRepo           role.Repository
+	permissionRepo     permission.Repository
 	applicationRepo    *application.Repository
 	serviceAccountRepo *serviceaccount.Repository
 	auditRepo          *audit.Repository
@@ -141,53 +142,53 @@ func (h *Handlers) GetEvent(w http.ResponseWriter, r *http.Request) {
 // Event Type handlers
 
 func (h *Handlers) ListEventTypes(w http.ResponseWriter, r *http.Request) {
-	h.eventTypeRepo.ListHandler(w, r)
+	h.eventTypeHandler.List(w, r)
 }
 
 func (h *Handlers) CreateEventType(w http.ResponseWriter, r *http.Request) {
-	h.eventTypeRepo.CreateHandler(w, r)
+	h.eventTypeHandler.Create(w, r)
 }
 
 func (h *Handlers) GetEventType(w http.ResponseWriter, r *http.Request) {
-	h.eventTypeRepo.GetHandler(w, r)
+	h.eventTypeHandler.Get(w, r)
 }
 
 func (h *Handlers) UpdateEventType(w http.ResponseWriter, r *http.Request) {
-	h.eventTypeRepo.UpdateHandler(w, r)
+	h.eventTypeHandler.Update(w, r)
 }
 
 func (h *Handlers) DeleteEventType(w http.ResponseWriter, r *http.Request) {
-	h.eventTypeRepo.DeleteHandler(w, r)
+	h.eventTypeHandler.Delete(w, r)
 }
 
 func (h *Handlers) ArchiveEventType(w http.ResponseWriter, r *http.Request) {
-	h.eventTypeRepo.ArchiveHandler(w, r)
+	h.eventTypeHandler.Archive(w, r)
 }
 
 // Event Type Schema handlers
 
 func (h *Handlers) ListEventTypeSchemas(w http.ResponseWriter, r *http.Request) {
-	h.eventTypeRepo.ListSchemasHandler(w, r)
+	h.eventTypeHandler.ListSchemas(w, r)
 }
 
 func (h *Handlers) GetEventTypeSchema(w http.ResponseWriter, r *http.Request) {
-	h.eventTypeRepo.GetSchemaHandler(w, r)
+	h.eventTypeHandler.GetSchema(w, r)
 }
 
 func (h *Handlers) AddEventTypeSchema(w http.ResponseWriter, r *http.Request) {
-	h.eventTypeRepo.AddSchemaHandler(w, r)
+	h.eventTypeHandler.AddSchema(w, r)
 }
 
 func (h *Handlers) FinaliseEventTypeSchema(w http.ResponseWriter, r *http.Request) {
-	h.eventTypeRepo.FinaliseSchemaHandler(w, r)
+	h.eventTypeHandler.FinaliseSchema(w, r)
 }
 
 func (h *Handlers) DeprecateEventTypeSchema(w http.ResponseWriter, r *http.Request) {
-	h.eventTypeRepo.DeprecateSchemaHandler(w, r)
+	h.eventTypeHandler.DeprecateSchema(w, r)
 }
 
 func (h *Handlers) DeleteEventTypeSchema(w http.ResponseWriter, r *http.Request) {
-	h.eventTypeRepo.DeleteSchemaHandler(w, r)
+	h.eventTypeHandler.DeleteSchema(w, r)
 }
 
 // Subscription handlers
@@ -505,11 +506,27 @@ func (h *Handlers) DeleteRole(w http.ResponseWriter, r *http.Request) {
 // Permission handlers
 
 func (h *Handlers) ListPermissions(w http.ResponseWriter, r *http.Request) {
-	h.permissionRepo.ListHandler(w, r)
+	permissions, err := h.permissionRepo.FindAll(r.Context())
+	if err != nil {
+		WriteInternalError(w, "Failed to list permissions")
+		return
+	}
+	WriteJSON(w, http.StatusOK, permissions)
 }
 
 func (h *Handlers) GetPermission(w http.ResponseWriter, r *http.Request) {
-	h.permissionRepo.GetHandler(w, r)
+	code := chi.URLParam(r, "code")
+
+	perm, err := h.permissionRepo.FindByCode(r.Context(), code)
+	if err != nil {
+		WriteInternalError(w, "Failed to get permission")
+		return
+	}
+	if perm == nil {
+		WriteNotFound(w, "Permission not found")
+		return
+	}
+	WriteJSON(w, http.StatusOK, perm)
 }
 
 // Application handlers
@@ -561,8 +578,32 @@ func (h *Handlers) GetServiceAccount(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) UpdateServiceAccount(w http.ResponseWriter, r *http.Request) {
-	// No UpdateUseCase - delegate to repo for now
-	h.serviceAccountRepo.UpdateHandler(w, r)
+	id := chi.URLParam(r, "id")
+
+	existing, err := h.serviceAccountRepo.FindByID(r.Context(), id)
+	if err != nil {
+		WriteInternalError(w, "Failed to get service account")
+		return
+	}
+	if existing == nil {
+		WriteNotFound(w, "Service account not found")
+		return
+	}
+
+	var account serviceaccount.ServiceAccount
+	if err := DecodeJSON(r, &account); err != nil {
+		WriteBadRequest(w, "Invalid request body")
+		return
+	}
+	account.ID = id
+	account.CreatedAt = existing.CreatedAt
+	account.WebhookCredentials = existing.WebhookCredentials
+
+	if err := h.serviceAccountRepo.Update(r.Context(), &account); err != nil {
+		WriteInternalError(w, "Failed to update service account")
+		return
+	}
+	WriteJSON(w, http.StatusOK, account)
 }
 
 func (h *Handlers) DeleteServiceAccount(w http.ResponseWriter, r *http.Request) {

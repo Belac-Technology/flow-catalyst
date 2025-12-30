@@ -177,7 +177,7 @@ type QueueManager struct {
 	standbyChecker StandbyChecker
 
 	// Config sync
-	poolRepo       *dispatchpool.Repository
+	poolRepo       dispatchpool.Repository
 	syncConfig     *ConfigSyncConfig
 	syncCtx        context.Context
 	syncCancel     context.CancelFunc

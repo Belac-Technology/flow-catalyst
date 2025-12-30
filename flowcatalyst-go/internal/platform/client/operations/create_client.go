@@ -21,12 +21,12 @@ type CreateClientCommand struct {
 
 // CreateClientUseCase handles creating a new client
 type CreateClientUseCase struct {
-	repo       *client.Repository
+	repo       client.Repository
 	unitOfWork common.UnitOfWork
 }
 
 // NewCreateClientUseCase creates a new CreateClientUseCase
-func NewCreateClientUseCase(repo *client.Repository, uow common.UnitOfWork) *CreateClientUseCase {
+func NewCreateClientUseCase(repo client.Repository, uow common.UnitOfWork) *CreateClientUseCase {
 	return &CreateClientUseCase{
 		repo:       repo,
 		unitOfWork: uow,

@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import tech.flowcatalyst.platform.authentication.JwtKeyService;
 import tech.flowcatalyst.platform.principal.Principal;
 import tech.flowcatalyst.platform.principal.UserService;
+import tech.flowcatalyst.platform.principal.UserScope;
 
 import java.util.List;
 import java.util.Set;
@@ -39,7 +40,7 @@ class RoleAdminResourceTest {
             "role-admin-" + uniqueId + "@test.com",
             "Password123!",
             "Admin User",
-            null
+            null, UserScope.ANCHOR
         );
 
         adminToken = jwtKeyService.issueSessionToken(adminUser.id, adminUser.userIdentity.email, Set.of("platform:admin"), List.of("*"));

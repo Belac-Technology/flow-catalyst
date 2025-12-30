@@ -17,12 +17,12 @@ type SuspendClientCommand struct {
 
 // SuspendClientUseCase handles suspending a client
 type SuspendClientUseCase struct {
-	repo       *client.Repository
+	repo       client.Repository
 	unitOfWork common.UnitOfWork
 }
 
 // NewSuspendClientUseCase creates a new SuspendClientUseCase
-func NewSuspendClientUseCase(repo *client.Repository, uow common.UnitOfWork) *SuspendClientUseCase {
+func NewSuspendClientUseCase(repo client.Repository, uow common.UnitOfWork) *SuspendClientUseCase {
 	return &SuspendClientUseCase{
 		repo:       repo,
 		unitOfWork: uow,

@@ -26,12 +26,12 @@ type UpdateSubscriptionCommand struct {
 
 // UpdateSubscriptionUseCase handles updating a subscription
 type UpdateSubscriptionUseCase struct {
-	repo       *subscription.Repository
+	repo       subscription.Repository
 	unitOfWork common.UnitOfWork
 }
 
 // NewUpdateSubscriptionUseCase creates a new UpdateSubscriptionUseCase
-func NewUpdateSubscriptionUseCase(repo *subscription.Repository, uow common.UnitOfWork) *UpdateSubscriptionUseCase {
+func NewUpdateSubscriptionUseCase(repo subscription.Repository, uow common.UnitOfWork) *UpdateSubscriptionUseCase {
 	return &UpdateSubscriptionUseCase{
 		repo:       repo,
 		unitOfWork: uow,

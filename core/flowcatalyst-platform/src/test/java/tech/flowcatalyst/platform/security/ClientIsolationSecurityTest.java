@@ -9,6 +9,7 @@ import tech.flowcatalyst.platform.principal.Principal;
 import tech.flowcatalyst.platform.client.Client;
 import tech.flowcatalyst.platform.client.ClientService;
 import tech.flowcatalyst.platform.principal.UserService;
+import tech.flowcatalyst.platform.principal.UserScope;
 
 import java.util.Set;
 
@@ -57,7 +58,8 @@ class ClientIsolationSecurityTest {
             "alice@company-a.com",
             "SecurePass123!",
             "Alice from Company A",
-            clientA.id
+            clientA.id,
+            UserScope.CLIENT
         );
 
         // Act: Check accessible clients
@@ -81,11 +83,11 @@ class ClientIsolationSecurityTest {
 
         // Create user in each client
         Principal user1 = userService.createInternalUser(
-            "user@customer1.com", "Pass123!Pass", "User 1", client1.id);
+            "user@customer1.com", "Pass123!Pass", "User 1", client1.id, UserScope.CLIENT);
         Principal user2 = userService.createInternalUser(
-            "user@customer2.com", "Pass123!Pass", "User 2", client2.id);
+            "user@customer2.com", "Pass123!Pass", "User 2", client2.id, UserScope.CLIENT);
         Principal user3 = userService.createInternalUser(
-            "user@customer3.com", "Pass123!Pass", "User 3", client3.id);
+            "user@customer3.com", "Pass123!Pass", "User 3", client3.id, UserScope.CLIENT);
 
         // Act & Assert: Each user sees only their own client
         assertThat(clientService.getAccessibleClients(user1.id))
@@ -115,7 +117,7 @@ class ClientIsolationSecurityTest {
             "partner@logistics.com",
             "SecurePass123!",
             "Logistics Partner",
-            null
+            null, UserScope.ANCHOR
         );
 
         // Grant access
@@ -145,7 +147,7 @@ class ClientIsolationSecurityTest {
             "partner@logistics.com",
             "SecurePass123!",
             "Partner",
-            null
+            null, UserScope.ANCHOR
         );
 
         // First grant
@@ -169,7 +171,8 @@ class ClientIsolationSecurityTest {
             "user@customer.com",
             "SecurePass123!",
             "User",
-            client.id  // This is their home client
+            client.id,
+            UserScope.CLIENT
         );
 
         // Act & Assert: Cannot grant same client
@@ -194,7 +197,7 @@ class ClientIsolationSecurityTest {
             "user@customer.com",
             "SecurePass123!",
             "User",
-            client.id
+            client.id, UserScope.CLIENT
         );
 
         // Verify access before deactivation
@@ -220,7 +223,7 @@ class ClientIsolationSecurityTest {
             "user@customer.com",
             "SecurePass123!",
             "User",
-            client.id
+            client.id, UserScope.CLIENT
         );
 
         // Verify access before suspension
@@ -246,7 +249,7 @@ class ClientIsolationSecurityTest {
             "user@customer.com",
             "SecurePass123!",
             "User",
-            client.id
+            client.id, UserScope.CLIENT
         );
 
         clientService.suspendClient(client.id, "PAYMENT_FAILED", "system");
@@ -284,7 +287,7 @@ class ClientIsolationSecurityTest {
             "partner@logistics.com",
             "SecurePass123!",
             "Logistics Partner",
-            null
+            null, UserScope.ANCHOR
         );
 
         clientService.grantClientAccess(partner.id, c1.id);
@@ -314,7 +317,8 @@ class ClientIsolationSecurityTest {
             "newpartner@logistics.com",
             "SecurePass123!",
             "New Partner",
-            null  // No home client
+            null,
+            UserScope.ANCHOR
         );
 
         // Act
@@ -338,7 +342,7 @@ class ClientIsolationSecurityTest {
             "partner@logistics.com",
             "SecurePass123!",
             "Partner",
-            null
+            null, UserScope.ANCHOR
         );
 
         clientService.grantClientAccess(partner.id, c1.id);
@@ -372,12 +376,12 @@ class ClientIsolationSecurityTest {
         Client clientB = clientService.createClient("Company B", "company-b");
 
         Principal userA1 = userService.createInternalUser(
-            "alice@company-a.com", "Pass123!Pass", "Alice", clientA.id);
+            "alice@company-a.com", "Pass123!Pass", "Alice", clientA.id, UserScope.CLIENT);
         Principal userA2 = userService.createInternalUser(
-            "bob@company-a.com", "Pass123!Pass", "Bob", clientA.id);
+            "bob@company-a.com", "Pass123!Pass", "Bob", clientA.id, UserScope.CLIENT);
 
         Principal userB1 = userService.createInternalUser(
-            "charlie@company-b.com", "Pass123!Pass", "Charlie", clientB.id);
+            "charlie@company-b.com", "Pass123!Pass", "Charlie", clientB.id, UserScope.CLIENT);
 
         // Act: Get users for each client
         var clientAUsers = userService.findByClient(clientA.id);
@@ -407,7 +411,7 @@ class ClientIsolationSecurityTest {
         // Arrange
         Client client = clientService.createClient("Customer", "customer");
         Principal user = userService.createInternalUser(
-            "user@customer.com", "Pass123!Pass", "User", client.id);
+            "user@customer.com", "Pass123!Pass", "User", client.id, UserScope.CLIENT);
 
         // Cycle 1: Active → Suspended → Active
         assertThat(clientService.getAccessibleClients(user.id)).contains(client.id);
@@ -439,7 +443,7 @@ class ClientIsolationSecurityTest {
             "user@home.com",
             "Pass123!Pass",
             "User",
-            homeClient.id
+            homeClient.id, UserScope.CLIENT
         );
 
         clientService.grantClientAccess(user.id, grantedClient.id);

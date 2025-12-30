@@ -14,7 +14,7 @@ import (
 
 // ClientAdminHandler handles client administration endpoints using UseCases
 type ClientAdminHandler struct {
-	repo *client.Repository
+	repo client.Repository
 
 	// UseCases
 	createUseCase   *operations.CreateClientUseCase
@@ -25,7 +25,7 @@ type ClientAdminHandler struct {
 
 // NewClientAdminHandler creates a new client admin handler with UseCases
 func NewClientAdminHandler(
-	repo *client.Repository,
+	repo client.Repository,
 	uow common.UnitOfWork,
 ) *ClientAdminHandler {
 	return &ClientAdminHandler{

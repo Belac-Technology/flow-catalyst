@@ -11,6 +11,7 @@ import tech.flowcatalyst.platform.client.Client;
 import tech.flowcatalyst.platform.principal.AnchorDomainRepository;
 import tech.flowcatalyst.platform.client.ClientService;
 import tech.flowcatalyst.platform.principal.UserService;
+import tech.flowcatalyst.platform.principal.UserScope;
 import tech.flowcatalyst.platform.shared.TsidGenerator;
 
 import java.util.Set;
@@ -57,7 +58,8 @@ class MultiClientAccessIntegrationTest {
             "admin@mycompany.com",
             "SecurePass123!",
             "Platform Admin",
-            null  // No home client - has access to all
+            null,
+            UserScope.ANCHOR
         );
 
         // Act: Get accessible clients
@@ -93,7 +95,7 @@ class MultiClientAccessIntegrationTest {
             "admin@mycompany.com",
             "SecurePass123!",
             "Admin",
-            null
+            null, UserScope.ANCHOR
         );
 
         // Act
@@ -120,7 +122,7 @@ class MultiClientAccessIntegrationTest {
             "user@customer-a.com",
             "SecurePass123!",
             "Customer A User",
-            client1.id
+            client1.id, UserScope.CLIENT
         );
 
         // Act
@@ -142,7 +144,8 @@ class MultiClientAccessIntegrationTest {
             "partner@logistics.com",
             "SecurePass123!",
             "Partner User",
-            null  // No home client
+            null,
+            UserScope.ANCHOR
         );
 
         // Act
@@ -169,7 +172,7 @@ class MultiClientAccessIntegrationTest {
             "partner@logistics.com",
             "SecurePass123!",
             "Logistics Partner",
-            null
+            null, UserScope.ANCHOR
         );
 
         // Grant access to customers A and B (not C)
@@ -197,7 +200,7 @@ class MultiClientAccessIntegrationTest {
             "user@example.com",
             "SecurePass123!",
             "User",
-            homeClient.id
+            homeClient.id, UserScope.CLIENT
         );
 
         // Grant access to additional clients
@@ -224,7 +227,7 @@ class MultiClientAccessIntegrationTest {
             "partner@logistics.com",
             "SecurePass123!",
             "Partner",
-            null
+            null, UserScope.ANCHOR
         );
 
         // Grant access
@@ -258,7 +261,7 @@ class MultiClientAccessIntegrationTest {
             "user@customer.com",
             "SecurePass123!",
             "User",
-            client.id
+            client.id, UserScope.CLIENT
         );
 
         // Act & Assert: Cannot grant same client (redundant)
@@ -277,7 +280,7 @@ class MultiClientAccessIntegrationTest {
             "partner@logistics.com",
             "SecurePass123!",
             "Partner",
-            null
+            null, UserScope.ANCHOR
         );
 
         // First grant
@@ -299,7 +302,7 @@ class MultiClientAccessIntegrationTest {
             "partner@logistics.com",
             "SecurePass123!",
             "Partner",
-            null
+            null, UserScope.ANCHOR
         );
 
         // Act & Assert: Revoke without grant
@@ -325,14 +328,14 @@ class MultiClientAccessIntegrationTest {
             "user@client-a.com",
             "SecurePass123!",
             "User A",
-            clientA.id
+            clientA.id, UserScope.CLIENT
         );
 
         Principal userB = userService.createInternalUser(
             "user@client-b.com",
             "SecurePass123!",
             "User B",
-            clientB.id
+            clientB.id, UserScope.CLIENT
         );
 
         // Act
@@ -369,7 +372,7 @@ class MultiClientAccessIntegrationTest {
             "admin@platform.com",
             "SecurePass123!",
             "Platform Admin",
-            null
+            null, UserScope.ANCHOR
         );
 
         // Create customer users (home clients)
@@ -377,14 +380,14 @@ class MultiClientAccessIntegrationTest {
             "user@customer1.com",
             "SecurePass123!",
             "Customer 1 User",
-            customer1.id
+            customer1.id, UserScope.CLIENT
         );
 
         Principal customer2User = userService.createInternalUser(
             "user@customer2.com",
             "SecurePass123!",
             "Customer 2 User",
-            customer2.id
+            customer2.id, UserScope.CLIENT
         );
 
         // Create partner with grants to customers 1 and 2
@@ -392,7 +395,7 @@ class MultiClientAccessIntegrationTest {
             "partner@logistics.com",
             "SecurePass123!",
             "Logistics Partner",
-            null
+            null, UserScope.ANCHOR
         );
 
         clientService.grantClientAccess(partner.id, customer1.id);
@@ -430,7 +433,7 @@ class MultiClientAccessIntegrationTest {
             "partner@logistics.com",
             "SecurePass123!",
             "Partner",
-            null
+            null, UserScope.ANCHOR
         );
 
         clientService.grantClientAccess(partner.id, active.id);

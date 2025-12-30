@@ -884,8 +884,8 @@ public class AuthorizationResource {
             // Check if the application is enabled for the user's client
             if (principal.clientId != null) {
                 ApplicationClientConfig config = appClientConfigRepo
-                    .find("applicationId = ?1 and clientId = ?2", appId, principal.clientId)
-                    .firstResult();
+                    .findByApplicationAndClient(appId, principal.clientId)
+                    .orElse(null);
 
                 // If no config exists, the app is not enabled for this client
                 // If config exists and is enabled, the user has access

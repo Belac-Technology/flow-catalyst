@@ -93,11 +93,11 @@ public class OAuthClientAdminResource {
 
         List<OAuthClient> clients;
         if (applicationId != null && active != null) {
-            clients = clientRepo.find("?1 in applicationIds AND active = ?2", applicationId, active).list();
+            clients = clientRepo.findByApplicationIdAndActive(applicationId, active);
         } else if (applicationId != null) {
-            clients = clientRepo.find("?1 in applicationIds", applicationId).list();
+            clients = clientRepo.findByApplicationId(applicationId);
         } else if (active != null) {
-            clients = clientRepo.find("active", active).list();
+            clients = clientRepo.findByActive(active);
         } else {
             clients = clientRepo.listAll();
         }
@@ -108,7 +108,7 @@ public class OAuthClientAdminResource {
             .collect(Collectors.toSet());
         Map<String, String> appIdToName = new HashMap<>();
         if (!allAppIds.isEmpty()) {
-            applicationRepo.find("id in ?1", new ArrayList<>(allAppIds)).list()
+            applicationRepo.findByIds(allAppIds)
                 .forEach(app -> appIdToName.put(app.id, app.name));
         }
 
@@ -215,7 +215,7 @@ public class OAuthClientAdminResource {
 
         // Validate application IDs if provided
         if (request.applicationIds() != null && !request.applicationIds().isEmpty()) {
-            List<Application> apps = applicationRepo.find("id in ?1", new ArrayList<>(request.applicationIds())).list();
+            List<Application> apps = applicationRepo.findByIds(request.applicationIds());
             if (apps.size() != request.applicationIds().size()) {
                 Set<String> foundIds = apps.stream().map(a -> a.id).collect(Collectors.toSet());
                 Set<String> missingIds = new HashSet<>(request.applicationIds());
@@ -346,7 +346,7 @@ public class OAuthClientAdminResource {
 
             // Validate application IDs
             if (!request.applicationIds().isEmpty()) {
-                List<Application> apps = applicationRepo.find("id in ?1", new ArrayList<>(request.applicationIds())).list();
+                List<Application> apps = applicationRepo.findByIds(request.applicationIds());
                 if (apps.size() != request.applicationIds().size()) {
                     Set<String> foundIds = apps.stream().map(a -> a.id).collect(Collectors.toSet());
                     Set<String> missingIds = new HashSet<>(request.applicationIds());
@@ -572,7 +572,7 @@ public class OAuthClientAdminResource {
             return Map.of();
         }
         Map<String, String> appIdToName = new HashMap<>();
-        applicationRepo.find("id in ?1", new ArrayList<>(applicationIds)).list()
+        applicationRepo.findByIds(applicationIds)
             .forEach(app -> appIdToName.put(app.id, app.name));
         return appIdToName;
     }

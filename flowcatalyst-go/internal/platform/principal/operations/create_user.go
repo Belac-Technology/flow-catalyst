@@ -19,12 +19,12 @@ type CreateUserCommand struct {
 
 // CreateUserUseCase handles creating a new user
 type CreateUserUseCase struct {
-	repo       *principal.Repository
+	repo       principal.Repository
 	unitOfWork common.UnitOfWork
 }
 
 // NewCreateUserUseCase creates a new CreateUserUseCase
-func NewCreateUserUseCase(repo *principal.Repository, uow common.UnitOfWork) *CreateUserUseCase {
+func NewCreateUserUseCase(repo principal.Repository, uow common.UnitOfWork) *CreateUserUseCase {
 	return &CreateUserUseCase{
 		repo:       repo,
 		unitOfWork: uow,

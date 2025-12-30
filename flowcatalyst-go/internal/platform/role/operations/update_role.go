@@ -18,12 +18,12 @@ type UpdateRoleCommand struct {
 
 // UpdateRoleUseCase handles updating a role
 type UpdateRoleUseCase struct {
-	repo       *role.Repository
+	repo       role.Repository
 	unitOfWork common.UnitOfWork
 }
 
 // NewUpdateRoleUseCase creates a new UpdateRoleUseCase
-func NewUpdateRoleUseCase(repo *role.Repository, uow common.UnitOfWork) *UpdateRoleUseCase {
+func NewUpdateRoleUseCase(repo role.Repository, uow common.UnitOfWork) *UpdateRoleUseCase {
 	return &UpdateRoleUseCase{
 		repo:       repo,
 		unitOfWork: uow,

@@ -23,8 +23,8 @@ use crate::mediator::Mediator;
 use crate::Result;
 
 const DEFAULT_GROUP: &str = "__DEFAULT__";
-const QUEUE_CAPACITY_MULTIPLIER: u32 = 10;
-const MIN_QUEUE_CAPACITY: u32 = 500;
+const QUEUE_CAPACITY_MULTIPLIER: u32 = 2;   // Java: QUEUE_CAPACITY_MULTIPLIER = 2
+const MIN_QUEUE_CAPACITY: u32 = 50;          // Java: MIN_QUEUE_CAPACITY = 50
 
 /// Task submitted to a pool worker
 pub struct PoolTask {
@@ -32,6 +32,8 @@ pub struct PoolTask {
     pub receipt_handle: String,
     pub ack_tx: oneshot::Sender<AckNack>,
     pub batch_id: Option<String>,
+    /// Pre-computed batch+group key for FIFO tracking (format: "batchId|messageGroupId")
+    pub batch_group_key: Option<String>,
 }
 
 /// Process pool with FIFO ordering and rate limiting
@@ -50,6 +52,9 @@ pub struct ProcessPool {
 
     /// Batch+group failure tracking for cascading NACKs
     failed_batch_groups: DashSet<String>,
+
+    /// Track remaining messages per batch+group for cleanup (Java: batchGroupMessageCount)
+    batch_group_message_count: Arc<DashMap<String, AtomicU32>>,
 
     /// Rate limiter (optional)
     rate_limiter: Option<Arc<RateLimiter<NotKeyed, InMemoryState, DefaultClock>>>,
@@ -81,6 +86,7 @@ impl ProcessPool {
             message_group_queues: DashMap::new(),
             in_flight_groups: DashSet::new(),
             failed_batch_groups: DashSet::new(),
+            batch_group_message_count: Arc::new(DashMap::new()),
             rate_limiter,
             running: AtomicBool::new(false),
             queue_size: Arc::new(AtomicU32::new(0)),
@@ -137,16 +143,28 @@ impl ProcessPool {
             .cloned()
             .unwrap_or_else(|| DEFAULT_GROUP.to_string());
 
-        // Check if batch+group has failed
-        if let Some(batch_id) = &batch_msg.batch_id {
-            let batch_group_key = format!("{}|{}", batch_id, group_id);
-            if self.failed_batch_groups.contains(&batch_group_key) {
+        // Track batch+group message count for cleanup (Java: batchGroupMessageCount)
+        let batch_group_key = batch_msg.batch_id.as_ref()
+            .map(|batch_id| format!("{}|{}", batch_id, group_id));
+
+        if let Some(ref key) = batch_group_key {
+            self.batch_group_message_count
+                .entry(key.clone())
+                .or_insert_with(|| AtomicU32::new(0))
+                .fetch_add(1, Ordering::SeqCst);
+            debug!(batch_group = %key, "Tracking message in batch+group, count incremented");
+        }
+
+        // Check if batch+group has failed (early check before queueing)
+        if let Some(ref key) = batch_group_key {
+            if self.failed_batch_groups.contains(key) {
                 debug!(
                     message_id = %batch_msg.message.id,
-                    batch_group = %batch_group_key,
+                    batch_group = %key,
                     "Batch+group failed, NACKing for FIFO"
                 );
                 self.queue_size.fetch_sub(1, Ordering::SeqCst);
+                self.decrement_and_cleanup_batch_group(key);
                 let _ = batch_msg.ack_tx.send(AckNack::Nack { delay_seconds: Some(1) });
                 return Ok(());
             }
@@ -155,17 +173,25 @@ impl ProcessPool {
         // Get or create group queue and worker
         let group_tx = self.get_or_create_group_queue(&group_id);
 
+        // Clone batch_group_key before moving into task (for error handling)
+        let batch_group_key_for_error = batch_group_key.clone();
+
         // Send to group queue
         let task = PoolTask {
             message: batch_msg.message,
             receipt_handle: batch_msg.receipt_handle,
             ack_tx: batch_msg.ack_tx,
             batch_id: batch_msg.batch_id,
+            batch_group_key,
         };
 
         if let Err(e) = group_tx.send(task).await {
             error!(error = %e, "Failed to send to group queue");
             self.queue_size.fetch_sub(1, Ordering::SeqCst);
+            // Decrement batch+group count on send failure
+            if let Some(ref key) = batch_group_key_for_error {
+                self.decrement_and_cleanup_batch_group(key);
+            }
         }
 
         Ok(())
@@ -190,6 +216,7 @@ impl ProcessPool {
         let active_workers = self.active_workers.clone();
         let in_flight_groups = self.in_flight_groups.clone();
         let failed_batch_groups = self.failed_batch_groups.clone();
+        let batch_group_message_count = self.batch_group_message_count.clone();
         let rate_limiter = self.rate_limiter.clone();
         let message_group_queues = self.message_group_queues.clone();
 
@@ -204,6 +231,7 @@ impl ProcessPool {
                 active_workers,
                 in_flight_groups,
                 failed_batch_groups,
+                batch_group_message_count,
                 rate_limiter,
                 message_group_queues,
             ).await;
@@ -223,6 +251,7 @@ impl ProcessPool {
         active_workers: Arc<AtomicU32>,
         in_flight_groups: DashSet<String>,
         failed_batch_groups: DashSet<String>,
+        batch_group_message_count: Arc<DashMap<String, AtomicU32>>,
         rate_limiter: Option<Arc<RateLimiter<NotKeyed, InMemoryState, DefaultClock>>>,
         message_group_queues: DashMap<String, mpsc::Sender<PoolTask>>,
     ) {
@@ -256,6 +285,25 @@ impl ProcessPool {
             // Decrement queue size
             queue_size.fetch_sub(1, Ordering::SeqCst);
 
+            // Check if batch+group has already failed AFTER polling (Java: line 548)
+            // This catches messages that were queued before a failure occurred
+            if let Some(ref batch_group_key) = task.batch_group_key {
+                if failed_batch_groups.contains(batch_group_key) {
+                    warn!(
+                        message_id = %task.message.id,
+                        batch_group = %batch_group_key,
+                        "Message from failed batch+group, NACKing to preserve FIFO ordering"
+                    );
+                    Self::decrement_and_cleanup_batch_group_static(
+                        batch_group_key,
+                        &batch_group_message_count,
+                        &failed_batch_groups,
+                    );
+                    let _ = task.ack_tx.send(AckNack::Nack { delay_seconds: Some(1) });
+                    continue;
+                }
+            }
+
             // Check rate limiting before acquiring semaphore
             if let Some(ref rl) = rate_limiter {
                 if rl.check().is_err() {
@@ -264,6 +312,14 @@ impl ProcessPool {
                         pool_code = %pool_code,
                         "Rate limited, NACKing"
                     );
+                    // Decrement batch+group count on rate limit
+                    if let Some(ref key) = task.batch_group_key {
+                        Self::decrement_and_cleanup_batch_group_static(
+                            key,
+                            &batch_group_message_count,
+                            &failed_batch_groups,
+                        );
+                    }
                     let _ = task.ack_tx.send(AckNack::Nack { delay_seconds: Some(1) });
                     continue;
                 }
@@ -274,6 +330,14 @@ impl ProcessPool {
                 Ok(p) => p,
                 Err(_) => {
                     error!("Semaphore closed");
+                    // Decrement batch+group count on semaphore error
+                    if let Some(ref key) = task.batch_group_key {
+                        Self::decrement_and_cleanup_batch_group_static(
+                            key,
+                            &batch_group_message_count,
+                            &failed_batch_groups,
+                        );
+                    }
                     let _ = task.ack_tx.send(AckNack::Nack { delay_seconds: Some(5) });
                     break;
                 }
@@ -312,10 +376,15 @@ impl ProcessPool {
                         "Transient error, NACKing for retry"
                     );
 
-                    // Mark batch+group as failed
-                    if let Some(ref batch_id) = task.batch_id {
-                        let batch_group_key = format!("{}|{}", batch_id, group_id);
-                        failed_batch_groups.insert(batch_group_key);
+                    // Mark batch+group as failed to trigger cascading NACKs
+                    if let Some(ref key) = task.batch_group_key {
+                        let was_new = failed_batch_groups.insert(key.clone());
+                        if was_new {
+                            warn!(
+                                batch_group = %key,
+                                "Batch+group marked as failed - remaining messages will be NACKed"
+                            );
+                        }
                     }
 
                     AckNack::Nack { delay_seconds: outcome.delay_seconds }
@@ -327,10 +396,15 @@ impl ProcessPool {
                         "Connection error, NACKing for retry"
                     );
 
-                    // Mark batch+group as failed
-                    if let Some(ref batch_id) = task.batch_id {
-                        let batch_group_key = format!("{}|{}", batch_id, group_id);
-                        failed_batch_groups.insert(batch_group_key);
+                    // Mark batch+group as failed to trigger cascading NACKs
+                    if let Some(ref key) = task.batch_group_key {
+                        let was_new = failed_batch_groups.insert(key.clone());
+                        if was_new {
+                            warn!(
+                                batch_group = %key,
+                                "Batch+group marked as failed - remaining messages will be NACKed"
+                            );
+                        }
                     }
 
                     AckNack::Nack { delay_seconds: Some(5) }
@@ -340,6 +414,15 @@ impl ProcessPool {
             // Send ACK/NACK
             let _ = task.ack_tx.send(ack_nack);
 
+            // Decrement batch+group count and cleanup if done (Java: decrementAndCleanupBatchGroup)
+            if let Some(ref key) = task.batch_group_key {
+                Self::decrement_and_cleanup_batch_group_static(
+                    key,
+                    &batch_group_message_count,
+                    &failed_batch_groups,
+                );
+            }
+
             // Cleanup
             in_flight_groups.remove(&group_id);
             active_workers.fetch_sub(1, Ordering::SeqCst);
@@ -347,6 +430,42 @@ impl ProcessPool {
         }
 
         debug!(group_id = %group_id, pool_code = %pool_code, "Group worker exited");
+    }
+
+    /// Decrement batch+group message count and cleanup tracking maps when count reaches zero.
+    /// Instance version for use in submit().
+    fn decrement_and_cleanup_batch_group(&self, batch_group_key: &str) {
+        Self::decrement_and_cleanup_batch_group_static(
+            batch_group_key,
+            &self.batch_group_message_count,
+            &self.failed_batch_groups,
+        );
+    }
+
+    /// Decrement batch+group message count and cleanup tracking maps when count reaches zero.
+    /// Static version for use in worker tasks.
+    fn decrement_and_cleanup_batch_group_static(
+        batch_group_key: &str,
+        batch_group_message_count: &DashMap<String, AtomicU32>,
+        failed_batch_groups: &DashSet<String>,
+    ) {
+        // Use get() to decrement, then check if we should cleanup
+        // IMPORTANT: We must drop the Ref guard before calling remove() to avoid deadlock
+        let should_cleanup = if let Some(counter) = batch_group_message_count.get(batch_group_key) {
+            let remaining = counter.fetch_sub(1, Ordering::SeqCst).saturating_sub(1);
+            debug!(batch_group = %batch_group_key, remaining = remaining, "Batch+group count decremented");
+            remaining == 0
+        } else {
+            false
+        };
+        // Ref guard is now dropped, safe to mutate
+
+        if should_cleanup {
+            // All messages in this batch+group have been processed - cleanup
+            batch_group_message_count.remove(batch_group_key);
+            failed_batch_groups.remove(batch_group_key);
+            debug!(batch_group = %batch_group_key, "Batch+group fully processed, cleaned up");
+        }
     }
 
     /// Check available capacity

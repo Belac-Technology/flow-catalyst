@@ -10,6 +10,7 @@ import tech.flowcatalyst.platform.authentication.JwtKeyService;
 import tech.flowcatalyst.platform.principal.Principal;
 import tech.flowcatalyst.platform.principal.PrincipalType;
 import tech.flowcatalyst.platform.principal.UserService;
+import tech.flowcatalyst.platform.principal.UserScope;
 import tech.flowcatalyst.platform.client.Client;
 import tech.flowcatalyst.platform.client.ClientService;
 import tech.flowcatalyst.platform.client.ClientStatus;
@@ -46,7 +47,8 @@ class ClientAdminResourceTest {
                 "admin-" + System.currentTimeMillis() + "@test.com",
                 "Password123!",
                 "Admin User",
-                null
+                null,
+                UserScope.ANCHOR
             );
         } catch (Exception e) {
             // User might already exist in another test

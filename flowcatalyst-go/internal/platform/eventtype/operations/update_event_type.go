@@ -18,12 +18,12 @@ type UpdateEventTypeCommand struct {
 
 // UpdateEventTypeUseCase handles updating an event type
 type UpdateEventTypeUseCase struct {
-	repo       *eventtype.Repository
+	repo       eventtype.Repository
 	unitOfWork common.UnitOfWork
 }
 
 // NewUpdateEventTypeUseCase creates a new UpdateEventTypeUseCase
-func NewUpdateEventTypeUseCase(repo *eventtype.Repository, uow common.UnitOfWork) *UpdateEventTypeUseCase {
+func NewUpdateEventTypeUseCase(repo eventtype.Repository, uow common.UnitOfWork) *UpdateEventTypeUseCase {
 	return &UpdateEventTypeUseCase{
 		repo:       repo,
 		unitOfWork: uow,

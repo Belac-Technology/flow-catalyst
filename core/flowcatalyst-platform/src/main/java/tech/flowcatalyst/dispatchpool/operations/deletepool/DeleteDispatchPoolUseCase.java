@@ -58,15 +58,6 @@ public class DeleteDispatchPoolUseCase {
             ));
         }
 
-        // TODO: Check for subscriptions using this pool once DispatchSubscription is implemented
-        // if (subscriptionRepo.existsByPoolId(command.poolId())) {
-        //     return Result.failure(new UseCaseError.BusinessRuleViolation(
-        //         "POOL_HAS_SUBSCRIPTIONS",
-        //         "Cannot delete a pool that has active subscriptions",
-        //         Map.of("poolId", command.poolId())
-        //     ));
-        // }
-
         // Archive the pool (soft delete)
         DispatchPool archived = new DispatchPool(
             existing.id(),

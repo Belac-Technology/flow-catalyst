@@ -16,12 +16,12 @@ type ActivateClientCommand struct {
 
 // ActivateClientUseCase handles activating a suspended client
 type ActivateClientUseCase struct {
-	repo       *client.Repository
+	repo       client.Repository
 	unitOfWork common.UnitOfWork
 }
 
 // NewActivateClientUseCase creates a new ActivateClientUseCase
-func NewActivateClientUseCase(repo *client.Repository, uow common.UnitOfWork) *ActivateClientUseCase {
+func NewActivateClientUseCase(repo client.Repository, uow common.UnitOfWork) *ActivateClientUseCase {
 	return &ActivateClientUseCase{
 		repo:       repo,
 		unitOfWork: uow,

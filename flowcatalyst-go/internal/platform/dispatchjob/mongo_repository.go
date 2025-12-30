@@ -13,24 +13,24 @@ import (
 )
 
 var (
-	ErrNotFound       = errors.New("not found")
-	ErrDuplicateJob   = errors.New("duplicate job")
+	ErrNotFound     = errors.New("not found")
+	ErrDuplicateJob = errors.New("duplicate job")
 )
 
-// Repository provides access to dispatch job data
-type Repository struct {
+// mongoRepository provides MongoDB access to dispatch job data
+type mongoRepository struct {
 	jobs *mongo.Collection
 }
 
-// NewRepository creates a new dispatch job repository
-func NewRepository(db *mongo.Database) *Repository {
-	return &Repository{
+// NewRepository creates a new dispatch job repository with instrumentation
+func NewRepository(db *mongo.Database) Repository {
+	return newInstrumentedRepository(&mongoRepository{
 		jobs: db.Collection("dispatch_jobs"),
-	}
+	})
 }
 
 // FindByID finds a dispatch job by ID
-func (r *Repository) FindByID(ctx context.Context, id string) (*DispatchJob, error) {
+func (r *mongoRepository) FindByID(ctx context.Context, id string) (*DispatchJob, error) {
 	var job DispatchJob
 	err := r.jobs.FindOne(ctx, bson.M{"_id": id}).Decode(&job)
 	if err != nil {
@@ -43,7 +43,7 @@ func (r *Repository) FindByID(ctx context.Context, id string) (*DispatchJob, err
 }
 
 // FindByIdempotencyKey finds a dispatch job by idempotency key
-func (r *Repository) FindByIdempotencyKey(ctx context.Context, key string) (*DispatchJob, error) {
+func (r *mongoRepository) FindByIdempotencyKey(ctx context.Context, key string) (*DispatchJob, error) {
 	var job DispatchJob
 	err := r.jobs.FindOne(ctx, bson.M{"idempotencyKey": key}).Decode(&job)
 	if err != nil {
@@ -56,7 +56,7 @@ func (r *Repository) FindByIdempotencyKey(ctx context.Context, key string) (*Dis
 }
 
 // FindByEventID finds dispatch jobs for an event
-func (r *Repository) FindByEventID(ctx context.Context, eventID string) ([]*DispatchJob, error) {
+func (r *mongoRepository) FindByEventID(ctx context.Context, eventID string) ([]*DispatchJob, error) {
 	cursor, err := r.jobs.Find(ctx, bson.M{"eventId": eventID})
 	if err != nil {
 		return nil, err
@@ -71,7 +71,7 @@ func (r *Repository) FindByEventID(ctx context.Context, eventID string) ([]*Disp
 }
 
 // FindBySubscription finds dispatch jobs for a subscription
-func (r *Repository) FindBySubscription(ctx context.Context, subscriptionID string, skip, limit int64) ([]*DispatchJob, error) {
+func (r *mongoRepository) FindBySubscription(ctx context.Context, subscriptionID string, skip, limit int64) ([]*DispatchJob, error) {
 	opts := options.Find().
 		SetSkip(skip).
 		SetLimit(limit).
@@ -91,7 +91,7 @@ func (r *Repository) FindBySubscription(ctx context.Context, subscriptionID stri
 }
 
 // FindPending finds all pending jobs ready for dispatch
-func (r *Repository) FindPending(ctx context.Context, limit int64) ([]*DispatchJob, error) {
+func (r *mongoRepository) FindPending(ctx context.Context, limit int64) ([]*DispatchJob, error) {
 	filter := bson.M{
 		"status": DispatchStatusPending,
 		"$or": []bson.M{
@@ -118,7 +118,7 @@ func (r *Repository) FindPending(ctx context.Context, limit int64) ([]*DispatchJ
 }
 
 // FindPendingByPool finds pending jobs for a specific dispatch pool
-func (r *Repository) FindPendingByPool(ctx context.Context, poolID string, limit int64) ([]*DispatchJob, error) {
+func (r *mongoRepository) FindPendingByPool(ctx context.Context, poolID string, limit int64) ([]*DispatchJob, error) {
 	filter := bson.M{
 		"status":         DispatchStatusPending,
 		"dispatchPoolId": poolID,
@@ -146,7 +146,7 @@ func (r *Repository) FindPendingByPool(ctx context.Context, poolID string, limit
 }
 
 // FindStaleQueued finds jobs that have been queued too long (stuck)
-func (r *Repository) FindStaleQueued(ctx context.Context, threshold time.Duration) ([]*DispatchJob, error) {
+func (r *mongoRepository) FindStaleQueued(ctx context.Context, threshold time.Duration) ([]*DispatchJob, error) {
 	staleTime := time.Now().Add(-threshold)
 
 	filter := bson.M{
@@ -168,7 +168,7 @@ func (r *Repository) FindStaleQueued(ctx context.Context, threshold time.Duratio
 }
 
 // Insert creates a new dispatch job
-func (r *Repository) Insert(ctx context.Context, job *DispatchJob) error {
+func (r *mongoRepository) Insert(ctx context.Context, job *DispatchJob) error {
 	if job.ID == "" {
 		job.ID = tsid.Generate()
 	}
@@ -188,7 +188,7 @@ func (r *Repository) Insert(ctx context.Context, job *DispatchJob) error {
 }
 
 // InsertMany creates multiple dispatch jobs
-func (r *Repository) InsertMany(ctx context.Context, jobs []*DispatchJob) error {
+func (r *mongoRepository) InsertMany(ctx context.Context, jobs []*DispatchJob) error {
 	now := time.Now()
 	docs := make([]interface{}, len(jobs))
 	for i, job := range jobs {
@@ -208,7 +208,7 @@ func (r *Repository) InsertMany(ctx context.Context, jobs []*DispatchJob) error 
 }
 
 // Update updates an existing dispatch job
-func (r *Repository) Update(ctx context.Context, job *DispatchJob) error {
+func (r *mongoRepository) Update(ctx context.Context, job *DispatchJob) error {
 	job.UpdatedAt = time.Now()
 
 	result, err := r.jobs.ReplaceOne(ctx, bson.M{"_id": job.ID}, job)
@@ -222,7 +222,7 @@ func (r *Repository) Update(ctx context.Context, job *DispatchJob) error {
 }
 
 // UpdateStatus updates a job's status
-func (r *Repository) UpdateStatus(ctx context.Context, id string, status DispatchStatus) error {
+func (r *mongoRepository) UpdateStatus(ctx context.Context, id string, status DispatchStatus) error {
 	update := bson.M{
 		"$set": bson.M{
 			"status":    status,
@@ -241,17 +241,17 @@ func (r *Repository) UpdateStatus(ctx context.Context, id string, status Dispatc
 }
 
 // MarkQueued marks a job as queued
-func (r *Repository) MarkQueued(ctx context.Context, id string) error {
+func (r *mongoRepository) MarkQueued(ctx context.Context, id string) error {
 	return r.UpdateStatus(ctx, id, DispatchStatusQueued)
 }
 
 // MarkInProgress marks a job as in progress
-func (r *Repository) MarkInProgress(ctx context.Context, id string) error {
+func (r *mongoRepository) MarkInProgress(ctx context.Context, id string) error {
 	return r.UpdateStatus(ctx, id, DispatchStatusInProgress)
 }
 
 // MarkCompleted marks a job as completed
-func (r *Repository) MarkCompleted(ctx context.Context, id string, durationMillis int64) error {
+func (r *mongoRepository) MarkCompleted(ctx context.Context, id string, durationMillis int64) error {
 	now := time.Now()
 	update := bson.M{
 		"$set": bson.M{
@@ -273,7 +273,7 @@ func (r *Repository) MarkCompleted(ctx context.Context, id string, durationMilli
 }
 
 // MarkError marks a job as errored
-func (r *Repository) MarkError(ctx context.Context, id string, errorMsg string) error {
+func (r *mongoRepository) MarkError(ctx context.Context, id string, errorMsg string) error {
 	now := time.Now()
 	update := bson.M{
 		"$set": bson.M{
@@ -294,7 +294,7 @@ func (r *Repository) MarkError(ctx context.Context, id string, errorMsg string) 
 }
 
 // RecordAttempt records a delivery attempt
-func (r *Repository) RecordAttempt(ctx context.Context, id string, attempt DispatchAttempt) error {
+func (r *mongoRepository) RecordAttempt(ctx context.Context, id string, attempt DispatchAttempt) error {
 	if attempt.ID == "" {
 		attempt.ID = tsid.Generate()
 	}
@@ -321,7 +321,7 @@ func (r *Repository) RecordAttempt(ctx context.Context, id string, attempt Dispa
 }
 
 // ResetToPending resets a job to pending status (for retry)
-func (r *Repository) ResetToPending(ctx context.Context, id string, scheduledFor time.Time) error {
+func (r *mongoRepository) ResetToPending(ctx context.Context, id string, scheduledFor time.Time) error {
 	now := time.Now()
 	update := bson.M{
 		"$set": bson.M{
@@ -342,12 +342,12 @@ func (r *Repository) ResetToPending(ctx context.Context, id string, scheduledFor
 }
 
 // CountByStatus counts jobs by status
-func (r *Repository) CountByStatus(ctx context.Context, status DispatchStatus) (int64, error) {
+func (r *mongoRepository) CountByStatus(ctx context.Context, status DispatchStatus) (int64, error) {
 	return r.jobs.CountDocuments(ctx, bson.M{"status": status})
 }
 
 // CountByGroupAndStatus counts jobs by message group and status
-func (r *Repository) CountByGroupAndStatus(ctx context.Context, messageGroup string, status DispatchStatus) (int64, error) {
+func (r *mongoRepository) CountByGroupAndStatus(ctx context.Context, messageGroup string, status DispatchStatus) (int64, error) {
 	filter := bson.M{
 		"messageGroup": messageGroup,
 		"status":       status,
@@ -356,7 +356,7 @@ func (r *Repository) CountByGroupAndStatus(ctx context.Context, messageGroup str
 }
 
 // HasErrorJobsInGroup returns true if there are any ERROR jobs in the message group
-func (r *Repository) HasErrorJobsInGroup(ctx context.Context, messageGroup string) (bool, error) {
+func (r *mongoRepository) HasErrorJobsInGroup(ctx context.Context, messageGroup string) (bool, error) {
 	count, err := r.CountByGroupAndStatus(ctx, messageGroup, DispatchStatusError)
 	if err != nil {
 		return false, err
@@ -366,7 +366,7 @@ func (r *Repository) HasErrorJobsInGroup(ctx context.Context, messageGroup strin
 
 // GetBlockedMessageGroups returns message groups that have ERROR status jobs
 // from the provided list of groups
-func (r *Repository) GetBlockedMessageGroups(ctx context.Context, groups []string) (map[string]bool, error) {
+func (r *mongoRepository) GetBlockedMessageGroups(ctx context.Context, groups []string) (map[string]bool, error) {
 	if len(groups) == 0 {
 		return map[string]bool{}, nil
 	}
@@ -407,7 +407,7 @@ func (r *Repository) GetBlockedMessageGroups(ctx context.Context, groups []strin
 }
 
 // Delete removes a dispatch job
-func (r *Repository) Delete(ctx context.Context, id string) error {
+func (r *mongoRepository) Delete(ctx context.Context, id string) error {
 	result, err := r.jobs.DeleteOne(ctx, bson.M{"_id": id})
 	if err != nil {
 		return err

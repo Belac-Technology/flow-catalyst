@@ -19,14 +19,14 @@ import (
 //
 // This matches Java's DispatchProcessingResource
 type DispatchProcessingHandler struct {
-	repo        *dispatchjob.Repository
+	repo        dispatchjob.Repository
 	authService *dispatchjob.DispatchAuthService
 	httpClient  *http.Client
 }
 
 // NewDispatchProcessingHandler creates a new dispatch processing handler
 func NewDispatchProcessingHandler(
-	repo *dispatchjob.Repository,
+	repo dispatchjob.Repository,
 	authService *dispatchjob.DispatchAuthService,
 ) *DispatchProcessingHandler {
 	return &DispatchProcessingHandler{

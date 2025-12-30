@@ -18,26 +18,26 @@ var (
 	ErrDuplicateEvent    = errors.New("duplicate event")
 )
 
-// Repository provides access to event data
-type Repository struct {
+// mongoRepository provides MongoDB access to event data
+type mongoRepository struct {
 	events     *mongo.Collection
 	eventTypes *mongo.Collection
 	schemas    *mongo.Collection
 }
 
-// NewRepository creates a new event repository
-func NewRepository(db *mongo.Database) *Repository {
-	return &Repository{
+// NewRepository creates a new event repository with instrumentation
+func NewRepository(db *mongo.Database) Repository {
+	return newInstrumentedRepository(&mongoRepository{
 		events:     db.Collection("events"),
 		eventTypes: db.Collection("event_types"),
 		schemas:    db.Collection("schemas"),
-	}
+	})
 }
 
 // === Event operations ===
 
 // FindEventByID finds an event by ID
-func (r *Repository) FindEventByID(ctx context.Context, id string) (*Event, error) {
+func (r *mongoRepository) FindEventByID(ctx context.Context, id string) (*Event, error) {
 	var event Event
 	err := r.events.FindOne(ctx, bson.M{"_id": id}).Decode(&event)
 	if err != nil {
@@ -50,7 +50,7 @@ func (r *Repository) FindEventByID(ctx context.Context, id string) (*Event, erro
 }
 
 // FindEventsByType finds events by type with pagination
-func (r *Repository) FindEventsByType(ctx context.Context, eventType string, skip, limit int64) ([]*Event, error) {
+func (r *mongoRepository) FindEventsByType(ctx context.Context, eventType string, skip, limit int64) ([]*Event, error) {
 	opts := options.Find().
 		SetSkip(skip).
 		SetLimit(limit).
@@ -70,7 +70,7 @@ func (r *Repository) FindEventsByType(ctx context.Context, eventType string, ski
 }
 
 // FindEventsByClient finds events for a client with pagination
-func (r *Repository) FindEventsByClient(ctx context.Context, clientID string, skip, limit int64) ([]*Event, error) {
+func (r *mongoRepository) FindEventsByClient(ctx context.Context, clientID string, skip, limit int64) ([]*Event, error) {
 	opts := options.Find().
 		SetSkip(skip).
 		SetLimit(limit).
@@ -90,7 +90,7 @@ func (r *Repository) FindEventsByClient(ctx context.Context, clientID string, sk
 }
 
 // InsertEvent creates a new event
-func (r *Repository) InsertEvent(ctx context.Context, event *Event) error {
+func (r *mongoRepository) InsertEvent(ctx context.Context, event *Event) error {
 	if event.ID == "" {
 		event.ID = tsid.Generate()
 	}
@@ -104,7 +104,7 @@ func (r *Repository) InsertEvent(ctx context.Context, event *Event) error {
 }
 
 // InsertEvents inserts multiple events
-func (r *Repository) InsertEvents(ctx context.Context, events []*Event) error {
+func (r *mongoRepository) InsertEvents(ctx context.Context, events []*Event) error {
 	now := time.Now()
 	docs := make([]interface{}, len(events))
 	for i, e := range events {
@@ -120,14 +120,14 @@ func (r *Repository) InsertEvents(ctx context.Context, events []*Event) error {
 }
 
 // CountEvents counts events matching a filter
-func (r *Repository) CountEvents(ctx context.Context, filter bson.M) (int64, error) {
+func (r *mongoRepository) CountEvents(ctx context.Context, filter bson.M) (int64, error) {
 	return r.events.CountDocuments(ctx, filter)
 }
 
 // === Event Type operations ===
 
 // FindEventTypeByID finds an event type by ID
-func (r *Repository) FindEventTypeByID(ctx context.Context, id string) (*EventType, error) {
+func (r *mongoRepository) FindEventTypeByID(ctx context.Context, id string) (*EventType, error) {
 	var eventType EventType
 	err := r.eventTypes.FindOne(ctx, bson.M{"_id": id}).Decode(&eventType)
 	if err != nil {
@@ -140,7 +140,7 @@ func (r *Repository) FindEventTypeByID(ctx context.Context, id string) (*EventTy
 }
 
 // FindEventTypeByCode finds an event type by code
-func (r *Repository) FindEventTypeByCode(ctx context.Context, code string) (*EventType, error) {
+func (r *mongoRepository) FindEventTypeByCode(ctx context.Context, code string) (*EventType, error) {
 	var eventType EventType
 	err := r.eventTypes.FindOne(ctx, bson.M{"code": code}).Decode(&eventType)
 	if err != nil {
@@ -153,7 +153,7 @@ func (r *Repository) FindEventTypeByCode(ctx context.Context, code string) (*Eve
 }
 
 // FindAllEventTypes returns all event types
-func (r *Repository) FindAllEventTypes(ctx context.Context) ([]*EventType, error) {
+func (r *mongoRepository) FindAllEventTypes(ctx context.Context) ([]*EventType, error) {
 	cursor, err := r.eventTypes.Find(ctx, bson.M{})
 	if err != nil {
 		return nil, err
@@ -168,7 +168,7 @@ func (r *Repository) FindAllEventTypes(ctx context.Context) ([]*EventType, error
 }
 
 // FindActiveEventTypes returns all active event types
-func (r *Repository) FindActiveEventTypes(ctx context.Context) ([]*EventType, error) {
+func (r *mongoRepository) FindActiveEventTypes(ctx context.Context) ([]*EventType, error) {
 	cursor, err := r.eventTypes.Find(ctx, bson.M{"status": EventTypeStatusCurrent})
 	if err != nil {
 		return nil, err
@@ -183,7 +183,7 @@ func (r *Repository) FindActiveEventTypes(ctx context.Context) ([]*EventType, er
 }
 
 // InsertEventType creates a new event type
-func (r *Repository) InsertEventType(ctx context.Context, eventType *EventType) error {
+func (r *mongoRepository) InsertEventType(ctx context.Context, eventType *EventType) error {
 	if eventType.ID == "" {
 		eventType.ID = tsid.Generate()
 	}
@@ -199,7 +199,7 @@ func (r *Repository) InsertEventType(ctx context.Context, eventType *EventType) 
 }
 
 // UpdateEventType updates an existing event type
-func (r *Repository) UpdateEventType(ctx context.Context, eventType *EventType) error {
+func (r *mongoRepository) UpdateEventType(ctx context.Context, eventType *EventType) error {
 	eventType.UpdatedAt = time.Now()
 
 	result, err := r.eventTypes.ReplaceOne(ctx, bson.M{"_id": eventType.ID}, eventType)
@@ -213,7 +213,7 @@ func (r *Repository) UpdateEventType(ctx context.Context, eventType *EventType) 
 }
 
 // DeleteEventType removes an event type
-func (r *Repository) DeleteEventType(ctx context.Context, id string) error {
+func (r *mongoRepository) DeleteEventType(ctx context.Context, id string) error {
 	result, err := r.eventTypes.DeleteOne(ctx, bson.M{"_id": id})
 	if err != nil {
 		return err
@@ -225,7 +225,7 @@ func (r *Repository) DeleteEventType(ctx context.Context, id string) error {
 }
 
 // ArchiveEventType sets an event type to archived status
-func (r *Repository) ArchiveEventType(ctx context.Context, id string) error {
+func (r *mongoRepository) ArchiveEventType(ctx context.Context, id string) error {
 	result, err := r.eventTypes.UpdateOne(ctx,
 		bson.M{"_id": id},
 		bson.M{"$set": bson.M{
@@ -245,7 +245,7 @@ func (r *Repository) ArchiveEventType(ctx context.Context, id string) error {
 // === Schema operations ===
 
 // FindSchemaByID finds a schema by ID
-func (r *Repository) FindSchemaByID(ctx context.Context, id string) (*Schema, error) {
+func (r *mongoRepository) FindSchemaByID(ctx context.Context, id string) (*Schema, error) {
 	var schema Schema
 	err := r.schemas.FindOne(ctx, bson.M{"_id": id}).Decode(&schema)
 	if err != nil {
@@ -258,7 +258,7 @@ func (r *Repository) FindSchemaByID(ctx context.Context, id string) (*Schema, er
 }
 
 // FindSchemasByEventType finds schemas for an event type
-func (r *Repository) FindSchemasByEventType(ctx context.Context, eventTypeID string) ([]*Schema, error) {
+func (r *mongoRepository) FindSchemasByEventType(ctx context.Context, eventTypeID string) ([]*Schema, error) {
 	cursor, err := r.schemas.Find(ctx, bson.M{"eventTypeId": eventTypeID})
 	if err != nil {
 		return nil, err
@@ -273,7 +273,7 @@ func (r *Repository) FindSchemasByEventType(ctx context.Context, eventTypeID str
 }
 
 // InsertSchema creates a new schema
-func (r *Repository) InsertSchema(ctx context.Context, schema *Schema) error {
+func (r *mongoRepository) InsertSchema(ctx context.Context, schema *Schema) error {
 	if schema.ID == "" {
 		schema.ID = tsid.Generate()
 	}
@@ -286,7 +286,7 @@ func (r *Repository) InsertSchema(ctx context.Context, schema *Schema) error {
 }
 
 // UpdateSchema updates an existing schema
-func (r *Repository) UpdateSchema(ctx context.Context, schema *Schema) error {
+func (r *mongoRepository) UpdateSchema(ctx context.Context, schema *Schema) error {
 	schema.UpdatedAt = time.Now()
 
 	result, err := r.schemas.ReplaceOne(ctx, bson.M{"_id": schema.ID}, schema)
@@ -300,7 +300,7 @@ func (r *Repository) UpdateSchema(ctx context.Context, schema *Schema) error {
 }
 
 // DeleteSchema removes a schema
-func (r *Repository) DeleteSchema(ctx context.Context, id string) error {
+func (r *mongoRepository) DeleteSchema(ctx context.Context, id string) error {
 	result, err := r.schemas.DeleteOne(ctx, bson.M{"_id": id})
 	if err != nil {
 		return err

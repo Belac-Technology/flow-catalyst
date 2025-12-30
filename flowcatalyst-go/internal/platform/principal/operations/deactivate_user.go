@@ -15,12 +15,12 @@ type DeactivateUserCommand struct {
 
 // DeactivateUserUseCase handles deactivating an active user
 type DeactivateUserUseCase struct {
-	repo       *principal.Repository
+	repo       principal.Repository
 	unitOfWork common.UnitOfWork
 }
 
 // NewDeactivateUserUseCase creates a new DeactivateUserUseCase
-func NewDeactivateUserUseCase(repo *principal.Repository, uow common.UnitOfWork) *DeactivateUserUseCase {
+func NewDeactivateUserUseCase(repo principal.Repository, uow common.UnitOfWork) *DeactivateUserUseCase {
 	return &DeactivateUserUseCase{
 		repo:       repo,
 		unitOfWork: uow,

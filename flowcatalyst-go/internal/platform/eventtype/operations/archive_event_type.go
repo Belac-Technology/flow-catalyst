@@ -15,12 +15,12 @@ type ArchiveEventTypeCommand struct {
 
 // ArchiveEventTypeUseCase handles archiving an event type
 type ArchiveEventTypeUseCase struct {
-	repo       *eventtype.Repository
+	repo       eventtype.Repository
 	unitOfWork common.UnitOfWork
 }
 
 // NewArchiveEventTypeUseCase creates a new ArchiveEventTypeUseCase
-func NewArchiveEventTypeUseCase(repo *eventtype.Repository, uow common.UnitOfWork) *ArchiveEventTypeUseCase {
+func NewArchiveEventTypeUseCase(repo eventtype.Repository, uow common.UnitOfWork) *ArchiveEventTypeUseCase {
 	return &ArchiveEventTypeUseCase{
 		repo:       repo,
 		unitOfWork: uow,

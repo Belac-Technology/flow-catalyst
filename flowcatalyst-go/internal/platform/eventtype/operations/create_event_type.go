@@ -22,12 +22,12 @@ type CreateEventTypeCommand struct {
 
 // CreateEventTypeUseCase handles creating a new event type
 type CreateEventTypeUseCase struct {
-	repo       *eventtype.Repository
+	repo       eventtype.Repository
 	unitOfWork common.UnitOfWork
 }
 
 // NewCreateEventTypeUseCase creates a new CreateEventTypeUseCase
-func NewCreateEventTypeUseCase(repo *eventtype.Repository, uow common.UnitOfWork) *CreateEventTypeUseCase {
+func NewCreateEventTypeUseCase(repo eventtype.Repository, uow common.UnitOfWork) *CreateEventTypeUseCase {
 	return &CreateEventTypeUseCase{
 		repo:       repo,
 		unitOfWork: uow,

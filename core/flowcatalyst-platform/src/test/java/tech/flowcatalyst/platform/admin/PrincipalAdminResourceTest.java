@@ -10,6 +10,7 @@ import tech.flowcatalyst.platform.authentication.JwtKeyService;
 import tech.flowcatalyst.platform.authorization.RoleService;
 import tech.flowcatalyst.platform.principal.Principal;
 import tech.flowcatalyst.platform.principal.UserService;
+import tech.flowcatalyst.platform.principal.UserScope;
 import tech.flowcatalyst.platform.client.Client;
 import tech.flowcatalyst.platform.client.ClientService;
 
@@ -52,7 +53,7 @@ class PrincipalAdminResourceTest {
             "principal-admin-" + uniqueId + "@test.com",
             "Password123!",
             "Admin User",
-            null
+            null, UserScope.ANCHOR
         );
 
         adminToken = jwtKeyService.issueSessionToken(adminUser.id, adminUser.userIdentity.email, Set.of("platform:admin"), List.of("*"));
@@ -83,7 +84,7 @@ class PrincipalAdminResourceTest {
             "client-user-" + uniqueId + "@test.com",
             "Password123!",
             "Client User",
-            testClient.id
+            testClient.id, UserScope.CLIENT
         );
 
         given()
@@ -145,7 +146,7 @@ class PrincipalAdminResourceTest {
         String email = "duplicate-" + uniqueId + "@test.com";
 
         // Create first user
-        userService.createInternalUser(email, "Password123!", "First User", testClient.id);
+        userService.createInternalUser(email, "Password123!", "First User", testClient.id, UserScope.CLIENT);
 
         // Try to create with same email
         given()
@@ -206,7 +207,7 @@ class PrincipalAdminResourceTest {
             "update-" + uniqueId + "@test.com",
             "Password123!",
             "Original Name",
-            testClient.id
+            testClient.id, UserScope.CLIENT
         );
 
         given()
@@ -234,7 +235,7 @@ class PrincipalAdminResourceTest {
             "deactivate-" + uniqueId + "@test.com",
             "Password123!",
             "Deactivate User",
-            testClient.id
+            testClient.id, UserScope.CLIENT
         );
 
         given()
@@ -265,7 +266,7 @@ class PrincipalAdminResourceTest {
             "activate-" + uniqueId + "@test.com",
             "Password123!",
             "Activate User",
-            testClient.id
+            testClient.id, UserScope.CLIENT
         );
         userService.deactivateUser(user.id);
 
@@ -289,7 +290,7 @@ class PrincipalAdminResourceTest {
             "reset-pwd-" + uniqueId + "@test.com",
             "OldPassword123!",
             "Reset Password User",
-            testClient.id
+            testClient.id, UserScope.CLIENT
         );
 
         given()
@@ -317,7 +318,7 @@ class PrincipalAdminResourceTest {
             "roles-" + uniqueId + "@test.com",
             "Password123!",
             "Roles User",
-            testClient.id
+            testClient.id, UserScope.CLIENT
         );
 
         given()
@@ -338,7 +339,7 @@ class PrincipalAdminResourceTest {
             "assign-role-" + uniqueId + "@test.com",
             "Password123!",
             "Assign Role User",
-            testClient.id
+            testClient.id, UserScope.CLIENT
         );
 
         given()
@@ -365,7 +366,7 @@ class PrincipalAdminResourceTest {
             "bad-role-" + uniqueId + "@test.com",
             "Password123!",
             "Bad Role User",
-            testClient.id
+            testClient.id, UserScope.CLIENT
         );
 
         given()
@@ -391,7 +392,7 @@ class PrincipalAdminResourceTest {
             "remove-role-" + uniqueId + "@test.com",
             "Password123!",
             "Remove Role User",
-            testClient.id
+            testClient.id, UserScope.CLIENT
         );
 
         // First assign the role
@@ -417,7 +418,8 @@ class PrincipalAdminResourceTest {
             "grants-" + uniqueId + "@test.com",
             "Password123!",
             "Grants User",
-            null // No home tenant - partner user
+            null,
+            UserScope.ANCHOR
         );
 
         given()
@@ -438,7 +440,8 @@ class PrincipalAdminResourceTest {
             "grant-access-" + uniqueId + "@test.com",
             "Password123!",
             "Partner User",
-            null // No home client - partner user
+            null,
+            UserScope.ANCHOR
         );
 
         given()
@@ -464,7 +467,7 @@ class PrincipalAdminResourceTest {
             "revoke-access-" + uniqueId + "@test.com",
             "Password123!",
             "Partner User",
-            null
+            null, UserScope.ANCHOR
         );
 
         // Grant access first

@@ -17,22 +17,22 @@ var (
 	ErrDuplicateCode = errors.New("duplicate code")
 )
 
-// Repository provides access to subscription data
-type Repository struct {
+// mongoRepository provides MongoDB access to subscription data
+type mongoRepository struct {
 	subscriptions *mongo.Collection
 }
 
-// NewRepository creates a new subscription repository
-func NewRepository(db *mongo.Database) *Repository {
-	return &Repository{
+// NewRepository creates a new subscription repository with instrumentation
+func NewRepository(db *mongo.Database) Repository {
+	return newInstrumentedRepository(&mongoRepository{
 		subscriptions: db.Collection("subscriptions"),
-	}
+	})
 }
 
 // === Subscription operations ===
 
 // FindSubscriptionByID finds a subscription by ID
-func (r *Repository) FindSubscriptionByID(ctx context.Context, id string) (*Subscription, error) {
+func (r *mongoRepository) FindSubscriptionByID(ctx context.Context, id string) (*Subscription, error) {
 	var sub Subscription
 	err := r.subscriptions.FindOne(ctx, bson.M{"_id": id}).Decode(&sub)
 	if err != nil {
@@ -45,7 +45,7 @@ func (r *Repository) FindSubscriptionByID(ctx context.Context, id string) (*Subs
 }
 
 // FindSubscriptionByCode finds a subscription by code
-func (r *Repository) FindSubscriptionByCode(ctx context.Context, code string) (*Subscription, error) {
+func (r *mongoRepository) FindSubscriptionByCode(ctx context.Context, code string) (*Subscription, error) {
 	var sub Subscription
 	err := r.subscriptions.FindOne(ctx, bson.M{"code": code}).Decode(&sub)
 	if err != nil {
@@ -58,7 +58,7 @@ func (r *Repository) FindSubscriptionByCode(ctx context.Context, code string) (*
 }
 
 // FindSubscriptionsByClient finds all subscriptions for a client
-func (r *Repository) FindSubscriptionsByClient(ctx context.Context, clientID string) ([]*Subscription, error) {
+func (r *mongoRepository) FindSubscriptionsByClient(ctx context.Context, clientID string) ([]*Subscription, error) {
 	cursor, err := r.subscriptions.Find(ctx, bson.M{"clientId": clientID})
 	if err != nil {
 		return nil, err
@@ -73,7 +73,7 @@ func (r *Repository) FindSubscriptionsByClient(ctx context.Context, clientID str
 }
 
 // FindActiveSubscriptions finds all active subscriptions
-func (r *Repository) FindActiveSubscriptions(ctx context.Context) ([]*Subscription, error) {
+func (r *mongoRepository) FindActiveSubscriptions(ctx context.Context) ([]*Subscription, error) {
 	cursor, err := r.subscriptions.Find(ctx, bson.M{"status": SubscriptionStatusActive})
 	if err != nil {
 		return nil, err
@@ -88,9 +88,9 @@ func (r *Repository) FindActiveSubscriptions(ctx context.Context) ([]*Subscripti
 }
 
 // FindSubscriptionsByEventType finds all active subscriptions matching an event type
-func (r *Repository) FindSubscriptionsByEventType(ctx context.Context, eventTypeCode string) ([]*Subscription, error) {
+func (r *mongoRepository) FindSubscriptionsByEventType(ctx context.Context, eventTypeCode string) ([]*Subscription, error) {
 	filter := bson.M{
-		"status":               SubscriptionStatusActive,
+		"status":                    SubscriptionStatusActive,
 		"eventTypes.eventTypeCode": eventTypeCode,
 	}
 
@@ -108,7 +108,7 @@ func (r *Repository) FindSubscriptionsByEventType(ctx context.Context, eventType
 }
 
 // FindAllSubscriptions returns all subscriptions with pagination
-func (r *Repository) FindAllSubscriptions(ctx context.Context, skip, limit int64) ([]*Subscription, error) {
+func (r *mongoRepository) FindAllSubscriptions(ctx context.Context, skip, limit int64) ([]*Subscription, error) {
 	opts := options.Find().
 		SetSkip(skip).
 		SetLimit(limit).
@@ -128,7 +128,7 @@ func (r *Repository) FindAllSubscriptions(ctx context.Context, skip, limit int64
 }
 
 // InsertSubscription creates a new subscription
-func (r *Repository) InsertSubscription(ctx context.Context, sub *Subscription) error {
+func (r *mongoRepository) InsertSubscription(ctx context.Context, sub *Subscription) error {
 	if sub.ID == "" {
 		sub.ID = tsid.Generate()
 	}
@@ -144,7 +144,7 @@ func (r *Repository) InsertSubscription(ctx context.Context, sub *Subscription) 
 }
 
 // UpdateSubscription updates an existing subscription
-func (r *Repository) UpdateSubscription(ctx context.Context, sub *Subscription) error {
+func (r *mongoRepository) UpdateSubscription(ctx context.Context, sub *Subscription) error {
 	sub.UpdatedAt = time.Now()
 
 	result, err := r.subscriptions.ReplaceOne(ctx, bson.M{"_id": sub.ID}, sub)
@@ -158,7 +158,7 @@ func (r *Repository) UpdateSubscription(ctx context.Context, sub *Subscription) 
 }
 
 // UpdateSubscriptionStatus updates a subscription's status
-func (r *Repository) UpdateSubscriptionStatus(ctx context.Context, id string, status SubscriptionStatus) error {
+func (r *mongoRepository) UpdateSubscriptionStatus(ctx context.Context, id string, status SubscriptionStatus) error {
 	result, err := r.subscriptions.UpdateOne(ctx,
 		bson.M{"_id": id},
 		bson.M{"$set": bson.M{
@@ -176,7 +176,7 @@ func (r *Repository) UpdateSubscriptionStatus(ctx context.Context, id string, st
 }
 
 // DeleteSubscription removes a subscription
-func (r *Repository) DeleteSubscription(ctx context.Context, id string) error {
+func (r *mongoRepository) DeleteSubscription(ctx context.Context, id string) error {
 	result, err := r.subscriptions.DeleteOne(ctx, bson.M{"_id": id})
 	if err != nil {
 		return err

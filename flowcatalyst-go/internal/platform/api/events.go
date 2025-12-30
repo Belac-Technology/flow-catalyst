@@ -13,11 +13,11 @@ import (
 
 // EventHandler handles event endpoints
 type EventHandler struct {
-	repo *event.Repository
+	repo event.Repository
 }
 
 // NewEventHandler creates a new event handler
-func NewEventHandler(repo *event.Repository) *EventHandler {
+func NewEventHandler(repo event.Repository) *EventHandler {
 	return &EventHandler{repo: repo}
 }
 

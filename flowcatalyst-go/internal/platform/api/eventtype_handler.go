@@ -1,7 +1,9 @@
 package api
 
 import (
+	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -13,7 +15,7 @@ import (
 // EventTypeHandler handles event type endpoints using UseCases
 // @Description Event type management API with schema versioning support
 type EventTypeHandler struct {
-	repo *eventtype.Repository
+	repo eventtype.Repository
 
 	// UseCases
 	createUseCase           *operations.CreateEventTypeUseCase
@@ -26,7 +28,7 @@ type EventTypeHandler struct {
 
 // NewEventTypeHandler creates a new event type handler with UseCases
 func NewEventTypeHandler(
-	repo *eventtype.Repository,
+	repo eventtype.Repository,
 	uow common.UnitOfWork,
 ) *EventTypeHandler {
 	return &EventTypeHandler{
@@ -74,7 +76,13 @@ func (h *EventTypeHandler) Routes() chi.Router {
 // @Security BearerAuth
 // @Router /api/v1/event-types [get]
 func (h *EventTypeHandler) List(w http.ResponseWriter, r *http.Request) {
-	h.repo.ListHandler(w, r)
+	types, err := h.repo.FindAll(r.Context())
+	if err != nil {
+		slog.Error("Failed to list event types", "error", err)
+		WriteInternalError(w, "Failed to list event types")
+		return
+	}
+	WriteJSON(w, http.StatusOK, types)
 }
 
 // Get handles GET /event-types/{id}
@@ -90,7 +98,19 @@ func (h *EventTypeHandler) List(w http.ResponseWriter, r *http.Request) {
 // @Security BearerAuth
 // @Router /api/v1/event-types/{id} [get]
 func (h *EventTypeHandler) Get(w http.ResponseWriter, r *http.Request) {
-	h.repo.GetHandler(w, r)
+	id := chi.URLParam(r, "id")
+
+	et, err := h.repo.FindByID(r.Context(), id)
+	if err != nil {
+		slog.Error("Failed to get event type", "error", err, "id", id)
+		WriteInternalError(w, "Failed to get event type")
+		return
+	}
+	if et == nil {
+		WriteNotFound(w, "Event type not found")
+		return
+	}
+	WriteJSON(w, http.StatusOK, et)
 }
 
 // Create handles POST /event-types (using UseCase)
@@ -163,7 +183,14 @@ func (h *EventTypeHandler) Update(w http.ResponseWriter, r *http.Request) {
 // @Security BearerAuth
 // @Router /api/v1/event-types/{id} [delete]
 func (h *EventTypeHandler) Delete(w http.ResponseWriter, r *http.Request) {
-	h.repo.DeleteHandler(w, r)
+	id := chi.URLParam(r, "id")
+
+	if err := h.repo.Delete(r.Context(), id); err != nil {
+		slog.Error("Failed to delete event type", "error", err, "id", id)
+		WriteInternalError(w, "Failed to delete event type")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // Archive handles POST /event-types/{id}/archive (using UseCase)
@@ -202,7 +229,24 @@ func (h *EventTypeHandler) Archive(w http.ResponseWriter, r *http.Request) {
 // @Security BearerAuth
 // @Router /api/v1/event-types/{id}/schemas [get]
 func (h *EventTypeHandler) ListSchemas(w http.ResponseWriter, r *http.Request) {
-	h.repo.ListSchemasHandler(w, r)
+	id := chi.URLParam(r, "id")
+
+	et, err := h.repo.FindByID(r.Context(), id)
+	if err != nil {
+		slog.Error("Failed to get event type", "error", err, "id", id)
+		WriteInternalError(w, "Failed to get event type")
+		return
+	}
+	if et == nil {
+		WriteNotFound(w, "Event type not found")
+		return
+	}
+
+	schemas := et.SpecVersions
+	if schemas == nil {
+		schemas = []eventtype.SpecVersion{}
+	}
+	WriteJSON(w, http.StatusOK, schemas)
 }
 
 // GetSchema handles GET /event-types/{id}/schemas/{version}
@@ -219,7 +263,27 @@ func (h *EventTypeHandler) ListSchemas(w http.ResponseWriter, r *http.Request) {
 // @Security BearerAuth
 // @Router /api/v1/event-types/{id}/schemas/{version} [get]
 func (h *EventTypeHandler) GetSchema(w http.ResponseWriter, r *http.Request) {
-	h.repo.GetSchemaHandler(w, r)
+	id := chi.URLParam(r, "id")
+	version := chi.URLParam(r, "version")
+
+	et, err := h.repo.FindByID(r.Context(), id)
+	if err != nil {
+		slog.Error("Failed to get event type", "error", err, "id", id)
+		WriteInternalError(w, "Failed to get event type")
+		return
+	}
+	if et == nil {
+		WriteNotFound(w, "Event type not found")
+		return
+	}
+
+	sv := et.FindSpecVersion(version)
+	if sv == nil {
+		WriteNotFound(w, "Schema version not found")
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, sv)
 }
 
 // AddSchema handles POST /event-types/{id}/schemas (using UseCase)
@@ -324,7 +388,49 @@ func (h *EventTypeHandler) DeprecateSchema(w http.ResponseWriter, r *http.Reques
 // @Security BearerAuth
 // @Router /api/v1/event-types/{id}/schemas/{version} [delete]
 func (h *EventTypeHandler) DeleteSchema(w http.ResponseWriter, r *http.Request) {
-	h.repo.DeleteSchemaHandler(w, r)
+	id := chi.URLParam(r, "id")
+	version := chi.URLParam(r, "version")
+
+	et, err := h.repo.FindByID(r.Context(), id)
+	if err != nil {
+		slog.Error("Failed to get event type", "error", err, "id", id)
+		WriteInternalError(w, "Failed to get event type")
+		return
+	}
+	if et == nil {
+		WriteNotFound(w, "Event type not found")
+		return
+	}
+
+	sv := et.FindSpecVersion(version)
+	if sv == nil {
+		WriteNotFound(w, "Schema version not found")
+		return
+	}
+
+	// Only allow deletion of finalising (draft) schemas
+	if sv.Status != eventtype.SpecVersionStatusFinalising {
+		WriteConflict(w, "Only draft (finalising) schemas can be deleted")
+		return
+	}
+
+	// Remove the version from the array
+	newVersions := make([]eventtype.SpecVersion, 0, len(et.SpecVersions)-1)
+	for _, v := range et.SpecVersions {
+		if v.Version != version {
+			newVersions = append(newVersions, v)
+		}
+	}
+	et.SpecVersions = newVersions
+	et.UpdatedAt = time.Now()
+
+	if err := h.repo.Update(r.Context(), et); err != nil {
+		slog.Error("Failed to update event type", "error", err, "id", id)
+		WriteInternalError(w, "Failed to delete schema version")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // getPrincipalID extracts principal ID from request context

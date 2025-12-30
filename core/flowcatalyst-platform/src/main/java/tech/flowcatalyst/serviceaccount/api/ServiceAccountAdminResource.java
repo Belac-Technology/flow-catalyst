@@ -33,7 +33,7 @@ import tech.flowcatalyst.serviceaccount.operations.regenerateauthtoken.Regenerat
 import tech.flowcatalyst.serviceaccount.operations.regeneratesigningsecret.RegenerateSigningSecretResult;
 import tech.flowcatalyst.serviceaccount.operations.updateserviceaccount.ServiceAccountUpdated;
 import tech.flowcatalyst.serviceaccount.operations.updateserviceaccount.UpdateServiceAccountCommand;
-import tech.flowcatalyst.serviceaccount.repository.ServiceAccountRepository.ServiceAccountFilter;
+import tech.flowcatalyst.serviceaccount.repository.ServiceAccountFilter;
 
 import java.time.Instant;
 import java.util.List;

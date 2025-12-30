@@ -11,11 +11,11 @@ import (
 // BlockChecker checks whether message groups should be blocked from dispatch
 // due to existing ERROR status jobs (for BLOCK_ON_ERROR mode)
 type BlockChecker struct {
-	jobRepo *dispatchjob.Repository
+	jobRepo dispatchjob.Repository
 }
 
 // NewBlockChecker creates a new block checker
-func NewBlockChecker(jobRepo *dispatchjob.Repository) *BlockChecker {
+func NewBlockChecker(jobRepo dispatchjob.Repository) *BlockChecker {
 	return &BlockChecker{
 		jobRepo: jobRepo,
 	}

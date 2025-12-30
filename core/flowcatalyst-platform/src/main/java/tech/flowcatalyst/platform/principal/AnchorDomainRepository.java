@@ -1,24 +1,26 @@
 package tech.flowcatalyst.platform.principal;
 
-import io.quarkus.mongodb.panache.PanacheMongoRepositoryBase;
-import jakarta.enterprise.context.ApplicationScoped;
+import java.util.List;
 import java.util.Optional;
 
 /**
- * Repository for AnchorDomain entities.
+ * Repository interface for AnchorDomain entities.
+ * Exposes only approved data access methods - Panache internals are hidden.
  */
-@ApplicationScoped
-public class AnchorDomainRepository implements PanacheMongoRepositoryBase<AnchorDomain, String> {
+public interface AnchorDomainRepository {
 
-    public Optional<AnchorDomain> findByDomain(String domain) {
-        return find("domain", domain).firstResultOptional();
-    }
+    // Read operations
+    AnchorDomain findById(String id);
+    Optional<AnchorDomain> findByIdOptional(String id);
+    Optional<AnchorDomain> findByDomain(String domain);
+    List<AnchorDomain> listAll();
+    long count();
+    boolean existsByDomain(String domain);
+    boolean isAnchorDomain(String domain);
 
-    public boolean existsByDomain(String domain) {
-        return find("domain", domain).count() > 0;
-    }
-
-    public boolean isAnchorDomain(String domain) {
-        return existsByDomain(domain);
-    }
+    // Write operations
+    void persist(AnchorDomain domain);
+    void update(AnchorDomain domain);
+    void delete(AnchorDomain domain);
+    boolean deleteById(String id);
 }

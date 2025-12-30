@@ -24,7 +24,7 @@ import tech.flowcatalyst.serviceaccount.operations.updateserviceaccount.ServiceA
 import tech.flowcatalyst.serviceaccount.operations.updateserviceaccount.UpdateServiceAccountCommand;
 import tech.flowcatalyst.serviceaccount.operations.updateserviceaccount.UpdateServiceAccountUseCase;
 import tech.flowcatalyst.serviceaccount.repository.ServiceAccountRepository;
-import tech.flowcatalyst.serviceaccount.repository.ServiceAccountRepository.ServiceAccountFilter;
+import tech.flowcatalyst.serviceaccount.repository.ServiceAccountFilter;
 
 import java.util.List;
 import java.util.Optional;

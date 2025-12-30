@@ -15,12 +15,12 @@ type DeleteSubscriptionCommand struct {
 
 // DeleteSubscriptionUseCase handles deleting a subscription
 type DeleteSubscriptionUseCase struct {
-	repo       *subscription.Repository
+	repo       subscription.Repository
 	unitOfWork common.UnitOfWork
 }
 
 // NewDeleteSubscriptionUseCase creates a new DeleteSubscriptionUseCase
-func NewDeleteSubscriptionUseCase(repo *subscription.Repository, uow common.UnitOfWork) *DeleteSubscriptionUseCase {
+func NewDeleteSubscriptionUseCase(repo subscription.Repository, uow common.UnitOfWork) *DeleteSubscriptionUseCase {
 	return &DeleteSubscriptionUseCase{
 		repo:       repo,
 		unitOfWork: uow,

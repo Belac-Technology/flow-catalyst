@@ -14,6 +14,7 @@ import tech.flowcatalyst.platform.authentication.oauth.OAuthClient.ClientType;
 import tech.flowcatalyst.platform.authentication.oauth.OAuthClientRepository;
 import tech.flowcatalyst.platform.principal.Principal;
 import tech.flowcatalyst.platform.principal.UserService;
+import tech.flowcatalyst.platform.principal.UserScope;
 import tech.flowcatalyst.platform.shared.TsidGenerator;
 
 import java.util.List;
@@ -47,7 +48,7 @@ class OAuthClientAdminResourceTest {
             "oauth-admin-" + uniqueId + "@test.com",
             "Password123!",
             "Admin User",
-            null
+            null, UserScope.ANCHOR
         );
 
         adminToken = jwtKeyService.issueSessionToken(adminUser.id, adminUser.userIdentity.email, Set.of("platform:admin"), List.of("*"));

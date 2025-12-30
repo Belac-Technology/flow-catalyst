@@ -64,9 +64,7 @@ public class RawDispatchJobBffResource {
         if (size < 1 || size > 100) size = 20;
 
         // Query raw dispatch jobs - limited filtering since this is debug
-        List<DispatchJob> jobs = dispatchJobRepository.findAll(Sort.by("createdAt").descending())
-            .page(page, size)
-            .list();
+        List<DispatchJob> jobs = dispatchJobRepository.findRecentPaged(page, size);
 
         long totalCount = dispatchJobRepository.count();
 

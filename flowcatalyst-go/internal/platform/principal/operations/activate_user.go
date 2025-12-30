@@ -15,12 +15,12 @@ type ActivateUserCommand struct {
 
 // ActivateUserUseCase handles activating a deactivated user
 type ActivateUserUseCase struct {
-	repo       *principal.Repository
+	repo       principal.Repository
 	unitOfWork common.UnitOfWork
 }
 
 // NewActivateUserUseCase creates a new ActivateUserUseCase
-func NewActivateUserUseCase(repo *principal.Repository, uow common.UnitOfWork) *ActivateUserUseCase {
+func NewActivateUserUseCase(repo principal.Repository, uow common.UnitOfWork) *ActivateUserUseCase {
 	return &ActivateUserUseCase{
 		repo:       repo,
 		unitOfWork: uow,

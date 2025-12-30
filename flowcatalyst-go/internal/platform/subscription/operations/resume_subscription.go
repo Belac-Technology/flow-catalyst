@@ -15,12 +15,12 @@ type ResumeSubscriptionCommand struct {
 
 // ResumeSubscriptionUseCase handles resuming a paused subscription
 type ResumeSubscriptionUseCase struct {
-	repo       *subscription.Repository
+	repo       subscription.Repository
 	unitOfWork common.UnitOfWork
 }
 
 // NewResumeSubscriptionUseCase creates a new ResumeSubscriptionUseCase
-func NewResumeSubscriptionUseCase(repo *subscription.Repository, uow common.UnitOfWork) *ResumeSubscriptionUseCase {
+func NewResumeSubscriptionUseCase(repo subscription.Repository, uow common.UnitOfWork) *ResumeSubscriptionUseCase {
 	return &ResumeSubscriptionUseCase{
 		repo:       repo,
 		unitOfWork: uow,

@@ -154,8 +154,7 @@ public class ClientService {
         }
 
         // Check if grant already exists
-        long existingGrants = grantRepo.count("principalId = ?1 AND clientId = ?2", principalId, clientId);
-        if (existingGrants > 0) {
+        if (grantRepo.existsByPrincipalIdAndClientId(principalId, clientId)) {
             throw new BadRequestException("Client access grant already exists");
         }
 
@@ -177,7 +176,7 @@ public class ClientService {
      * @throws NotFoundException if grant not found
      */
     public void revokeClientAccess(String principalId, String clientId) {
-        long deleted = grantRepo.delete("principalId = ?1 AND clientId = ?2", principalId, clientId);
+        long deleted = grantRepo.deleteByPrincipalIdAndClientId(principalId, clientId);
         if (deleted == 0) {
             throw new NotFoundException("Client access grant not found");
         }
@@ -214,11 +213,11 @@ public class ClientService {
             .toList();
 
         // Also include users who have this as their home client
-        List<Principal> principals = principalRepo.find("clientId", clientId).list();
+        List<Principal> principals = new java.util.ArrayList<>(principalRepo.findByClientId(clientId));
 
         // Add granted principals
         if (!principalIds.isEmpty()) {
-            List<Principal> grantedPrincipals = principalRepo.find("id in ?1", principalIds).list();
+            List<Principal> grantedPrincipals = principalRepo.findByIds(principalIds);
             principals.addAll(grantedPrincipals);
         }
 

@@ -15,12 +15,12 @@ type DeleteUserCommand struct {
 
 // DeleteUserUseCase handles deleting a user
 type DeleteUserUseCase struct {
-	repo       *principal.Repository
+	repo       principal.Repository
 	unitOfWork common.UnitOfWork
 }
 
 // NewDeleteUserUseCase creates a new DeleteUserUseCase
-func NewDeleteUserUseCase(repo *principal.Repository, uow common.UnitOfWork) *DeleteUserUseCase {
+func NewDeleteUserUseCase(repo principal.Repository, uow common.UnitOfWork) *DeleteUserUseCase {
 	return &DeleteUserUseCase{
 		repo:       repo,
 		unitOfWork: uow,

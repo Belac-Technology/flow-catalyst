@@ -84,7 +84,7 @@ public class DeleteApplicationUseCase {
         // Clean up legacy service account principal and OAuth clients
         if (app.serviceAccountPrincipalId != null) {
             // Delete OAuth clients linked to this service account
-            oauthClientRepo.delete("serviceAccountPrincipalId", app.serviceAccountPrincipalId);
+            oauthClientRepo.deleteByServiceAccountPrincipalId(app.serviceAccountPrincipalId);
 
             // Delete the service account principal
             principalRepo.deleteById(app.serviceAccountPrincipalId);

@@ -12,14 +12,22 @@ import (
 	"go.flowcatalyst.tech/internal/common/tsid"
 )
 
+const (
+	collectionClients       = "auth_clients"
+	collectionAccessGrants  = "client_access_grants"
+	collectionAnchorDomains = "anchor_domains"
+	collectionAuthConfigs   = "client_auth_config"
+	collectionRoleMappings  = "idp_role_mappings"
+)
+
 var (
 	ErrNotFound            = errors.New("client not found")
 	ErrDuplicateIdentifier = errors.New("identifier already exists")
 	ErrDuplicateDomain     = errors.New("domain already exists")
 )
 
-// Repository provides access to client data
-type Repository struct {
+// mongoRepository provides MongoDB access to client data
+type mongoRepository struct {
 	clients       *mongo.Collection
 	accessGrants  *mongo.Collection
 	anchorDomains *mongo.Collection
@@ -27,21 +35,21 @@ type Repository struct {
 	roleMappings  *mongo.Collection
 }
 
-// NewRepository creates a new client repository
-func NewRepository(db *mongo.Database) *Repository {
-	return &Repository{
-		clients:       db.Collection("auth_clients"),
-		accessGrants:  db.Collection("client_access_grants"),
-		anchorDomains: db.Collection("anchor_domains"),
-		authConfigs:   db.Collection("client_auth_config"),
-		roleMappings:  db.Collection("idp_role_mappings"),
-	}
+// NewRepository creates a new client repository with instrumentation
+func NewRepository(db *mongo.Database) Repository {
+	return newInstrumentedRepository(&mongoRepository{
+		clients:       db.Collection(collectionClients),
+		accessGrants:  db.Collection(collectionAccessGrants),
+		anchorDomains: db.Collection(collectionAnchorDomains),
+		authConfigs:   db.Collection(collectionAuthConfigs),
+		roleMappings:  db.Collection(collectionRoleMappings),
+	})
 }
 
 // === Client operations ===
 
 // FindByID finds a client by ID
-func (r *Repository) FindByID(ctx context.Context, id string) (*Client, error) {
+func (r *mongoRepository) FindByID(ctx context.Context, id string) (*Client, error) {
 	var client Client
 	err := r.clients.FindOne(ctx, bson.M{"_id": id}).Decode(&client)
 	if err != nil {
@@ -54,7 +62,7 @@ func (r *Repository) FindByID(ctx context.Context, id string) (*Client, error) {
 }
 
 // FindByIdentifier finds a client by its unique identifier
-func (r *Repository) FindByIdentifier(ctx context.Context, identifier string) (*Client, error) {
+func (r *mongoRepository) FindByIdentifier(ctx context.Context, identifier string) (*Client, error) {
 	var client Client
 	err := r.clients.FindOne(ctx, bson.M{"identifier": identifier}).Decode(&client)
 	if err != nil {
@@ -67,7 +75,7 @@ func (r *Repository) FindByIdentifier(ctx context.Context, identifier string) (*
 }
 
 // FindAll returns all clients with optional pagination
-func (r *Repository) FindAll(ctx context.Context, skip, limit int64) ([]*Client, error) {
+func (r *mongoRepository) FindAll(ctx context.Context, skip, limit int64) ([]*Client, error) {
 	opts := options.Find().
 		SetSkip(skip).
 		SetLimit(limit).
@@ -87,7 +95,7 @@ func (r *Repository) FindAll(ctx context.Context, skip, limit int64) ([]*Client,
 }
 
 // FindByStatus finds clients by status
-func (r *Repository) FindByStatus(ctx context.Context, status ClientStatus) ([]*Client, error) {
+func (r *mongoRepository) FindByStatus(ctx context.Context, status ClientStatus) ([]*Client, error) {
 	cursor, err := r.clients.Find(ctx, bson.M{"status": status})
 	if err != nil {
 		return nil, err
@@ -102,7 +110,7 @@ func (r *Repository) FindByStatus(ctx context.Context, status ClientStatus) ([]*
 }
 
 // Search searches clients by name or identifier
-func (r *Repository) Search(ctx context.Context, query string) ([]*Client, error) {
+func (r *mongoRepository) Search(ctx context.Context, query string) ([]*Client, error) {
 	filter := bson.M{
 		"$or": []bson.M{
 			{"name": bson.M{"$regex": query, "$options": "i"}},
@@ -124,7 +132,7 @@ func (r *Repository) Search(ctx context.Context, query string) ([]*Client, error
 }
 
 // Insert creates a new client
-func (r *Repository) Insert(ctx context.Context, client *Client) error {
+func (r *mongoRepository) Insert(ctx context.Context, client *Client) error {
 	if client.ID == "" {
 		client.ID = tsid.Generate()
 	}
@@ -143,7 +151,7 @@ func (r *Repository) Insert(ctx context.Context, client *Client) error {
 }
 
 // Update updates an existing client
-func (r *Repository) Update(ctx context.Context, client *Client) error {
+func (r *mongoRepository) Update(ctx context.Context, client *Client) error {
 	client.UpdatedAt = time.Now()
 
 	result, err := r.clients.ReplaceOne(ctx, bson.M{"_id": client.ID}, client)
@@ -157,7 +165,7 @@ func (r *Repository) Update(ctx context.Context, client *Client) error {
 }
 
 // UpdateStatus updates a client's status
-func (r *Repository) UpdateStatus(ctx context.Context, id string, status ClientStatus, reason string) error {
+func (r *mongoRepository) UpdateStatus(ctx context.Context, id string, status ClientStatus, reason string) error {
 	now := time.Now()
 	result, err := r.clients.UpdateOne(ctx,
 		bson.M{"_id": id},
@@ -180,7 +188,7 @@ func (r *Repository) UpdateStatus(ctx context.Context, id string, status ClientS
 }
 
 // AddNote adds a note to a client
-func (r *Repository) AddNote(ctx context.Context, id string, note ClientNote) error {
+func (r *mongoRepository) AddNote(ctx context.Context, id string, note ClientNote) error {
 	note.Timestamp = time.Now()
 	result, err := r.clients.UpdateOne(ctx,
 		bson.M{"_id": id},
@@ -199,7 +207,7 @@ func (r *Repository) AddNote(ctx context.Context, id string, note ClientNote) er
 }
 
 // Delete removes a client
-func (r *Repository) Delete(ctx context.Context, id string) error {
+func (r *mongoRepository) Delete(ctx context.Context, id string) error {
 	result, err := r.clients.DeleteOne(ctx, bson.M{"_id": id})
 	if err != nil {
 		return err
@@ -213,7 +221,7 @@ func (r *Repository) Delete(ctx context.Context, id string) error {
 // === Access Grant operations ===
 
 // FindAccessGrantsByPrincipal finds all access grants for a principal
-func (r *Repository) FindAccessGrantsByPrincipal(ctx context.Context, principalID string) ([]*ClientAccessGrant, error) {
+func (r *mongoRepository) FindAccessGrantsByPrincipal(ctx context.Context, principalID string) ([]*ClientAccessGrant, error) {
 	cursor, err := r.accessGrants.Find(ctx, bson.M{"principalId": principalID})
 	if err != nil {
 		return nil, err
@@ -228,7 +236,7 @@ func (r *Repository) FindAccessGrantsByPrincipal(ctx context.Context, principalI
 }
 
 // FindAccessGrantsByClient finds all access grants for a client
-func (r *Repository) FindAccessGrantsByClient(ctx context.Context, clientID string) ([]*ClientAccessGrant, error) {
+func (r *mongoRepository) FindAccessGrantsByClient(ctx context.Context, clientID string) ([]*ClientAccessGrant, error) {
 	cursor, err := r.accessGrants.Find(ctx, bson.M{"clientId": clientID})
 	if err != nil {
 		return nil, err
@@ -243,7 +251,7 @@ func (r *Repository) FindAccessGrantsByClient(ctx context.Context, clientID stri
 }
 
 // GrantAccess grants a principal access to a client
-func (r *Repository) GrantAccess(ctx context.Context, grant *ClientAccessGrant) error {
+func (r *mongoRepository) GrantAccess(ctx context.Context, grant *ClientAccessGrant) error {
 	if grant.ID == "" {
 		grant.ID = tsid.Generate()
 	}
@@ -254,7 +262,7 @@ func (r *Repository) GrantAccess(ctx context.Context, grant *ClientAccessGrant) 
 }
 
 // RevokeAccess revokes a principal's access to a client
-func (r *Repository) RevokeAccess(ctx context.Context, principalID, clientID string) error {
+func (r *mongoRepository) RevokeAccess(ctx context.Context, principalID, clientID string) error {
 	_, err := r.accessGrants.DeleteOne(ctx, bson.M{
 		"principalId": principalID,
 		"clientId":    clientID,
@@ -263,7 +271,7 @@ func (r *Repository) RevokeAccess(ctx context.Context, principalID, clientID str
 }
 
 // HasAccess checks if a principal has access to a client
-func (r *Repository) HasAccess(ctx context.Context, principalID, clientID string) (bool, error) {
+func (r *mongoRepository) HasAccess(ctx context.Context, principalID, clientID string) (bool, error) {
 	count, err := r.accessGrants.CountDocuments(ctx, bson.M{
 		"principalId": principalID,
 		"clientId":    clientID,
@@ -277,7 +285,7 @@ func (r *Repository) HasAccess(ctx context.Context, principalID, clientID string
 // === Anchor Domain operations ===
 
 // FindAnchorDomains returns all anchor domains
-func (r *Repository) FindAnchorDomains(ctx context.Context) ([]*AnchorDomain, error) {
+func (r *mongoRepository) FindAnchorDomains(ctx context.Context) ([]*AnchorDomain, error) {
 	cursor, err := r.anchorDomains.Find(ctx, bson.M{})
 	if err != nil {
 		return nil, err
@@ -292,7 +300,7 @@ func (r *Repository) FindAnchorDomains(ctx context.Context) ([]*AnchorDomain, er
 }
 
 // IsAnchorDomain checks if a domain is an anchor domain
-func (r *Repository) IsAnchorDomain(ctx context.Context, domain string) (bool, error) {
+func (r *mongoRepository) IsAnchorDomain(ctx context.Context, domain string) (bool, error) {
 	count, err := r.anchorDomains.CountDocuments(ctx, bson.M{"domain": domain})
 	if err != nil {
 		return false, err
@@ -301,7 +309,7 @@ func (r *Repository) IsAnchorDomain(ctx context.Context, domain string) (bool, e
 }
 
 // AddAnchorDomain adds an anchor domain
-func (r *Repository) AddAnchorDomain(ctx context.Context, domain *AnchorDomain) error {
+func (r *mongoRepository) AddAnchorDomain(ctx context.Context, domain *AnchorDomain) error {
 	if domain.ID == "" {
 		domain.ID = tsid.Generate()
 	}
@@ -315,7 +323,7 @@ func (r *Repository) AddAnchorDomain(ctx context.Context, domain *AnchorDomain) 
 }
 
 // RemoveAnchorDomain removes an anchor domain
-func (r *Repository) RemoveAnchorDomain(ctx context.Context, domain string) error {
+func (r *mongoRepository) RemoveAnchorDomain(ctx context.Context, domain string) error {
 	_, err := r.anchorDomains.DeleteOne(ctx, bson.M{"domain": domain})
 	return err
 }
@@ -323,7 +331,7 @@ func (r *Repository) RemoveAnchorDomain(ctx context.Context, domain string) erro
 // === Auth Config operations ===
 
 // FindAuthConfigByDomain finds auth config for an email domain
-func (r *Repository) FindAuthConfigByDomain(ctx context.Context, emailDomain string) (*ClientAuthConfig, error) {
+func (r *mongoRepository) FindAuthConfigByDomain(ctx context.Context, emailDomain string) (*ClientAuthConfig, error) {
 	var config ClientAuthConfig
 	err := r.authConfigs.FindOne(ctx, bson.M{"emailDomain": emailDomain}).Decode(&config)
 	if err != nil {
@@ -336,7 +344,7 @@ func (r *Repository) FindAuthConfigByDomain(ctx context.Context, emailDomain str
 }
 
 // FindAllAuthConfigs returns all auth configs
-func (r *Repository) FindAllAuthConfigs(ctx context.Context) ([]*ClientAuthConfig, error) {
+func (r *mongoRepository) FindAllAuthConfigs(ctx context.Context) ([]*ClientAuthConfig, error) {
 	cursor, err := r.authConfigs.Find(ctx, bson.M{})
 	if err != nil {
 		return nil, err
@@ -351,7 +359,7 @@ func (r *Repository) FindAllAuthConfigs(ctx context.Context) ([]*ClientAuthConfi
 }
 
 // InsertAuthConfig creates a new auth config
-func (r *Repository) InsertAuthConfig(ctx context.Context, config *ClientAuthConfig) error {
+func (r *mongoRepository) InsertAuthConfig(ctx context.Context, config *ClientAuthConfig) error {
 	if config.ID == "" {
 		config.ID = tsid.Generate()
 	}
@@ -367,7 +375,7 @@ func (r *Repository) InsertAuthConfig(ctx context.Context, config *ClientAuthCon
 }
 
 // UpdateAuthConfig updates an existing auth config
-func (r *Repository) UpdateAuthConfig(ctx context.Context, config *ClientAuthConfig) error {
+func (r *mongoRepository) UpdateAuthConfig(ctx context.Context, config *ClientAuthConfig) error {
 	config.UpdatedAt = time.Now()
 
 	result, err := r.authConfigs.ReplaceOne(ctx, bson.M{"_id": config.ID}, config)
@@ -381,7 +389,7 @@ func (r *Repository) UpdateAuthConfig(ctx context.Context, config *ClientAuthCon
 }
 
 // DeleteAuthConfig removes an auth config
-func (r *Repository) DeleteAuthConfig(ctx context.Context, id string) error {
+func (r *mongoRepository) DeleteAuthConfig(ctx context.Context, id string) error {
 	result, err := r.authConfigs.DeleteOne(ctx, bson.M{"_id": id})
 	if err != nil {
 		return err
@@ -395,7 +403,7 @@ func (r *Repository) DeleteAuthConfig(ctx context.Context, id string) error {
 // === IDP Role Mapping operations ===
 
 // FindIdpRoleMappingsByDomain finds all role mappings for an email domain
-func (r *Repository) FindIdpRoleMappingsByDomain(ctx context.Context, emailDomain string) ([]*IdpRoleMapping, error) {
+func (r *mongoRepository) FindIdpRoleMappingsByDomain(ctx context.Context, emailDomain string) ([]*IdpRoleMapping, error) {
 	cursor, err := r.roleMappings.Find(ctx, bson.M{"emailDomain": emailDomain})
 	if err != nil {
 		return nil, err
@@ -410,7 +418,7 @@ func (r *Repository) FindIdpRoleMappingsByDomain(ctx context.Context, emailDomai
 }
 
 // FindAllIdpRoleMappings returns all role mappings
-func (r *Repository) FindAllIdpRoleMappings(ctx context.Context) ([]*IdpRoleMapping, error) {
+func (r *mongoRepository) FindAllIdpRoleMappings(ctx context.Context) ([]*IdpRoleMapping, error) {
 	cursor, err := r.roleMappings.Find(ctx, bson.M{})
 	if err != nil {
 		return nil, err
@@ -425,7 +433,7 @@ func (r *Repository) FindAllIdpRoleMappings(ctx context.Context) ([]*IdpRoleMapp
 }
 
 // InsertIdpRoleMapping creates a new role mapping
-func (r *Repository) InsertIdpRoleMapping(ctx context.Context, mapping *IdpRoleMapping) error {
+func (r *mongoRepository) InsertIdpRoleMapping(ctx context.Context, mapping *IdpRoleMapping) error {
 	if mapping.ID == "" {
 		mapping.ID = tsid.Generate()
 	}
@@ -438,7 +446,7 @@ func (r *Repository) InsertIdpRoleMapping(ctx context.Context, mapping *IdpRoleM
 }
 
 // DeleteIdpRoleMapping removes a role mapping
-func (r *Repository) DeleteIdpRoleMapping(ctx context.Context, id string) error {
+func (r *mongoRepository) DeleteIdpRoleMapping(ctx context.Context, id string) error {
 	result, err := r.roleMappings.DeleteOne(ctx, bson.M{"_id": id})
 	if err != nil {
 		return err
@@ -450,7 +458,7 @@ func (r *Repository) DeleteIdpRoleMapping(ctx context.Context, id string) error 
 }
 
 // DeleteIdpRoleMappingsByDomain removes all role mappings for a domain
-func (r *Repository) DeleteIdpRoleMappingsByDomain(ctx context.Context, emailDomain string) error {
+func (r *mongoRepository) DeleteIdpRoleMappingsByDomain(ctx context.Context, emailDomain string) error {
 	_, err := r.roleMappings.DeleteMany(ctx, bson.M{"emailDomain": emailDomain})
 	return err
 }

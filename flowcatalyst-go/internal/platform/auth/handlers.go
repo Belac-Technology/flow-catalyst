@@ -25,8 +25,8 @@ import (
 
 // AuthService handles authentication operations
 type AuthService struct {
-	principalRepo     *principal.Repository
-	clientRepo        *client.Repository
+	principalRepo     principal.Repository
+	clientRepo        client.Repository
 	oidcRepo          *oidc.Repository
 	tokenService      *jwt.TokenService
 	sessionManager    *session.Manager
@@ -38,8 +38,8 @@ type AuthService struct {
 
 // NewAuthService creates a new auth service
 func NewAuthService(
-	principalRepo *principal.Repository,
-	clientRepo *client.Repository,
+	principalRepo principal.Repository,
+	clientRepo client.Repository,
 	oidcRepo *oidc.Repository,
 	tokenService *jwt.TokenService,
 	sessionManager *session.Manager,

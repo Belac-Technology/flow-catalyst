@@ -11,11 +11,11 @@ import (
 
 // AnchorDomainHandler handles anchor domain admin API requests
 type AnchorDomainHandler struct {
-	clientRepo *client.Repository
+	clientRepo client.Repository
 }
 
 // NewAnchorDomainHandler creates a new anchor domain handler
-func NewAnchorDomainHandler(clientRepo *client.Repository) *AnchorDomainHandler {
+func NewAnchorDomainHandler(clientRepo client.Repository) *AnchorDomainHandler {
 	return &AnchorDomainHandler{
 		clientRepo: clientRepo,
 	}

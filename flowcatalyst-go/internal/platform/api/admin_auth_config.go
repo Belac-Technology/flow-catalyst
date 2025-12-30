@@ -11,11 +11,11 @@ import (
 
 // AuthConfigHandler handles auth config admin API requests
 type AuthConfigHandler struct {
-	clientRepo *client.Repository
+	clientRepo client.Repository
 }
 
 // NewAuthConfigHandler creates a new auth config handler
-func NewAuthConfigHandler(clientRepo *client.Repository) *AuthConfigHandler {
+func NewAuthConfigHandler(clientRepo client.Repository) *AuthConfigHandler {
 	return &AuthConfigHandler{
 		clientRepo: clientRepo,
 	}

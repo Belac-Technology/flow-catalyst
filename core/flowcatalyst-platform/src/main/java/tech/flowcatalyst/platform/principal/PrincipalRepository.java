@@ -1,37 +1,40 @@
 package tech.flowcatalyst.platform.principal;
 
-import io.quarkus.mongodb.panache.PanacheMongoRepositoryBase;
-import jakarta.enterprise.context.ApplicationScoped;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
 /**
- * Repository for Principal entities.
+ * Repository interface for Principal entities.
+ * Exposes only approved data access methods - Panache internals are hidden.
  */
-@ApplicationScoped
-public class PrincipalRepository implements PanacheMongoRepositoryBase<Principal, String> {
+public interface PrincipalRepository {
 
-    public Optional<Principal> findByEmail(String email) {
-        return find("userIdentity.email", email).firstResultOptional();
-    }
+    // Read operations - single entity
+    Principal findById(String id);
+    Optional<Principal> findByIdOptional(String id);
+    Optional<Principal> findByEmail(String email);
+    Optional<Principal> findByServiceAccountClientId(String clientId);
+    Optional<Principal> findByExternalIdpId(String externalIdpId);
+    Optional<Principal> findByServiceAccountCode(String code);
 
-    public Optional<Principal> findByServiceAccountClientId(String clientId) {
-        return find("serviceAccount.clientId", clientId).firstResultOptional();
-    }
+    // Read operations - lists
+    List<Principal> findByType(PrincipalType type);
+    List<Principal> findByClientId(String clientId);
+    List<Principal> findByIds(Collection<String> ids);
+    List<Principal> findByClientIdAndType(String clientId, PrincipalType type);
+    List<Principal> findByClientIdAndTypeAndActive(String clientId, PrincipalType type, boolean active);
+    List<Principal> findByClientIdAndActive(String clientId, boolean active);
+    List<Principal> findByActive(boolean active);
+    List<Principal> findUsersByClientId(String clientId);
+    List<Principal> findActiveUsersByClientId(String clientId);
+    List<Principal> listAll();
+    long count();
+    long countByEmailDomain(String emailDomain);
 
-    public Optional<Principal> findByExternalIdpId(String externalIdpId) {
-        return find("userIdentity.externalIdpId", externalIdpId).firstResultOptional();
-    }
-
-    public Optional<Principal> findByServiceAccountCode(String code) {
-        return find("serviceAccount.code", code).firstResultOptional();
-    }
-
-    public List<Principal> findByType(PrincipalType type) {
-        return find("type", type).list();
-    }
-
-    public List<Principal> findByClientId(String clientId) {
-        return find("clientId", clientId).list();
-    }
+    // Write operations
+    void persist(Principal principal);
+    void update(Principal principal);
+    void delete(Principal principal);
+    boolean deleteById(String id);
 }

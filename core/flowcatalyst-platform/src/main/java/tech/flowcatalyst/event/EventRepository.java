@@ -1,60 +1,30 @@
 package tech.flowcatalyst.event;
 
-import io.quarkus.mongodb.panache.PanacheMongoRepositoryBase;
-import jakarta.enterprise.context.ApplicationScoped;
-
+import java.util.List;
 import java.util.Optional;
 
 /**
- * Repository for Event documents in MongoDB using Panache.
+ * Repository interface for Event entities.
+ * Exposes only approved data access methods - Panache internals are hidden.
  *
  * Indexes are created by MongoIndexInitializer on startup.
  */
-@ApplicationScoped
-public class EventRepository implements PanacheMongoRepositoryBase<Event, String> {
+public interface EventRepository {
 
-    /**
-     * Find an event by its ID.
-     *
-     * @param id The event ID
-     * @return The event if found
-     */
-    public Optional<Event> findByIdOptional(String id) {
-        return Optional.ofNullable(findById(id));
-    }
+    // Read operations
+    Event findById(String id);
+    Optional<Event> findByIdOptional(String id);
+    Optional<Event> findByDeduplicationId(String deduplicationId);
+    List<Event> listAll();
+    List<Event> findRecentPaged(int page, int size);
+    long count();
+    boolean existsByDeduplicationId(String deduplicationId);
 
-    /**
-     * Find an event by deduplication ID.
-     *
-     * @param deduplicationId The deduplication ID
-     * @return The event if found
-     */
-    public Optional<Event> findByDeduplicationId(String deduplicationId) {
-        if (deduplicationId == null) {
-            return Optional.empty();
-        }
-        return find("deduplicationId", deduplicationId).firstResultOptional();
-    }
-
-    /**
-     * Check if an event with the given deduplication ID already exists.
-     *
-     * @param deduplicationId The deduplication ID to check
-     * @return true if an event with this deduplication ID exists
-     */
-    public boolean existsByDeduplicationId(String deduplicationId) {
-        if (deduplicationId == null) {
-            return false;
-        }
-        return count("deduplicationId", deduplicationId) > 0;
-    }
-
-    /**
-     * Insert a new event into the collection.
-     *
-     * @param event The event to insert
-     */
-    public void insert(Event event) {
-        persist(event);
-    }
+    // Write operations
+    void insert(Event event);
+    void persist(Event event);
+    void persistAll(List<Event> events);
+    void update(Event event);
+    void delete(Event event);
+    boolean deleteById(String id);
 }

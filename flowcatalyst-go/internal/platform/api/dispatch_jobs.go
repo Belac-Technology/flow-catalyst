@@ -14,11 +14,11 @@ import (
 
 // DispatchJobHandler handles dispatch job endpoints
 type DispatchJobHandler struct {
-	repo *dispatchjob.Repository
+	repo dispatchjob.Repository
 }
 
 // NewDispatchJobHandler creates a new dispatch job handler
-func NewDispatchJobHandler(repo *dispatchjob.Repository) *DispatchJobHandler {
+func NewDispatchJobHandler(repo dispatchjob.Repository) *DispatchJobHandler {
 	return &DispatchJobHandler{repo: repo}
 }
 

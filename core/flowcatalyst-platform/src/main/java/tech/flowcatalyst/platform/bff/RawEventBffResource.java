@@ -65,9 +65,7 @@ public class RawEventBffResource {
         if (size < 1 || size > 100) size = 20;
 
         // Query raw events - limited filtering since this is debug
-        List<Event> events = eventRepository.findAll(Sort.by("time").descending())
-            .page(page, size)
-            .list();
+        List<Event> events = eventRepository.findRecentPaged(page, size);
 
         long totalCount = eventRepository.count();
 

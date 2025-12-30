@@ -1,40 +1,27 @@
 package tech.flowcatalyst.platform.authentication.oauth;
 
-import io.quarkus.mongodb.panache.PanacheMongoRepositoryBase;
-import jakarta.enterprise.context.ApplicationScoped;
-
-import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
-@ApplicationScoped
-public class AuthorizationCodeRepository implements PanacheMongoRepositoryBase<AuthorizationCode, String> {
+/**
+ * Repository interface for AuthorizationCode entities.
+ * Exposes only approved data access methods - Panache internals are hidden.
+ */
+public interface AuthorizationCodeRepository {
 
-    /**
-     * Find a valid (unused and not expired) authorization code.
-     */
-    public Optional<AuthorizationCode> findValidCode(String code) {
-        return find("code = ?1 and used = false and expiresAt > ?2", code, Instant.now())
-            .firstResultOptional();
-    }
+    // Read operations
+    AuthorizationCode findById(String id);
+    Optional<AuthorizationCode> findByIdOptional(String id);
+    Optional<AuthorizationCode> findValidCode(String code);
+    List<AuthorizationCode> listAll();
+    long count();
 
-    /**
-     * Mark an authorization code as used (single-use enforcement).
-     */
-    public void markAsUsed(String code) {
-        update("used = true").where("code", code);
-    }
-
-    /**
-     * Delete all expired authorization codes (cleanup job).
-     */
-    public long deleteExpired() {
-        return delete("expiresAt < ?1", Instant.now());
-    }
-
-    /**
-     * Delete all codes for a principal (e.g., on logout/revoke).
-     */
-    public long deleteByPrincipalId(String principalId) {
-        return delete("principalId", principalId);
-    }
+    // Write operations
+    void persist(AuthorizationCode code);
+    void update(AuthorizationCode code);
+    void delete(AuthorizationCode code);
+    boolean deleteById(String id);
+    void markAsUsed(String code);
+    long deleteExpired();
+    long deleteByPrincipalId(String principalId);
 }

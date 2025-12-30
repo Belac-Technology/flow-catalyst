@@ -80,17 +80,6 @@ public class UserService {
     }
 
     /**
-     * Create a new user with INTERNAL authentication (password-based).
-     * Derives scope from clientId (ANCHOR if null, CLIENT if set).
-     *
-     * @deprecated Use {@link #createInternalUser(String, String, String, Long, UserScope)} instead
-     */
-    @Deprecated
-    public Principal createInternalUser(String email, String password, String name, String clientId) {
-        return createInternalUser(email, password, name, clientId, null);
-    }
-
-    /**
      * Create or update OIDC user (during OIDC login flow).
      * This is called by OidcSyncService during OIDC authentication.
      *
@@ -290,7 +279,7 @@ public class UserService {
      * @return List of principals
      */
     public List<Principal> findByClient(String clientId) {
-        return principalRepo.find("clientId = ?1 AND type = ?2", clientId, PrincipalType.USER).list();
+        return principalRepo.findUsersByClientId(clientId);
     }
 
     /**
@@ -300,8 +289,7 @@ public class UserService {
      * @return List of active principals
      */
     public List<Principal> findActiveByClient(String clientId) {
-        return principalRepo.find("clientId = ?1 AND type = ?2 AND active = true",
-            clientId, PrincipalType.USER).list();
+        return principalRepo.findActiveUsersByClientId(clientId);
     }
 
     /**

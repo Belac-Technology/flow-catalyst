@@ -202,9 +202,7 @@ public class AuditLogAdminResource {
         }
 
         // Get distinct entity types using aggregation
-        List<String> entityTypes = auditLogRepo.mongoCollection()
-            .distinct("entityType", String.class)
-            .into(new java.util.ArrayList<>());
+        List<String> entityTypes = auditLogRepo.findDistinctEntityTypes();
 
         return Response.ok(Map.of("entityTypes", entityTypes)).build();
     }
@@ -232,9 +230,7 @@ public class AuditLogAdminResource {
         }
 
         // Get distinct operations using aggregation
-        List<String> operations = auditLogRepo.mongoCollection()
-            .distinct("operation", String.class)
-            .into(new java.util.ArrayList<>());
+        List<String> operations = auditLogRepo.findDistinctOperations();
 
         return Response.ok(Map.of("operations", operations)).build();
     }

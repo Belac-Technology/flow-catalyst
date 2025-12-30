@@ -89,7 +89,7 @@ type Scheduler struct {
 	publisher queue.Publisher
 
 	collection    *mongo.Collection
-	jobRepo       *dispatchjob.Repository
+	jobRepo       dispatchjob.Repository
 	blockChecker  *BlockChecker
 	leaderElector *leader.LeaderElector
 	authService   *dispatchjob.DispatchAuthService

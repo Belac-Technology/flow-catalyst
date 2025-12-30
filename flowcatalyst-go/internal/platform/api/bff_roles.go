@@ -19,10 +19,10 @@ import (
 // RoleBffHandler handles BFF endpoints for roles and permissions
 // @Description Web-optimized role and permission endpoints with string IDs for JavaScript clients
 type RoleBffHandler struct {
-	roleRepo       *role.Repository
-	permissionRepo *permission.Repository
+	roleRepo        role.Repository
+	permissionRepo  permission.Repository
 	applicationRepo *application.Repository
-	unitOfWork     common.UnitOfWork
+	unitOfWork      common.UnitOfWork
 
 	// UseCases
 	createUseCase *operations.CreateRoleUseCase
@@ -32,8 +32,8 @@ type RoleBffHandler struct {
 
 // NewRoleBffHandler creates a new role BFF handler
 func NewRoleBffHandler(
-	roleRepo *role.Repository,
-	permissionRepo *permission.Repository,
+	roleRepo role.Repository,
+	permissionRepo permission.Repository,
 	applicationRepo *application.Repository,
 	uow common.UnitOfWork,
 ) *RoleBffHandler {

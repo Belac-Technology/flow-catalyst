@@ -17,12 +17,12 @@ type DeprecateSchemaCommand struct {
 
 // DeprecateSchemaUseCase handles deprecating a schema version
 type DeprecateSchemaUseCase struct {
-	repo       *eventtype.Repository
+	repo       eventtype.Repository
 	unitOfWork common.UnitOfWork
 }
 
 // NewDeprecateSchemaUseCase creates a new DeprecateSchemaUseCase
-func NewDeprecateSchemaUseCase(repo *eventtype.Repository, uow common.UnitOfWork) *DeprecateSchemaUseCase {
+func NewDeprecateSchemaUseCase(repo eventtype.Repository, uow common.UnitOfWork) *DeprecateSchemaUseCase {
 	return &DeprecateSchemaUseCase{
 		repo:       repo,
 		unitOfWork: uow,

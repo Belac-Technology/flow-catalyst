@@ -1,46 +1,31 @@
 package tech.flowcatalyst.platform.authorization;
 
-import io.quarkus.mongodb.panache.PanacheMongoRepositoryBase;
-import jakarta.enterprise.context.ApplicationScoped;
-
 import java.util.List;
 import java.util.Optional;
 
 /**
- * Repository for AuthRole entities.
+ * Repository interface for AuthRole entities.
+ * Exposes only approved data access methods - Panache internals are hidden.
  */
-@ApplicationScoped
-public class AuthRoleRepository implements PanacheMongoRepositoryBase<AuthRole, String> {
+public interface AuthRoleRepository {
 
-    public Optional<AuthRole> findByName(String name) {
-        return find("name", name).firstResultOptional();
-    }
+    // Read operations
+    AuthRole findById(String id);
+    Optional<AuthRole> findByIdOptional(String id);
+    Optional<AuthRole> findByName(String name);
+    List<AuthRole> findByApplicationId(String applicationId);
+    List<AuthRole> findByApplicationCode(String applicationCode);
+    List<AuthRole> findBySource(AuthRole.RoleSource source);
+    List<AuthRole> findClientManagedRoles();
+    List<AuthRole> listAll();
+    long count();
+    boolean existsByName(String name);
 
-    public List<AuthRole> findByApplicationId(String applicationId) {
-        return find("applicationId", applicationId).list();
-    }
-
-    public List<AuthRole> findByApplicationCode(String applicationCode) {
-        return find("applicationCode", applicationCode).list();
-    }
-
-    public List<AuthRole> findBySource(AuthRole.RoleSource source) {
-        return find("source", source).list();
-    }
-
-    public List<AuthRole> findClientManagedRoles() {
-        return find("clientManaged", true).list();
-    }
-
-    public boolean existsByName(String name) {
-        return count("name", name) > 0;
-    }
-
-    public long deleteByName(String name) {
-        return delete("name", name);
-    }
-
-    public long deleteByApplicationIdAndSource(String applicationId, AuthRole.RoleSource source) {
-        return delete("applicationId = ?1 and source = ?2", applicationId, source);
-    }
+    // Write operations
+    void persist(AuthRole role);
+    void update(AuthRole role);
+    void delete(AuthRole role);
+    boolean deleteById(String id);
+    long deleteByName(String name);
+    long deleteByApplicationIdAndSource(String applicationId, AuthRole.RoleSource source);
 }

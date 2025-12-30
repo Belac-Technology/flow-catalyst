@@ -19,20 +19,20 @@ var (
 	ErrDuplicateEmail = errors.New("email already exists")
 )
 
-// Repository provides access to principal data
-type Repository struct {
+// mongoRepository provides MongoDB access to principal data
+type mongoRepository struct {
 	collection *mongo.Collection
 }
 
-// NewRepository creates a new principal repository
-func NewRepository(db *mongo.Database) *Repository {
-	return &Repository{
+// NewRepository creates a new principal repository with instrumentation
+func NewRepository(db *mongo.Database) Repository {
+	return newInstrumentedRepository(&mongoRepository{
 		collection: db.Collection(collectionName),
-	}
+	})
 }
 
 // FindByID finds a principal by ID
-func (r *Repository) FindByID(ctx context.Context, id string) (*Principal, error) {
+func (r *mongoRepository) FindByID(ctx context.Context, id string) (*Principal, error) {
 	var principal Principal
 	err := r.collection.FindOne(ctx, bson.M{"_id": id}).Decode(&principal)
 	if err != nil {
@@ -45,7 +45,7 @@ func (r *Repository) FindByID(ctx context.Context, id string) (*Principal, error
 }
 
 // FindByEmail finds a principal by email address
-func (r *Repository) FindByEmail(ctx context.Context, email string) (*Principal, error) {
+func (r *mongoRepository) FindByEmail(ctx context.Context, email string) (*Principal, error) {
 	var principal Principal
 	err := r.collection.FindOne(ctx, bson.M{"userIdentity.email": email}).Decode(&principal)
 	if err != nil {
@@ -58,7 +58,7 @@ func (r *Repository) FindByEmail(ctx context.Context, email string) (*Principal,
 }
 
 // FindByClientID finds all principals for a client with pagination
-func (r *Repository) FindByClientID(ctx context.Context, clientID string, skip, limit int64) ([]*Principal, error) {
+func (r *mongoRepository) FindByClientID(ctx context.Context, clientID string, skip, limit int64) ([]*Principal, error) {
 	opts := options.Find().
 		SetSkip(skip).
 		SetLimit(limit).
@@ -78,7 +78,7 @@ func (r *Repository) FindByClientID(ctx context.Context, clientID string, skip, 
 }
 
 // FindByType finds all principals of a specific type with pagination
-func (r *Repository) FindByType(ctx context.Context, principalType PrincipalType, skip, limit int64) ([]*Principal, error) {
+func (r *mongoRepository) FindByType(ctx context.Context, principalType PrincipalType, skip, limit int64) ([]*Principal, error) {
 	opts := options.Find().
 		SetSkip(skip).
 		SetLimit(limit).
@@ -98,7 +98,7 @@ func (r *Repository) FindByType(ctx context.Context, principalType PrincipalType
 }
 
 // FindActive finds all active principals with pagination
-func (r *Repository) FindActive(ctx context.Context, skip, limit int64) ([]*Principal, error) {
+func (r *mongoRepository) FindActive(ctx context.Context, skip, limit int64) ([]*Principal, error) {
 	opts := options.Find().
 		SetSkip(skip).
 		SetLimit(limit).
@@ -118,7 +118,7 @@ func (r *Repository) FindActive(ctx context.Context, skip, limit int64) ([]*Prin
 }
 
 // FindAll returns all principals with optional pagination
-func (r *Repository) FindAll(ctx context.Context, skip, limit int64) ([]*Principal, error) {
+func (r *mongoRepository) FindAll(ctx context.Context, skip, limit int64) ([]*Principal, error) {
 	opts := options.Find().
 		SetSkip(skip).
 		SetLimit(limit).
@@ -138,7 +138,7 @@ func (r *Repository) FindAll(ctx context.Context, skip, limit int64) ([]*Princip
 }
 
 // Insert creates a new principal
-func (r *Repository) Insert(ctx context.Context, principal *Principal) error {
+func (r *mongoRepository) Insert(ctx context.Context, principal *Principal) error {
 	if principal.ID == "" {
 		principal.ID = tsid.Generate()
 	}
@@ -154,7 +154,7 @@ func (r *Repository) Insert(ctx context.Context, principal *Principal) error {
 }
 
 // Update updates an existing principal
-func (r *Repository) Update(ctx context.Context, principal *Principal) error {
+func (r *mongoRepository) Update(ctx context.Context, principal *Principal) error {
 	principal.UpdatedAt = time.Now()
 
 	result, err := r.collection.ReplaceOne(ctx, bson.M{"_id": principal.ID}, principal)
@@ -168,7 +168,7 @@ func (r *Repository) Update(ctx context.Context, principal *Principal) error {
 }
 
 // UpdateRoles updates the roles for a principal
-func (r *Repository) UpdateRoles(ctx context.Context, id string, roles []RoleAssignment) error {
+func (r *mongoRepository) UpdateRoles(ctx context.Context, id string, roles []RoleAssignment) error {
 	result, err := r.collection.UpdateOne(ctx,
 		bson.M{"_id": id},
 		bson.M{
@@ -188,7 +188,7 @@ func (r *Repository) UpdateRoles(ctx context.Context, id string, roles []RoleAss
 }
 
 // UpdateLastLogin updates the last login timestamp
-func (r *Repository) UpdateLastLogin(ctx context.Context, id string) error {
+func (r *mongoRepository) UpdateLastLogin(ctx context.Context, id string) error {
 	_, err := r.collection.UpdateOne(ctx,
 		bson.M{"_id": id},
 		bson.M{
@@ -202,7 +202,7 @@ func (r *Repository) UpdateLastLogin(ctx context.Context, id string) error {
 }
 
 // SetActive activates or deactivates a principal
-func (r *Repository) SetActive(ctx context.Context, id string, active bool) error {
+func (r *mongoRepository) SetActive(ctx context.Context, id string, active bool) error {
 	result, err := r.collection.UpdateOne(ctx,
 		bson.M{"_id": id},
 		bson.M{
@@ -222,7 +222,7 @@ func (r *Repository) SetActive(ctx context.Context, id string, active bool) erro
 }
 
 // Delete removes a principal
-func (r *Repository) Delete(ctx context.Context, id string) error {
+func (r *mongoRepository) Delete(ctx context.Context, id string) error {
 	result, err := r.collection.DeleteOne(ctx, bson.M{"_id": id})
 	if err != nil {
 		return err
@@ -234,17 +234,17 @@ func (r *Repository) Delete(ctx context.Context, id string) error {
 }
 
 // Count returns the total number of principals
-func (r *Repository) Count(ctx context.Context) (int64, error) {
+func (r *mongoRepository) Count(ctx context.Context) (int64, error) {
 	return r.collection.CountDocuments(ctx, bson.M{})
 }
 
 // CountByType returns the count of principals by type
-func (r *Repository) CountByType(ctx context.Context, principalType PrincipalType) (int64, error) {
+func (r *mongoRepository) CountByType(ctx context.Context, principalType PrincipalType) (int64, error) {
 	return r.collection.CountDocuments(ctx, bson.M{"type": principalType})
 }
 
 // ExistsByEmail checks if a principal with the given email exists
-func (r *Repository) ExistsByEmail(ctx context.Context, email string) (bool, error) {
+func (r *mongoRepository) ExistsByEmail(ctx context.Context, email string) (bool, error) {
 	count, err := r.collection.CountDocuments(ctx, bson.M{"userIdentity.email": email})
 	if err != nil {
 		return false, err

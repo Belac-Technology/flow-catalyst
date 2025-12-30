@@ -16,7 +16,7 @@ import (
 // SubscriptionHandler handles subscription endpoints using UseCases
 // @Description Subscription management API for webhook event delivery
 type SubscriptionHandler struct {
-	repo *subscription.Repository
+	repo subscription.Repository
 
 	// UseCases
 	createUseCase *operations.CreateSubscriptionUseCase
@@ -28,7 +28,7 @@ type SubscriptionHandler struct {
 
 // NewSubscriptionHandler creates a new subscription handler with UseCases
 func NewSubscriptionHandler(
-	repo *subscription.Repository,
+	repo subscription.Repository,
 	uow common.UnitOfWork,
 ) *SubscriptionHandler {
 	return &SubscriptionHandler{
@@ -327,7 +327,7 @@ func (h *SubscriptionHandler) Resume(w http.ResponseWriter, r *http.Request) {
 // DispatchPoolHandler handles dispatch pool endpoints using UseCases
 // @Description Dispatch pool management API for rate limiting and concurrency control
 type DispatchPoolHandler struct {
-	repo *dispatchpool.Repository
+	repo dispatchpool.Repository
 
 	// UseCases
 	createUseCase  *dpops.CreateDispatchPoolUseCase
@@ -338,7 +338,7 @@ type DispatchPoolHandler struct {
 
 // NewDispatchPoolHandler creates a new dispatch pool handler with UseCases
 func NewDispatchPoolHandler(
-	repo *dispatchpool.Repository,
+	repo dispatchpool.Repository,
 	uow common.UnitOfWork,
 ) *DispatchPoolHandler {
 	return &DispatchPoolHandler{
@@ -641,6 +641,39 @@ func (h *DispatchPoolHandler) Archive(w http.ResponseWriter, r *http.Request) {
 // @Security BearerAuth
 // @Router /api/v1/dispatch-pools/{id}/activate [post]
 func (h *DispatchPoolHandler) Activate(w http.ResponseWriter, r *http.Request) {
-	// Delegate to repository handler for now (no UseCase)
-	h.repo.ActivateHandler(w, r)
+	id := chi.URLParam(r, "id")
+
+	// Get pool first to check current status
+	pool, err := h.repo.FindByID(r.Context(), id)
+	if err != nil {
+		if err == dispatchpool.ErrNotFound {
+			WriteNotFound(w, "Dispatch pool not found")
+			return
+		}
+		slog.Error("Failed to get dispatch pool", "error", err, "id", id)
+		WriteInternalError(w, "Failed to get dispatch pool")
+		return
+	}
+
+	// Check access
+	p := GetPrincipal(r.Context())
+	if p != nil && !p.IsAnchor() && pool.ClientID != p.ClientID {
+		WriteNotFound(w, "Dispatch pool not found")
+		return
+	}
+
+	if pool.Status == dispatchpool.DispatchPoolStatusArchived {
+		WriteBadRequest(w, "Cannot activate archived pool")
+		return
+	}
+
+	if err := h.repo.SetStatus(r.Context(), id, dispatchpool.DispatchPoolStatusActive); err != nil {
+		slog.Error("Failed to activate dispatch pool", "error", err, "id", id)
+		WriteInternalError(w, "Failed to activate dispatch pool")
+		return
+	}
+
+	pool.Status = dispatchpool.DispatchPoolStatusActive
+	pool.Enabled = true
+	WriteJSON(w, http.StatusOK, pool)
 }

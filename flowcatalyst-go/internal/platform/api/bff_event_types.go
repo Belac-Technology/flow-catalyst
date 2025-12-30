@@ -17,7 +17,7 @@ import (
 // EventTypeBffHandler handles BFF endpoints for event types
 // @Description Web-optimized event type endpoints with string IDs for JavaScript clients
 type EventTypeBffHandler struct {
-	repo       *eventtype.Repository
+	repo       eventtype.Repository
 	unitOfWork common.UnitOfWork
 
 	// UseCases
@@ -30,7 +30,7 @@ type EventTypeBffHandler struct {
 }
 
 // NewEventTypeBffHandler creates a new event type BFF handler
-func NewEventTypeBffHandler(repo *eventtype.Repository, uow common.UnitOfWork) *EventTypeBffHandler {
+func NewEventTypeBffHandler(repo eventtype.Repository, uow common.UnitOfWork) *EventTypeBffHandler {
 	return &EventTypeBffHandler{
 		repo:             repo,
 		unitOfWork:       uow,

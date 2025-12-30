@@ -14,6 +14,7 @@ import tech.flowcatalyst.platform.principal.Principal;
 import tech.flowcatalyst.platform.principal.PrincipalRepository;
 import tech.flowcatalyst.platform.principal.PrincipalType;
 import tech.flowcatalyst.platform.principal.UserIdentity;
+import tech.flowcatalyst.platform.principal.UserScope;
 import tech.flowcatalyst.platform.principal.UserService;
 
 import java.time.Instant;
@@ -57,7 +58,7 @@ class UserServiceTest {
         when(passwordService.validateAndHashPassword(password)).thenReturn("$2a$10$hashed...");
 
         // Act
-        Principal result = service.createInternalUser(email, password, name, clientId);
+        Principal result = service.createInternalUser(email, password, name, clientId, UserScope.CLIENT);
 
         // Assert
         assertThat(result).isNotNull();
@@ -79,7 +80,7 @@ class UserServiceTest {
     @Test
     @DisplayName("createInternalUser should throw exception when email is null")
     void createInternalUser_shouldThrowException_whenEmailIsNull() {
-        assertThatThrownBy(() -> service.createInternalUser(null, "Password123!", "John", "0HZTEST00100"))
+        assertThatThrownBy(() -> service.createInternalUser(null, "Password123!", "John", "0HZTEST00100", UserScope.CLIENT))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("Email cannot be null or empty");
     }
@@ -87,7 +88,7 @@ class UserServiceTest {
     @Test
     @DisplayName("createInternalUser should throw exception when email is blank")
     void createInternalUser_shouldThrowException_whenEmailIsBlank() {
-        assertThatThrownBy(() -> service.createInternalUser("  ", "Password123!", "John", "0HZTEST00100"))
+        assertThatThrownBy(() -> service.createInternalUser("  ", "Password123!", "John", "0HZTEST00100", UserScope.CLIENT))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("Email cannot be null or empty");
     }
@@ -102,7 +103,7 @@ class UserServiceTest {
         when(principalRepo.findByEmail(email)).thenReturn(Optional.of(existingPrincipal));
 
         // Act & Assert
-        assertThatThrownBy(() -> service.createInternalUser(email, "Password123!", "John", "0HZTEST00100"))
+        assertThatThrownBy(() -> service.createInternalUser(email, "Password123!", "John", "0HZTEST00100", UserScope.CLIENT))
             .isInstanceOf(BadRequestException.class)
             .hasMessageContaining("Email already exists");
 
@@ -122,7 +123,7 @@ class UserServiceTest {
             .thenThrow(new IllegalArgumentException("Password must be at least 12 characters long"));
 
         // Act & Assert
-        assertThatThrownBy(() -> service.createInternalUser(email, weakPassword, "John", "0HZTEST00100"))
+        assertThatThrownBy(() -> service.createInternalUser(email, weakPassword, "John", "0HZTEST00100", UserScope.CLIENT))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("Password must be at least 12 characters long");
 
@@ -138,7 +139,7 @@ class UserServiceTest {
         when(passwordService.validateAndHashPassword(anyString())).thenReturn("$2a$10$hashed...");
 
         // Act
-        Principal result = service.createInternalUser(email, "SecurePass123!", "Admin", null);
+        Principal result = service.createInternalUser(email, "SecurePass123!", "Admin", null, UserScope.ANCHOR);
 
         // Assert
         assertThat(result.clientId).isNull();
@@ -153,7 +154,7 @@ class UserServiceTest {
         when(passwordService.validateAndHashPassword(anyString())).thenReturn("$2a$10$hashed...");
 
         // Act
-        Principal result = service.createInternalUser("USER@ACME.COM", "SecurePass123!", "User", "0HZTEST00100");
+        Principal result = service.createInternalUser("USER@ACME.COM", "SecurePass123!", "User", "0HZTEST00100", UserScope.CLIENT);
 
         // Assert: Domain should be lowercase
         assertThat(result.userIdentity.emailDomain).isEqualTo("acme.com");
@@ -587,9 +588,8 @@ class UserServiceTest {
         Principal user2 = createInternalUserPrincipal("0HZTEST00002", "jane@acme.com", "0HZTEST00100");
         user2.active = false; // Inactive user
 
-        io.quarkus.mongodb.panache.PanacheQuery<Principal> mockQuery = mockPanacheQuery(List.of(user1, user2));
-        when(principalRepo.find("clientId = ?1 and type = ?2", "0HZTEST00100", PrincipalType.USER))
-            .thenReturn(mockQuery);
+        when(principalRepo.findUsersByClientId("0HZTEST00100"))
+            .thenReturn(List.of(user1, user2));
 
         // Act
         List<Principal> result = service.findByClient("0HZTEST00100");
@@ -603,9 +603,8 @@ class UserServiceTest {
     @DisplayName("findByClient should return empty list when client has no users")
     void findByClient_shouldReturnEmpty_whenClientHasNoUsers() {
         // Arrange
-        io.quarkus.mongodb.panache.PanacheQuery<Principal> mockQuery = mockPanacheQuery(List.of());
-        when(principalRepo.find("clientId = ?1 and type = ?2", "0HZTEST00999", PrincipalType.USER))
-            .thenReturn(mockQuery);
+        when(principalRepo.findUsersByClientId("0HZTEST00999"))
+            .thenReturn(List.of());
 
         // Act
         List<Principal> result = service.findByClient("0HZTEST00999");
@@ -625,9 +624,8 @@ class UserServiceTest {
         Principal user1 = createInternalUserPrincipal("0HZTEST00001", "john@acme.com", "0HZTEST00100");
         user1.active = true;
 
-        io.quarkus.mongodb.panache.PanacheQuery<Principal> mockQuery = mockPanacheQuery(List.of(user1));
-        when(principalRepo.find("clientId = ?1 and type = ?2 and active = true", "0HZTEST00100", PrincipalType.USER))
-            .thenReturn(mockQuery);
+        when(principalRepo.findActiveUsersByClientId("0HZTEST00100"))
+            .thenReturn(List.of(user1));
 
         // Act
         List<Principal> result = service.findActiveByClient("0HZTEST00100");

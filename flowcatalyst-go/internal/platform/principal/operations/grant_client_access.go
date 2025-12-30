@@ -19,15 +19,15 @@ type GrantClientAccessCommand struct {
 
 // GrantClientAccessUseCase handles granting a principal access to a client
 type GrantClientAccessUseCase struct {
-	principalRepo *principal.Repository
-	clientRepo    *client.Repository
+	principalRepo principal.Repository
+	clientRepo    client.Repository
 	unitOfWork    common.UnitOfWork
 }
 
 // NewGrantClientAccessUseCase creates a new GrantClientAccessUseCase
 func NewGrantClientAccessUseCase(
-	principalRepo *principal.Repository,
-	clientRepo *client.Repository,
+	principalRepo principal.Repository,
+	clientRepo client.Repository,
 	uow common.UnitOfWork,
 ) *GrantClientAccessUseCase {
 	return &GrantClientAccessUseCase{

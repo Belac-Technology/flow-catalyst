@@ -1,33 +1,29 @@
 package tech.flowcatalyst.platform.client;
 
-import io.quarkus.mongodb.panache.PanacheMongoRepositoryBase;
-import jakarta.enterprise.context.ApplicationScoped;
 import java.util.List;
 import java.util.Optional;
 
 /**
- * Repository for ClientAccessGrant entities.
+ * Repository interface for ClientAccessGrant entities.
+ * Exposes only approved data access methods - Panache internals are hidden.
  */
-@ApplicationScoped
-public class ClientAccessGrantRepository implements PanacheMongoRepositoryBase<ClientAccessGrant, String> {
+public interface ClientAccessGrantRepository {
 
-    public List<ClientAccessGrant> findByPrincipalId(String principalId) {
-        return find("principalId", principalId).list();
-    }
+    // Read operations
+    ClientAccessGrant findById(String id);
+    Optional<ClientAccessGrant> findByIdOptional(String id);
+    List<ClientAccessGrant> findByPrincipalId(String principalId);
+    List<ClientAccessGrant> findByClientId(String clientId);
+    Optional<ClientAccessGrant> findByPrincipalIdAndClientId(String principalId, String clientId);
+    List<ClientAccessGrant> listAll();
+    long count();
+    boolean existsByPrincipalIdAndClientId(String principalId, String clientId);
 
-    public List<ClientAccessGrant> findByClientId(String clientId) {
-        return find("clientId", clientId).list();
-    }
-
-    public Optional<ClientAccessGrant> findByPrincipalIdAndClientId(String principalId, String clientId) {
-        return find("principalId = ?1 and clientId = ?2", principalId, clientId).firstResultOptional();
-    }
-
-    public boolean existsByPrincipalIdAndClientId(String principalId, String clientId) {
-        return count("principalId = ?1 and clientId = ?2", principalId, clientId) > 0;
-    }
-
-    public void deleteByPrincipalId(String principalId) {
-        delete("principalId", principalId);
-    }
+    // Write operations
+    void persist(ClientAccessGrant grant);
+    void update(ClientAccessGrant grant);
+    void delete(ClientAccessGrant grant);
+    boolean deleteById(String id);
+    void deleteByPrincipalId(String principalId);
+    long deleteByPrincipalIdAndClientId(String principalId, String clientId);
 }

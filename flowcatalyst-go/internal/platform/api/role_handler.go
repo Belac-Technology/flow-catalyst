@@ -1,6 +1,7 @@
 package api
 
 import (
+	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -13,7 +14,7 @@ import (
 // RoleHandler handles role endpoints using UseCases
 // @Description Role management API for access control
 type RoleHandler struct {
-	repo *role.Repository
+	repo role.Repository
 
 	// UseCases
 	createUseCase *operations.CreateRoleUseCase
@@ -23,7 +24,7 @@ type RoleHandler struct {
 
 // NewRoleHandler creates a new role handler with UseCases
 func NewRoleHandler(
-	repo *role.Repository,
+	repo role.Repository,
 	uow common.UnitOfWork,
 ) *RoleHandler {
 	return &RoleHandler{
@@ -59,7 +60,13 @@ func (h *RoleHandler) Routes() chi.Router {
 // @Security BearerAuth
 // @Router /api/admin/platform/roles [get]
 func (h *RoleHandler) List(w http.ResponseWriter, r *http.Request) {
-	h.repo.ListHandler(w, r)
+	roles, err := h.repo.FindAll(r.Context())
+	if err != nil {
+		slog.Error("Failed to list roles", "error", err)
+		WriteInternalError(w, "Failed to list roles")
+		return
+	}
+	WriteJSON(w, http.StatusOK, roles)
 }
 
 // Get handles GET /api/admin/platform/roles/{id}
@@ -75,7 +82,19 @@ func (h *RoleHandler) List(w http.ResponseWriter, r *http.Request) {
 // @Security BearerAuth
 // @Router /api/admin/platform/roles/{id} [get]
 func (h *RoleHandler) Get(w http.ResponseWriter, r *http.Request) {
-	h.repo.GetHandler(w, r)
+	id := chi.URLParam(r, "id")
+
+	roleData, err := h.repo.FindByID(r.Context(), id)
+	if err != nil {
+		slog.Error("Failed to get role", "error", err, "id", id)
+		WriteInternalError(w, "Failed to get role")
+		return
+	}
+	if roleData == nil {
+		WriteNotFound(w, "Role not found")
+		return
+	}
+	WriteJSON(w, http.StatusOK, roleData)
 }
 
 // Create handles POST /api/admin/platform/roles (using UseCase)

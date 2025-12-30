@@ -2,11 +2,8 @@ package application
 
 import (
 	"context"
-	"encoding/json"
-	"net/http"
 	"time"
 
-	"github.com/go-chi/chi/v5"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -114,84 +111,4 @@ func (r *Repository) InsertClientConfig(ctx context.Context, config *Application
 	config.UpdatedAt = time.Now()
 	_, err := r.configCollection.InsertOne(ctx, config)
 	return err
-}
-
-// HTTP Handlers
-
-func (r *Repository) ListHandler(w http.ResponseWriter, req *http.Request) {
-	apps, err := r.FindAll(req.Context())
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	writeJSON(w, http.StatusOK, apps)
-}
-
-func (r *Repository) CreateHandler(w http.ResponseWriter, req *http.Request) {
-	var app Application
-	if err := json.NewDecoder(req.Body).Decode(&app); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
-		return
-	}
-	app.Active = true
-	if err := r.Insert(req.Context(), &app); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	writeJSON(w, http.StatusCreated, app)
-}
-
-func (r *Repository) GetHandler(w http.ResponseWriter, req *http.Request) {
-	id := chi.URLParam(req, "id")
-	app, err := r.FindByID(req.Context(), id)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if app == nil {
-		http.Error(w, "Application not found", http.StatusNotFound)
-		return
-	}
-	writeJSON(w, http.StatusOK, app)
-}
-
-func (r *Repository) UpdateHandler(w http.ResponseWriter, req *http.Request) {
-	id := chi.URLParam(req, "id")
-	existing, err := r.FindByID(req.Context(), id)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if existing == nil {
-		http.Error(w, "Application not found", http.StatusNotFound)
-		return
-	}
-
-	var app Application
-	if err := json.NewDecoder(req.Body).Decode(&app); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
-		return
-	}
-	app.ID = id
-	app.CreatedAt = existing.CreatedAt
-	if err := r.Update(req.Context(), &app); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	writeJSON(w, http.StatusOK, app)
-}
-
-func (r *Repository) DeleteHandler(w http.ResponseWriter, req *http.Request) {
-	id := chi.URLParam(req, "id")
-	if err := r.Delete(req.Context(), id); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
-}
-
-func writeJSON(w http.ResponseWriter, status int, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(data)
 }

@@ -38,12 +38,12 @@ type CreateSubscriptionCommand struct {
 
 // CreateSubscriptionUseCase handles creating a new subscription
 type CreateSubscriptionUseCase struct {
-	repo       *subscription.Repository
+	repo       subscription.Repository
 	unitOfWork common.UnitOfWork
 }
 
 // NewCreateSubscriptionUseCase creates a new CreateSubscriptionUseCase
-func NewCreateSubscriptionUseCase(repo *subscription.Repository, uow common.UnitOfWork) *CreateSubscriptionUseCase {
+func NewCreateSubscriptionUseCase(repo subscription.Repository, uow common.UnitOfWork) *CreateSubscriptionUseCase {
 	return &CreateSubscriptionUseCase{
 		repo:       repo,
 		unitOfWork: uow,

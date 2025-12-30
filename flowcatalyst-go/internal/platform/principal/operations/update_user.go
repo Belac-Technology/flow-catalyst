@@ -16,12 +16,12 @@ type UpdateUserCommand struct {
 
 // UpdateUserUseCase handles updating a user
 type UpdateUserUseCase struct {
-	repo       *principal.Repository
+	repo       principal.Repository
 	unitOfWork common.UnitOfWork
 }
 
 // NewUpdateUserUseCase creates a new UpdateUserUseCase
-func NewUpdateUserUseCase(repo *principal.Repository, uow common.UnitOfWork) *UpdateUserUseCase {
+func NewUpdateUserUseCase(repo principal.Repository, uow common.UnitOfWork) *UpdateUserUseCase {
 	return &UpdateUserUseCase{
 		repo:       repo,
 		unitOfWork: uow,

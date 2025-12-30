@@ -1,23 +1,26 @@
 package tech.flowcatalyst.platform.authentication.oidc;
 
-import io.quarkus.mongodb.panache.PanacheMongoRepositoryBase;
-import jakarta.enterprise.context.ApplicationScoped;
-
-import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
-@ApplicationScoped
-public class OidcLoginStateRepository implements PanacheMongoRepositoryBase<OidcLoginState, String> {
+/**
+ * Repository interface for OidcLoginState entities.
+ * Exposes only approved data access methods - Panache internals are hidden.
+ */
+public interface OidcLoginStateRepository {
 
-    public Optional<OidcLoginState> findValidState(String state) {
-        return find("_id = ?1 and expiresAt > ?2", state, Instant.now()).firstResultOptional();
-    }
+    // Read operations
+    OidcLoginState findById(String id);
+    Optional<OidcLoginState> findByIdOptional(String id);
+    Optional<OidcLoginState> findValidState(String state);
+    List<OidcLoginState> listAll();
+    long count();
 
-    public void deleteExpired() {
-        delete("expiresAt < ?1", Instant.now());
-    }
-
-    public void deleteByState(String state) {
-        deleteById(state);
-    }
+    // Write operations
+    void persist(OidcLoginState state);
+    void update(OidcLoginState state);
+    void delete(OidcLoginState state);
+    boolean deleteById(String id);
+    void deleteExpired();
+    void deleteByState(String state);
 }
