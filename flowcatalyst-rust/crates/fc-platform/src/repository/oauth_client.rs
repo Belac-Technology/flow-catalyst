@@ -17,53 +17,53 @@ impl OAuthClientRepository {
     }
 
     pub async fn insert(&self, client: &OAuthClient) -> Result<()> {
-        self.collection.insert_one(client, None).await?;
+        self.collection.insert_one(client).await?;
         Ok(())
     }
 
     pub async fn find_by_id(&self, id: &str) -> Result<Option<OAuthClient>> {
-        Ok(self.collection.find_one(doc! { "_id": id }, None).await?)
+        Ok(self.collection.find_one(doc! { "_id": id }).await?)
     }
 
     pub async fn find_by_client_id(&self, client_id: &str) -> Result<Option<OAuthClient>> {
-        Ok(self.collection.find_one(doc! { "clientId": client_id }, None).await?)
+        Ok(self.collection.find_one(doc! { "clientId": client_id }).await?)
     }
 
     pub async fn find_active(&self) -> Result<Vec<OAuthClient>> {
         let cursor = self.collection
-            .find(doc! { "active": true }, None)
+            .find(doc! { "active": true })
             .await?;
         Ok(cursor.try_collect().await?)
     }
 
     pub async fn find_all(&self) -> Result<Vec<OAuthClient>> {
-        let cursor = self.collection.find(doc! {}, None).await?;
+        let cursor = self.collection.find(doc! {}).await?;
         Ok(cursor.try_collect().await?)
     }
 
     pub async fn find_by_application(&self, application_id: &str) -> Result<Vec<OAuthClient>> {
         let cursor = self.collection
-            .find(doc! { "applicationIds": application_id }, None)
+            .find(doc! { "applicationIds": application_id })
             .await?;
         Ok(cursor.try_collect().await?)
     }
 
     pub async fn exists_by_client_id(&self, client_id: &str) -> Result<bool> {
         let count = self.collection
-            .count_documents(doc! { "clientId": client_id }, None)
+            .count_documents(doc! { "clientId": client_id })
             .await?;
         Ok(count > 0)
     }
 
     pub async fn update(&self, client: &OAuthClient) -> Result<()> {
         self.collection
-            .replace_one(doc! { "_id": &client.id }, client, None)
+            .replace_one(doc! { "_id": &client.id }, client)
             .await?;
         Ok(())
     }
 
     pub async fn delete(&self, id: &str) -> Result<bool> {
-        let result = self.collection.delete_one(doc! { "_id": id }, None).await?;
+        let result = self.collection.delete_one(doc! { "_id": id }).await?;
         Ok(result.deleted_count > 0)
     }
 }

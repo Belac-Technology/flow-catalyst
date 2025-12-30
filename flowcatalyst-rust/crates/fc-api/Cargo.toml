@@ -7,22 +7,18 @@ edition = "2021"
 fc-common = { path = "../fc-common" }
 fc-queue = { path = "../fc-queue" }
 fc-router = { path = "../fc-router" }
-axum = { workspace = true }
+salvo = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
-utoipa = { workspace = true }
-utoipa-swagger-ui = { workspace = true }
 metrics = { workspace = true }
 metrics-exporter-prometheus = { workspace = true }
 
 [dev-dependencies]
 tokio-test = { workspace = true }
-tower = { workspace = true }
-hyper = "1.1"
-http-body-util = "0.1"
 async-trait = { workspace = true }
 parking_lot = { workspace = true }
+bytes = { workspace = true }

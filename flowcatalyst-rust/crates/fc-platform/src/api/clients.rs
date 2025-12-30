@@ -2,19 +2,15 @@
 //!
 //! REST endpoints for client management.
 
-use axum::{
-    extract::{Path, Query, State},
-    routing::{get, post},
-    Json, Router,
-};
+use salvo::prelude::*;
+use salvo::oapi::{ToSchema, endpoint, extract::*};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use utoipa::ToSchema;
 
 use crate::domain::Client;
 use crate::repository::ClientRepository;
 use crate::error::PlatformError;
-use crate::api::common::{ApiResult, PaginationParams, CreatedResponse, SuccessResponse};
+use crate::api::common::{PaginationParams, CreatedResponse, SuccessResponse};
 use crate::api::middleware::Authenticated;
 
 /// Create client request
@@ -71,7 +67,7 @@ impl From<Client> for ClientResponse {
 }
 
 /// Query parameters for clients list
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ClientsQuery {
     #[serde(flatten)]
@@ -88,13 +84,17 @@ pub struct ClientsState {
 }
 
 /// Create a new client
+#[endpoint(tags("clients"))]
 pub async fn create_client(
-    State(state): State<ClientsState>,
-    Authenticated(auth): Authenticated,
-    Json(req): Json<CreateClientRequest>,
-) -> ApiResult<CreatedResponse> {
+    depot: &mut Depot,
+    body: JsonBody<CreateClientRequest>,
+) -> Result<Json<CreatedResponse>, PlatformError> {
+    let auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<ClientsState>().map_err(|_| PlatformError::internal("State not found"))?;
+    let req = body.into_inner();
+
     // Only anchor users can create clients
-    crate::service::checks::require_anchor(&auth)?;
+    crate::service::checks::require_anchor(&auth.0)?;
 
     // Check for duplicate identifier
     if let Some(_) = state.client_repo.find_by_identifier(&req.identifier).await? {
@@ -113,13 +113,17 @@ pub async fn create_client(
 }
 
 /// Get client by ID
+#[endpoint(tags("clients"))]
 pub async fn get_client(
-    State(state): State<ClientsState>,
-    Authenticated(auth): Authenticated,
-    Path(id): Path<String>,
-) -> ApiResult<ClientResponse> {
+    depot: &mut Depot,
+    id: PathParam<String>,
+) -> Result<Json<ClientResponse>, PlatformError> {
+    let auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<ClientsState>().map_err(|_| PlatformError::internal("State not found"))?;
+    let id = id.into_inner();
+
     // Check access
-    if !auth.is_anchor() && !auth.can_access_client(&id) {
+    if !auth.0.is_anchor() && !auth.0.can_access_client(&id) {
         return Err(PlatformError::forbidden("No access to this client"));
     }
 
@@ -130,16 +134,19 @@ pub async fn get_client(
 }
 
 /// List clients
+#[endpoint(tags("clients"))]
 pub async fn list_clients(
-    State(state): State<ClientsState>,
-    Authenticated(auth): Authenticated,
-    Query(_query): Query<ClientsQuery>,
-) -> ApiResult<Vec<ClientResponse>> {
+    depot: &mut Depot,
+    _query: QueryParam<ClientsQuery, false>,
+) -> Result<Json<Vec<ClientResponse>>, PlatformError> {
+    let auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<ClientsState>().map_err(|_| PlatformError::internal("State not found"))?;
+
     let clients = state.client_repo.find_active().await?;
 
     // Filter by access
     let filtered: Vec<ClientResponse> = clients.into_iter()
-        .filter(|c| auth.is_anchor() || auth.can_access_client(&c.id))
+        .filter(|c| auth.0.is_anchor() || auth.0.can_access_client(&c.id))
         .map(|c| c.into())
         .collect();
 
@@ -147,13 +154,18 @@ pub async fn list_clients(
 }
 
 /// Update client
+#[endpoint(tags("clients"))]
 pub async fn update_client(
-    State(state): State<ClientsState>,
-    Authenticated(auth): Authenticated,
-    Path(id): Path<String>,
-    Json(req): Json<UpdateClientRequest>,
-) -> ApiResult<ClientResponse> {
-    crate::service::checks::require_anchor(&auth)?;
+    depot: &mut Depot,
+    id: PathParam<String>,
+    body: JsonBody<UpdateClientRequest>,
+) -> Result<Json<ClientResponse>, PlatformError> {
+    let auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<ClientsState>().map_err(|_| PlatformError::internal("State not found"))?;
+    let id = id.into_inner();
+    let req = body.into_inner();
+
+    crate::service::checks::require_anchor(&auth.0)?;
 
     let mut client = state.client_repo.find_by_id(&id).await?
         .ok_or_else(|| PlatformError::not_found("Client", &id))?;
@@ -172,12 +184,16 @@ pub async fn update_client(
 }
 
 /// Delete client (soft delete)
+#[endpoint(tags("clients"))]
 pub async fn delete_client(
-    State(state): State<ClientsState>,
-    Authenticated(auth): Authenticated,
-    Path(id): Path<String>,
-) -> ApiResult<SuccessResponse> {
-    crate::service::checks::require_anchor(&auth)?;
+    depot: &mut Depot,
+    id: PathParam<String>,
+) -> Result<Json<SuccessResponse>, PlatformError> {
+    let auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<ClientsState>().map_err(|_| PlatformError::internal("State not found"))?;
+    let id = id.into_inner();
+
+    crate::service::checks::require_anchor(&auth.0)?;
 
     let mut client = state.client_repo.find_by_id(&id).await?
         .ok_or_else(|| PlatformError::not_found("Client", &id))?;
@@ -191,7 +207,16 @@ pub async fn delete_client(
 /// Create clients router
 pub fn clients_router(state: ClientsState) -> Router {
     Router::new()
-        .route("/", post(create_client).get(list_clients))
-        .route("/:id", get(get_client).put(update_client).delete(delete_client))
-        .with_state(state)
+        .push(
+            Router::new()
+                .post(create_client)
+                .get(list_clients)
+        )
+        .push(
+            Router::with_path("<id>")
+                .get(get_client)
+                .put(update_client)
+                .delete(delete_client)
+        )
+        .hoop(affix_state::inject(state))
 }

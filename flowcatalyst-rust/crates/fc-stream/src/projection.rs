@@ -360,7 +360,7 @@ impl MongoProjectionStore {
         ];
 
         self.events_read
-            .create_indexes(event_indexes, None)
+            .create_indexes(event_indexes)
             .await
             .map_err(|e| format!("Failed to create event indexes: {}", e))?;
 
@@ -406,7 +406,7 @@ impl MongoProjectionStore {
         ];
 
         self.dispatch_jobs_read
-            .create_indexes(job_indexes, None)
+            .create_indexes(job_indexes)
             .await
             .map_err(|e| format!("Failed to create dispatch job indexes: {}", e))?;
 
@@ -423,7 +423,7 @@ impl ProjectionStore for MongoProjectionStore {
             .map_err(|e| format!("Serialization error: {}", e))?;
 
         self.events_read
-            .insert_one(doc, None)
+            .insert_one(doc)
             .await
             .map_err(|e| format!("MongoDB insert error: {}", e))?;
 
@@ -438,7 +438,7 @@ impl ProjectionStore for MongoProjectionStore {
             .map_err(|e| format!("Serialization error: {}", e))?;
 
         self.dispatch_jobs_read
-            .insert_one(doc, None)
+            .insert_one(doc)
             .await
             .map_err(|e| format!("MongoDB insert error: {}", e))?;
 
@@ -455,7 +455,7 @@ impl ProjectionStore for MongoProjectionStore {
             .map_err(|e| format!("Serialization error: {}", e))?;
 
         self.dispatch_jobs_read
-            .replace_one(doc! { "_id": &projection.id }, doc, None)
+            .replace_one(doc! { "_id": &projection.id }, doc)
             .await
             .map_err(|e| format!("MongoDB replace error: {}", e))?;
 
@@ -469,7 +469,6 @@ impl ProjectionStore for MongoProjectionStore {
             .update_one(
                 doc! { "_id": event_id },
                 doc! { "$inc": { "dispatchJobCount": 1 } },
-                None,
             )
             .await
             .map_err(|e| format!("MongoDB update error: {}", e))?;

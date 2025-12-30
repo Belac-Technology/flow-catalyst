@@ -2,19 +2,15 @@
 //!
 //! REST endpoints for dispatch pool management.
 
-use axum::{
-    extract::{Path, Query, State},
-    routing::{get, post},
-    Json, Router,
-};
+use salvo::prelude::*;
+use salvo::oapi::extract::*;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use utoipa::ToSchema;
 
 use crate::domain::{DispatchPool, DispatchPoolStatus};
 use crate::repository::DispatchPoolRepository;
 use crate::error::PlatformError;
-use crate::api::common::{ApiResult, PaginationParams, CreatedResponse, SuccessResponse};
+use crate::api::common::{PaginationParams, CreatedResponse, SuccessResponse};
 use crate::api::middleware::Authenticated;
 
 /// Create dispatch pool request
@@ -91,8 +87,9 @@ impl From<DispatchPool> for DispatchPoolResponse {
 }
 
 /// Query parameters for dispatch pools list
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize, ToParameters)]
 #[serde(rename_all = "camelCase")]
+#[salvo(parameters(default_parameter_in = Query))]
 pub struct DispatchPoolsQuery {
     #[serde(flatten)]
     pub pagination: PaginationParams,
@@ -119,15 +116,20 @@ fn parse_status(s: &str) -> Option<DispatchPoolStatus> {
 }
 
 /// Create a new dispatch pool
+#[endpoint(tags("DispatchPools"))]
 pub async fn create_dispatch_pool(
-    State(state): State<DispatchPoolsState>,
-    Authenticated(auth): Authenticated,
-    Json(req): Json<CreateDispatchPoolRequest>,
-) -> ApiResult<CreatedResponse> {
+    depot: &mut Depot,
+    body: JsonBody<CreateDispatchPoolRequest>,
+) -> Result<Json<CreatedResponse>, PlatformError> {
+    let auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<DispatchPoolsState>().map_err(|_| PlatformError::internal("State not found"))?;
+
+    let req = body.into_inner();
+
     // Check access - anchor or client admin
-    if !auth.is_anchor() {
+    if !auth.0.is_anchor() {
         if let Some(ref client_id) = req.client_id {
-            if !auth.can_access_client(client_id) {
+            if !auth.0.can_access_client(client_id) {
                 return Err(PlatformError::forbidden("No access to this client"));
             }
         } else {
@@ -165,18 +167,22 @@ pub async fn create_dispatch_pool(
 }
 
 /// Get dispatch pool by ID
+#[endpoint(tags("DispatchPools"))]
 pub async fn get_dispatch_pool(
-    State(state): State<DispatchPoolsState>,
-    Authenticated(auth): Authenticated,
-    Path(id): Path<String>,
-) -> ApiResult<DispatchPoolResponse> {
+    depot: &mut Depot,
+    id: PathParam<String>,
+) -> Result<Json<DispatchPoolResponse>, PlatformError> {
+    let auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<DispatchPoolsState>().map_err(|_| PlatformError::internal("State not found"))?;
+    let id = id.into_inner();
+
     let pool = state.dispatch_pool_repo.find_by_id(&id).await?
         .ok_or_else(|| PlatformError::not_found("DispatchPool", &id))?;
 
     // Check access
-    if !auth.is_anchor() {
+    if !auth.0.is_anchor() {
         if let Some(ref client_id) = pool.client_id {
-            if !auth.can_access_client(client_id) {
+            if !auth.0.can_access_client(client_id) {
                 return Err(PlatformError::forbidden("No access to this dispatch pool"));
             }
         }
@@ -186,14 +192,17 @@ pub async fn get_dispatch_pool(
 }
 
 /// List dispatch pools
+#[endpoint(tags("DispatchPools"))]
 pub async fn list_dispatch_pools(
-    State(state): State<DispatchPoolsState>,
-    Authenticated(auth): Authenticated,
-    Query(query): Query<DispatchPoolsQuery>,
-) -> ApiResult<Vec<DispatchPoolResponse>> {
+    depot: &mut Depot,
+    query: DispatchPoolsQuery,
+) -> Result<Json<Vec<DispatchPoolResponse>>, PlatformError> {
+    let auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<DispatchPoolsState>().map_err(|_| PlatformError::internal("State not found"))?;
+
     let pools = if let Some(ref client_id) = query.client_id {
         // Check access
-        if !auth.is_anchor() && !auth.can_access_client(client_id) {
+        if !auth.0.is_anchor() && !auth.0.can_access_client(client_id) {
             return Err(PlatformError::forbidden("No access to this client"));
         }
         state.dispatch_pool_repo.find_by_client(Some(client_id.as_str())).await?
@@ -215,10 +224,10 @@ pub async fn list_dispatch_pools(
                 }
             }
             // Access filter
-            if auth.is_anchor() {
+            if auth.0.is_anchor() {
                 true
             } else if let Some(ref cid) = p.client_id {
-                auth.can_access_client(cid)
+                auth.0.can_access_client(cid)
             } else {
                 // Anchor-level pools visible to all authenticated users
                 true
@@ -231,19 +240,23 @@ pub async fn list_dispatch_pools(
 }
 
 /// Update dispatch pool
+#[endpoint(tags("DispatchPools"))]
 pub async fn update_dispatch_pool(
-    State(state): State<DispatchPoolsState>,
-    Authenticated(auth): Authenticated,
-    Path(id): Path<String>,
-    Json(req): Json<UpdateDispatchPoolRequest>,
-) -> ApiResult<DispatchPoolResponse> {
+    depot: &mut Depot,
+    id: PathParam<String>,
+    body: JsonBody<UpdateDispatchPoolRequest>,
+) -> Result<Json<DispatchPoolResponse>, PlatformError> {
+    let auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<DispatchPoolsState>().map_err(|_| PlatformError::internal("State not found"))?;
+    let id = id.into_inner();
+
     let mut pool = state.dispatch_pool_repo.find_by_id(&id).await?
         .ok_or_else(|| PlatformError::not_found("DispatchPool", &id))?;
 
     // Check access
-    if !auth.is_anchor() {
+    if !auth.0.is_anchor() {
         if let Some(ref client_id) = pool.client_id {
-            if !auth.can_access_client(client_id) {
+            if !auth.0.can_access_client(client_id) {
                 return Err(PlatformError::forbidden("No access to this dispatch pool"));
             }
         } else {
@@ -251,6 +264,7 @@ pub async fn update_dispatch_pool(
         }
     }
 
+    let req = body.into_inner();
     if let Some(name) = req.name {
         pool.name = name;
     }
@@ -271,18 +285,22 @@ pub async fn update_dispatch_pool(
 }
 
 /// Archive dispatch pool
+#[endpoint(tags("DispatchPools"))]
 pub async fn archive_dispatch_pool(
-    State(state): State<DispatchPoolsState>,
-    Authenticated(auth): Authenticated,
-    Path(id): Path<String>,
-) -> ApiResult<DispatchPoolResponse> {
+    depot: &mut Depot,
+    id: PathParam<String>,
+) -> Result<Json<DispatchPoolResponse>, PlatformError> {
+    let auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<DispatchPoolsState>().map_err(|_| PlatformError::internal("State not found"))?;
+    let id = id.into_inner();
+
     let mut pool = state.dispatch_pool_repo.find_by_id(&id).await?
         .ok_or_else(|| PlatformError::not_found("DispatchPool", &id))?;
 
     // Check access
-    if !auth.is_anchor() {
+    if !auth.0.is_anchor() {
         if let Some(ref client_id) = pool.client_id {
-            if !auth.can_access_client(client_id) {
+            if !auth.0.can_access_client(client_id) {
                 return Err(PlatformError::forbidden("No access to this dispatch pool"));
             }
         } else {
@@ -297,12 +315,16 @@ pub async fn archive_dispatch_pool(
 }
 
 /// Delete dispatch pool
+#[endpoint(tags("DispatchPools"))]
 pub async fn delete_dispatch_pool(
-    State(state): State<DispatchPoolsState>,
-    Authenticated(auth): Authenticated,
-    Path(id): Path<String>,
-) -> ApiResult<SuccessResponse> {
-    crate::service::checks::require_anchor(&auth)?;
+    depot: &mut Depot,
+    id: PathParam<String>,
+) -> Result<Json<SuccessResponse>, PlatformError> {
+    let auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<DispatchPoolsState>().map_err(|_| PlatformError::internal("State not found"))?;
+    let id = id.into_inner();
+
+    crate::service::checks::require_anchor(&auth.0)?;
 
     let exists = state.dispatch_pool_repo.find_by_id(&id).await?.is_some();
     if !exists {
@@ -317,8 +339,20 @@ pub async fn delete_dispatch_pool(
 /// Create dispatch pools router
 pub fn dispatch_pools_router(state: DispatchPoolsState) -> Router {
     Router::new()
-        .route("/", post(create_dispatch_pool).get(list_dispatch_pools))
-        .route("/:id", get(get_dispatch_pool).put(update_dispatch_pool).delete(delete_dispatch_pool))
-        .route("/:id/archive", post(archive_dispatch_pool))
-        .with_state(state)
+        .push(
+            Router::new()
+                .post(create_dispatch_pool)
+                .get(list_dispatch_pools)
+        )
+        .push(
+            Router::with_path("<id>")
+                .get(get_dispatch_pool)
+                .put(update_dispatch_pool)
+                .delete(delete_dispatch_pool)
+        )
+        .push(
+            Router::with_path("<id>/archive")
+                .post(archive_dispatch_pool)
+        )
+        .hoop(affix_state::inject(state))
 }

@@ -15,7 +15,7 @@ use tokio::sync::broadcast;
 use anyhow::Result;
 use tracing::{info, error};
 use tracing_subscriber::EnvFilter;
-use axum::Extension;
+use salvo::prelude::*;
 
 use fc_common::{RouterConfig, PoolConfig, QueueConfig};
 use fc_router::{
@@ -29,8 +29,8 @@ use fc_outbox::{OutboxProcessor, repository::OutboxRepository};
 
 // Platform imports
 use fc_platform::service::{AuthService, AuthConfig, AuthorizationService, AuditService};
+use fc_platform::api::middleware::AppState;
 use fc_platform::api::{
-    AppState,
     EventsState, events_router,
     EventTypesState, event_types_router,
     DispatchJobsState, dispatch_jobs_router,
@@ -299,28 +299,31 @@ async fn main() -> Result<()> {
     };
 
     // 8f. Build platform API router with all endpoints
-    let platform_router = axum::Router::new()
+    use fc_platform::api::middleware::AuthHandler;
+    let auth_handler = AuthHandler::new(app_state.clone());
+
+    let platform_router = Router::new()
         // BFF APIs
-        .nest("/api/bff/events", events_router(events_state))
-        .nest("/api/bff/event-types", event_types_router(event_types_state))
-        .nest("/api/bff/dispatch-jobs", dispatch_jobs_router(dispatch_jobs_state))
-        .nest("/api/bff/filter-options", filter_options_router(filter_options_state))
+        .push(Router::with_path("api/bff/events").push(events_router(events_state)))
+        .push(Router::with_path("api/bff/event-types").push(event_types_router(event_types_state)))
+        .push(Router::with_path("api/bff/dispatch-jobs").push(dispatch_jobs_router(dispatch_jobs_state)))
+        .push(Router::with_path("api/bff/filter-options").push(filter_options_router(filter_options_state)))
         // Admin APIs
-        .nest("/api/admin/clients", clients_router(clients_state))
-        .nest("/api/admin/principals", principals_router(principals_state))
-        .nest("/api/admin/roles", roles_router(roles_state))
-        .nest("/api/admin/subscriptions", subscriptions_router(subscriptions_state))
-        .nest("/api/admin/oauth-clients", oauth_clients_router(oauth_clients_state))
-        .nest("/api/admin/anchor-domains", anchor_domains_router(auth_config_state.clone()))
-        .nest("/api/admin/client-auth-configs", client_auth_configs_router(auth_config_state.clone()))
-        .nest("/api/admin/idp-role-mappings", idp_role_mappings_router(auth_config_state))
-        .nest("/api/admin/audit-logs", audit_logs_router(audit_logs_state))
-        .nest("/api/admin/applications", applications_router(applications_state))
-        .nest("/api/admin/dispatch-pools", dispatch_pools_router(dispatch_pools_state))
+        .push(Router::with_path("api/admin/clients").push(clients_router(clients_state)))
+        .push(Router::with_path("api/admin/principals").push(principals_router(principals_state)))
+        .push(Router::with_path("api/admin/roles").push(roles_router(roles_state)))
+        .push(Router::with_path("api/admin/subscriptions").push(subscriptions_router(subscriptions_state)))
+        .push(Router::with_path("api/admin/oauth-clients").push(oauth_clients_router(oauth_clients_state)))
+        .push(Router::with_path("api/admin/anchor-domains").push(anchor_domains_router(auth_config_state.clone())))
+        .push(Router::with_path("api/admin/client-auth-configs").push(client_auth_configs_router(auth_config_state.clone())))
+        .push(Router::with_path("api/admin/idp-role-mappings").push(idp_role_mappings_router(auth_config_state)))
+        .push(Router::with_path("api/admin/audit-logs").push(audit_logs_router(audit_logs_state)))
+        .push(Router::with_path("api/admin/applications").push(applications_router(applications_state)))
+        .push(Router::with_path("api/admin/dispatch-pools").push(dispatch_pools_router(dispatch_pools_state)))
         // Monitoring APIs
-        .nest("/api/monitoring", monitoring_router(monitoring_state))
-        // Add AppState extension for auth middleware
-        .layer(Extension(app_state));
+        .push(Router::with_path("api/monitoring").push(monitoring_router(monitoring_state)))
+        // Add auth middleware
+        .hoop(auth_handler);
 
     info!("Platform APIs configured");
 
@@ -332,43 +335,49 @@ async fn main() -> Result<()> {
         health_service.clone(),
     );
 
-    let api_app = router_api.merge(platform_router);
+    let api_app = Router::new()
+        .push(router_api)
+        .push(platform_router);
 
-    let api_addr = std::net::SocketAddr::from(([0, 0, 0, 0], args.api_port));
+    let api_addr = format!("0.0.0.0:{}", args.api_port);
     info!("API server listening on http://{}", api_addr);
 
-    let api_listener = tokio::net::TcpListener::bind(api_addr).await?;
+    let api_acceptor = TcpListener::new(&api_addr).bind().await;
     let api_handle = {
         let mut shutdown_rx = shutdown_tx.subscribe();
+        let server = Server::new(api_acceptor);
+        let handle = server.handle();
+        let server_task = tokio::spawn(async move {
+            server.serve(api_app).await;
+        });
         tokio::spawn(async move {
-            axum::serve(api_listener, api_app.into_make_service())
-                .with_graceful_shutdown(async move {
-                    let _ = shutdown_rx.recv().await;
-                })
-                .await
-                .ok();
-        })
+            let _ = shutdown_rx.recv().await;
+            handle.stop_graceful(None);
+        });
+        server_task
     };
 
     // 10. Start metrics server
-    let metrics_addr = std::net::SocketAddr::from(([0, 0, 0, 0], args.metrics_port));
+    let metrics_addr = format!("0.0.0.0:{}", args.metrics_port);
     info!("Metrics server listening on http://{}/metrics", metrics_addr);
 
-    let metrics_app = axum::Router::new()
-        .route("/metrics", axum::routing::get(metrics_handler))
-        .route("/health", axum::routing::get(health_handler));
+    let metrics_app = Router::new()
+        .push(Router::with_path("metrics").get(metrics_handler))
+        .push(Router::with_path("health").get(health_handler));
 
-    let metrics_listener = tokio::net::TcpListener::bind(metrics_addr).await?;
+    let metrics_acceptor = TcpListener::new(&metrics_addr).bind().await;
     let metrics_handle = {
         let mut shutdown_rx = shutdown_tx.subscribe();
+        let server = Server::new(metrics_acceptor);
+        let handle = server.handle();
+        let server_task = tokio::spawn(async move {
+            server.serve(metrics_app).await;
+        });
         tokio::spawn(async move {
-            axum::serve(metrics_listener, metrics_app)
-                .with_graceful_shutdown(async move {
-                    let _ = shutdown_rx.recv().await;
-                })
-                .await
-                .ok();
-        })
+            let _ = shutdown_rx.recv().await;
+            handle.stop_graceful(None);
+        });
+        server_task
     };
 
     // 11. Start QueueManager (blocking - runs consumer loops)
@@ -481,15 +490,17 @@ impl fc_outbox::QueuePublisher for OutboxQueuePublisher {
     }
 }
 
-async fn metrics_handler() -> String {
+#[handler]
+async fn metrics_handler(res: &mut Response) {
     // In a real implementation, you'd use metrics-exporter-prometheus
     // For now, return basic Prometheus format
     let stats = "# HELP fc_up FlowCatalyst is up\n# TYPE fc_up gauge\nfc_up 1\n".to_string();
-    stats
+    res.render(Text::Plain(stats));
 }
 
-async fn health_handler() -> axum::Json<serde_json::Value> {
-    axum::Json(serde_json::json!({
+#[handler]
+async fn health_handler() -> Json<serde_json::Value> {
+    Json(serde_json::json!({
         "status": "UP",
         "version": env!("CARGO_PKG_VERSION"),
         "components": {

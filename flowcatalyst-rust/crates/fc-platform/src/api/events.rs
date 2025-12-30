@@ -2,19 +2,15 @@
 //!
 //! REST endpoints for event management.
 
-use axum::{
-    extract::{Path, Query, State},
-    routing::{get, post},
-    Json, Router,
-};
+use salvo::prelude::*;
+use salvo::oapi::extract::*;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use utoipa::ToSchema;
 
 use crate::domain::{Event, EventRead};
 use crate::repository::EventRepository;
 use crate::error::PlatformError;
-use crate::api::common::{ApiResult, PaginationParams, CreatedResponse};
+use crate::api::common::{PaginationParams, CreatedResponse};
 use crate::api::middleware::Authenticated;
 
 /// Create event request
@@ -130,8 +126,9 @@ impl From<EventRead> for EventReadResponse {
 }
 
 /// Query parameters for events list
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize, ToParameters)]
 #[serde(rename_all = "camelCase")]
+#[salvo(parameters(default_parameter_in = Query))]
 pub struct EventsQuery {
     #[serde(flatten)]
     pub pagination: PaginationParams,
@@ -153,26 +150,31 @@ pub struct EventsState {
 }
 
 /// Create a new event
+#[endpoint(tags("Events"))]
 pub async fn create_event(
-    State(state): State<EventsState>,
-    Authenticated(auth): Authenticated,
-    Json(req): Json<CreateEventRequest>,
-) -> ApiResult<CreatedResponse> {
+    depot: &mut Depot,
+    body: JsonBody<CreateEventRequest>,
+) -> Result<Json<CreatedResponse>, PlatformError> {
+    let auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<EventsState>().map_err(|_| PlatformError::internal("State not found"))?;
+
     // Verify permission
-    crate::service::checks::can_write_events(&auth)?;
+    crate::service::checks::can_write_events(&auth.0)?;
+
+    let req = body.into_inner();
 
     // Determine client ID
     let client_id = req.client_id.or_else(|| {
-        if auth.is_anchor() {
+        if auth.0.is_anchor() {
             None
         } else {
-            auth.accessible_clients.first().cloned()
+            auth.0.accessible_clients.first().cloned()
         }
     });
 
     // Validate client access if specified
     if let Some(ref cid) = client_id {
-        if !auth.can_access_client(cid) {
+        if !auth.0.can_access_client(cid) {
             return Err(PlatformError::forbidden(format!("No access to client: {}", cid)));
         }
     }
@@ -203,19 +205,23 @@ pub async fn create_event(
 }
 
 /// Get event by ID
+#[endpoint(tags("Events"))]
 pub async fn get_event(
-    State(state): State<EventsState>,
-    Authenticated(auth): Authenticated,
-    Path(id): Path<String>,
-) -> ApiResult<EventResponse> {
-    crate::service::checks::can_read_events(&auth)?;
+    depot: &mut Depot,
+    id: PathParam<String>,
+) -> Result<Json<EventResponse>, PlatformError> {
+    let auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<EventsState>().map_err(|_| PlatformError::internal("State not found"))?;
+    let id = id.into_inner();
+
+    crate::service::checks::can_read_events(&auth.0)?;
 
     let event = state.event_repo.find_by_id(&id).await?
         .ok_or_else(|| PlatformError::not_found("Event", &id))?;
 
     // Check client access
     if let Some(ref cid) = event.client_id {
-        if !auth.can_access_client(cid) {
+        if !auth.0.can_access_client(cid) {
             return Err(PlatformError::forbidden("No access to this event"));
         }
     }
@@ -224,19 +230,22 @@ pub async fn get_event(
 }
 
 /// List events
+#[endpoint(tags("Events"))]
 pub async fn list_events(
-    State(state): State<EventsState>,
-    Authenticated(auth): Authenticated,
-    Query(query): Query<EventsQuery>,
-) -> ApiResult<Vec<EventResponse>> {
-    crate::service::checks::can_read_events(&auth)?;
+    depot: &mut Depot,
+    query: EventsQuery,
+) -> Result<Json<Vec<EventResponse>>, PlatformError> {
+    let auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<EventsState>().map_err(|_| PlatformError::internal("State not found"))?;
+
+    crate::service::checks::can_read_events(&auth.0)?;
 
     let events = if let Some(ref corr_id) = query.correlation_id {
         state.event_repo.find_by_correlation_id(corr_id).await?
     } else if let Some(ref event_type) = query.event_type {
         state.event_repo.find_by_type(event_type, query.pagination.limit as i64).await?
     } else if let Some(ref client_id) = query.client_id {
-        if !auth.can_access_client(client_id) {
+        if !auth.0.can_access_client(client_id) {
             return Err(PlatformError::forbidden(format!("No access to client: {}", client_id)));
         }
         state.event_repo.find_by_client(client_id, query.pagination.limit as i64).await?
@@ -249,8 +258,8 @@ pub async fn list_events(
     let filtered: Vec<EventResponse> = events.into_iter()
         .filter(|e| {
             match &e.client_id {
-                Some(cid) => auth.can_access_client(cid),
-                None => auth.is_anchor(), // Anchor-level events only visible to anchors
+                Some(cid) => auth.0.can_access_client(cid),
+                None => auth.0.is_anchor(), // Anchor-level events only visible to anchors
             }
         })
         .map(|e| e.into())
@@ -285,29 +294,33 @@ pub struct BatchFailure {
 }
 
 /// Batch create events
+#[endpoint(tags("Events"))]
 pub async fn batch_create_events(
-    State(state): State<EventsState>,
-    Authenticated(auth): Authenticated,
-    Json(req): Json<BatchCreateEventsRequest>,
-) -> ApiResult<BatchCreateResponse> {
-    crate::service::checks::can_write_events(&auth)?;
+    depot: &mut Depot,
+    body: JsonBody<BatchCreateEventsRequest>,
+) -> Result<Json<BatchCreateResponse>, PlatformError> {
+    let auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<EventsState>().map_err(|_| PlatformError::internal("State not found"))?;
 
+    crate::service::checks::can_write_events(&auth.0)?;
+
+    let req = body.into_inner();
     let mut created = Vec::new();
     let mut failed = Vec::new();
 
     for (index, event_req) in req.events.into_iter().enumerate() {
         // Determine client ID
         let client_id = event_req.client_id.or_else(|| {
-            if auth.is_anchor() {
+            if auth.0.is_anchor() {
                 None
             } else {
-                auth.accessible_clients.first().cloned()
+                auth.0.accessible_clients.first().cloned()
             }
         });
 
         // Validate client access if specified
         if let Some(ref cid) = client_id {
-            if !auth.can_access_client(cid) {
+            if !auth.0.can_access_client(cid) {
                 failed.push(BatchFailure {
                     index,
                     error: format!("No access to client: {}", cid),
@@ -359,8 +372,18 @@ pub async fn batch_create_events(
 /// Create events router
 pub fn events_router(state: EventsState) -> Router {
     Router::new()
-        .route("/", post(create_event).get(list_events))
-        .route("/batch", post(batch_create_events))
-        .route("/:id", get(get_event))
-        .with_state(state)
+        .push(
+            Router::new()
+                .post(create_event)
+                .get(list_events)
+        )
+        .push(
+            Router::with_path("batch")
+                .post(batch_create_events)
+        )
+        .push(
+            Router::with_path("<id>")
+                .get(get_event)
+        )
+        .hoop(affix_state::inject(state))
 }

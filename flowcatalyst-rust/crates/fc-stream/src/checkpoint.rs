@@ -34,7 +34,7 @@ impl MongoCheckpointStore {
 impl CheckpointStore for MongoCheckpointStore {
     async fn get_checkpoint(&self, key: &str) -> Result<Option<Document>> {
         let filter = mongodb::bson::doc! { "_id": key };
-        let doc = self.collection.find_one(filter, None).await?;
+        let doc = self.collection.find_one(filter).await?;
         Ok(doc.and_then(|d| d.get_document("token").ok().cloned()))
     }
 
@@ -45,13 +45,13 @@ impl CheckpointStore for MongoCheckpointStore {
         };
         let options = mongodb::options::UpdateOptions::builder().upsert(true).build();
 
-        self.collection.update_one(filter, update, options).await?;
+        self.collection.update_one(filter, update).with_options(options).await?;
         Ok(())
     }
 
     async fn clear_checkpoint(&self, key: &str) -> Result<()> {
         let filter = mongodb::bson::doc! { "_id": key };
-        self.collection.delete_one(filter, None).await?;
+        self.collection.delete_one(filter).await?;
         Ok(())
     }
 }

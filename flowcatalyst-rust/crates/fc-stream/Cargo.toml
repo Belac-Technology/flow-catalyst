@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 fc-common = { path = "../fc-common" }
+fc-standby = { path = "../fc-standby", optional = true }
 tokio = { workspace = true }
 mongodb = { workspace = true }
 bson = { workspace = true }
@@ -17,3 +18,6 @@ tracing = { workspace = true }
 async-trait = { workspace = true }
 parking_lot = "0.12"
 redis = { workspace = true }
+
+[features]
+standby = ["dep:fc-standby"]

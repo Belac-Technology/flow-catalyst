@@ -31,7 +31,7 @@ impl OutboxRepository for MongoOutboxRepository {
             .limit(limit as i64)
             .build();
 
-        let mut cursor = self.collection.find(filter, find_options).await?;
+        let mut cursor = self.collection.find(filter).with_options(find_options).await?;
         let mut items = Vec::new();
 
         while let Some(doc) = cursor.try_next().await? {
@@ -85,7 +85,7 @@ impl OutboxRepository for MongoOutboxRepository {
             } 
         };
 
-        self.collection.update_many(filter, update, None).await?;
+        self.collection.update_many(filter, update).await?;
         Ok(())
     }
 
@@ -105,7 +105,7 @@ impl OutboxRepository for MongoOutboxRepository {
         }
 
         let update = doc! { "$set": set_doc };
-        self.collection.update_one(filter, update, None).await?;
+        self.collection.update_one(filter, update).await?;
         Ok(())
     }
 
@@ -123,7 +123,7 @@ impl OutboxRepository for MongoOutboxRepository {
             "$unset": { "processed_at": "" }
         };
 
-        let result = self.collection.update_many(filter, update, None).await?;
+        let result = self.collection.update_many(filter, update).await?;
         let recovered = result.modified_count;
 
         if recovered > 0 {

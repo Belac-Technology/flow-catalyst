@@ -47,7 +47,7 @@ impl JobDispatcher {
         let collection: Collection<bson::Document> = self.db.collection("dispatch_jobs");
 
         let filter = doc! { "_id": job_id };
-        let Some(doc) = collection.find_one(filter.clone(), None).await? else {
+        let Some(doc) = collection.find_one(filter.clone()).await? else {
             warn!(job_id = %job_id, "Job not found");
             return Ok(false);
         };
@@ -94,7 +94,7 @@ impl JobDispatcher {
                         "updatedAt": bson::DateTime::now()
                     }
                 };
-                collection.update_one(filter, update, None).await?;
+                collection.update_one(filter, update).await?;
                 debug!(job_id = %job_id, "Job dispatched successfully");
                 metrics::counter!("scheduler.jobs.queued_total").increment(1);
                 Ok(true)

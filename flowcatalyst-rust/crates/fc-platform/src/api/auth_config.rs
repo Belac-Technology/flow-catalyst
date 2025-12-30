@@ -3,14 +3,10 @@
 //! REST endpoints for authentication configuration management.
 //! Includes anchor domains, client auth configs, and IDP role mappings.
 
-use axum::{
-    extract::{Path, Query, State},
-    routing::{get, post},
-    Json, Router,
-};
+use salvo::prelude::*;
+use salvo::oapi::extract::*;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use utoipa::ToSchema;
 
 use crate::domain::{
     AnchorDomain, ClientAuthConfig, IdpRoleMapping,
@@ -20,7 +16,7 @@ use crate::repository::{
     AnchorDomainRepository, ClientAuthConfigRepository, IdpRoleMappingRepository,
 };
 use crate::error::PlatformError;
-use crate::api::common::{ApiResult, CreatedResponse, SuccessResponse};
+use crate::api::common::{CreatedResponse, SuccessResponse};
 use crate::api::middleware::Authenticated;
 
 // ============================================================================
@@ -211,13 +207,17 @@ fn parse_auth_provider(s: &str) -> AuthProvider {
 // ============================================================================
 
 /// Create anchor domain
+#[endpoint(tags("AuthConfig"))]
 pub async fn create_anchor_domain(
-    State(state): State<AuthConfigState>,
-    Authenticated(auth): Authenticated,
-    Json(req): Json<CreateAnchorDomainRequest>,
-) -> ApiResult<CreatedResponse> {
-    crate::service::checks::require_anchor(&auth)?;
+    depot: &mut Depot,
+    body: JsonBody<CreateAnchorDomainRequest>,
+) -> Result<Json<CreatedResponse>, PlatformError> {
+    let auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<AuthConfigState>().map_err(|_| PlatformError::internal("State not found"))?;
 
+    crate::service::checks::require_anchor(&auth.0)?;
+
+    let req = body.into_inner();
     let domain = req.domain.to_lowercase();
 
     // Check for duplicate
@@ -234,11 +234,14 @@ pub async fn create_anchor_domain(
 }
 
 /// List anchor domains
+#[endpoint(tags("AuthConfig"))]
 pub async fn list_anchor_domains(
-    State(state): State<AuthConfigState>,
-    Authenticated(auth): Authenticated,
-) -> ApiResult<Vec<AnchorDomainResponse>> {
-    crate::service::checks::require_anchor(&auth)?;
+    depot: &mut Depot,
+) -> Result<Json<Vec<AnchorDomainResponse>>, PlatformError> {
+    let auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<AuthConfigState>().map_err(|_| PlatformError::internal("State not found"))?;
+
+    crate::service::checks::require_anchor(&auth.0)?;
 
     let domains = state.anchor_domain_repo.find_all().await?;
     let response: Vec<AnchorDomainResponse> = domains.into_iter()
@@ -249,12 +252,16 @@ pub async fn list_anchor_domains(
 }
 
 /// Delete anchor domain
+#[endpoint(tags("AuthConfig"))]
 pub async fn delete_anchor_domain(
-    State(state): State<AuthConfigState>,
-    Authenticated(auth): Authenticated,
-    Path(id): Path<String>,
-) -> ApiResult<SuccessResponse> {
-    crate::service::checks::require_anchor(&auth)?;
+    depot: &mut Depot,
+    id: PathParam<String>,
+) -> Result<Json<SuccessResponse>, PlatformError> {
+    let auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<AuthConfigState>().map_err(|_| PlatformError::internal("State not found"))?;
+    let id = id.into_inner();
+
+    crate::service::checks::require_anchor(&auth.0)?;
 
     let exists = state.anchor_domain_repo.find_by_id(&id).await?.is_some();
     if !exists {
@@ -271,13 +278,17 @@ pub async fn delete_anchor_domain(
 // ============================================================================
 
 /// Create client auth config
+#[endpoint(tags("AuthConfig"))]
 pub async fn create_client_auth_config(
-    State(state): State<AuthConfigState>,
-    Authenticated(auth): Authenticated,
-    Json(req): Json<CreateClientAuthConfigRequest>,
-) -> ApiResult<CreatedResponse> {
-    crate::service::checks::require_anchor(&auth)?;
+    depot: &mut Depot,
+    body: JsonBody<CreateClientAuthConfigRequest>,
+) -> Result<Json<CreatedResponse>, PlatformError> {
+    let auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<AuthConfigState>().map_err(|_| PlatformError::internal("State not found"))?;
 
+    crate::service::checks::require_anchor(&auth.0)?;
+
+    let req = body.into_inner();
     let email_domain = req.email_domain.to_lowercase();
 
     // Check for duplicate
@@ -314,12 +325,16 @@ pub async fn create_client_auth_config(
 }
 
 /// Get client auth config by ID
+#[endpoint(tags("AuthConfig"))]
 pub async fn get_client_auth_config(
-    State(state): State<AuthConfigState>,
-    Authenticated(auth): Authenticated,
-    Path(id): Path<String>,
-) -> ApiResult<ClientAuthConfigResponse> {
-    crate::service::checks::require_anchor(&auth)?;
+    depot: &mut Depot,
+    id: PathParam<String>,
+) -> Result<Json<ClientAuthConfigResponse>, PlatformError> {
+    let auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<AuthConfigState>().map_err(|_| PlatformError::internal("State not found"))?;
+    let id = id.into_inner();
+
+    crate::service::checks::require_anchor(&auth.0)?;
 
     let config = state.client_auth_config_repo.find_by_id(&id).await?
         .ok_or_else(|| PlatformError::not_found("ClientAuthConfig", &id))?;
@@ -328,11 +343,14 @@ pub async fn get_client_auth_config(
 }
 
 /// List client auth configs
+#[endpoint(tags("AuthConfig"))]
 pub async fn list_client_auth_configs(
-    State(state): State<AuthConfigState>,
-    Authenticated(auth): Authenticated,
-) -> ApiResult<Vec<ClientAuthConfigResponse>> {
-    crate::service::checks::require_anchor(&auth)?;
+    depot: &mut Depot,
+) -> Result<Json<Vec<ClientAuthConfigResponse>>, PlatformError> {
+    let auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<AuthConfigState>().map_err(|_| PlatformError::internal("State not found"))?;
+
+    crate::service::checks::require_anchor(&auth.0)?;
 
     let configs = state.client_auth_config_repo.find_all().await?;
     let response: Vec<ClientAuthConfigResponse> = configs.into_iter()
@@ -343,17 +361,22 @@ pub async fn list_client_auth_configs(
 }
 
 /// Update client auth config
+#[endpoint(tags("AuthConfig"))]
 pub async fn update_client_auth_config(
-    State(state): State<AuthConfigState>,
-    Authenticated(auth): Authenticated,
-    Path(id): Path<String>,
-    Json(req): Json<UpdateClientAuthConfigRequest>,
-) -> ApiResult<ClientAuthConfigResponse> {
-    crate::service::checks::require_anchor(&auth)?;
+    depot: &mut Depot,
+    id: PathParam<String>,
+    body: JsonBody<UpdateClientAuthConfigRequest>,
+) -> Result<Json<ClientAuthConfigResponse>, PlatformError> {
+    let auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<AuthConfigState>().map_err(|_| PlatformError::internal("State not found"))?;
+    let id = id.into_inner();
+
+    crate::service::checks::require_anchor(&auth.0)?;
 
     let mut config = state.client_auth_config_repo.find_by_id(&id).await?
         .ok_or_else(|| PlatformError::not_found("ClientAuthConfig", &id))?;
 
+    let req = body.into_inner();
     if let Some(client_id) = req.primary_client_id {
         config.primary_client_id = Some(client_id);
     }
@@ -377,12 +400,16 @@ pub async fn update_client_auth_config(
 }
 
 /// Delete client auth config
+#[endpoint(tags("AuthConfig"))]
 pub async fn delete_client_auth_config(
-    State(state): State<AuthConfigState>,
-    Authenticated(auth): Authenticated,
-    Path(id): Path<String>,
-) -> ApiResult<SuccessResponse> {
-    crate::service::checks::require_anchor(&auth)?;
+    depot: &mut Depot,
+    id: PathParam<String>,
+) -> Result<Json<SuccessResponse>, PlatformError> {
+    let auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<AuthConfigState>().map_err(|_| PlatformError::internal("State not found"))?;
+    let id = id.into_inner();
+
+    crate::service::checks::require_anchor(&auth.0)?;
 
     let exists = state.client_auth_config_repo.find_by_id(&id).await?.is_some();
     if !exists {
@@ -399,12 +426,17 @@ pub async fn delete_client_auth_config(
 // ============================================================================
 
 /// Create IDP role mapping
+#[endpoint(tags("AuthConfig"))]
 pub async fn create_idp_role_mapping(
-    State(state): State<AuthConfigState>,
-    Authenticated(auth): Authenticated,
-    Json(req): Json<CreateIdpRoleMappingRequest>,
-) -> ApiResult<CreatedResponse> {
-    crate::service::checks::require_anchor(&auth)?;
+    depot: &mut Depot,
+    body: JsonBody<CreateIdpRoleMappingRequest>,
+) -> Result<Json<CreatedResponse>, PlatformError> {
+    let auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<AuthConfigState>().map_err(|_| PlatformError::internal("State not found"))?;
+
+    crate::service::checks::require_anchor(&auth.0)?;
+
+    let req = body.into_inner();
 
     // Check for duplicate
     if state.idp_role_mapping_repo.find_by_idp_role(&req.idp_type, &req.idp_role_name).await?.is_some() {
@@ -419,13 +451,24 @@ pub async fn create_idp_role_mapping(
     Ok(Json(CreatedResponse::new(id)))
 }
 
+/// Query parameters for IDP role mappings
+#[derive(Debug, Default, Deserialize, ToParameters)]
+#[serde(rename_all = "camelCase")]
+#[salvo(parameters(default_parameter_in = Query))]
+pub struct IdpRoleMappingQuery {
+    pub idp_type: Option<String>,
+}
+
 /// List IDP role mappings
+#[endpoint(tags("AuthConfig"))]
 pub async fn list_idp_role_mappings(
-    State(state): State<AuthConfigState>,
-    Authenticated(auth): Authenticated,
-    Query(query): Query<IdpRoleMappingQuery>,
-) -> ApiResult<Vec<IdpRoleMappingResponse>> {
-    crate::service::checks::require_anchor(&auth)?;
+    depot: &mut Depot,
+    query: IdpRoleMappingQuery,
+) -> Result<Json<Vec<IdpRoleMappingResponse>>, PlatformError> {
+    let auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<AuthConfigState>().map_err(|_| PlatformError::internal("State not found"))?;
+
+    crate::service::checks::require_anchor(&auth.0)?;
 
     let mappings = if let Some(ref idp_type) = query.idp_type {
         state.idp_role_mapping_repo.find_by_idp_type(idp_type).await?
@@ -440,19 +483,17 @@ pub async fn list_idp_role_mappings(
     Ok(Json(response))
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct IdpRoleMappingQuery {
-    pub idp_type: Option<String>,
-}
-
 /// Delete IDP role mapping
+#[endpoint(tags("AuthConfig"))]
 pub async fn delete_idp_role_mapping(
-    State(state): State<AuthConfigState>,
-    Authenticated(auth): Authenticated,
-    Path(id): Path<String>,
-) -> ApiResult<SuccessResponse> {
-    crate::service::checks::require_anchor(&auth)?;
+    depot: &mut Depot,
+    id: PathParam<String>,
+) -> Result<Json<SuccessResponse>, PlatformError> {
+    let auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<AuthConfigState>().map_err(|_| PlatformError::internal("State not found"))?;
+    let id = id.into_inner();
+
+    crate::service::checks::require_anchor(&auth.0)?;
 
     let exists = state.idp_role_mapping_repo.find_by_id(&id).await?.is_some();
     if !exists {
@@ -471,23 +512,46 @@ pub async fn delete_idp_role_mapping(
 /// Create anchor domains router
 pub fn anchor_domains_router(state: AuthConfigState) -> Router {
     Router::new()
-        .route("/", post(create_anchor_domain).get(list_anchor_domains))
-        .route("/:id", axum::routing::delete(delete_anchor_domain))
-        .with_state(state)
+        .push(
+            Router::new()
+                .post(create_anchor_domain)
+                .get(list_anchor_domains)
+        )
+        .push(
+            Router::with_path("<id>")
+                .delete(delete_anchor_domain)
+        )
+        .hoop(affix_state::inject(state))
 }
 
 /// Create client auth configs router
 pub fn client_auth_configs_router(state: AuthConfigState) -> Router {
     Router::new()
-        .route("/", post(create_client_auth_config).get(list_client_auth_configs))
-        .route("/:id", get(get_client_auth_config).put(update_client_auth_config).delete(delete_client_auth_config))
-        .with_state(state)
+        .push(
+            Router::new()
+                .post(create_client_auth_config)
+                .get(list_client_auth_configs)
+        )
+        .push(
+            Router::with_path("<id>")
+                .get(get_client_auth_config)
+                .put(update_client_auth_config)
+                .delete(delete_client_auth_config)
+        )
+        .hoop(affix_state::inject(state))
 }
 
 /// Create IDP role mappings router
 pub fn idp_role_mappings_router(state: AuthConfigState) -> Router {
     Router::new()
-        .route("/", post(create_idp_role_mapping).get(list_idp_role_mappings))
-        .route("/:id", axum::routing::delete(delete_idp_role_mapping))
-        .with_state(state)
+        .push(
+            Router::new()
+                .post(create_idp_role_mapping)
+                .get(list_idp_role_mappings)
+        )
+        .push(
+            Router::with_path("<id>")
+                .delete(delete_idp_role_mapping)
+        )
+        .hoop(affix_state::inject(state))
 }

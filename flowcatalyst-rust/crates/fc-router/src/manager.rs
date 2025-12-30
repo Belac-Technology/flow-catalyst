@@ -20,6 +20,7 @@ use fc_common::{
     PoolConfig, RouterConfig, PoolStats,
 };
 use fc_queue::{QueueConsumer, QueueMetrics};
+use salvo::oapi::ToSchema;
 
 use crate::pool::ProcessPool;
 use crate::mediator::Mediator;
@@ -889,7 +890,7 @@ impl QueueManager {
 }
 
 /// Information about an in-flight message for API response
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, ToSchema)]
 pub struct InFlightMessageInfo {
     #[serde(rename = "messageId")]
     pub message_id: String,

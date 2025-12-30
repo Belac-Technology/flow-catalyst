@@ -88,7 +88,7 @@ impl PendingJobPoller {
         let filter = doc! { "status": "PENDING" };
         let options = FindOptions::builder().limit(self.config.batch_size as i64).build();
 
-        let mut cursor = collection.find(filter, options).await?;
+        let mut cursor = collection.find(filter).with_options(options).await?;
         let mut jobs = Vec::new();
         while cursor.advance().await? {
             let doc = cursor.deserialize_current()?;
@@ -189,7 +189,7 @@ impl PendingJobPoller {
                             "updatedAt": bson::DateTime::now()
                         }
                     };
-                    collection.update_one(filter, update, None).await?;
+                    collection.update_one(filter, update).await?;
                     debug!(job_id = %job.id, "Job dispatched");
                     metrics::counter!("scheduler.jobs.queued_total").increment(1);
                 }

@@ -16,7 +16,7 @@ fc-stream = { path = "../../crates/fc-stream" }
 fc-standby = { path = "../../crates/fc-standby" }
 fc-platform = { path = "../../crates/fc-platform" }
 tokio = { workspace = true }
-axum = { workspace = true }
+salvo = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 sqlx = { workspace = true }

@@ -8,15 +8,11 @@
 //! - Message publishing
 
 use std::sync::Arc;
-use axum::{
-    body::Body,
-    http::{Request, StatusCode, Method},
-};
-use tower::ServiceExt;
-use http_body_util::BodyExt;
+use salvo::prelude::*;
+use salvo::test::*;
 use async_trait::async_trait;
 
-use fc_common::{Message, MediationType, MediationOutcome, PoolConfig, RouterConfig};
+use fc_common::{Message, MediationOutcome, PoolConfig, RouterConfig};
 use fc_queue::QueuePublisher;
 use fc_router::{
     QueueManager, WarningService, HealthService, Mediator,
@@ -74,7 +70,7 @@ impl Mediator for MockMediator {
     }
 }
 
-async fn create_test_app() -> (axum::Router, Arc<MockPublisher>, Arc<QueueManager>) {
+async fn create_test_app() -> (Service, Arc<MockPublisher>, Arc<QueueManager>) {
     let publisher = Arc::new(MockPublisher::new());
     let mediator = Arc::new(MockMediator);
     let queue_manager = Arc::new(QueueManager::new(mediator));
@@ -95,19 +91,40 @@ async fn create_test_app() -> (axum::Router, Arc<MockPublisher>, Arc<QueueManage
     };
     queue_manager.apply_config(config).await.unwrap();
 
-    let app = create_router(
+    let router = create_router(
         publisher.clone(),
         queue_manager.clone(),
         warning_service,
         health_service,
     );
 
-    (app, publisher, queue_manager)
+    let service = Service::new(router);
+
+    (service, publisher, queue_manager)
 }
 
-async fn get_body_string(body: Body) -> String {
-    let bytes = body.collect().await.unwrap().to_bytes();
-    String::from_utf8(bytes.to_vec()).unwrap()
+// Helper to get status from response
+fn status(res: &Response) -> StatusCode {
+    res.status_code.unwrap_or(StatusCode::OK)
+}
+
+// Helper to extract JSON body
+async fn take_json(res: &mut Response) -> serde_json::Value {
+    use salvo::http::body::ResBody;
+
+    let body = res.take_body();
+    let bytes = match body {
+        ResBody::Once(bytes) => bytes,
+        ResBody::Chunks(chunks) => {
+            let mut all_bytes = bytes::BytesMut::new();
+            for chunk in chunks {
+                all_bytes.extend_from_slice(&chunk);
+            }
+            all_bytes.freeze()
+        }
+        _ => bytes::Bytes::new(),
+    };
+    serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null)
 }
 
 // ============================================================================
@@ -116,22 +133,15 @@ async fn get_body_string(body: Body) -> String {
 
 #[tokio::test]
 async fn test_health_endpoint() {
-    let (app, _, _) = create_test_app().await;
+    let (service, _, _) = create_test_app().await;
 
-    let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/health")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let mut response = TestClient::get("http://localhost/health")
+        .send(&service)
+        .await;
 
-    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(status(&response), StatusCode::OK);
 
-    let body = get_body_string(response.into_body()).await;
-    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    let json = take_json(&mut response).await;
 
     assert_eq!(json["status"], "UP");
     assert!(json["version"].is_string());
@@ -139,44 +149,30 @@ async fn test_health_endpoint() {
 
 #[tokio::test]
 async fn test_liveness_probe() {
-    let (app, _, _) = create_test_app().await;
+    let (service, _, _) = create_test_app().await;
 
-    let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/health/live")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let mut response = TestClient::get("http://localhost/health/live")
+        .send(&service)
+        .await;
 
-    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(status(&response), StatusCode::OK);
 
-    let body = get_body_string(response.into_body()).await;
-    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    let json = take_json(&mut response).await;
 
     assert_eq!(json["status"], "LIVE");
 }
 
 #[tokio::test]
 async fn test_readiness_probe() {
-    let (app, _, _) = create_test_app().await;
+    let (service, _, _) = create_test_app().await;
 
-    let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/health/ready")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let mut response = TestClient::get("http://localhost/health/ready")
+        .send(&service)
+        .await;
 
-    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(status(&response), StatusCode::OK);
 
-    let body = get_body_string(response.into_body()).await;
-    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    let json = take_json(&mut response).await;
 
     assert_eq!(json["status"], "READY");
 }
@@ -187,22 +183,15 @@ async fn test_readiness_probe() {
 
 #[tokio::test]
 async fn test_monitoring_endpoint() {
-    let (app, _, _) = create_test_app().await;
+    let (service, _, _) = create_test_app().await;
 
-    let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/monitoring")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let mut response = TestClient::get("http://localhost/monitoring")
+        .send(&service)
+        .await;
 
-    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(status(&response), StatusCode::OK);
 
-    let body = get_body_string(response.into_body()).await;
-    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    let json = take_json(&mut response).await;
 
     assert_eq!(json["status"], "HEALTHY");
     assert!(json["version"].is_string());
@@ -213,44 +202,30 @@ async fn test_monitoring_endpoint() {
 
 #[tokio::test]
 async fn test_health_report_endpoint() {
-    let (app, _, _) = create_test_app().await;
+    let (service, _, _) = create_test_app().await;
 
-    let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/monitoring/health")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let mut response = TestClient::get("http://localhost/monitoring/health")
+        .send(&service)
+        .await;
 
-    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(status(&response), StatusCode::OK);
 
-    let body = get_body_string(response.into_body()).await;
-    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    let json = take_json(&mut response).await;
 
     assert!(json["status"].is_string());
 }
 
 #[tokio::test]
 async fn test_pool_stats_endpoint() {
-    let (app, _, _) = create_test_app().await;
+    let (service, _, _) = create_test_app().await;
 
-    let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/monitoring/pools")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let mut response = TestClient::get("http://localhost/monitoring/pools")
+        .send(&service)
+        .await;
 
-    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(status(&response), StatusCode::OK);
 
-    let body = get_body_string(response.into_body()).await;
-    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    let json = take_json(&mut response).await;
 
     assert!(json.is_array());
     let pools = json.as_array().unwrap();
@@ -260,24 +235,17 @@ async fn test_pool_stats_endpoint() {
 
 #[tokio::test]
 async fn test_update_pool_config() {
-    let (app, _, queue_manager) = create_test_app().await;
+    let (service, _, queue_manager) = create_test_app().await;
 
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method(Method::PUT)
-                .uri("/monitoring/pools/DEFAULT")
-                .header("Content-Type", "application/json")
-                .body(Body::from(r#"{"concurrency": 20, "rate_limit_per_minute": 1000}"#))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let mut response = TestClient::put("http://localhost/monitoring/pools/DEFAULT")
+        .add_header("Content-Type", "application/json", true)
+        .body(r#"{"concurrency": 20, "rate_limit_per_minute": 1000}"#)
+        .send(&service)
+        .await;
 
-    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(status(&response), StatusCode::OK);
 
-    let body = get_body_string(response.into_body()).await;
-    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    let json = take_json(&mut response).await;
 
     assert_eq!(json["success"], true);
 
@@ -294,22 +262,15 @@ async fn test_update_pool_config() {
 
 #[tokio::test]
 async fn test_list_warnings_empty() {
-    let (app, _, _) = create_test_app().await;
+    let (service, _, _) = create_test_app().await;
 
-    let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/warnings")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let mut response = TestClient::get("http://localhost/warnings")
+        .send(&service)
+        .await;
 
-    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(status(&response), StatusCode::OK);
 
-    let body = get_body_string(response.into_body()).await;
-    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    let json = take_json(&mut response).await;
 
     assert!(json.is_array());
     assert!(json.as_array().unwrap().is_empty());
@@ -317,63 +278,41 @@ async fn test_list_warnings_empty() {
 
 #[tokio::test]
 async fn test_critical_warnings_endpoint() {
-    let (app, _, _) = create_test_app().await;
+    let (service, _, _) = create_test_app().await;
 
-    let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/warnings/critical")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let mut response = TestClient::get("http://localhost/warnings/critical")
+        .send(&service)
+        .await;
 
-    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(status(&response), StatusCode::OK);
 
-    let body = get_body_string(response.into_body()).await;
-    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    let json = take_json(&mut response).await;
 
     assert!(json.is_array());
 }
 
 #[tokio::test]
 async fn test_acknowledge_nonexistent_warning() {
-    let (app, _, _) = create_test_app().await;
+    let (service, _, _) = create_test_app().await;
 
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method(Method::POST)
-                .uri("/warnings/nonexistent-id/acknowledge")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let response = TestClient::post("http://localhost/warnings/nonexistent-id/acknowledge")
+        .send(&service)
+        .await;
 
-    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    assert_eq!(status(&response), StatusCode::NOT_FOUND);
 }
 
 #[tokio::test]
 async fn test_acknowledge_all_warnings() {
-    let (app, _, _) = create_test_app().await;
+    let (service, _, _) = create_test_app().await;
 
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method(Method::POST)
-                .uri("/warnings/acknowledge-all")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let mut response = TestClient::post("http://localhost/warnings/acknowledge-all")
+        .send(&service)
+        .await;
 
-    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(status(&response), StatusCode::OK);
 
-    let body = get_body_string(response.into_body()).await;
-    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    let json = take_json(&mut response).await;
 
     assert!(json["acknowledged"].is_number());
 }
@@ -384,26 +323,19 @@ async fn test_acknowledge_all_warnings() {
 
 #[tokio::test]
 async fn test_publish_message() {
-    let (app, publisher, _) = create_test_app().await;
+    let (service, publisher, _) = create_test_app().await;
 
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method(Method::POST)
-                .uri("/messages")
-                .header("Content-Type", "application/json")
-                .body(Body::from(r#"{
-                    "payload": {"test": true, "value": 42}
-                }"#))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let mut response = TestClient::post("http://localhost/messages")
+        .add_header("Content-Type", "application/json", true)
+        .body(r#"{
+            "payload": {"test": true, "value": 42}
+        }"#)
+        .send(&service)
+        .await;
 
-    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(status(&response), StatusCode::OK);
 
-    let body = get_body_string(response.into_body()).await;
-    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    let json = take_json(&mut response).await;
 
     assert_eq!(json["status"], "ACCEPTED");
     assert!(json["message_id"].is_string());
@@ -414,70 +346,52 @@ async fn test_publish_message() {
 
 #[tokio::test]
 async fn test_publish_message_with_pool_code() {
-    let (app, publisher, _) = create_test_app().await;
+    let (service, publisher, _) = create_test_app().await;
 
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method(Method::POST)
-                .uri("/messages")
-                .header("Content-Type", "application/json")
-                .body(Body::from(r#"{
-                    "pool_code": "HIGH_PRIORITY",
-                    "payload": {"important": true}
-                }"#))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let response = TestClient::post("http://localhost/messages")
+        .add_header("Content-Type", "application/json", true)
+        .body(r#"{
+            "pool_code": "HIGH_PRIORITY",
+            "payload": {"important": true}
+        }"#)
+        .send(&service)
+        .await;
 
-    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(status(&response), StatusCode::OK);
     assert_eq!(publisher.published_count(), 1);
 }
 
 #[tokio::test]
 async fn test_publish_message_with_target() {
-    let (app, publisher, _) = create_test_app().await;
+    let (service, publisher, _) = create_test_app().await;
 
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method(Method::POST)
-                .uri("/messages")
-                .header("Content-Type", "application/json")
-                .body(Body::from(r#"{
-                    "mediation_target": "http://example.com/webhook",
-                    "payload": {"data": "value"}
-                }"#))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let response = TestClient::post("http://localhost/messages")
+        .add_header("Content-Type", "application/json", true)
+        .body(r#"{
+            "mediation_target": "http://example.com/webhook",
+            "payload": {"data": "value"}
+        }"#)
+        .send(&service)
+        .await;
 
-    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(status(&response), StatusCode::OK);
     assert_eq!(publisher.published_count(), 1);
 }
 
 #[tokio::test]
 async fn test_publish_message_with_group_id() {
-    let (app, publisher, _) = create_test_app().await;
+    let (service, publisher, _) = create_test_app().await;
 
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method(Method::POST)
-                .uri("/messages")
-                .header("Content-Type", "application/json")
-                .body(Body::from(r#"{
-                    "message_group_id": "order-123",
-                    "payload": {"order_id": 123}
-                }"#))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let response = TestClient::post("http://localhost/messages")
+        .add_header("Content-Type", "application/json", true)
+        .body(r#"{
+            "message_group_id": "order-123",
+            "payload": {"order_id": 123}
+        }"#)
+        .send(&service)
+        .await;
 
-    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(status(&response), StatusCode::OK);
     assert_eq!(publisher.published_count(), 1);
 }
 
@@ -487,59 +401,41 @@ async fn test_publish_message_with_group_id() {
 
 #[tokio::test]
 async fn test_invalid_json_body() {
-    let (app, _, _) = create_test_app().await;
+    let (service, _, _) = create_test_app().await;
 
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method(Method::POST)
-                .uri("/messages")
-                .header("Content-Type", "application/json")
-                .body(Body::from("not valid json"))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let response = TestClient::post("http://localhost/messages")
+        .add_header("Content-Type", "application/json", true)
+        .body("not valid json")
+        .send(&service)
+        .await;
 
     // Should return a 4xx error
-    assert!(response.status().is_client_error());
+    assert!(status(&response).is_client_error());
 }
 
 #[tokio::test]
 async fn test_missing_required_field() {
-    let (app, _, _) = create_test_app().await;
+    let (service, _, _) = create_test_app().await;
 
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method(Method::POST)
-                .uri("/messages")
-                .header("Content-Type", "application/json")
-                .body(Body::from(r#"{}"#)) // Missing payload
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let response = TestClient::post("http://localhost/messages")
+        .add_header("Content-Type", "application/json", true)
+        .body(r#"{}"#) // Missing payload
+        .send(&service)
+        .await;
 
     // Should return a 4xx error for missing required field
-    assert!(response.status().is_client_error());
+    assert!(status(&response).is_client_error());
 }
 
 #[tokio::test]
 async fn test_unknown_route() {
-    let (app, _, _) = create_test_app().await;
+    let (service, _, _) = create_test_app().await;
 
-    let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/unknown/path")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let response = TestClient::get("http://localhost/unknown/path")
+        .send(&service)
+        .await;
 
-    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    assert_eq!(status(&response), StatusCode::NOT_FOUND);
 }
 
 // ============================================================================
@@ -548,51 +444,33 @@ async fn test_unknown_route() {
 
 #[tokio::test]
 async fn test_warnings_with_severity_filter() {
-    let (app, _, _) = create_test_app().await;
+    let (service, _, _) = create_test_app().await;
 
-    let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/warnings?severity=CRITICAL")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let response = TestClient::get("http://localhost/warnings?severity=CRITICAL")
+        .send(&service)
+        .await;
 
-    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(status(&response), StatusCode::OK);
 }
 
 #[tokio::test]
 async fn test_warnings_with_category_filter() {
-    let (app, _, _) = create_test_app().await;
+    let (service, _, _) = create_test_app().await;
 
-    let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/warnings?category=ROUTING")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let response = TestClient::get("http://localhost/warnings?category=ROUTING")
+        .send(&service)
+        .await;
 
-    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(status(&response), StatusCode::OK);
 }
 
 #[tokio::test]
 async fn test_warnings_unacknowledged_only() {
-    let (app, _, _) = create_test_app().await;
+    let (service, _, _) = create_test_app().await;
 
-    let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/warnings?acknowledged=false")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let response = TestClient::get("http://localhost/warnings?acknowledged=false")
+        .send(&service)
+        .await;
 
-    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(status(&response), StatusCode::OK);
 }

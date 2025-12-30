@@ -2,19 +2,15 @@
 //!
 //! REST endpoints for event type management.
 
-use axum::{
-    extract::{Path, Query, State},
-    routing::{get, post},
-    Json, Router,
-};
+use salvo::prelude::*;
+use salvo::oapi::extract::*;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use utoipa::ToSchema;
 
 use crate::domain::{EventType, SpecVersion};
 use crate::repository::EventTypeRepository;
 use crate::error::PlatformError;
-use crate::api::common::{ApiResult, PaginationParams, CreatedResponse, SuccessResponse};
+use crate::api::common::{PaginationParams, CreatedResponse, SuccessResponse};
 use crate::api::middleware::Authenticated;
 
 /// Create event type request
@@ -121,8 +117,9 @@ impl From<EventType> for EventTypeResponse {
 }
 
 /// Query parameters for event types list
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize, ToParameters)]
 #[serde(rename_all = "camelCase")]
+#[salvo(parameters(default_parameter_in = Query))]
 pub struct EventTypesQuery {
     #[serde(flatten)]
     pub pagination: PaginationParams,
@@ -144,19 +141,24 @@ pub struct EventTypesState {
 }
 
 /// Create a new event type
+#[endpoint(tags("EventTypes"))]
 pub async fn create_event_type(
-    State(state): State<EventTypesState>,
-    Authenticated(auth): Authenticated,
-    Json(req): Json<CreateEventTypeRequest>,
-) -> ApiResult<CreatedResponse> {
-    crate::service::checks::can_write_event_types(&auth)?;
+    depot: &mut Depot,
+    body: JsonBody<CreateEventTypeRequest>,
+) -> Result<Json<CreatedResponse>, PlatformError> {
+    let auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<EventTypesState>().map_err(|_| PlatformError::internal("State not found"))?;
+
+    crate::service::checks::can_write_event_types(&auth.0)?;
+
+    let req = body.into_inner();
 
     // Validate client access if specified
     if let Some(ref cid) = req.client_id {
-        if !auth.can_access_client(cid) {
+        if !auth.0.can_access_client(cid) {
             return Err(PlatformError::forbidden(format!("No access to client: {}", cid)));
         }
-    } else if !auth.is_anchor() {
+    } else if !auth.0.is_anchor() {
         return Err(PlatformError::forbidden("Only anchor users can create anchor-level event types"));
     }
 
@@ -186,19 +188,23 @@ pub async fn create_event_type(
 }
 
 /// Get event type by ID
+#[endpoint(tags("EventTypes"))]
 pub async fn get_event_type(
-    State(state): State<EventTypesState>,
-    Authenticated(auth): Authenticated,
-    Path(id): Path<String>,
-) -> ApiResult<EventTypeResponse> {
-    crate::service::checks::can_read_event_types(&auth)?;
+    depot: &mut Depot,
+    id: PathParam<String>,
+) -> Result<Json<EventTypeResponse>, PlatformError> {
+    let auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<EventTypesState>().map_err(|_| PlatformError::internal("State not found"))?;
+    let id = id.into_inner();
+
+    crate::service::checks::can_read_event_types(&auth.0)?;
 
     let event_type = state.event_type_repo.find_by_id(&id).await?
         .ok_or_else(|| PlatformError::not_found("EventType", &id))?;
 
     // Check client access
     if let Some(ref cid) = event_type.client_id {
-        if !auth.can_access_client(cid) {
+        if !auth.0.can_access_client(cid) {
             return Err(PlatformError::forbidden("No access to this event type"));
         }
     }
@@ -207,19 +213,23 @@ pub async fn get_event_type(
 }
 
 /// Get event type by code
+#[endpoint(tags("EventTypes"))]
 pub async fn get_event_type_by_code(
-    State(state): State<EventTypesState>,
-    Authenticated(auth): Authenticated,
-    Path(code): Path<String>,
-) -> ApiResult<EventTypeResponse> {
-    crate::service::checks::can_read_event_types(&auth)?;
+    depot: &mut Depot,
+    code: PathParam<String>,
+) -> Result<Json<EventTypeResponse>, PlatformError> {
+    let auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<EventTypesState>().map_err(|_| PlatformError::internal("State not found"))?;
+    let code = code.into_inner();
+
+    crate::service::checks::can_read_event_types(&auth.0)?;
 
     let event_type = state.event_type_repo.find_by_code(&code).await?
         .ok_or_else(|| PlatformError::EventTypeNotFound { code: code.clone() })?;
 
     // Check client access
     if let Some(ref cid) = event_type.client_id {
-        if !auth.can_access_client(cid) {
+        if !auth.0.can_access_client(cid) {
             return Err(PlatformError::forbidden("No access to this event type"));
         }
     }
@@ -228,12 +238,15 @@ pub async fn get_event_type_by_code(
 }
 
 /// List event types
+#[endpoint(tags("EventTypes"))]
 pub async fn list_event_types(
-    State(state): State<EventTypesState>,
-    Authenticated(auth): Authenticated,
-    Query(query): Query<EventTypesQuery>,
-) -> ApiResult<Vec<EventTypeResponse>> {
-    crate::service::checks::can_read_event_types(&auth)?;
+    depot: &mut Depot,
+    query: EventTypesQuery,
+) -> Result<Json<Vec<EventTypeResponse>>, PlatformError> {
+    let auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<EventTypesState>().map_err(|_| PlatformError::internal("State not found"))?;
+
+    crate::service::checks::can_read_event_types(&auth.0)?;
 
     let event_types = if let Some(ref app) = query.application {
         state.event_type_repo.find_by_application(app).await?
@@ -245,7 +258,7 @@ pub async fn list_event_types(
     let filtered: Vec<EventTypeResponse> = event_types.into_iter()
         .filter(|et| {
             match &et.client_id {
-                Some(cid) => auth.can_access_client(cid),
+                Some(cid) => auth.0.can_access_client(cid),
                 None => true, // Anchor-level event types visible to all
             }
         })
@@ -256,27 +269,32 @@ pub async fn list_event_types(
 }
 
 /// Update event type
+#[endpoint(tags("EventTypes"))]
 pub async fn update_event_type(
-    State(state): State<EventTypesState>,
-    Authenticated(auth): Authenticated,
-    Path(id): Path<String>,
-    Json(req): Json<UpdateEventTypeRequest>,
-) -> ApiResult<EventTypeResponse> {
-    crate::service::checks::can_write_event_types(&auth)?;
+    depot: &mut Depot,
+    id: PathParam<String>,
+    body: JsonBody<UpdateEventTypeRequest>,
+) -> Result<Json<EventTypeResponse>, PlatformError> {
+    let auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<EventTypesState>().map_err(|_| PlatformError::internal("State not found"))?;
+    let id = id.into_inner();
+
+    crate::service::checks::can_write_event_types(&auth.0)?;
 
     let mut event_type = state.event_type_repo.find_by_id(&id).await?
         .ok_or_else(|| PlatformError::not_found("EventType", &id))?;
 
     // Check client access
     if let Some(ref cid) = event_type.client_id {
-        if !auth.can_access_client(cid) {
+        if !auth.0.can_access_client(cid) {
             return Err(PlatformError::forbidden("No access to this event type"));
         }
-    } else if !auth.is_anchor() {
+    } else if !auth.0.is_anchor() {
         return Err(PlatformError::forbidden("Only anchor users can modify anchor-level event types"));
     }
 
     // Update fields
+    let req = body.into_inner();
     if let Some(name) = req.name {
         event_type.name = name;
     }
@@ -291,24 +309,29 @@ pub async fn update_event_type(
 }
 
 /// Add schema version to event type
+#[endpoint(tags("EventTypes"))]
 pub async fn add_schema_version(
-    State(state): State<EventTypesState>,
-    Authenticated(auth): Authenticated,
-    Path(id): Path<String>,
-    Json(req): Json<AddSchemaVersionRequest>,
-) -> ApiResult<EventTypeResponse> {
-    crate::service::checks::can_write_event_types(&auth)?;
+    depot: &mut Depot,
+    id: PathParam<String>,
+    body: JsonBody<AddSchemaVersionRequest>,
+) -> Result<Json<EventTypeResponse>, PlatformError> {
+    let auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<EventTypesState>().map_err(|_| PlatformError::internal("State not found"))?;
+    let id = id.into_inner();
+
+    crate::service::checks::can_write_event_types(&auth.0)?;
 
     let mut event_type = state.event_type_repo.find_by_id(&id).await?
         .ok_or_else(|| PlatformError::not_found("EventType", &id))?;
 
     // Check client access
     if let Some(ref cid) = event_type.client_id {
-        if !auth.can_access_client(cid) {
+        if !auth.0.can_access_client(cid) {
             return Err(PlatformError::forbidden("No access to this event type"));
         }
     }
 
+    let req = body.into_inner();
     event_type.add_schema_version(req.schema);
     state.event_type_repo.update(&event_type).await?;
 
@@ -316,22 +339,26 @@ pub async fn add_schema_version(
 }
 
 /// Delete event type (archive)
+#[endpoint(tags("EventTypes"))]
 pub async fn delete_event_type(
-    State(state): State<EventTypesState>,
-    Authenticated(auth): Authenticated,
-    Path(id): Path<String>,
-) -> ApiResult<SuccessResponse> {
-    crate::service::checks::can_write_event_types(&auth)?;
+    depot: &mut Depot,
+    id: PathParam<String>,
+) -> Result<Json<SuccessResponse>, PlatformError> {
+    let auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<EventTypesState>().map_err(|_| PlatformError::internal("State not found"))?;
+    let id = id.into_inner();
+
+    crate::service::checks::can_write_event_types(&auth.0)?;
 
     let mut event_type = state.event_type_repo.find_by_id(&id).await?
         .ok_or_else(|| PlatformError::not_found("EventType", &id))?;
 
     // Check client access
     if let Some(ref cid) = event_type.client_id {
-        if !auth.can_access_client(cid) {
+        if !auth.0.can_access_client(cid) {
             return Err(PlatformError::forbidden("No access to this event type"));
         }
-    } else if !auth.is_anchor() {
+    } else if !auth.0.is_anchor() {
         return Err(PlatformError::forbidden("Only anchor users can delete anchor-level event types"));
     }
 
@@ -344,9 +371,24 @@ pub async fn delete_event_type(
 /// Create event types router
 pub fn event_types_router(state: EventTypesState) -> Router {
     Router::new()
-        .route("/", post(create_event_type).get(list_event_types))
-        .route("/:id", get(get_event_type).put(update_event_type).delete(delete_event_type))
-        .route("/by-code/:code", get(get_event_type_by_code))
-        .route("/:id/versions", post(add_schema_version))
-        .with_state(state)
+        .push(
+            Router::new()
+                .post(create_event_type)
+                .get(list_event_types)
+        )
+        .push(
+            Router::with_path("<id>")
+                .get(get_event_type)
+                .put(update_event_type)
+                .delete(delete_event_type)
+        )
+        .push(
+            Router::with_path("by-code/<code>")
+                .get(get_event_type_by_code)
+        )
+        .push(
+            Router::with_path("<id>/versions")
+                .post(add_schema_version)
+        )
+        .hoop(affix_state::inject(state))
 }

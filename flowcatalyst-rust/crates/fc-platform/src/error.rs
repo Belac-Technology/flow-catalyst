@@ -98,6 +98,10 @@ impl PlatformError {
     pub fn forbidden(message: impl Into<String>) -> Self {
         Self::Forbidden { message: message.into() }
     }
+
+    pub fn internal(message: impl Into<String>) -> Self {
+        Self::Internal { message: message.into() }
+    }
 }
 
 pub type Result<T> = std::result::Result<T, PlatformError>;

@@ -262,7 +262,7 @@ impl DispatchTarget for MongoDispatchTarget {
             .map_err(|e| format!("Serialization error: {}", e))?;
 
         self.collection
-            .insert_one(doc, None)
+            .insert_one(doc)
             .await
             .map_err(|e| format!("MongoDB insert error: {}", e))?;
 
@@ -298,7 +298,7 @@ impl DispatchTarget for MongoDispatchTarget {
             }
         };
 
-        match self.collection.insert_many(docs, None).await {
+        match self.collection.insert_many(docs).await {
             Ok(_) => BatchDispatchResult::success(jobs.len()),
             Err(e) => {
                 error!("MongoDB batch insert error: {}", e);

@@ -2,19 +2,15 @@
 //!
 //! REST endpoints for viewing dispatch job status.
 
-use axum::{
-    extract::{Path, Query, State},
-    routing::get,
-    Json, Router,
-};
+use salvo::prelude::*;
+use salvo::oapi::extract::*;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use utoipa::ToSchema;
 
 use crate::domain::{DispatchJob, DispatchJobRead, DispatchStatus};
 use crate::repository::DispatchJobRepository;
 use crate::error::PlatformError;
-use crate::api::common::{ApiResult, PaginationParams};
+use crate::api::common::PaginationParams;
 use crate::api::middleware::Authenticated;
 
 /// Dispatch job response DTO
@@ -126,8 +122,9 @@ impl From<DispatchJobRead> for DispatchJobReadResponse {
 }
 
 /// Query parameters for dispatch jobs list
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize, ToParameters)]
 #[serde(rename_all = "camelCase")]
+#[salvo(parameters(default_parameter_in = Query))]
 pub struct DispatchJobsQuery {
     #[serde(flatten)]
     pub pagination: PaginationParams,
@@ -155,19 +152,23 @@ pub struct DispatchJobsState {
 }
 
 /// Get dispatch job by ID
+#[endpoint(tags("DispatchJobs"))]
 pub async fn get_dispatch_job(
-    State(state): State<DispatchJobsState>,
-    Authenticated(auth): Authenticated,
-    Path(id): Path<String>,
-) -> ApiResult<DispatchJobResponse> {
-    crate::service::checks::can_read_dispatch_jobs(&auth)?;
+    depot: &mut Depot,
+    id: PathParam<String>,
+) -> Result<Json<DispatchJobResponse>, PlatformError> {
+    let auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<DispatchJobsState>().map_err(|_| PlatformError::internal("State not found"))?;
+    let id = id.into_inner();
+
+    crate::service::checks::can_read_dispatch_jobs(&auth.0)?;
 
     let job = state.dispatch_job_repo.find_by_id(&id).await?
         .ok_or_else(|| PlatformError::not_found("DispatchJob", &id))?;
 
     // Check client access
     if let Some(ref cid) = job.client_id {
-        if !auth.can_access_client(cid) {
+        if !auth.0.can_access_client(cid) {
             return Err(PlatformError::forbidden("No access to this dispatch job"));
         }
     }
@@ -176,12 +177,15 @@ pub async fn get_dispatch_job(
 }
 
 /// List dispatch jobs
+#[endpoint(tags("DispatchJobs"))]
 pub async fn list_dispatch_jobs(
-    State(state): State<DispatchJobsState>,
-    Authenticated(auth): Authenticated,
-    Query(query): Query<DispatchJobsQuery>,
-) -> ApiResult<Vec<DispatchJobResponse>> {
-    crate::service::checks::can_read_dispatch_jobs(&auth)?;
+    depot: &mut Depot,
+    query: DispatchJobsQuery,
+) -> Result<Json<Vec<DispatchJobResponse>>, PlatformError> {
+    let auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<DispatchJobsState>().map_err(|_| PlatformError::internal("State not found"))?;
+
+    crate::service::checks::can_read_dispatch_jobs(&auth.0)?;
 
     let jobs = if let Some(ref event_id) = query.event_id {
         state.dispatch_job_repo.find_by_event_id(event_id).await?
@@ -190,7 +194,7 @@ pub async fn list_dispatch_jobs(
     } else if let Some(ref sub_id) = query.subscription_id {
         state.dispatch_job_repo.find_by_subscription_id(sub_id, query.pagination.limit as i64).await?
     } else if let Some(ref client_id) = query.client_id {
-        if !auth.can_access_client(client_id) {
+        if !auth.0.can_access_client(client_id) {
             return Err(PlatformError::forbidden(format!("No access to client: {}", client_id)));
         }
         state.dispatch_job_repo.find_by_client(client_id, query.pagination.limit as i64).await?
@@ -214,8 +218,8 @@ pub async fn list_dispatch_jobs(
     let filtered: Vec<DispatchJobResponse> = jobs.into_iter()
         .filter(|j| {
             match &j.client_id {
-                Some(cid) => auth.can_access_client(cid),
-                None => auth.is_anchor(),
+                Some(cid) => auth.0.can_access_client(cid),
+                None => auth.0.is_anchor(),
             }
         })
         .map(|j| j.into())
@@ -225,12 +229,15 @@ pub async fn list_dispatch_jobs(
 }
 
 /// Get dispatch jobs for an event
+#[endpoint(tags("DispatchJobs"))]
 pub async fn get_jobs_for_event(
-    State(state): State<DispatchJobsState>,
-    Authenticated(auth): Authenticated,
-    Path(event_id): Path<String>,
-) -> ApiResult<Vec<DispatchJobResponse>> {
-    crate::service::checks::can_read_dispatch_jobs(&auth)?;
+    depot: &mut Depot,
+    event_id: PathParam<String>,
+) -> Result<Json<Vec<DispatchJobResponse>>, PlatformError> {
+    let auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<DispatchJobsState>().map_err(|_| PlatformError::internal("State not found"))?;
+
+    crate::service::checks::can_read_dispatch_jobs(&auth.0)?;
 
     let jobs = state.dispatch_job_repo.find_by_event_id(&event_id).await?;
 
@@ -238,8 +245,8 @@ pub async fn get_jobs_for_event(
     let filtered: Vec<DispatchJobResponse> = jobs.into_iter()
         .filter(|j| {
             match &j.client_id {
-                Some(cid) => auth.can_access_client(cid),
-                None => auth.is_anchor(),
+                Some(cid) => auth.0.can_access_client(cid),
+                None => auth.0.is_anchor(),
             }
         })
         .map(|j| j.into())
@@ -251,8 +258,17 @@ pub async fn get_jobs_for_event(
 /// Create dispatch jobs router
 pub fn dispatch_jobs_router(state: DispatchJobsState) -> Router {
     Router::new()
-        .route("/", get(list_dispatch_jobs))
-        .route("/:id", get(get_dispatch_job))
-        .route("/by-event/:event_id", get(get_jobs_for_event))
-        .with_state(state)
+        .push(
+            Router::new()
+                .get(list_dispatch_jobs)
+        )
+        .push(
+            Router::with_path("<id>")
+                .get(get_dispatch_job)
+        )
+        .push(
+            Router::with_path("by-event/<event_id>")
+                .get(get_jobs_for_event)
+        )
+        .hoop(affix_state::inject(state))
 }

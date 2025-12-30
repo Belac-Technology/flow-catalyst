@@ -38,7 +38,7 @@ impl StaleQueuedJobPoller {
             "$unset": { "queuedAt": "" }
         };
 
-        let result = collection.update_many(filter, update, None).await?;
+        let result = collection.update_many(filter, update).await?;
         let count = result.modified_count as usize;
 
         // Record metrics
@@ -58,7 +58,7 @@ impl StaleQueuedJobPoller {
     pub async fn count_queued_jobs(&self) -> Result<u64, SchedulerError> {
         let collection: Collection<bson::Document> = self.db.collection("dispatch_jobs");
         let filter = doc! { "status": "QUEUED" };
-        let count = collection.count_documents(filter, None).await?;
+        let count = collection.count_documents(filter).await?;
 
         metrics::gauge!("scheduler.queued_jobs_total").set(count as f64);
         Ok(count)
@@ -78,7 +78,7 @@ impl StaleQueuedJobPoller {
             "queuedAt": { "$lt": threshold_bson }
         };
 
-        let count = collection.count_documents(filter, None).await?;
+        let count = collection.count_documents(filter).await?;
 
         if count > 0 {
             warn!(count = count, "Jobs approaching stale threshold");

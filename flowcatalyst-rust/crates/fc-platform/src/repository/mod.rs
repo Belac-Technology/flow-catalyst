@@ -15,6 +15,7 @@ pub mod role;
 pub mod oauth_client;
 pub mod auth_config;
 pub mod audit_log;
+pub mod oidc_login_state;
 
 pub use event::EventRepository;
 pub use event_type::EventTypeRepository;
@@ -34,3 +35,4 @@ pub use auth_config::{
     IdpRoleMappingRepository,
 };
 pub use audit_log::AuditLogRepository;
+pub use oidc_login_state::OidcLoginStateRepository;

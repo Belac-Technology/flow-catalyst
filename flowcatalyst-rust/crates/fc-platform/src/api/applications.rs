@@ -3,19 +3,15 @@
 //! REST endpoints for application management.
 //! Applications are global platform entities (not client-scoped).
 
-use axum::{
-    extract::{Path, Query, State},
-    routing::{get, post},
-    Json, Router,
-};
+use salvo::prelude::*;
+use salvo::oapi::extract::*;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use utoipa::ToSchema;
 
 use crate::domain::Application;
 use crate::repository::ApplicationRepository;
 use crate::error::PlatformError;
-use crate::api::common::{ApiResult, PaginationParams, CreatedResponse, SuccessResponse};
+use crate::api::common::{PaginationParams, CreatedResponse, SuccessResponse};
 use crate::api::middleware::Authenticated;
 
 /// Create application request
@@ -97,8 +93,9 @@ impl From<Application> for ApplicationResponse {
 }
 
 /// Query parameters for applications list
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize, ToParameters)]
 #[serde(rename_all = "camelCase")]
+#[salvo(parameters(default_parameter_in = Query))]
 pub struct ApplicationsQuery {
     #[serde(flatten)]
     pub pagination: PaginationParams,
@@ -114,13 +111,18 @@ pub struct ApplicationsState {
 }
 
 /// Create a new application
+#[endpoint(tags("Applications"))]
 pub async fn create_application(
-    State(state): State<ApplicationsState>,
-    Authenticated(auth): Authenticated,
-    Json(req): Json<CreateApplicationRequest>,
-) -> ApiResult<CreatedResponse> {
+    depot: &mut Depot,
+    body: JsonBody<CreateApplicationRequest>,
+) -> Result<Json<CreatedResponse>, PlatformError> {
+    let auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<ApplicationsState>().map_err(|_| PlatformError::internal("State not found"))?;
+
     // Only anchor users can manage applications
-    crate::service::checks::require_anchor(&auth)?;
+    crate::service::checks::require_anchor(&auth.0)?;
+
+    let req = body.into_inner();
 
     // Check for duplicate code
     if let Some(_) = state.application_repo.find_by_code(&req.code).await? {
@@ -152,11 +154,15 @@ pub async fn create_application(
 }
 
 /// Get application by ID
+#[endpoint(tags("Applications"))]
 pub async fn get_application(
-    State(state): State<ApplicationsState>,
-    Authenticated(_auth): Authenticated,
-    Path(id): Path<String>,
-) -> ApiResult<ApplicationResponse> {
+    depot: &mut Depot,
+    id: PathParam<String>,
+) -> Result<Json<ApplicationResponse>, PlatformError> {
+    let _auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<ApplicationsState>().map_err(|_| PlatformError::internal("State not found"))?;
+    let id = id.into_inner();
+
     let app = state.application_repo.find_by_id(&id).await?
         .ok_or_else(|| PlatformError::not_found("Application", &id))?;
 
@@ -164,11 +170,14 @@ pub async fn get_application(
 }
 
 /// List applications
+#[endpoint(tags("Applications"))]
 pub async fn list_applications(
-    State(state): State<ApplicationsState>,
-    Authenticated(_auth): Authenticated,
-    Query(query): Query<ApplicationsQuery>,
-) -> ApiResult<Vec<ApplicationResponse>> {
+    depot: &mut Depot,
+    query: ApplicationsQuery,
+) -> Result<Json<Vec<ApplicationResponse>>, PlatformError> {
+    let _auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<ApplicationsState>().map_err(|_| PlatformError::internal("State not found"))?;
+
     let apps = if query.active.unwrap_or(true) {
         state.application_repo.find_active().await?
     } else {
@@ -183,17 +192,22 @@ pub async fn list_applications(
 }
 
 /// Update application
+#[endpoint(tags("Applications"))]
 pub async fn update_application(
-    State(state): State<ApplicationsState>,
-    Authenticated(auth): Authenticated,
-    Path(id): Path<String>,
-    Json(req): Json<UpdateApplicationRequest>,
-) -> ApiResult<ApplicationResponse> {
-    crate::service::checks::require_anchor(&auth)?;
+    depot: &mut Depot,
+    id: PathParam<String>,
+    body: JsonBody<UpdateApplicationRequest>,
+) -> Result<Json<ApplicationResponse>, PlatformError> {
+    let auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<ApplicationsState>().map_err(|_| PlatformError::internal("State not found"))?;
+    let id = id.into_inner();
+
+    crate::service::checks::require_anchor(&auth.0)?;
 
     let mut app = state.application_repo.find_by_id(&id).await?
         .ok_or_else(|| PlatformError::not_found("Application", &id))?;
 
+    let req = body.into_inner();
     if let Some(name) = req.name {
         app.name = name;
     }
@@ -214,12 +228,16 @@ pub async fn update_application(
 }
 
 /// Delete application (deactivate)
+#[endpoint(tags("Applications"))]
 pub async fn delete_application(
-    State(state): State<ApplicationsState>,
-    Authenticated(auth): Authenticated,
-    Path(id): Path<String>,
-) -> ApiResult<SuccessResponse> {
-    crate::service::checks::require_anchor(&auth)?;
+    depot: &mut Depot,
+    id: PathParam<String>,
+) -> Result<Json<SuccessResponse>, PlatformError> {
+    let auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<ApplicationsState>().map_err(|_| PlatformError::internal("State not found"))?;
+    let id = id.into_inner();
+
+    crate::service::checks::require_anchor(&auth.0)?;
 
     let mut app = state.application_repo.find_by_id(&id).await?
         .ok_or_else(|| PlatformError::not_found("Application", &id))?;
@@ -233,7 +251,16 @@ pub async fn delete_application(
 /// Create applications router
 pub fn applications_router(state: ApplicationsState) -> Router {
     Router::new()
-        .route("/", post(create_application).get(list_applications))
-        .route("/:id", get(get_application).put(update_application).delete(delete_application))
-        .with_state(state)
+        .push(
+            Router::new()
+                .post(create_application)
+                .get(list_applications)
+        )
+        .push(
+            Router::with_path("<id>")
+                .get(get_application)
+                .put(update_application)
+                .delete(delete_application)
+        )
+        .hoop(affix_state::inject(state))
 }

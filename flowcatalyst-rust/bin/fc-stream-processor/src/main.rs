@@ -155,7 +155,7 @@ async fn watch_events(
 
     info!("Starting change stream on events collection");
 
-    let mut change_stream = collection.watch(pipeline, None).await?;
+    let mut change_stream = collection.watch().pipeline(pipeline).await?;
 
     while let Some(change) = change_stream.next().await {
         match change {

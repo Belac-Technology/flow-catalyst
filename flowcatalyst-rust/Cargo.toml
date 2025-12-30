@@ -25,9 +25,9 @@ tokio = { version = "1.36", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 axum = "0.7"
-reqwest = { version = "0.11", features = ["json", "rustls-tls"] }
+reqwest = { version = "0.12.9", features = ["json", "rustls-tls"] }
 sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "sqlite", "postgres", "mysql", "chrono", "uuid"] }
-mongodb = { version = "2.8", features = ["tokio-runtime"] }
+mongodb = "3.1"
 bson = { version = "2.9", features = ["chrono-0_4"] }
 aws-sdk-sqs = "1.14"
 aws-config = "1.1"
@@ -48,6 +48,7 @@ nonzero_ext = "0.3"
 redis = { version = "0.24", features = ["tokio-comp", "connection-manager"] }
 parking_lot = "0.12"
 futures = "0.3"
+bytes = "1.5"
 hmac = "0.12"
 sha2 = "0.10"
 subtle = "2.5"
@@ -56,7 +57,10 @@ pin-project-lite = "0.2"
 lapin = "2.3"
 regex = "1.10"
 
-# OpenAPI documentation
+# Salvo web framework with OpenAPI
+salvo = { version = "0.72", features = ["oapi", "affix-state", "cors", "logging", "catch-panic", "jwt-auth", "test"] }
+
+# OpenAPI documentation (legacy - being replaced by salvo)
 utoipa = { version = "4.2", features = ["axum_extras", "chrono", "uuid"] }
 utoipa-swagger-ui = { version = "6.0", features = ["axum"] }
 

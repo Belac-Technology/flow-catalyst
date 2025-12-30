@@ -18,32 +18,32 @@ impl AnchorDomainRepository {
     }
 
     pub async fn insert(&self, domain: &AnchorDomain) -> Result<()> {
-        self.collection.insert_one(domain, None).await?;
+        self.collection.insert_one(domain).await?;
         Ok(())
     }
 
     pub async fn find_by_id(&self, id: &str) -> Result<Option<AnchorDomain>> {
-        Ok(self.collection.find_one(doc! { "_id": id }, None).await?)
+        Ok(self.collection.find_one(doc! { "_id": id }).await?)
     }
 
     pub async fn find_by_domain(&self, domain: &str) -> Result<Option<AnchorDomain>> {
-        Ok(self.collection.find_one(doc! { "domain": domain.to_lowercase() }, None).await?)
+        Ok(self.collection.find_one(doc! { "domain": domain.to_lowercase() }).await?)
     }
 
     pub async fn find_all(&self) -> Result<Vec<AnchorDomain>> {
-        let cursor = self.collection.find(doc! {}, None).await?;
+        let cursor = self.collection.find(doc! {}).await?;
         Ok(cursor.try_collect().await?)
     }
 
     pub async fn is_anchor_domain(&self, domain: &str) -> Result<bool> {
         let count = self.collection
-            .count_documents(doc! { "domain": domain.to_lowercase() }, None)
+            .count_documents(doc! { "domain": domain.to_lowercase() })
             .await?;
         Ok(count > 0)
     }
 
     pub async fn delete(&self, id: &str) -> Result<bool> {
-        let result = self.collection.delete_one(doc! { "_id": id }, None).await?;
+        let result = self.collection.delete_one(doc! { "_id": id }).await?;
         Ok(result.deleted_count > 0)
     }
 }
@@ -61,41 +61,41 @@ impl ClientAuthConfigRepository {
     }
 
     pub async fn insert(&self, config: &ClientAuthConfig) -> Result<()> {
-        self.collection.insert_one(config, None).await?;
+        self.collection.insert_one(config).await?;
         Ok(())
     }
 
     pub async fn find_by_id(&self, id: &str) -> Result<Option<ClientAuthConfig>> {
-        Ok(self.collection.find_one(doc! { "_id": id }, None).await?)
+        Ok(self.collection.find_one(doc! { "_id": id }).await?)
     }
 
     pub async fn find_by_email_domain(&self, domain: &str) -> Result<Option<ClientAuthConfig>> {
         Ok(self.collection
-            .find_one(doc! { "emailDomain": domain.to_lowercase() }, None)
+            .find_one(doc! { "emailDomain": domain.to_lowercase() })
             .await?)
     }
 
     pub async fn find_by_client_id(&self, client_id: &str) -> Result<Vec<ClientAuthConfig>> {
         let cursor = self.collection
-            .find(doc! { "primaryClientId": client_id }, None)
+            .find(doc! { "primaryClientId": client_id })
             .await?;
         Ok(cursor.try_collect().await?)
     }
 
     pub async fn find_all(&self) -> Result<Vec<ClientAuthConfig>> {
-        let cursor = self.collection.find(doc! {}, None).await?;
+        let cursor = self.collection.find(doc! {}).await?;
         Ok(cursor.try_collect().await?)
     }
 
     pub async fn update(&self, config: &ClientAuthConfig) -> Result<()> {
         self.collection
-            .replace_one(doc! { "_id": &config.id }, config, None)
+            .replace_one(doc! { "_id": &config.id }, config)
             .await?;
         Ok(())
     }
 
     pub async fn delete(&self, id: &str) -> Result<bool> {
-        let result = self.collection.delete_one(doc! { "_id": id }, None).await?;
+        let result = self.collection.delete_one(doc! { "_id": id }).await?;
         Ok(result.deleted_count > 0)
     }
 }
@@ -113,24 +113,24 @@ impl ClientAccessGrantRepository {
     }
 
     pub async fn insert(&self, grant: &ClientAccessGrant) -> Result<()> {
-        self.collection.insert_one(grant, None).await?;
+        self.collection.insert_one(grant).await?;
         Ok(())
     }
 
     pub async fn find_by_id(&self, id: &str) -> Result<Option<ClientAccessGrant>> {
-        Ok(self.collection.find_one(doc! { "_id": id }, None).await?)
+        Ok(self.collection.find_one(doc! { "_id": id }).await?)
     }
 
     pub async fn find_by_principal(&self, principal_id: &str) -> Result<Vec<ClientAccessGrant>> {
         let cursor = self.collection
-            .find(doc! { "principalId": principal_id }, None)
+            .find(doc! { "principalId": principal_id })
             .await?;
         Ok(cursor.try_collect().await?)
     }
 
     pub async fn find_by_client(&self, client_id: &str) -> Result<Vec<ClientAccessGrant>> {
         let cursor = self.collection
-            .find(doc! { "clientId": client_id }, None)
+            .find(doc! { "clientId": client_id })
             .await?;
         Ok(cursor.try_collect().await?)
     }
@@ -141,7 +141,7 @@ impl ClientAccessGrantRepository {
         client_id: &str,
     ) -> Result<Option<ClientAccessGrant>> {
         Ok(self.collection
-            .find_one(doc! { "principalId": principal_id, "clientId": client_id }, None)
+            .find_one(doc! { "principalId": principal_id, "clientId": client_id })
             .await?)
     }
 
@@ -156,13 +156,13 @@ impl ClientAccessGrantRepository {
                     { "expiresAt": null },
                     { "expiresAt": { "$gt": now } }
                 ]
-            }, None)
+            })
             .await?;
         Ok(cursor.try_collect().await?)
     }
 
     pub async fn delete(&self, id: &str) -> Result<bool> {
-        let result = self.collection.delete_one(doc! { "_id": id }, None).await?;
+        let result = self.collection.delete_one(doc! { "_id": id }).await?;
         Ok(result.deleted_count > 0)
     }
 
@@ -172,7 +172,7 @@ impl ClientAccessGrantRepository {
         client_id: &str,
     ) -> Result<bool> {
         let result = self.collection
-            .delete_one(doc! { "principalId": principal_id, "clientId": client_id }, None)
+            .delete_one(doc! { "principalId": principal_id, "clientId": client_id })
             .await?;
         Ok(result.deleted_count > 0)
     }
@@ -191,17 +191,17 @@ impl IdpRoleMappingRepository {
     }
 
     pub async fn insert(&self, mapping: &IdpRoleMapping) -> Result<()> {
-        self.collection.insert_one(mapping, None).await?;
+        self.collection.insert_one(mapping).await?;
         Ok(())
     }
 
     pub async fn find_by_id(&self, id: &str) -> Result<Option<IdpRoleMapping>> {
-        Ok(self.collection.find_one(doc! { "_id": id }, None).await?)
+        Ok(self.collection.find_one(doc! { "_id": id }).await?)
     }
 
     pub async fn find_by_idp_type(&self, idp_type: &str) -> Result<Vec<IdpRoleMapping>> {
         let cursor = self.collection
-            .find(doc! { "idpType": idp_type }, None)
+            .find(doc! { "idpType": idp_type })
             .await?;
         Ok(cursor.try_collect().await?)
     }
@@ -212,24 +212,24 @@ impl IdpRoleMappingRepository {
         idp_role_name: &str,
     ) -> Result<Option<IdpRoleMapping>> {
         Ok(self.collection
-            .find_one(doc! { "idpType": idp_type, "idpRoleName": idp_role_name }, None)
+            .find_one(doc! { "idpType": idp_type, "idpRoleName": idp_role_name })
             .await?)
     }
 
     pub async fn find_all(&self) -> Result<Vec<IdpRoleMapping>> {
-        let cursor = self.collection.find(doc! {}, None).await?;
+        let cursor = self.collection.find(doc! {}).await?;
         Ok(cursor.try_collect().await?)
     }
 
     pub async fn update(&self, mapping: &IdpRoleMapping) -> Result<()> {
         self.collection
-            .replace_one(doc! { "_id": &mapping.id }, mapping, None)
+            .replace_one(doc! { "_id": &mapping.id }, mapping)
             .await?;
         Ok(())
     }
 
     pub async fn delete(&self, id: &str) -> Result<bool> {
-        let result = self.collection.delete_one(doc! { "_id": id }, None).await?;
+        let result = self.collection.delete_one(doc! { "_id": id }).await?;
         Ok(result.deleted_count > 0)
     }
 }

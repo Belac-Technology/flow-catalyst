@@ -1,5 +1,6 @@
 pub mod config;
 pub mod checkpoint;
+pub mod checkpoint_tracker;
 pub mod watcher;
 pub mod mock;
 pub mod subscription_matcher;
@@ -7,9 +8,14 @@ pub mod batch_dispatcher;
 pub mod projection;
 pub mod health;
 
+#[cfg(feature = "standby")]
+pub mod standby;
+
 use async_trait::async_trait;
 use anyhow::Result;
 pub use config::StreamConfig;
+pub use checkpoint_tracker::{CheckpointTracker, AggregateTracker, PendingDocument};
+pub use watcher::{MongoStreamWatcher, BatchProcessor, LoggingBatchProcessor};
 
 // Re-export key types
 pub use subscription_matcher::{
@@ -28,6 +34,9 @@ pub use projection::{
 pub use health::{
     StreamHealth, StreamHealthStatus, StreamProcessorHealth, StreamHealthService,
 };
+
+#[cfg(feature = "standby")]
+pub use standby::StandbyStreamProcessor;
 
 #[async_trait]
 pub trait StreamWatcher: Send + Sync {

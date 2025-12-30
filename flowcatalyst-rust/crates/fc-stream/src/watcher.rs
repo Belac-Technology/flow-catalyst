@@ -1,5 +1,11 @@
+//! Stream Watcher
+//!
+//! Watches MongoDB change streams and dispatches batches for concurrent processing.
+//! Ensures aggregate ID ordering by not allowing the same aggregate in concurrent batches.
+
 use crate::{StreamWatcher, StreamConfig};
 use crate::checkpoint::CheckpointStore;
+use crate::checkpoint_tracker::{CheckpointTracker, AggregateTracker, PendingDocument};
 use async_trait::async_trait;
 use mongodb::{Client, Collection};
 use mongodb::bson::{doc, Document};
@@ -7,8 +13,10 @@ use mongodb::options::ChangeStreamOptions;
 use mongodb::change_stream::event::ResumeToken;
 use futures::stream::StreamExt;
 use anyhow::Result;
-use tracing::{info, warn, error};
+use tracing::{info, warn, error, debug};
 use std::sync::Arc;
+use std::collections::HashSet;
+use tokio::sync::Semaphore;
 use tokio::time::{timeout, Duration};
 
 /// Reconnection settings
@@ -16,64 +24,190 @@ const INITIAL_BACKOFF_MS: u64 = 5000;    // 5 seconds
 const MAX_BACKOFF_MS: u64 = 60000;       // 60 seconds
 const BACKOFF_MULTIPLIER: f64 = 2.0;
 
+/// Batch processor callback
+#[async_trait]
+pub trait BatchProcessor: Send + Sync {
+    /// Process a batch of documents
+    async fn process(&self, documents: Vec<Document>) -> Result<()>;
+}
+
+/// Default batch processor that just logs
+pub struct LoggingBatchProcessor {
+    stream_name: String,
+}
+
+impl LoggingBatchProcessor {
+    pub fn new(stream_name: &str) -> Self {
+        Self {
+            stream_name: stream_name.to_string(),
+        }
+    }
+}
+
+#[async_trait]
+impl BatchProcessor for LoggingBatchProcessor {
+    async fn process(&self, documents: Vec<Document>) -> Result<()> {
+        info!("[{}] Processing batch of {} documents", self.stream_name, documents.len());
+        Ok(())
+    }
+}
+
 pub struct MongoStreamWatcher {
     client: Client,
     config: StreamConfig,
     checkpoint_store: Arc<dyn CheckpointStore>,
+    checkpoint_tracker: Arc<CheckpointTracker>,
+    aggregate_tracker: Arc<AggregateTracker>,
+    batch_processor: Arc<dyn BatchProcessor>,
+    concurrency_semaphore: Arc<Semaphore>,
 }
 
 impl MongoStreamWatcher {
     pub fn new(
-        client: Client, 
-        config: StreamConfig, 
-        checkpoint_store: Arc<dyn CheckpointStore>
+        client: Client,
+        config: StreamConfig,
+        checkpoint_store: Arc<dyn CheckpointStore>,
+        batch_processor: Arc<dyn BatchProcessor>,
     ) -> Self {
+        let checkpoint_key = format!("checkpoint:{}", config.name);
+        let checkpoint_tracker = Arc::new(CheckpointTracker::new(
+            checkpoint_store.clone(),
+            config.name.clone(),
+            checkpoint_key,
+        ));
+        let aggregate_tracker = Arc::new(AggregateTracker::new(config.name.clone()));
+        let concurrency_semaphore = Arc::new(Semaphore::new(config.concurrency as usize));
+
         Self {
             client,
             config,
             checkpoint_store,
+            checkpoint_tracker,
+            aggregate_tracker,
+            batch_processor,
+            concurrency_semaphore,
         }
     }
 
-    async fn process_batch(&self, batch: Vec<Document>, last_token: Option<ResumeToken>) -> Result<()> {
-        if batch.is_empty() {
+    /// Create with custom trackers (for testing or advanced usage)
+    pub fn with_trackers(
+        client: Client,
+        config: StreamConfig,
+        checkpoint_store: Arc<dyn CheckpointStore>,
+        checkpoint_tracker: Arc<CheckpointTracker>,
+        aggregate_tracker: Arc<AggregateTracker>,
+        batch_processor: Arc<dyn BatchProcessor>,
+    ) -> Self {
+        let concurrency_semaphore = Arc::new(Semaphore::new(config.concurrency as usize));
+
+        Self {
+            client,
+            config,
+            checkpoint_store,
+            checkpoint_tracker,
+            aggregate_tracker,
+            batch_processor,
+            concurrency_semaphore,
+        }
+    }
+
+    /// Check if the watcher should shutdown due to fatal error
+    pub async fn has_fatal_error(&self) -> bool {
+        self.checkpoint_tracker.has_fatal_error().await
+    }
+
+    /// Get the fatal error if one occurred
+    pub async fn get_fatal_error(&self) -> Option<String> {
+        self.checkpoint_tracker.get_fatal_error().await
+    }
+
+    /// Dispatch a batch for processing
+    async fn dispatch_batch(
+        &self,
+        documents: Vec<Document>,
+        aggregate_ids: HashSet<String>,
+        resume_token: Option<ResumeToken>,
+    ) -> Result<()> {
+        if documents.is_empty() {
             return Ok(());
         }
 
-        info!("[{}] Processing batch of {} events", self.config.name, batch.len());
-        
-        // TODO: Dispatch to downstream processor
-        
-        if let Some(token) = last_token {
-            // ResumeToken is a wrapper around Bson/Document. We need to serialize it to Document to store it.
-            // For simplicity in this dev version, we'll convert it to Bson and then Document if possible,
-            // or just rely on the raw bytes if the driver exposes them.
-            // The mongodb crate's ResumeToken is opaque but usually holds an _id document.
-            // We'll store it as a Document for now.
-             
-             // Hack: In 2.x, ResumeToken is a newtype. We need to extract the underlying Bson/Document.
-             // Ideally we'd use `token.into_raw()` or similar if available.
-             // If not available easily, we will rely on the fact that the resume token IS the `_id` field of the event.
-             // Let's assume for this step we can just serialize it.
-             
-             let token_doc = mongodb::bson::to_document(&token).unwrap_or_default();
-             let key = format!("checkpoint:{}", self.config.name);
-             self.checkpoint_store.save_checkpoint(&key, token_doc).await?;
+        // Check for fatal error before dispatching
+        if self.checkpoint_tracker.has_fatal_error().await {
+            warn!("[{}] Skipping batch dispatch - fatal error occurred", self.config.name);
+            return Ok(());
         }
-        
+
+        // Get batch sequence
+        let seq = self.checkpoint_tracker.next_sequence().await;
+
+        // Register aggregate IDs for this batch
+        self.aggregate_tracker.register_batch(seq, aggregate_ids.clone()).await;
+
+        // Acquire concurrency permit - blocks if at max concurrency
+        let permit = self.concurrency_semaphore.clone().acquire_owned().await
+            .map_err(|e| anyhow::anyhow!("Semaphore closed: {}", e))?;
+
+        // Clone what we need for the spawned task
+        let checkpoint_tracker = self.checkpoint_tracker.clone();
+        let aggregate_tracker = self.aggregate_tracker.clone();
+        let batch_processor = self.batch_processor.clone();
+        let stream_name = self.config.name.clone();
+
+        // Spawn task to process the batch
+        tokio::spawn(async move {
+            let _permit = permit; // Holds permit until task completes
+
+            let result = batch_processor.process(documents).await;
+
+            match result {
+                Ok(()) => {
+                    checkpoint_tracker.mark_complete(seq, resume_token).await;
+                    debug!("[{}] Batch {} completed", stream_name, seq);
+                }
+                Err(e) => {
+                    error!("[{}] Batch {} failed: {}", stream_name, seq, e);
+                    checkpoint_tracker.mark_failed(seq, e.to_string()).await;
+                }
+            }
+
+            // Release aggregate IDs and check for pending documents
+            let released = aggregate_tracker.complete_batch(seq).await;
+            if !released.is_empty() {
+                debug!("[{}] Released {} pending documents after batch {}", stream_name, released.len(), seq);
+            }
+        });
+
         Ok(())
+    }
+
+    /// Extract aggregate ID from a document
+    fn get_aggregate_id(&self, doc: &Document) -> Option<String> {
+        // Try to get the aggregate ID field
+        let field = &self.config.aggregate_id_field;
+
+        if let Ok(id) = doc.get_str(field) {
+            return Some(id.to_string());
+        }
+
+        // Try as ObjectId
+        if let Ok(id) = doc.get_object_id(field) {
+            return Some(id.to_hex());
+        }
+
+        // Try nested path (e.g., "_id")
+        if field == "_id" {
+            if let Some(bson) = doc.get("_id") {
+                return Some(format!("{}", bson));
+            }
+        }
+
+        None
     }
 }
 
 #[async_trait]
 impl StreamWatcher for MongoStreamWatcher {
-    /// Watch the change stream with automatic reconnection on failure.
-    ///
-    /// This method wraps the stream consumption in a retry loop with exponential backoff.
-    /// It handles:
-    /// - Connection failures (retries with backoff)
-    /// - Stream errors (retries with backoff)
-    /// - Stale resume tokens (clears checkpoint and starts fresh)
     async fn watch(&self) -> Result<()> {
         let db = self.client.database(&self.config.source_database);
         let collection: Collection<Document> = db.collection(&self.config.source_collection);
@@ -84,7 +218,13 @@ impl StreamWatcher for MongoStreamWatcher {
 
         // Outer reconnection loop
         loop {
-            // Load checkpoint for this connection attempt
+            // Check for fatal error
+            if self.checkpoint_tracker.has_fatal_error().await {
+                error!("[{}] Fatal error detected - stopping watcher", self.config.name);
+                return Err(anyhow::anyhow!("Fatal error in batch processing"));
+            }
+
+            // Load checkpoint
             let resume_token_doc = match self.checkpoint_store.get_checkpoint(&checkpoint_key).await {
                 Ok(doc) => doc,
                 Err(e) => {
@@ -111,20 +251,19 @@ impl StreamWatcher for MongoStreamWatcher {
             ];
 
             // Try to open the change stream
-            let stream_result = collection.watch(pipeline, options).await;
+            let stream_result = collection.watch().pipeline(pipeline).with_options(options).await;
             let mut stream = match stream_result {
                 Ok(s) => {
-                    // Reset backoff on successful connection
                     consecutive_failures = 0;
                     backoff_ms = INITIAL_BACKOFF_MS;
-                    info!("[{}] Change stream opened on {}.{}",
-                        self.config.name, self.config.source_database, self.config.source_collection);
+                    info!("[{}] Change stream opened on {}.{} (concurrency: {})",
+                        self.config.name, self.config.source_database, self.config.source_collection,
+                        self.config.concurrency);
                     s
                 }
                 Err(e) => {
                     consecutive_failures += 1;
 
-                    // Check for stale resume token
                     if is_stale_resume_token_error(&e) {
                         error!("[{}] Resume token expired - clearing checkpoint. EVENTS MAY BE MISSED.", self.config.name);
                         let _ = self.checkpoint_store.clear_checkpoint(&checkpoint_key).await;
@@ -145,19 +284,22 @@ impl StreamWatcher for MongoStreamWatcher {
             };
 
             // Process stream events
-            let stream_error = self.process_stream_events(&mut stream, &checkpoint_key).await;
+            let stream_error = self.process_stream_events(&mut stream).await;
 
-            // Handle stream exit
             match stream_error {
                 Ok(()) => {
-                    // Clean exit (shouldn't happen normally)
                     info!("[{}] Change stream ended cleanly", self.config.name);
                     return Ok(());
                 }
                 Err(e) => {
+                    // Check if this is a fatal error from batch processing
+                    if self.checkpoint_tracker.has_fatal_error().await {
+                        error!("[{}] Fatal error in batch processing - stopping", self.config.name);
+                        return Err(e);
+                    }
+
                     consecutive_failures += 1;
 
-                    // Check for stale resume token
                     if is_stale_resume_token_error(&e) {
                         error!("[{}] Resume token expired - clearing checkpoint. EVENTS MAY BE MISSED.", self.config.name);
                         let _ = self.checkpoint_store.clear_checkpoint(&checkpoint_key).await;
@@ -180,48 +322,110 @@ impl StreamWatcher for MongoStreamWatcher {
 }
 
 impl MongoStreamWatcher {
-    /// Process events from an active change stream until an error occurs
+    /// Process events from an active change stream
     async fn process_stream_events(
         &self,
         stream: &mut mongodb::change_stream::ChangeStream<mongodb::change_stream::event::ChangeStreamEvent<Document>>,
-        _checkpoint_key: &str,
     ) -> Result<()> {
-        let mut batch = Vec::new();
-        let mut last_token = None;
+        let mut batch: Vec<Document> = Vec::new();
+        let mut batch_aggregate_ids: HashSet<String> = HashSet::new();
+        let mut last_token: Option<ResumeToken> = None;
         let batch_timeout = Duration::from_millis(self.config.batch_max_wait_ms);
 
         loop {
+            // Check for fatal error
+            if self.checkpoint_tracker.has_fatal_error().await {
+                error!("[{}] Fatal error detected - stopping stream processing", self.config.name);
+                // Flush current batch before returning
+                if !batch.is_empty() {
+                    let _ = self.dispatch_batch(
+                        std::mem::take(&mut batch),
+                        std::mem::take(&mut batch_aggregate_ids),
+                        last_token.clone(),
+                    ).await;
+                }
+                return Err(anyhow::anyhow!("Fatal error in batch processing"));
+            }
+
             let event_result = timeout(batch_timeout, stream.next()).await;
 
             match event_result {
                 Ok(Some(Ok(event))) => {
                     if let Some(doc) = event.full_document {
+                        // Get aggregate ID
+                        let aggregate_id = self.get_aggregate_id(&doc);
+
+                        if let Some(ref agg_id) = aggregate_id {
+                            // Check if this aggregate is already in-flight
+                            if self.aggregate_tracker.is_in_flight(agg_id).await {
+                                // Add to pending queue
+                                debug!("[{}] Aggregate {} is in-flight, queueing document", self.config.name, agg_id);
+                                self.aggregate_tracker.add_pending(PendingDocument {
+                                    aggregate_id: agg_id.clone(),
+                                    document: doc,
+                                    resume_token: stream.resume_token(),
+                                }).await;
+                                continue;
+                            }
+
+                            // Check if this aggregate is already in current batch
+                            if batch_aggregate_ids.contains(agg_id) {
+                                // Flush current batch first, then add this to next batch
+                                if !batch.is_empty() {
+                                    self.dispatch_batch(
+                                        std::mem::take(&mut batch),
+                                        std::mem::take(&mut batch_aggregate_ids),
+                                        last_token.clone(),
+                                    ).await?;
+                                }
+                            }
+
+                            batch_aggregate_ids.insert(agg_id.clone());
+                        }
+
                         batch.push(doc);
                         last_token = stream.resume_token();
                     }
 
+                    // Check if batch is full
                     if batch.len() >= self.config.batch_max_size as usize {
-                        self.process_batch(batch.drain(..).collect(), last_token.clone()).await?;
+                        self.dispatch_batch(
+                            std::mem::take(&mut batch),
+                            std::mem::take(&mut batch_aggregate_ids),
+                            last_token.clone(),
+                        ).await?;
                     }
                 }
                 Ok(Some(Err(e))) => {
-                    // Stream error - flush batch and return error for reconnection
+                    // Stream error - flush batch and return for reconnection
                     if !batch.is_empty() {
-                        let _ = self.process_batch(batch.drain(..).collect(), last_token.clone()).await;
+                        let _ = self.dispatch_batch(
+                            std::mem::take(&mut batch),
+                            std::mem::take(&mut batch_aggregate_ids),
+                            last_token.clone(),
+                        ).await;
                     }
                     return Err(e.into());
                 }
                 Ok(None) => {
-                    // Stream closed - flush batch and return error for reconnection
+                    // Stream closed
                     if !batch.is_empty() {
-                        let _ = self.process_batch(batch.drain(..).collect(), last_token.clone()).await;
+                        let _ = self.dispatch_batch(
+                            std::mem::take(&mut batch),
+                            std::mem::take(&mut batch_aggregate_ids),
+                            last_token.clone(),
+                        ).await;
                     }
                     return Err(anyhow::anyhow!("Change stream closed unexpectedly"));
                 }
                 Err(_) => {
                     // Timeout - flush batch if any
                     if !batch.is_empty() {
-                        self.process_batch(batch.drain(..).collect(), last_token.clone()).await?;
+                        self.dispatch_batch(
+                            std::mem::take(&mut batch),
+                            std::mem::take(&mut batch_aggregate_ids),
+                            last_token.clone(),
+                        ).await?;
                     }
                 }
             }
@@ -230,11 +434,49 @@ impl MongoStreamWatcher {
 }
 
 /// Check if an error is due to a stale/expired resume token
-/// Works with any error type that implements Display
 fn is_stale_resume_token_error<E: std::fmt::Display>(e: &E) -> bool {
     let err_str = e.to_string().to_lowercase();
     err_str.contains("changestream") && err_str.contains("history") ||
     err_str.contains("resume token") ||
     err_str.contains("oplog") ||
     err_str.contains("invalidate")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::checkpoint::MemoryCheckpointStore;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    struct CountingProcessor {
+        count: AtomicUsize,
+    }
+
+    impl CountingProcessor {
+        fn new() -> Self {
+            Self {
+                count: AtomicUsize::new(0),
+            }
+        }
+
+        fn count(&self) -> usize {
+            self.count.load(Ordering::SeqCst)
+        }
+    }
+
+    #[async_trait]
+    impl BatchProcessor for CountingProcessor {
+        async fn process(&self, documents: Vec<Document>) -> Result<()> {
+            self.count.fetch_add(documents.len(), Ordering::SeqCst);
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn test_stale_resume_token_detection() {
+        assert!(is_stale_resume_token_error(&"ChangeStream history lost"));
+        assert!(is_stale_resume_token_error(&"resume token expired"));
+        assert!(is_stale_resume_token_error(&"oplog entry not found"));
+        assert!(!is_stale_resume_token_error(&"connection refused"));
+    }
 }

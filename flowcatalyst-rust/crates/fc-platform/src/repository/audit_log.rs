@@ -18,7 +18,7 @@ impl AuditLogRepository {
     }
 
     pub async fn insert(&self, log: &AuditLog) -> Result<()> {
-        self.collection.insert_one(log, None).await?;
+        self.collection.insert_one(log).await?;
         Ok(())
     }
 
@@ -26,12 +26,12 @@ impl AuditLogRepository {
         if logs.is_empty() {
             return Ok(0);
         }
-        let result = self.collection.insert_many(logs, None).await?;
+        let result = self.collection.insert_many(logs).await?;
         Ok(result.inserted_ids.len())
     }
 
     pub async fn find_by_id(&self, id: &str) -> Result<Option<AuditLog>> {
-        Ok(self.collection.find_one(doc! { "_id": id }, None).await?)
+        Ok(self.collection.find_one(doc! { "_id": id }).await?)
     }
 
     pub async fn find_by_entity(
@@ -46,7 +46,8 @@ impl AuditLogRepository {
             .build();
 
         let cursor = self.collection
-            .find(doc! { "entityType": entity_type, "entityId": entity_id }, options)
+            .find(doc! { "entityType": entity_type, "entityId": entity_id })
+            .with_options(options)
             .await?;
         Ok(cursor.try_collect().await?)
     }
@@ -62,7 +63,8 @@ impl AuditLogRepository {
             .build();
 
         let cursor = self.collection
-            .find(doc! { "principalId": principal_id }, options)
+            .find(doc! { "principalId": principal_id })
+            .with_options(options)
             .await?;
         Ok(cursor.try_collect().await?)
     }
@@ -78,7 +80,8 @@ impl AuditLogRepository {
             .build();
 
         let cursor = self.collection
-            .find(doc! { "clientId": client_id }, options)
+            .find(doc! { "clientId": client_id })
+            .with_options(options)
             .await?;
         Ok(cursor.try_collect().await?)
     }
@@ -99,7 +102,8 @@ impl AuditLogRepository {
             .build();
 
         let cursor = self.collection
-            .find(doc! { "action": action_str }, options)
+            .find(doc! { "action": action_str })
+            .with_options(options)
             .await?;
         Ok(cursor.try_collect().await?)
     }
@@ -124,7 +128,8 @@ impl AuditLogRepository {
                     "$gte": start_bson,
                     "$lte": end_bson
                 }
-            }, options)
+            })
+            .with_options(options)
             .await?;
         Ok(cursor.try_collect().await?)
     }
@@ -135,7 +140,7 @@ impl AuditLogRepository {
             .limit(limit)
             .build();
 
-        let cursor = self.collection.find(doc! {}, options).await?;
+        let cursor = self.collection.find(doc! {}).with_options(options).await?;
         Ok(cursor.try_collect().await?)
     }
 
@@ -191,19 +196,19 @@ impl AuditLogRepository {
             .limit(limit)
             .build();
 
-        let cursor = self.collection.find(filter, options).await?;
+        let cursor = self.collection.find(filter).with_options(options).await?;
         Ok(cursor.try_collect().await?)
     }
 
     pub async fn count(&self) -> Result<u64> {
-        Ok(self.collection.count_documents(doc! {}, None).await?)
+        Ok(self.collection.count_documents(doc! {}).await?)
     }
 
     /// Delete logs older than a given date (for retention policy)
     pub async fn delete_older_than(&self, date: DateTime<Utc>) -> Result<u64> {
         let date_bson = mongodb::bson::DateTime::from_chrono(date);
         let result = self.collection
-            .delete_many(doc! { "createdAt": { "$lt": date_bson } }, None)
+            .delete_many(doc! { "createdAt": { "$lt": date_bson } })
             .await?;
         Ok(result.deleted_count)
     }

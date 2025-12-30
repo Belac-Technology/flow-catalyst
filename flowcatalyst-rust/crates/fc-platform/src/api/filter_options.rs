@@ -2,20 +2,15 @@
 //!
 //! REST endpoints for fetching filter options for UI dropdowns.
 
-use axum::{
-    extract::State,
-    routing::get,
-    Json, Router,
-};
+use salvo::prelude::*;
 use serde::Serialize;
 use std::sync::Arc;
-use utoipa::ToSchema;
 
 use crate::repository::{
     ClientRepository, EventTypeRepository, SubscriptionRepository,
     DispatchPoolRepository, ApplicationRepository,
 };
-use crate::api::common::ApiResult;
+use crate::error::PlatformError;
 use crate::api::middleware::Authenticated;
 
 /// Filter option item
@@ -78,15 +73,18 @@ pub struct FilterOptionsState {
 }
 
 /// Get client filter options
+#[endpoint(tags("FilterOptions"))]
 pub async fn get_client_options(
-    State(state): State<FilterOptionsState>,
-    Authenticated(auth): Authenticated,
-) -> ApiResult<ClientFilterOptions> {
+    depot: &mut Depot,
+) -> Result<Json<ClientFilterOptions>, PlatformError> {
+    let auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<FilterOptionsState>().map_err(|_| PlatformError::internal("State not found"))?;
+
     let clients = state.client_repo.find_active().await?;
 
     // Filter by access
     let options: Vec<FilterOption> = clients.into_iter()
-        .filter(|c| auth.is_anchor() || auth.can_access_client(&c.id))
+        .filter(|c| auth.0.is_anchor() || auth.0.can_access_client(&c.id))
         .map(|c| FilterOption {
             value: c.id,
             label: c.name,
@@ -97,10 +95,13 @@ pub async fn get_client_options(
 }
 
 /// Get event type filter options
+#[endpoint(tags("FilterOptions"))]
 pub async fn get_event_type_options(
-    State(state): State<FilterOptionsState>,
-    Authenticated(_auth): Authenticated,
-) -> ApiResult<EventTypeFilterOptions> {
+    depot: &mut Depot,
+) -> Result<Json<EventTypeFilterOptions>, PlatformError> {
+    let _auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<FilterOptionsState>().map_err(|_| PlatformError::internal("State not found"))?;
+
     let event_types = state.event_type_repo.find_active().await?;
 
     // Build event type options
@@ -143,18 +144,21 @@ pub async fn get_event_type_options(
 }
 
 /// Get subscription filter options
+#[endpoint(tags("FilterOptions"))]
 pub async fn get_subscription_options(
-    State(state): State<FilterOptionsState>,
-    Authenticated(auth): Authenticated,
-) -> ApiResult<SubscriptionFilterOptions> {
+    depot: &mut Depot,
+) -> Result<Json<SubscriptionFilterOptions>, PlatformError> {
+    let auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<FilterOptionsState>().map_err(|_| PlatformError::internal("State not found"))?;
+
     let subscriptions = state.subscription_repo.find_active().await?;
 
     // Filter by access
     let options: Vec<FilterOption> = subscriptions.into_iter()
         .filter(|s| {
             match &s.client_id {
-                Some(cid) => auth.is_anchor() || auth.can_access_client(cid),
-                None => auth.is_anchor(),
+                Some(cid) => auth.0.is_anchor() || auth.0.can_access_client(cid),
+                None => auth.0.is_anchor(),
             }
         })
         .map(|s| FilterOption {
@@ -167,17 +171,20 @@ pub async fn get_subscription_options(
 }
 
 /// Get dispatch pool filter options
+#[endpoint(tags("FilterOptions"))]
 pub async fn get_dispatch_pool_options(
-    State(state): State<FilterOptionsState>,
-    Authenticated(auth): Authenticated,
-) -> ApiResult<DispatchPoolFilterOptions> {
+    depot: &mut Depot,
+) -> Result<Json<DispatchPoolFilterOptions>, PlatformError> {
+    let auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<FilterOptionsState>().map_err(|_| PlatformError::internal("State not found"))?;
+
     let pools = state.dispatch_pool_repo.find_active().await?;
 
     // Filter by access
     let options: Vec<FilterOption> = pools.into_iter()
         .filter(|p| {
             match &p.client_id {
-                Some(cid) => auth.is_anchor() || auth.can_access_client(cid),
+                Some(cid) => auth.0.is_anchor() || auth.0.can_access_client(cid),
                 None => true, // Anchor-level pools visible to all
             }
         })
@@ -191,14 +198,17 @@ pub async fn get_dispatch_pool_options(
 }
 
 /// Get all filter options at once
+#[endpoint(tags("FilterOptions"))]
 pub async fn get_all_options(
-    State(state): State<FilterOptionsState>,
-    Authenticated(auth): Authenticated,
-) -> ApiResult<AllFilterOptions> {
+    depot: &mut Depot,
+) -> Result<Json<AllFilterOptions>, PlatformError> {
+    let auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<FilterOptionsState>().map_err(|_| PlatformError::internal("State not found"))?;
+
     // Get clients
     let clients = state.client_repo.find_active().await?;
     let client_options: Vec<FilterOption> = clients.into_iter()
-        .filter(|c| auth.is_anchor() || auth.can_access_client(&c.id))
+        .filter(|c| auth.0.is_anchor() || auth.0.can_access_client(&c.id))
         .map(|c| FilterOption {
             value: c.id,
             label: c.name,
@@ -228,8 +238,8 @@ pub async fn get_all_options(
     let subscription_options: Vec<FilterOption> = subscriptions.into_iter()
         .filter(|s| {
             match &s.client_id {
-                Some(cid) => auth.is_anchor() || auth.can_access_client(cid),
-                None => auth.is_anchor(),
+                Some(cid) => auth.0.is_anchor() || auth.0.can_access_client(cid),
+                None => auth.0.is_anchor(),
             }
         })
         .map(|s| FilterOption {
@@ -243,7 +253,7 @@ pub async fn get_all_options(
     let pool_options: Vec<FilterOption> = pools.into_iter()
         .filter(|p| {
             match &p.client_id {
-                Some(cid) => auth.is_anchor() || auth.can_access_client(cid),
+                Some(cid) => auth.0.is_anchor() || auth.0.can_access_client(cid),
                 None => true,
             }
         })
@@ -265,10 +275,25 @@ pub async fn get_all_options(
 /// Create filter options router
 pub fn filter_options_router(state: FilterOptionsState) -> Router {
     Router::new()
-        .route("/", get(get_all_options))
-        .route("/clients", get(get_client_options))
-        .route("/event-types", get(get_event_type_options))
-        .route("/subscriptions", get(get_subscription_options))
-        .route("/dispatch-pools", get(get_dispatch_pool_options))
-        .with_state(state)
+        .push(
+            Router::new()
+                .get(get_all_options)
+        )
+        .push(
+            Router::with_path("clients")
+                .get(get_client_options)
+        )
+        .push(
+            Router::with_path("event-types")
+                .get(get_event_type_options)
+        )
+        .push(
+            Router::with_path("subscriptions")
+                .get(get_subscription_options)
+        )
+        .push(
+            Router::with_path("dispatch-pools")
+                .get(get_dispatch_pool_options)
+        )
+        .hoop(affix_state::inject(state))
 }

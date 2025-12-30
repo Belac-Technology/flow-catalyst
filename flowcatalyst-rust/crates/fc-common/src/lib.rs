@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
 use std::time::Instant;
+use salvo::oapi::ToSchema;
 
 // ============================================================================
 // Core Message Types
@@ -104,7 +105,7 @@ impl InFlightMessage {
 // Configuration Types
 // ============================================================================
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct PoolConfig {
     pub code: String,
     pub concurrency: u32,
@@ -242,7 +243,7 @@ pub struct OutboxItem {
 // ============================================================================
 
 /// Warning categories for the message router
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
 pub enum WarningCategory {
     /// Message routing issues
     Routing,
@@ -265,7 +266,7 @@ pub enum WarningCategory {
 }
 
 /// Warning severity levels
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, ToSchema)]
 pub enum WarningSeverity {
     /// Informational warning
     Info,
@@ -278,7 +279,7 @@ pub enum WarningSeverity {
 }
 
 /// A system warning
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct Warning {
     pub id: String,
     pub category: WarningCategory,
@@ -315,7 +316,7 @@ impl Warning {
 }
 
 /// Overall system health status
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub enum HealthStatus {
     /// All systems operational
     Healthy,
@@ -326,7 +327,7 @@ pub enum HealthStatus {
 }
 
 /// Detailed health report
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct HealthReport {
     pub status: HealthStatus,
     pub pools_healthy: u32,
@@ -342,7 +343,7 @@ pub struct HealthReport {
 // Health & Metrics Types
 // ============================================================================
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct PoolStats {
     pub pool_code: String,
     pub concurrency: u32,

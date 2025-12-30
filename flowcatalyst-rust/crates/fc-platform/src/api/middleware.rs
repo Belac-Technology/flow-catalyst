@@ -1,13 +1,9 @@
 //! API Middleware
 //!
-//! Authentication and authorization middleware for Axum.
+//! Authentication and authorization middleware for Salvo.
 
-use axum::{
-    extract::FromRequestParts,
-    http::{request::Parts, StatusCode, header::AUTHORIZATION},
-    response::{IntoResponse, Response},
-    Json,
-};
+use salvo::prelude::*;
+use salvo::http::header::AUTHORIZATION;
 use std::sync::Arc;
 use crate::service::{AuthService, AuthorizationService, AuthContext};
 use crate::api::common::ApiError;
@@ -19,118 +15,155 @@ pub struct AppState {
     pub authz_service: Arc<AuthorizationService>,
 }
 
-/// Extractor for authenticated requests
-/// Validates JWT and builds AuthContext with resolved permissions
-pub struct Authenticated(pub AuthContext);
+/// Authentication middleware handler
+/// Validates JWT and injects AuthContext into depot
+pub struct AuthHandler {
+    pub app_state: AppState,
+}
 
-#[axum::async_trait]
-impl<S> FromRequestParts<S> for Authenticated
-where
-    S: Send + Sync,
-{
-    type Rejection = Response;
+impl AuthHandler {
+    pub fn new(app_state: AppState) -> Self {
+        Self { app_state }
+    }
+}
 
-    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+#[async_trait]
+impl Handler for AuthHandler {
+    async fn handle(&self, req: &mut Request, depot: &mut Depot, res: &mut Response, ctrl: &mut FlowCtrl) {
         // Extract authorization header
-        let auth_header = parts
-            .headers
-            .get(AUTHORIZATION)
-            .and_then(|v| v.to_str().ok())
-            .ok_or_else(|| {
+        let auth_header = match req.headers().get(AUTHORIZATION).and_then(|v| v.to_str().ok()) {
+            Some(h) => h,
+            None => {
                 let error = ApiError {
                     error: "UNAUTHORIZED".to_string(),
                     message: "Missing Authorization header".to_string(),
                     details: None,
                 };
-                (StatusCode::UNAUTHORIZED, Json(error)).into_response()
-            })?;
+                res.status_code(StatusCode::UNAUTHORIZED);
+                res.render(Json(error));
+                ctrl.skip_rest();
+                return;
+            }
+        };
 
         // Extract bearer token
-        let token = crate::service::extract_bearer_token(auth_header)
-            .ok_or_else(|| {
+        let token = match crate::service::extract_bearer_token(auth_header) {
+            Some(t) => t,
+            None => {
                 let error = ApiError {
                     error: "UNAUTHORIZED".to_string(),
                     message: "Invalid Authorization header format".to_string(),
                     details: None,
                 };
-                (StatusCode::UNAUTHORIZED, Json(error)).into_response()
-            })?;
-
-        // Get app state (this requires the state to be Arc<AppState> or similar)
-        // For now, we'll use a simpler approach with Extension
-        let app_state = parts
-            .extensions
-            .get::<AppState>()
-            .ok_or_else(|| {
-                let error = ApiError {
-                    error: "INTERNAL_ERROR".to_string(),
-                    message: "AppState not found".to_string(),
-                    details: None,
-                };
-                (StatusCode::INTERNAL_SERVER_ERROR, Json(error)).into_response()
-            })?;
+                res.status_code(StatusCode::UNAUTHORIZED);
+                res.render(Json(error));
+                ctrl.skip_rest();
+                return;
+            }
+        };
 
         // Validate token
-        let claims = app_state
-            .auth_service
-            .validate_token(token)
-            .map_err(|e| e.into_response())?;
+        let claims = match self.app_state.auth_service.validate_token(token) {
+            Ok(c) => c,
+            Err(e) => {
+                let error = ApiError {
+                    error: "UNAUTHORIZED".to_string(),
+                    message: e.to_string(),
+                    details: None,
+                };
+                res.status_code(StatusCode::UNAUTHORIZED);
+                res.render(Json(error));
+                ctrl.skip_rest();
+                return;
+            }
+        };
 
         // Build auth context with resolved permissions
-        let context = app_state
-            .authz_service
-            .build_context(&claims)
-            .await
-            .map_err(|e| e.into_response())?;
+        let context = match self.app_state.authz_service.build_context(&claims).await {
+            Ok(ctx) => ctx,
+            Err(e) => {
+                let error = ApiError {
+                    error: "UNAUTHORIZED".to_string(),
+                    message: e.to_string(),
+                    details: None,
+                };
+                res.status_code(StatusCode::UNAUTHORIZED);
+                res.render(Json(error));
+                ctrl.skip_rest();
+                return;
+            }
+        };
 
-        Ok(Authenticated(context))
+        // Store auth context in depot for handlers to access
+        depot.inject(context);
+        ctrl.call_next(req, depot, res).await;
     }
 }
 
-/// Extractor for optionally authenticated requests
+/// Optional authentication middleware handler
+/// Tries to validate JWT but allows unauthenticated requests
+pub struct OptionalAuthHandler {
+    pub app_state: AppState,
+}
+
+impl OptionalAuthHandler {
+    pub fn new(app_state: AppState) -> Self {
+        Self { app_state }
+    }
+}
+
+#[async_trait]
+impl Handler for OptionalAuthHandler {
+    async fn handle(&self, req: &mut Request, depot: &mut Depot, res: &mut Response, ctrl: &mut FlowCtrl) {
+        // Try to get authorization header
+        if let Some(auth_header) = req.headers().get(AUTHORIZATION).and_then(|v| v.to_str().ok()) {
+            // Try to extract bearer token
+            if let Some(token) = crate::service::extract_bearer_token(auth_header) {
+                // Try to validate token
+                if let Ok(claims) = self.app_state.auth_service.validate_token(token) {
+                    // Try to build context
+                    if let Ok(context) = self.app_state.authz_service.build_context(&claims).await {
+                        depot.inject(context);
+                    }
+                }
+            }
+        }
+
+        ctrl.call_next(req, depot, res).await;
+    }
+}
+
+/// Helper trait to get auth context from depot
+pub trait AuthExt {
+    fn auth_context(&self) -> Option<&AuthContext>;
+    fn require_auth(&self) -> Result<&AuthContext, crate::error::PlatformError>;
+}
+
+impl AuthExt for Depot {
+    fn auth_context(&self) -> Option<&AuthContext> {
+        self.obtain::<AuthContext>().ok()
+    }
+
+    fn require_auth(&self) -> Result<&AuthContext, crate::error::PlatformError> {
+        self.obtain::<AuthContext>()
+            .map_err(|_| crate::error::PlatformError::unauthorized("Authentication required"))
+    }
+}
+
+/// Wrapper types for backwards compatibility
+/// These can be used in function signatures
+pub struct Authenticated(pub AuthContext);
+
+impl Authenticated {
+    pub fn from_depot(depot: &Depot) -> Result<Self, crate::error::PlatformError> {
+        depot.require_auth().map(|ctx| Authenticated(ctx.clone()))
+    }
+}
+
 pub struct OptionalAuth(pub Option<AuthContext>);
 
-#[axum::async_trait]
-impl<S> FromRequestParts<S> for OptionalAuth
-where
-    S: Send + Sync,
-{
-    type Rejection = Response;
-
-    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
-        // Try to get authorization header
-        let auth_header = match parts.headers.get(AUTHORIZATION).and_then(|v| v.to_str().ok()) {
-            Some(h) => h,
-            None => return Ok(OptionalAuth(None)),
-        };
-
-        // Try to extract bearer token
-        let token = match crate::service::extract_bearer_token(auth_header) {
-            Some(t) => t,
-            None => return Ok(OptionalAuth(None)),
-        };
-
-        // Try to get app state
-        let app_state = match parts.extensions.get::<AppState>() {
-            Some(s) => s,
-            None => return Ok(OptionalAuth(None)),
-        };
-
-        // Try to validate token
-        let claims = match app_state.auth_service.validate_token(token) {
-            Ok(c) => c,
-            Err(_) => return Ok(OptionalAuth(None)),
-        };
-
-        // Try to build context
-        match app_state.authz_service.build_context(&claims).await {
-            Ok(ctx) => Ok(OptionalAuth(Some(ctx))),
-            Err(_) => Ok(OptionalAuth(None)),
-        }
+impl OptionalAuth {
+    pub fn from_depot(depot: &Depot) -> Self {
+        OptionalAuth(depot.auth_context().cloned())
     }
-}
-
-/// Extension trait for AuthContext to add to request extensions
-pub trait AuthContextExt {
-    fn with_auth_context(self, ctx: AuthContext) -> Self;
 }

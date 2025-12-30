@@ -17,45 +17,45 @@ impl PrincipalRepository {
     }
 
     pub async fn insert(&self, principal: &Principal) -> Result<()> {
-        self.collection.insert_one(principal, None).await?;
+        self.collection.insert_one(principal).await?;
         Ok(())
     }
 
     pub async fn find_by_id(&self, id: &str) -> Result<Option<Principal>> {
-        Ok(self.collection.find_one(doc! { "_id": id }, None).await?)
+        Ok(self.collection.find_one(doc! { "_id": id }).await?)
     }
 
     pub async fn find_by_email(&self, email: &str) -> Result<Option<Principal>> {
         Ok(self.collection.find_one(doc! {
             "type": "USER",
             "userIdentity.email": email
-        }, None).await?)
+        }).await?)
     }
 
     pub async fn find_by_service_account(&self, service_account_id: &str) -> Result<Option<Principal>> {
         Ok(self.collection.find_one(doc! {
             "type": "SERVICE",
             "serviceAccountId": service_account_id
-        }, None).await?)
+        }).await?)
     }
 
     pub async fn find_active(&self) -> Result<Vec<Principal>> {
         let cursor = self.collection
-            .find(doc! { "active": true }, None)
+            .find(doc! { "active": true })
             .await?;
         Ok(cursor.try_collect().await?)
     }
 
     pub async fn find_users(&self) -> Result<Vec<Principal>> {
         let cursor = self.collection
-            .find(doc! { "type": "USER", "active": true }, None)
+            .find(doc! { "type": "USER", "active": true })
             .await?;
         Ok(cursor.try_collect().await?)
     }
 
     pub async fn find_services(&self) -> Result<Vec<Principal>> {
         let cursor = self.collection
-            .find(doc! { "type": "SERVICE", "active": true }, None)
+            .find(doc! { "type": "SERVICE", "active": true })
             .await?;
         Ok(cursor.try_collect().await?)
     }
@@ -68,7 +68,7 @@ impl PrincipalRepository {
                     { "clientId": client_id },
                     { "assignedClients": client_id }
                 ]
-            }, None)
+            })
             .await?;
         Ok(cursor.try_collect().await?)
     }
@@ -79,41 +79,41 @@ impl PrincipalRepository {
             .trim_matches('"')
             .to_string();
         let cursor = self.collection
-            .find(doc! { "scope": scope_str, "active": true }, None)
+            .find(doc! { "scope": scope_str, "active": true })
             .await?;
         Ok(cursor.try_collect().await?)
     }
 
     pub async fn find_anchors(&self) -> Result<Vec<Principal>> {
         let cursor = self.collection
-            .find(doc! { "scope": "ANCHOR", "active": true }, None)
+            .find(doc! { "scope": "ANCHOR", "active": true })
             .await?;
         Ok(cursor.try_collect().await?)
     }
 
     pub async fn find_by_application(&self, application_id: &str) -> Result<Vec<Principal>> {
         let cursor = self.collection
-            .find(doc! { "applicationId": application_id }, None)
+            .find(doc! { "applicationId": application_id })
             .await?;
         Ok(cursor.try_collect().await?)
     }
 
     pub async fn find_with_role(&self, role: &str) -> Result<Vec<Principal>> {
         let cursor = self.collection
-            .find(doc! { "roles.role": role, "active": true }, None)
+            .find(doc! { "roles.role": role, "active": true })
             .await?;
         Ok(cursor.try_collect().await?)
     }
 
     pub async fn update(&self, principal: &Principal) -> Result<()> {
         self.collection
-            .replace_one(doc! { "_id": &principal.id }, principal, None)
+            .replace_one(doc! { "_id": &principal.id }, principal)
             .await?;
         Ok(())
     }
 
     pub async fn delete(&self, id: &str) -> Result<bool> {
-        let result = self.collection.delete_one(doc! { "_id": id }, None).await?;
+        let result = self.collection.delete_one(doc! { "_id": id }).await?;
         Ok(result.deleted_count > 0)
     }
 }

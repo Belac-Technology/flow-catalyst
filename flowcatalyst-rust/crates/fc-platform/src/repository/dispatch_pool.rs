@@ -17,16 +17,16 @@ impl DispatchPoolRepository {
     }
 
     pub async fn insert(&self, pool: &DispatchPool) -> Result<()> {
-        self.collection.insert_one(pool, None).await?;
+        self.collection.insert_one(pool).await?;
         Ok(())
     }
 
     pub async fn find_by_id(&self, id: &str) -> Result<Option<DispatchPool>> {
-        Ok(self.collection.find_one(doc! { "_id": id }, None).await?)
+        Ok(self.collection.find_one(doc! { "_id": id }).await?)
     }
 
     pub async fn find_by_code(&self, code: &str) -> Result<Option<DispatchPool>> {
-        Ok(self.collection.find_one(doc! { "code": code }, None).await?)
+        Ok(self.collection.find_one(doc! { "code": code }).await?)
     }
 
     pub async fn find_by_code_and_client(&self, code: &str, client_id: Option<&str>) -> Result<Option<DispatchPool>> {
@@ -34,12 +34,12 @@ impl DispatchPoolRepository {
             Some(id) => doc! { "code": code, "$or": [{ "clientId": id }, { "clientId": null }] },
             None => doc! { "code": code, "clientId": null },
         };
-        Ok(self.collection.find_one(filter, None).await?)
+        Ok(self.collection.find_one(filter).await?)
     }
 
     pub async fn find_active(&self) -> Result<Vec<DispatchPool>> {
         let cursor = self.collection
-            .find(doc! { "status": "ACTIVE" }, None)
+            .find(doc! { "status": "ACTIVE" })
             .await?;
         Ok(cursor.try_collect().await?)
     }
@@ -49,19 +49,19 @@ impl DispatchPoolRepository {
             Some(id) => doc! { "$or": [{ "clientId": id }, { "clientId": null }] },
             None => doc! { "clientId": null },
         };
-        let cursor = self.collection.find(filter, None).await?;
+        let cursor = self.collection.find(filter).await?;
         Ok(cursor.try_collect().await?)
     }
 
     pub async fn update(&self, pool: &DispatchPool) -> Result<()> {
         self.collection
-            .replace_one(doc! { "_id": &pool.id }, pool, None)
+            .replace_one(doc! { "_id": &pool.id }, pool)
             .await?;
         Ok(())
     }
 
     pub async fn delete(&self, id: &str) -> Result<bool> {
-        let result = self.collection.delete_one(doc! { "_id": id }, None).await?;
+        let result = self.collection.delete_one(doc! { "_id": id }).await?;
         Ok(result.deleted_count > 0)
     }
 }

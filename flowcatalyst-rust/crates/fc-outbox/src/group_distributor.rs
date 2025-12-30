@@ -10,8 +10,8 @@ use fc_common::Message;
 use tracing::{debug, info, warn};
 
 use crate::message_group_processor::{
-    MessageGroupProcessor, MessageGroupProcessorConfig, MessageDispatcher,
-    ProcessorState, TrackedMessage,
+    MessageGroupProcessor, MessageGroupProcessorConfig, BatchMessageDispatcher,
+    ProcessorState, TrackedMessage, DispatchResult,
 };
 
 /// Group distributor configuration
@@ -54,13 +54,13 @@ pub struct DistributorStats {
 /// Group distributor - routes messages to per-group processors
 pub struct GroupDistributor {
     config: GroupDistributorConfig,
-    dispatcher: Arc<dyn MessageDispatcher>,
+    dispatcher: Arc<dyn BatchMessageDispatcher>,
     groups: Arc<RwLock<HashMap<String, GroupEntry>>>,
     stats: Arc<RwLock<DistributorStats>>,
 }
 
 impl GroupDistributor {
-    pub fn new(config: GroupDistributorConfig, dispatcher: Arc<dyn MessageDispatcher>) -> Self {
+    pub fn new(config: GroupDistributorConfig, dispatcher: Arc<dyn BatchMessageDispatcher>) -> Self {
         Self {
             config,
             dispatcher,
@@ -156,12 +156,15 @@ impl GroupDistributor {
 
     /// Dispatch a message directly (for messages without a group)
     async fn dispatch_direct(&self, message: Message) -> Result<(), String> {
-        use crate::message_group_processor::DispatchResult;
+        let batch_result = self.dispatcher.dispatch_batch(&[message]).await;
 
-        match self.dispatcher.dispatch(&message).await {
-            DispatchResult::Success => Ok(()),
-            DispatchResult::Failure { error, .. } => Err(error),
-            DispatchResult::Blocked { reason } => Err(reason),
+        match batch_result.results.first() {
+            Some(item) => match &item.result {
+                DispatchResult::Success => Ok(()),
+                DispatchResult::Failure { error, .. } => Err(error.clone()),
+                DispatchResult::Blocked { reason } => Err(reason.clone()),
+            },
+            None => Err("No result from dispatch".to_string()),
         }
     }
 
@@ -315,14 +318,14 @@ mod tests {
     use chrono::Utc;
     use fc_common::MediationType;
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use crate::message_group_processor::DispatchResult;
+    use crate::message_group_processor::{BatchDispatchResult, BatchItemResult};
     use async_trait::async_trait;
 
-    struct MockDispatcher {
+    struct MockBatchDispatcher {
         dispatch_count: AtomicUsize,
     }
 
-    impl MockDispatcher {
+    impl MockBatchDispatcher {
         fn new() -> Self {
             Self {
                 dispatch_count: AtomicUsize::new(0),
@@ -335,10 +338,15 @@ mod tests {
     }
 
     #[async_trait]
-    impl MessageDispatcher for MockDispatcher {
-        async fn dispatch(&self, _message: &Message) -> DispatchResult {
-            self.dispatch_count.fetch_add(1, Ordering::SeqCst);
-            DispatchResult::Success
+    impl BatchMessageDispatcher for MockBatchDispatcher {
+        async fn dispatch_batch(&self, messages: &[Message]) -> BatchDispatchResult {
+            self.dispatch_count.fetch_add(messages.len(), Ordering::SeqCst);
+            BatchDispatchResult {
+                results: messages.iter().map(|m| BatchItemResult {
+                    message_id: m.id.clone(),
+                    result: DispatchResult::Success,
+                }).collect(),
+            }
         }
     }
 
@@ -357,7 +365,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_distribute_with_group() {
-        let dispatcher = Arc::new(MockDispatcher::new());
+        let dispatcher = Arc::new(MockBatchDispatcher::new());
         let distributor = GroupDistributor::new(
             GroupDistributorConfig::default(),
             dispatcher.clone(),
@@ -382,7 +390,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_distribute_without_group() {
-        let dispatcher = Arc::new(MockDispatcher::new());
+        let dispatcher = Arc::new(MockBatchDispatcher::new());
         let distributor = GroupDistributor::new(
             GroupDistributorConfig::default(),
             dispatcher.clone(),
@@ -402,7 +410,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_active_groups() {
-        let dispatcher = Arc::new(MockDispatcher::new());
+        let dispatcher = Arc::new(MockBatchDispatcher::new());
         let distributor = GroupDistributor::new(
             GroupDistributorConfig::default(),
             dispatcher.clone(),

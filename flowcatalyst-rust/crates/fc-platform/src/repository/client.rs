@@ -17,27 +17,27 @@ impl ClientRepository {
     }
 
     pub async fn insert(&self, client: &Client) -> Result<()> {
-        self.collection.insert_one(client, None).await?;
+        self.collection.insert_one(client).await?;
         Ok(())
     }
 
     pub async fn find_by_id(&self, id: &str) -> Result<Option<Client>> {
-        Ok(self.collection.find_one(doc! { "_id": id }, None).await?)
+        Ok(self.collection.find_one(doc! { "_id": id }).await?)
     }
 
     pub async fn find_by_identifier(&self, identifier: &str) -> Result<Option<Client>> {
-        Ok(self.collection.find_one(doc! { "identifier": identifier }, None).await?)
+        Ok(self.collection.find_one(doc! { "identifier": identifier }).await?)
     }
 
     pub async fn find_active(&self) -> Result<Vec<Client>> {
         let cursor = self.collection
-            .find(doc! { "status": "ACTIVE" }, None)
+            .find(doc! { "status": "ACTIVE" })
             .await?;
         Ok(cursor.try_collect().await?)
     }
 
     pub async fn find_all(&self) -> Result<Vec<Client>> {
-        let cursor = self.collection.find(doc! {}, None).await?;
+        let cursor = self.collection.find(doc! {}).await?;
         Ok(cursor.try_collect().await?)
     }
 
@@ -47,41 +47,41 @@ impl ClientRepository {
             .trim_matches('"')
             .to_string();
         let cursor = self.collection
-            .find(doc! { "status": status_str }, None)
+            .find(doc! { "status": status_str })
             .await?;
         Ok(cursor.try_collect().await?)
     }
 
     pub async fn find_by_ids(&self, ids: &[String]) -> Result<Vec<Client>> {
         let cursor = self.collection
-            .find(doc! { "_id": { "$in": ids } }, None)
+            .find(doc! { "_id": { "$in": ids } })
             .await?;
         Ok(cursor.try_collect().await?)
     }
 
     pub async fn exists(&self, id: &str) -> Result<bool> {
         let count = self.collection
-            .count_documents(doc! { "_id": id }, None)
+            .count_documents(doc! { "_id": id })
             .await?;
         Ok(count > 0)
     }
 
     pub async fn exists_by_identifier(&self, identifier: &str) -> Result<bool> {
         let count = self.collection
-            .count_documents(doc! { "identifier": identifier }, None)
+            .count_documents(doc! { "identifier": identifier })
             .await?;
         Ok(count > 0)
     }
 
     pub async fn update(&self, client: &Client) -> Result<()> {
         self.collection
-            .replace_one(doc! { "_id": &client.id }, client, None)
+            .replace_one(doc! { "_id": &client.id }, client)
             .await?;
         Ok(())
     }
 
     pub async fn delete(&self, id: &str) -> Result<bool> {
-        let result = self.collection.delete_one(doc! { "_id": id }, None).await?;
+        let result = self.collection.delete_one(doc! { "_id": id }).await?;
         Ok(result.deleted_count > 0)
     }
 }

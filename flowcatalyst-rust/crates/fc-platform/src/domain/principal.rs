@@ -270,8 +270,33 @@ impl Principal {
         self.updated_at = Utc::now();
     }
 
+    pub fn assign_role_with_source(&mut self, role: impl Into<String>, source: impl Into<String>) {
+        self.roles.push(RoleAssignment::with_source(role, source));
+        self.updated_at = Utc::now();
+    }
+
     pub fn assign_role_for_client(&mut self, role: impl Into<String>, client_id: impl Into<String>) {
         self.roles.push(RoleAssignment::for_client(role, client_id));
+        self.updated_at = Utc::now();
+    }
+
+    /// Remove all roles from a specific source (e.g., "IDP_SYNC")
+    /// Returns the number of roles removed
+    pub fn remove_roles_by_source(&mut self, source: &str) -> usize {
+        let original_count = self.roles.len();
+        self.roles.retain(|r| r.assignment_source.as_deref() != Some(source));
+        let removed = original_count - self.roles.len();
+        if removed > 0 {
+            self.updated_at = Utc::now();
+        }
+        removed
+    }
+
+    /// Update last login timestamp
+    pub fn update_last_login(&mut self) {
+        if let Some(ref mut identity) = self.user_identity {
+            identity.last_login_at = Some(Utc::now());
+        }
         self.updated_at = Utc::now();
     }
 

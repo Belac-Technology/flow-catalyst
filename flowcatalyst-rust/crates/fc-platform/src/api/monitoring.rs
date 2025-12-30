@@ -2,18 +2,13 @@
 //!
 //! REST endpoints for platform monitoring and observability.
 
-use axum::{
-    extract::State,
-    routing::get,
-    Json, Router,
-};
+use salvo::prelude::*;
 use serde::Serialize;
 use std::sync::Arc;
 use std::collections::HashMap;
 use tokio::sync::RwLock;
-use utoipa::ToSchema;
 
-use crate::api::common::ApiResult;
+use crate::error::PlatformError;
 use crate::api::middleware::Authenticated;
 use crate::repository::DispatchJobRepository;
 use crate::domain::DispatchStatus;
@@ -221,11 +216,14 @@ pub struct MonitoringState {
 }
 
 /// Get standby status
+#[endpoint(tags("Monitoring"))]
 pub async fn get_standby_status(
-    State(state): State<MonitoringState>,
-    Authenticated(auth): Authenticated,
-) -> ApiResult<StandbyStatus> {
-    crate::service::checks::require_anchor(&auth)?;
+    depot: &mut Depot,
+) -> Result<Json<StandbyStatus>, PlatformError> {
+    let auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<MonitoringState>().map_err(|_| PlatformError::internal("State not found"))?;
+
+    crate::service::checks::require_anchor(&auth.0)?;
 
     let is_leader = *state.leader_state.is_leader.read().await;
     let leader_id = state.leader_state.leader_id.read().await.clone();
@@ -242,11 +240,14 @@ pub async fn get_standby_status(
 }
 
 /// Get dashboard metrics
+#[endpoint(tags("Monitoring"))]
 pub async fn get_dashboard(
-    State(state): State<MonitoringState>,
-    Authenticated(auth): Authenticated,
-) -> ApiResult<DashboardMetrics> {
-    crate::service::checks::require_anchor(&auth)?;
+    depot: &mut Depot,
+) -> Result<Json<DashboardMetrics>, PlatformError> {
+    let auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<MonitoringState>().map_err(|_| PlatformError::internal("State not found"))?;
+
+    crate::service::checks::require_anchor(&auth.0)?;
 
     // Get job counts by status
     let pending = state.dispatch_job_repo.count_by_status(DispatchStatus::Pending).await.unwrap_or(0);
@@ -281,11 +282,14 @@ pub async fn get_dashboard(
 }
 
 /// Get circuit breaker states
+#[endpoint(tags("Monitoring"))]
 pub async fn get_circuit_breakers(
-    State(state): State<MonitoringState>,
-    Authenticated(auth): Authenticated,
-) -> ApiResult<CircuitBreakersResponse> {
-    crate::service::checks::require_anchor(&auth)?;
+    depot: &mut Depot,
+) -> Result<Json<CircuitBreakersResponse>, PlatformError> {
+    let auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<MonitoringState>().map_err(|_| PlatformError::internal("State not found"))?;
+
+    crate::service::checks::require_anchor(&auth.0)?;
 
     let breakers = state.circuit_breakers.get_all().await;
 
@@ -302,11 +306,14 @@ pub async fn get_circuit_breakers(
 }
 
 /// Get in-flight messages
+#[endpoint(tags("Monitoring"))]
 pub async fn get_in_flight_messages(
-    State(state): State<MonitoringState>,
-    Authenticated(auth): Authenticated,
-) -> ApiResult<InFlightMessagesResponse> {
-    crate::service::checks::require_anchor(&auth)?;
+    depot: &mut Depot,
+) -> Result<Json<InFlightMessagesResponse>, PlatformError> {
+    let auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<MonitoringState>().map_err(|_| PlatformError::internal("State not found"))?;
+
+    crate::service::checks::require_anchor(&auth.0)?;
 
     let messages = state.in_flight.get_all().await;
     let total_in_flight = messages.len();
@@ -338,9 +345,21 @@ pub async fn get_in_flight_messages(
 /// Create monitoring router
 pub fn monitoring_router(state: MonitoringState) -> Router {
     Router::new()
-        .route("/standby-status", get(get_standby_status))
-        .route("/dashboard", get(get_dashboard))
-        .route("/circuit-breakers", get(get_circuit_breakers))
-        .route("/in-flight-messages", get(get_in_flight_messages))
-        .with_state(state)
+        .push(
+            Router::with_path("standby-status")
+                .get(get_standby_status)
+        )
+        .push(
+            Router::with_path("dashboard")
+                .get(get_dashboard)
+        )
+        .push(
+            Router::with_path("circuit-breakers")
+                .get(get_circuit_breakers)
+        )
+        .push(
+            Router::with_path("in-flight-messages")
+                .get(get_in_flight_messages)
+        )
+        .hoop(affix_state::inject(state))
 }

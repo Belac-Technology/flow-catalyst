@@ -121,7 +121,7 @@ impl Default for WebhookCredentials {
     }
 }
 
-/// Role assignment embedded in service account
+/// Role assignment embedded in service account or principal
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RoleAssignment {
@@ -131,6 +131,10 @@ pub struct RoleAssignment {
     /// Client ID this role applies to (null = all clients)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub client_id: Option<String>,
+
+    /// Source of this role assignment (e.g., "ADMIN", "IDP_SYNC")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub assignment_source: Option<String>,
 
     /// When the role was assigned
     pub assigned_at: DateTime<Utc>,
@@ -145,6 +149,17 @@ impl RoleAssignment {
         Self {
             role: role.into(),
             client_id: None,
+            assignment_source: None,
+            assigned_at: Utc::now(),
+            assigned_by: None,
+        }
+    }
+
+    pub fn with_source(role: impl Into<String>, source: impl Into<String>) -> Self {
+        Self {
+            role: role.into(),
+            client_id: None,
+            assignment_source: Some(source.into()),
             assigned_at: Utc::now(),
             assigned_by: None,
         }
@@ -154,9 +169,15 @@ impl RoleAssignment {
         Self {
             role: role.into(),
             client_id: Some(client_id.into()),
+            assignment_source: None,
             assigned_at: Utc::now(),
             assigned_by: None,
         }
+    }
+
+    /// Check if this assignment is from IDP sync
+    pub fn is_idp_sync(&self) -> bool {
+        self.assignment_source.as_deref() == Some("IDP_SYNC")
     }
 }
 

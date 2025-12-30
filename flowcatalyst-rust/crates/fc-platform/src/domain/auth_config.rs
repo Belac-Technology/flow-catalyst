@@ -225,6 +225,118 @@ impl ClientAuthConfig {
         clients.extend(self.granted_client_ids.clone());
         clients
     }
+
+    /// Validate that a token issuer matches this config's OIDC issuer.
+    ///
+    /// Supports both:
+    /// - Exact match against `oidc_issuer_url`
+    /// - Pattern match for multi-tenant IDPs (e.g., Azure AD) using `oidc_issuer_pattern`
+    ///
+    /// For multi-tenant patterns, `{tenantId}` is replaced with a UUID pattern.
+    ///
+    /// # Example
+    /// ```ignore
+    /// // Exact match
+    /// config.oidc_issuer_url = Some("https://login.example.com/v2.0".to_string());
+    /// assert!(config.is_valid_issuer("https://login.example.com/v2.0"));
+    ///
+    /// // Multi-tenant pattern match (Azure AD)
+    /// config.oidc_multi_tenant = true;
+    /// config.oidc_issuer_pattern = Some("https://login.microsoftonline.com/{tenantId}/v2.0".to_string());
+    /// assert!(config.is_valid_issuer("https://login.microsoftonline.com/550e8400-e29b-41d4-a716-446655440000/v2.0"));
+    /// ```
+    pub fn is_valid_issuer(&self, token_issuer: &str) -> bool {
+        // First check explicit pattern for multi-tenant
+        if self.oidc_multi_tenant {
+            if let Some(ref pattern) = self.oidc_issuer_pattern {
+                return self.matches_issuer_pattern(pattern, token_issuer);
+            }
+            // If multi-tenant but no pattern, derive from issuer URL
+            if let Some(ref issuer_url) = self.oidc_issuer_url {
+                let derived_pattern = self.derive_issuer_pattern(issuer_url);
+                return self.matches_issuer_pattern(&derived_pattern, token_issuer);
+            }
+        }
+
+        // Fall back to exact match
+        if let Some(ref issuer_url) = self.oidc_issuer_url {
+            return issuer_url == token_issuer;
+        }
+
+        false
+    }
+
+    /// Get the effective issuer pattern for debugging/logging
+    pub fn effective_issuer_pattern(&self) -> Option<String> {
+        if self.oidc_multi_tenant {
+            if self.oidc_issuer_pattern.is_some() {
+                return self.oidc_issuer_pattern.clone();
+            }
+            if let Some(ref issuer_url) = self.oidc_issuer_url {
+                return Some(self.derive_issuer_pattern(issuer_url));
+            }
+        }
+        self.oidc_issuer_url.clone()
+    }
+
+    /// Match token issuer against a pattern with {tenantId} placeholder
+    fn matches_issuer_pattern(&self, pattern: &str, token_issuer: &str) -> bool {
+        // Replace {tenantId} with a regex pattern that matches UUIDs and GUIDs
+        // Azure AD tenant IDs are GUIDs, Keycloak realms are typically alphanumeric
+        let regex_pattern = pattern
+            .replace("{tenantId}", "[a-zA-Z0-9-]+")
+            .replace("{tenant}", "[a-zA-Z0-9-]+");
+
+        // Escape regex special chars except the placeholder we just inserted
+        let escaped = regex::escape(&regex_pattern)
+            .replace(r"\[a-zA-Z0-9-\]\+", "[a-zA-Z0-9-]+");
+
+        match regex::Regex::new(&format!("^{}$", escaped)) {
+            Ok(re) => re.is_match(token_issuer),
+            Err(_) => {
+                // If regex fails, fall back to simple contains check
+                token_issuer.contains(&pattern.replace("{tenantId}", "").replace("{tenant}", ""))
+            }
+        }
+    }
+
+    /// Derive an issuer pattern from a static issuer URL
+    /// This handles common cases like Azure AD where the issuer contains tenant ID
+    fn derive_issuer_pattern(&self, issuer_url: &str) -> String {
+        // Azure AD pattern: https://login.microsoftonline.com/{tenantId}/v2.0
+        if issuer_url.contains("login.microsoftonline.com") {
+            // Replace the tenant ID segment with placeholder
+            // Format: https://login.microsoftonline.com/TENANT_ID/v2.0
+            let parts: Vec<&str> = issuer_url.split('/').collect();
+            if parts.len() >= 4 {
+                // Reconstruct with placeholder
+                return format!(
+                    "https://login.microsoftonline.com/{{tenantId}}/{}",
+                    parts[4..].join("/")
+                );
+            }
+        }
+
+        // For other providers, just return the URL as-is (exact match)
+        issuer_url.to_string()
+    }
+
+    /// Validate that OIDC configuration is complete
+    pub fn validate_oidc_config(&self) -> Result<(), &'static str> {
+        if self.auth_provider != AuthProvider::Oidc {
+            return Ok(()); // Not OIDC, nothing to validate
+        }
+
+        if self.oidc_issuer_url.is_none() {
+            return Err("OIDC issuer URL is required");
+        }
+
+        if self.oidc_client_id.is_none() {
+            return Err("OIDC client ID is required");
+        }
+
+        Ok(())
+    }
 }
 
 /// Client access grant - explicit access grant for partner users

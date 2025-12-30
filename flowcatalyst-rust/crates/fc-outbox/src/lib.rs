@@ -3,6 +3,8 @@ pub mod buffer;
 pub mod message_group_processor;
 pub mod group_distributor;
 pub mod recovery;
+pub mod http_dispatcher;
+pub mod enhanced_processor;
 
 #[cfg(feature = "sqlite")]
 pub mod sqlite;
@@ -26,10 +28,13 @@ use async_trait::async_trait;
 pub use buffer::{GlobalBuffer, GlobalBufferConfig, BufferFullError};
 pub use message_group_processor::{
     MessageGroupProcessor, MessageGroupProcessorConfig, MessageDispatcher,
+    BatchMessageDispatcher, BatchDispatchResult, BatchItemResult,
     DispatchResult, ProcessorState, TrackedMessage,
 };
 pub use group_distributor::{GroupDistributor, GroupDistributorConfig, DistributorStats};
 pub use recovery::{RecoveryTask, RecoveryConfig};
+pub use http_dispatcher::{HttpDispatcher, HttpDispatcherConfig, BatchRequest, BatchResponse, ItemStatus};
+pub use enhanced_processor::{EnhancedOutboxProcessor, EnhancedProcessorConfig, ProcessorMetrics};
 
 /// Configuration for leader election in outbox processor
 #[derive(Debug, Clone)]

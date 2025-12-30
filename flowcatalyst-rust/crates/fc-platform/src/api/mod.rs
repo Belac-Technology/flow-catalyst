@@ -24,6 +24,7 @@ pub mod applications;
 pub mod dispatch_pools;
 pub mod monitoring;
 pub mod oauth;
+pub mod oidc_login;
 
 pub use common::*;
 pub use middleware::{AppState, Authenticated, OptionalAuth};
@@ -54,3 +55,4 @@ pub use monitoring::{
     LeaderState, CircuitBreakerRegistry, InFlightTracker,
 };
 pub use oauth::{OAuthState, oauth_router, issue_code};
+pub use oidc_login::{OidcLoginApiState, oidc_login_router};

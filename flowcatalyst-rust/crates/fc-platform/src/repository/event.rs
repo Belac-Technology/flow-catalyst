@@ -19,48 +19,48 @@ impl EventRepository {
     }
 
     pub async fn insert(&self, event: &Event) -> Result<()> {
-        self.collection.insert_one(event, None).await?;
+        self.collection.insert_one(event).await?;
         Ok(())
     }
 
     pub async fn find_by_id(&self, id: &str) -> Result<Option<Event>> {
-        Ok(self.collection.find_one(doc! { "_id": id }, None).await?)
+        Ok(self.collection.find_one(doc! { "_id": id }).await?)
     }
 
     pub async fn find_by_type(&self, event_type: &str, _limit: i64) -> Result<Vec<Event>> {
         let cursor = self.collection
-            .find(doc! { "type": event_type }, None)
+            .find(doc! { "type": event_type })
             .await?;
         Ok(cursor.try_collect().await?)
     }
 
     pub async fn find_by_client(&self, client_id: &str, _limit: i64) -> Result<Vec<Event>> {
         let cursor = self.collection
-            .find(doc! { "clientId": client_id }, None)
+            .find(doc! { "clientId": client_id })
             .await?;
         Ok(cursor.try_collect().await?)
     }
 
     pub async fn find_by_correlation_id(&self, correlation_id: &str) -> Result<Vec<Event>> {
         let cursor = self.collection
-            .find(doc! { "correlationId": correlation_id }, None)
+            .find(doc! { "correlationId": correlation_id })
             .await?;
         Ok(cursor.try_collect().await?)
     }
 
     // Read projection methods
     pub async fn find_read_by_id(&self, id: &str) -> Result<Option<EventRead>> {
-        Ok(self.read_collection.find_one(doc! { "_id": id }, None).await?)
+        Ok(self.read_collection.find_one(doc! { "_id": id }).await?)
     }
 
     pub async fn insert_read_projection(&self, projection: &EventRead) -> Result<()> {
-        self.read_collection.insert_one(projection, None).await?;
+        self.read_collection.insert_one(projection).await?;
         Ok(())
     }
 
     pub async fn update_read_projection(&self, projection: &EventRead) -> Result<()> {
         self.read_collection
-            .replace_one(doc! { "_id": &projection.id }, projection, None)
+            .replace_one(doc! { "_id": &projection.id }, projection)
             .await?;
         Ok(())
     }

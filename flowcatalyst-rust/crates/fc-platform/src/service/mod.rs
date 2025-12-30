@@ -9,6 +9,7 @@ pub mod authorization;
 pub mod dispatch;
 pub mod projections;
 pub mod oidc;
+pub mod oidc_sync;
 pub mod password;
 
 pub use audit::AuditService;
@@ -20,4 +21,5 @@ pub use dispatch::{
 };
 pub use projections::{EventProjectionWriter, DispatchJobProjectionWriter};
 pub use oidc::{OidcService, OidcProviderConfig, IdTokenClaims, TokenResponse};
+pub use oidc_sync::{OidcSyncService, IDP_SYNC_SOURCE};
 pub use password::{PasswordService, PasswordPolicy, Argon2Config, PasswordResetToken};

@@ -1,19 +1,31 @@
 //! FlowCatalyst Outbox Processor
 //!
-//! Reads messages from application database outbox tables and publishes to SQS queues.
+//! Reads messages from application database outbox tables and dispatches them.
+//!
+//! ## Modes
+//!
+//! - **Enhanced Mode (default)**: Sends to FlowCatalyst HTTP API with message group ordering
+//! - **SQS Mode**: Publishes directly to SQS (legacy behavior)
+//!
 //! Supports multiple database backends: SQLite, PostgreSQL, MongoDB.
 //!
 //! ## Environment Variables
 //!
 //! | Variable | Default | Description |
 //! |----------|---------|-------------|
+//! | `FC_OUTBOX_MODE` | `enhanced` | Mode: `enhanced` (HTTP API) or `sqs` (direct SQS) |
 //! | `FC_OUTBOX_DB_TYPE` | `postgres` | Database type: `sqlite`, `postgres`, `mongo` |
 //! | `FC_OUTBOX_DB_URL` | - | Database connection URL (required) |
 //! | `FC_OUTBOX_MONGO_DB` | `flowcatalyst` | MongoDB database name |
 //! | `FC_OUTBOX_MONGO_COLLECTION` | `outbox` | MongoDB collection name |
 //! | `FC_OUTBOX_POLL_INTERVAL_MS` | `1000` | Poll interval in milliseconds |
-//! | `FC_OUTBOX_BATCH_SIZE` | `100` | Max messages per batch |
-//! | `FC_QUEUE_URL` | - | SQS queue URL (required) |
+//! | `FC_OUTBOX_BATCH_SIZE` | `100` | Max messages per batch (SQS mode) |
+//! | `FC_QUEUE_URL` | - | SQS queue URL (required for SQS mode) |
+//! | `FC_API_BASE_URL` | `http://localhost:8080` | FlowCatalyst API URL (enhanced mode) |
+//! | `FC_API_TOKEN` | - | API Bearer token (optional) |
+//! | `FC_MAX_IN_FLIGHT` | `5000` | Max concurrent items (enhanced mode) |
+//! | `FC_GLOBAL_BUFFER_SIZE` | `1000` | Buffer capacity (enhanced mode) |
+//! | `FC_MAX_CONCURRENT_GROUPS` | `10` | Max concurrent message groups (enhanced mode) |
 //! | `FC_METRICS_PORT` | `9090` | Metrics/health port |
 //! | `RUST_LOG` | `info` | Log level |
 
@@ -28,6 +40,8 @@ use tokio::sync::broadcast;
 use async_trait::async_trait;
 
 use fc_outbox::{OutboxProcessor, repository::OutboxRepository};
+use fc_outbox::{EnhancedOutboxProcessor, EnhancedProcessorConfig};
+use fc_outbox::http_dispatcher::HttpDispatcherConfig;
 use fc_common::Message;
 
 use sqlx::sqlite::SqlitePoolOptions;
@@ -61,11 +75,10 @@ async fn main() -> Result<()> {
     info!("Starting FlowCatalyst Outbox Processor");
 
     // Configuration
+    let mode = env_or("FC_OUTBOX_MODE", "enhanced");
     let db_type = env_or("FC_OUTBOX_DB_TYPE", "postgres");
     let poll_interval_ms: u64 = env_or_parse("FC_OUTBOX_POLL_INTERVAL_MS", 1000);
-    let batch_size: u32 = env_or_parse("FC_OUTBOX_BATCH_SIZE", 100);
     let metrics_port: u16 = env_or_parse("FC_METRICS_PORT", 9090);
-    let queue_url = env_required("FC_QUEUE_URL")?;
 
     // Setup shutdown signal
     let (shutdown_tx, _) = broadcast::channel::<()>(1);
@@ -74,31 +87,78 @@ async fn main() -> Result<()> {
     let outbox_repo = create_outbox_repository(&db_type).await?;
     info!("Outbox repository initialized ({})", db_type);
 
-    // Initialize SQS publisher
-    let config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
-    let sqs_client = aws_sdk_sqs::Client::new(&config);
-    let publisher = Arc::new(SqsPublisher::new(sqs_client, queue_url.clone()));
-    info!("SQS publisher initialized: {}", queue_url);
+    // Start processor based on mode
+    let processor_handle = match mode.as_str() {
+        "sqs" => {
+            // Legacy SQS mode
+            let batch_size: u32 = env_or_parse("FC_OUTBOX_BATCH_SIZE", 100);
+            let queue_url = env_required("FC_QUEUE_URL")?;
 
-    // Create outbox processor
-    let processor = OutboxProcessor::new(
-        outbox_repo,
-        publisher,
-        Duration::from_millis(poll_interval_ms),
-        batch_size,
-    );
+            let config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
+            let sqs_client = aws_sdk_sqs::Client::new(&config);
+            let publisher = Arc::new(SqsPublisher::new(sqs_client, queue_url.clone()));
+            info!("SQS mode: publishing to {}", queue_url);
 
-    // Start processor
-    let processor_handle = {
-        let mut shutdown_rx = shutdown_tx.subscribe();
-        tokio::spawn(async move {
-            tokio::select! {
-                _ = processor.start() => {}
-                _ = shutdown_rx.recv() => {
-                    info!("Outbox processor shutting down");
+            let processor = OutboxProcessor::new(
+                outbox_repo,
+                publisher,
+                Duration::from_millis(poll_interval_ms),
+                batch_size,
+            );
+
+            let mut shutdown_rx = shutdown_tx.subscribe();
+            tokio::spawn(async move {
+                tokio::select! {
+                    _ = processor.start() => {}
+                    _ = shutdown_rx.recv() => {
+                        info!("Outbox processor shutting down");
+                    }
                 }
-            }
-        })
+            })
+        }
+        _ => {
+            // Enhanced mode (HTTP API with message group ordering)
+            let api_base_url = env_or("FC_API_BASE_URL", "http://localhost:8080");
+            let api_token = std::env::var("FC_API_TOKEN").ok();
+            let max_in_flight: u64 = env_or_parse("FC_MAX_IN_FLIGHT", 5000);
+            let global_buffer_size: usize = env_or_parse("FC_GLOBAL_BUFFER_SIZE", 1000);
+            let max_concurrent_groups: usize = env_or_parse("FC_MAX_CONCURRENT_GROUPS", 10);
+            let poll_batch_size: u32 = env_or_parse("FC_OUTBOX_BATCH_SIZE", 500);
+            let api_batch_size: usize = env_or_parse("FC_API_BATCH_SIZE", 100);
+
+            info!("Enhanced mode: sending to {} with message group ordering", api_base_url);
+            info!("  max_in_flight: {}, buffer_size: {}, concurrent_groups: {}",
+                max_in_flight, global_buffer_size, max_concurrent_groups);
+
+            let config = EnhancedProcessorConfig {
+                poll_interval: Duration::from_millis(poll_interval_ms),
+                poll_batch_size,
+                api_batch_size,
+                max_concurrent_groups,
+                global_buffer_size,
+                max_in_flight,
+                http_config: HttpDispatcherConfig {
+                    api_base_url,
+                    api_token,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let processor = Arc::new(EnhancedOutboxProcessor::new(config, outbox_repo)?);
+
+            let mut shutdown_rx = shutdown_tx.subscribe();
+            let processor_clone = Arc::clone(&processor);
+            tokio::spawn(async move {
+                tokio::select! {
+                    _ = processor_clone.start() => {}
+                    _ = shutdown_rx.recv() => {
+                        processor_clone.stop();
+                        info!("Enhanced outbox processor shutting down");
+                    }
+                }
+            })
+        }
     };
 
     // Start metrics server
@@ -123,7 +183,7 @@ async fn main() -> Result<()> {
         })
     };
 
-    info!("FlowCatalyst Outbox Processor started");
+    info!("FlowCatalyst Outbox Processor started (mode: {})", mode);
     info!("Press Ctrl+C to shutdown");
 
     // Wait for shutdown

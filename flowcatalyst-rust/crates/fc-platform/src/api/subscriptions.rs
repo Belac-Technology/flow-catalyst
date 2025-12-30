@@ -2,19 +2,15 @@
 //!
 //! REST endpoints for subscription management.
 
-use axum::{
-    extract::{Path, Query, State},
-    routing::{get, post},
-    Json, Router,
-};
+use salvo::prelude::*;
+use salvo::oapi::extract::*;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use utoipa::ToSchema;
 
 use crate::domain::{Subscription, EventTypeBinding, DispatchMode};
 use crate::repository::SubscriptionRepository;
 use crate::error::PlatformError;
-use crate::api::common::{ApiResult, PaginationParams, CreatedResponse, SuccessResponse};
+use crate::api::common::{PaginationParams, CreatedResponse, SuccessResponse};
 use crate::api::middleware::Authenticated;
 
 /// Event type binding request
@@ -162,8 +158,9 @@ impl From<Subscription> for SubscriptionResponse {
 }
 
 /// Query parameters for subscriptions list
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize, ToParameters)]
 #[serde(rename_all = "camelCase")]
+#[salvo(parameters(default_parameter_in = Query))]
 pub struct SubscriptionsQuery {
     #[serde(flatten)]
     pub pagination: PaginationParams,
@@ -191,19 +188,24 @@ fn parse_mode(s: &str) -> Result<DispatchMode, PlatformError> {
 }
 
 /// Create a new subscription
+#[endpoint(tags("Subscriptions"))]
 pub async fn create_subscription(
-    State(state): State<SubscriptionsState>,
-    Authenticated(auth): Authenticated,
-    Json(req): Json<CreateSubscriptionRequest>,
-) -> ApiResult<CreatedResponse> {
-    crate::service::checks::can_write_subscriptions(&auth)?;
+    depot: &mut Depot,
+    body: JsonBody<CreateSubscriptionRequest>,
+) -> Result<Json<CreatedResponse>, PlatformError> {
+    let auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<SubscriptionsState>().map_err(|_| PlatformError::internal("State not found"))?;
+
+    crate::service::checks::can_write_subscriptions(&auth.0)?;
+
+    let req = body.into_inner();
 
     // Validate client access if specified
     if let Some(ref cid) = req.client_id {
-        if !auth.can_access_client(cid) {
+        if !auth.0.can_access_client(cid) {
             return Err(PlatformError::forbidden(format!("No access to client: {}", cid)));
         }
-    } else if !auth.is_anchor() {
+    } else if !auth.0.is_anchor() {
         return Err(PlatformError::forbidden("Only anchor users can create anchor-level subscriptions"));
     }
 
@@ -255,19 +257,23 @@ pub async fn create_subscription(
 }
 
 /// Get subscription by ID
+#[endpoint(tags("Subscriptions"))]
 pub async fn get_subscription(
-    State(state): State<SubscriptionsState>,
-    Authenticated(auth): Authenticated,
-    Path(id): Path<String>,
-) -> ApiResult<SubscriptionResponse> {
-    crate::service::checks::can_read_subscriptions(&auth)?;
+    depot: &mut Depot,
+    id: PathParam<String>,
+) -> Result<Json<SubscriptionResponse>, PlatformError> {
+    let auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<SubscriptionsState>().map_err(|_| PlatformError::internal("State not found"))?;
+    let id = id.into_inner();
+
+    crate::service::checks::can_read_subscriptions(&auth.0)?;
 
     let subscription = state.subscription_repo.find_by_id(&id).await?
         .ok_or_else(|| PlatformError::not_found("Subscription", &id))?;
 
     // Check client access
     if let Some(ref cid) = subscription.client_id {
-        if !auth.can_access_client(cid) {
+        if !auth.0.can_access_client(cid) {
             return Err(PlatformError::forbidden("No access to this subscription"));
         }
     }
@@ -276,15 +282,18 @@ pub async fn get_subscription(
 }
 
 /// List subscriptions
+#[endpoint(tags("Subscriptions"))]
 pub async fn list_subscriptions(
-    State(state): State<SubscriptionsState>,
-    Authenticated(auth): Authenticated,
-    Query(query): Query<SubscriptionsQuery>,
-) -> ApiResult<Vec<SubscriptionResponse>> {
-    crate::service::checks::can_read_subscriptions(&auth)?;
+    depot: &mut Depot,
+    query: SubscriptionsQuery,
+) -> Result<Json<Vec<SubscriptionResponse>>, PlatformError> {
+    let auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<SubscriptionsState>().map_err(|_| PlatformError::internal("State not found"))?;
+
+    crate::service::checks::can_read_subscriptions(&auth.0)?;
 
     let subscriptions = if let Some(ref client_id) = query.client_id {
-        if !auth.can_access_client(client_id) {
+        if !auth.0.can_access_client(client_id) {
             return Err(PlatformError::forbidden(format!("No access to client: {}", client_id)));
         }
         state.subscription_repo.find_by_client(Some(client_id)).await?
@@ -296,8 +305,8 @@ pub async fn list_subscriptions(
     let filtered: Vec<SubscriptionResponse> = subscriptions.into_iter()
         .filter(|s| {
             match &s.client_id {
-                Some(cid) => auth.can_access_client(cid),
-                None => auth.is_anchor(),
+                Some(cid) => auth.0.can_access_client(cid),
+                None => auth.0.is_anchor(),
             }
         })
         .map(|s| s.into())
@@ -307,27 +316,32 @@ pub async fn list_subscriptions(
 }
 
 /// Update subscription
+#[endpoint(tags("Subscriptions"))]
 pub async fn update_subscription(
-    State(state): State<SubscriptionsState>,
-    Authenticated(auth): Authenticated,
-    Path(id): Path<String>,
-    Json(req): Json<UpdateSubscriptionRequest>,
-) -> ApiResult<SubscriptionResponse> {
-    crate::service::checks::can_write_subscriptions(&auth)?;
+    depot: &mut Depot,
+    id: PathParam<String>,
+    body: JsonBody<UpdateSubscriptionRequest>,
+) -> Result<Json<SubscriptionResponse>, PlatformError> {
+    let auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<SubscriptionsState>().map_err(|_| PlatformError::internal("State not found"))?;
+    let id = id.into_inner();
+
+    crate::service::checks::can_write_subscriptions(&auth.0)?;
 
     let mut subscription = state.subscription_repo.find_by_id(&id).await?
         .ok_or_else(|| PlatformError::not_found("Subscription", &id))?;
 
     // Check client access
     if let Some(ref cid) = subscription.client_id {
-        if !auth.can_access_client(cid) {
+        if !auth.0.can_access_client(cid) {
             return Err(PlatformError::forbidden("No access to this subscription"));
         }
-    } else if !auth.is_anchor() {
+    } else if !auth.0.is_anchor() {
         return Err(PlatformError::forbidden("Only anchor users can modify anchor-level subscriptions"));
     }
 
     // Update fields
+    let req = body.into_inner();
     if let Some(name) = req.name {
         subscription.name = name;
     }
@@ -351,19 +365,23 @@ pub async fn update_subscription(
 }
 
 /// Pause subscription
+#[endpoint(tags("Subscriptions"))]
 pub async fn pause_subscription(
-    State(state): State<SubscriptionsState>,
-    Authenticated(auth): Authenticated,
-    Path(id): Path<String>,
-) -> ApiResult<SubscriptionResponse> {
-    crate::service::checks::can_write_subscriptions(&auth)?;
+    depot: &mut Depot,
+    id: PathParam<String>,
+) -> Result<Json<SubscriptionResponse>, PlatformError> {
+    let auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<SubscriptionsState>().map_err(|_| PlatformError::internal("State not found"))?;
+    let id = id.into_inner();
+
+    crate::service::checks::can_write_subscriptions(&auth.0)?;
 
     let mut subscription = state.subscription_repo.find_by_id(&id).await?
         .ok_or_else(|| PlatformError::not_found("Subscription", &id))?;
 
     // Check client access
     if let Some(ref cid) = subscription.client_id {
-        if !auth.can_access_client(cid) {
+        if !auth.0.can_access_client(cid) {
             return Err(PlatformError::forbidden("No access to this subscription"));
         }
     }
@@ -375,19 +393,23 @@ pub async fn pause_subscription(
 }
 
 /// Resume subscription
+#[endpoint(tags("Subscriptions"))]
 pub async fn resume_subscription(
-    State(state): State<SubscriptionsState>,
-    Authenticated(auth): Authenticated,
-    Path(id): Path<String>,
-) -> ApiResult<SubscriptionResponse> {
-    crate::service::checks::can_write_subscriptions(&auth)?;
+    depot: &mut Depot,
+    id: PathParam<String>,
+) -> Result<Json<SubscriptionResponse>, PlatformError> {
+    let auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<SubscriptionsState>().map_err(|_| PlatformError::internal("State not found"))?;
+    let id = id.into_inner();
+
+    crate::service::checks::can_write_subscriptions(&auth.0)?;
 
     let mut subscription = state.subscription_repo.find_by_id(&id).await?
         .ok_or_else(|| PlatformError::not_found("Subscription", &id))?;
 
     // Check client access
     if let Some(ref cid) = subscription.client_id {
-        if !auth.can_access_client(cid) {
+        if !auth.0.can_access_client(cid) {
             return Err(PlatformError::forbidden("No access to this subscription"));
         }
     }
@@ -399,22 +421,26 @@ pub async fn resume_subscription(
 }
 
 /// Delete subscription (archive)
+#[endpoint(tags("Subscriptions"))]
 pub async fn delete_subscription(
-    State(state): State<SubscriptionsState>,
-    Authenticated(auth): Authenticated,
-    Path(id): Path<String>,
-) -> ApiResult<SuccessResponse> {
-    crate::service::checks::can_delete_subscriptions(&auth)?;
+    depot: &mut Depot,
+    id: PathParam<String>,
+) -> Result<Json<SuccessResponse>, PlatformError> {
+    let auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<SubscriptionsState>().map_err(|_| PlatformError::internal("State not found"))?;
+    let id = id.into_inner();
+
+    crate::service::checks::can_delete_subscriptions(&auth.0)?;
 
     let mut subscription = state.subscription_repo.find_by_id(&id).await?
         .ok_or_else(|| PlatformError::not_found("Subscription", &id))?;
 
     // Check client access
     if let Some(ref cid) = subscription.client_id {
-        if !auth.can_access_client(cid) {
+        if !auth.0.can_access_client(cid) {
             return Err(PlatformError::forbidden("No access to this subscription"));
         }
-    } else if !auth.is_anchor() {
+    } else if !auth.0.is_anchor() {
         return Err(PlatformError::forbidden("Only anchor users can delete anchor-level subscriptions"));
     }
 
@@ -427,9 +453,24 @@ pub async fn delete_subscription(
 /// Create subscriptions router
 pub fn subscriptions_router(state: SubscriptionsState) -> Router {
     Router::new()
-        .route("/", post(create_subscription).get(list_subscriptions))
-        .route("/:id", get(get_subscription).put(update_subscription).delete(delete_subscription))
-        .route("/:id/pause", post(pause_subscription))
-        .route("/:id/resume", post(resume_subscription))
-        .with_state(state)
+        .push(
+            Router::new()
+                .post(create_subscription)
+                .get(list_subscriptions)
+        )
+        .push(
+            Router::with_path("<id>")
+                .get(get_subscription)
+                .put(update_subscription)
+                .delete(delete_subscription)
+        )
+        .push(
+            Router::with_path("<id>/pause")
+                .post(pause_subscription)
+        )
+        .push(
+            Router::with_path("<id>/resume")
+                .post(resume_subscription)
+        )
+        .hoop(affix_state::inject(state))
 }

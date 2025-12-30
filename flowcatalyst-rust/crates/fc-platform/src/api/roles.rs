@@ -2,19 +2,15 @@
 //!
 //! REST endpoints for role management.
 
-use axum::{
-    extract::{Path, Query, State},
-    routing::{get, post},
-    Json, Router,
-};
+use salvo::prelude::*;
+use salvo::oapi::extract::*;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use utoipa::ToSchema;
 
 use crate::domain::{AuthRole, RoleSource};
 use crate::repository::RoleRepository;
 use crate::error::PlatformError;
-use crate::api::common::{ApiResult, PaginationParams, CreatedResponse, SuccessResponse};
+use crate::api::common::{PaginationParams, CreatedResponse, SuccessResponse};
 use crate::api::middleware::Authenticated;
 
 /// Create role request
@@ -99,8 +95,9 @@ impl From<AuthRole> for RoleResponse {
 }
 
 /// Query parameters for roles list
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize, ToParameters)]
 #[serde(rename_all = "camelCase")]
+#[salvo(parameters(default_parameter_in = Query))]
 pub struct RolesQuery {
     #[serde(flatten)]
     pub pagination: PaginationParams,
@@ -131,14 +128,18 @@ fn parse_source(s: &str) -> Result<RoleSource, PlatformError> {
 }
 
 /// Create a new role
+#[endpoint(tags("Roles"))]
 pub async fn create_role(
-    State(state): State<RolesState>,
-    Authenticated(auth): Authenticated,
-    Json(req): Json<CreateRoleRequest>,
-) -> ApiResult<CreatedResponse> {
-    // Only anchor users can create roles
-    crate::service::checks::require_anchor(&auth)?;
+    depot: &mut Depot,
+    body: JsonBody<CreateRoleRequest>,
+) -> Result<Json<CreatedResponse>, PlatformError> {
+    let auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<RolesState>().map_err(|_| PlatformError::internal("State not found"))?;
 
+    // Only anchor users can create roles
+    crate::service::checks::require_anchor(&auth.0)?;
+
+    let req = body.into_inner();
     let role_code = format!("{}:{}", req.application_code, req.role_name);
 
     // Check for duplicate code
@@ -162,11 +163,15 @@ pub async fn create_role(
 }
 
 /// Get role by ID
+#[endpoint(tags("Roles"))]
 pub async fn get_role(
-    State(state): State<RolesState>,
-    Authenticated(_auth): Authenticated,
-    Path(id): Path<String>,
-) -> ApiResult<RoleResponse> {
+    depot: &mut Depot,
+    id: PathParam<String>,
+) -> Result<Json<RoleResponse>, PlatformError> {
+    let _auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<RolesState>().map_err(|_| PlatformError::internal("State not found"))?;
+    let id = id.into_inner();
+
     // Roles are readable by any authenticated user
     let role = state.role_repo.find_by_id(&id).await?
         .ok_or_else(|| PlatformError::not_found("Role", &id))?;
@@ -175,11 +180,15 @@ pub async fn get_role(
 }
 
 /// Get role by code
+#[endpoint(tags("Roles"))]
 pub async fn get_role_by_code(
-    State(state): State<RolesState>,
-    Authenticated(_auth): Authenticated,
-    Path(code): Path<String>,
-) -> ApiResult<RoleResponse> {
+    depot: &mut Depot,
+    code: PathParam<String>,
+) -> Result<Json<RoleResponse>, PlatformError> {
+    let _auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<RolesState>().map_err(|_| PlatformError::internal("State not found"))?;
+    let code = code.into_inner();
+
     let role = state.role_repo.find_by_code(&code).await?
         .ok_or_else(|| PlatformError::not_found("Role", &code))?;
 
@@ -187,11 +196,14 @@ pub async fn get_role_by_code(
 }
 
 /// List roles
+#[endpoint(tags("Roles"))]
 pub async fn list_roles(
-    State(state): State<RolesState>,
-    Authenticated(_auth): Authenticated,
-    Query(query): Query<RolesQuery>,
-) -> ApiResult<Vec<RoleResponse>> {
+    depot: &mut Depot,
+    query: RolesQuery,
+) -> Result<Json<Vec<RoleResponse>>, PlatformError> {
+    let _auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<RolesState>().map_err(|_| PlatformError::internal("State not found"))?;
+
     let roles = if let Some(ref app) = query.application_code {
         state.role_repo.find_by_application(app).await?
     } else if let Some(ref source) = query.source {
@@ -211,13 +223,17 @@ pub async fn list_roles(
 }
 
 /// Update role
+#[endpoint(tags("Roles"))]
 pub async fn update_role(
-    State(state): State<RolesState>,
-    Authenticated(auth): Authenticated,
-    Path(id): Path<String>,
-    Json(req): Json<UpdateRoleRequest>,
-) -> ApiResult<RoleResponse> {
-    crate::service::checks::require_anchor(&auth)?;
+    depot: &mut Depot,
+    id: PathParam<String>,
+    body: JsonBody<UpdateRoleRequest>,
+) -> Result<Json<RoleResponse>, PlatformError> {
+    let auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<RolesState>().map_err(|_| PlatformError::internal("State not found"))?;
+    let id = id.into_inner();
+
+    crate::service::checks::require_anchor(&auth.0)?;
 
     let mut role = state.role_repo.find_by_id(&id).await?
         .ok_or_else(|| PlatformError::not_found("Role", &id))?;
@@ -230,6 +246,7 @@ pub async fn update_role(
         )));
     }
 
+    let req = body.into_inner();
     if let Some(display_name) = req.display_name {
         role.display_name = display_name;
     }
@@ -247,13 +264,17 @@ pub async fn update_role(
 }
 
 /// Grant permission to role
+#[endpoint(tags("Roles"))]
 pub async fn grant_permission(
-    State(state): State<RolesState>,
-    Authenticated(auth): Authenticated,
-    Path(id): Path<String>,
-    Json(req): Json<GrantPermissionRequest>,
-) -> ApiResult<RoleResponse> {
-    crate::service::checks::require_anchor(&auth)?;
+    depot: &mut Depot,
+    id: PathParam<String>,
+    body: JsonBody<GrantPermissionRequest>,
+) -> Result<Json<RoleResponse>, PlatformError> {
+    let auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<RolesState>().map_err(|_| PlatformError::internal("State not found"))?;
+    let id = id.into_inner();
+
+    crate::service::checks::require_anchor(&auth.0)?;
 
     let mut role = state.role_repo.find_by_id(&id).await?
         .ok_or_else(|| PlatformError::not_found("Role", &id))?;
@@ -262,6 +283,7 @@ pub async fn grant_permission(
         return Err(PlatformError::validation("This role cannot be modified"));
     }
 
+    let req = body.into_inner();
     role.grant_permission(req.permission);
     state.role_repo.update(&role).await?;
 
@@ -269,12 +291,18 @@ pub async fn grant_permission(
 }
 
 /// Revoke permission from role
+#[endpoint(tags("Roles"))]
 pub async fn revoke_permission(
-    State(state): State<RolesState>,
-    Authenticated(auth): Authenticated,
-    Path((id, permission)): Path<(String, String)>,
-) -> ApiResult<RoleResponse> {
-    crate::service::checks::require_anchor(&auth)?;
+    depot: &mut Depot,
+    id: PathParam<String>,
+    permission: PathParam<String>,
+) -> Result<Json<RoleResponse>, PlatformError> {
+    let auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<RolesState>().map_err(|_| PlatformError::internal("State not found"))?;
+    let id = id.into_inner();
+    let permission = permission.into_inner();
+
+    crate::service::checks::require_anchor(&auth.0)?;
 
     let mut role = state.role_repo.find_by_id(&id).await?
         .ok_or_else(|| PlatformError::not_found("Role", &id))?;
@@ -290,12 +318,16 @@ pub async fn revoke_permission(
 }
 
 /// Delete role
+#[endpoint(tags("Roles"))]
 pub async fn delete_role(
-    State(state): State<RolesState>,
-    Authenticated(auth): Authenticated,
-    Path(id): Path<String>,
-) -> ApiResult<SuccessResponse> {
-    crate::service::checks::require_anchor(&auth)?;
+    depot: &mut Depot,
+    id: PathParam<String>,
+) -> Result<Json<SuccessResponse>, PlatformError> {
+    let auth = Authenticated::from_depot(depot)?;
+    let state = depot.obtain::<RolesState>().map_err(|_| PlatformError::internal("State not found"))?;
+    let id = id.into_inner();
+
+    crate::service::checks::require_anchor(&auth.0)?;
 
     let role = state.role_repo.find_by_id(&id).await?
         .ok_or_else(|| PlatformError::not_found("Role", &id))?;
@@ -312,10 +344,28 @@ pub async fn delete_role(
 /// Create roles router
 pub fn roles_router(state: RolesState) -> Router {
     Router::new()
-        .route("/", post(create_role).get(list_roles))
-        .route("/:id", get(get_role).put(update_role).delete(delete_role))
-        .route("/by-code/:code", get(get_role_by_code))
-        .route("/:id/permissions", post(grant_permission))
-        .route("/:id/permissions/:permission", axum::routing::delete(revoke_permission))
-        .with_state(state)
+        .push(
+            Router::new()
+                .post(create_role)
+                .get(list_roles)
+        )
+        .push(
+            Router::with_path("<id>")
+                .get(get_role)
+                .put(update_role)
+                .delete(delete_role)
+        )
+        .push(
+            Router::with_path("by-code/<code>")
+                .get(get_role_by_code)
+        )
+        .push(
+            Router::with_path("<id>/permissions")
+                .post(grant_permission)
+        )
+        .push(
+            Router::with_path("<id>/permissions/<permission>")
+                .delete(revoke_permission)
+        )
+        .hoop(affix_state::inject(state))
 }

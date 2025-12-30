@@ -20,24 +20,24 @@ impl DispatchJobRepository {
     }
 
     pub async fn insert(&self, job: &DispatchJob) -> Result<()> {
-        self.collection.insert_one(job, None).await?;
+        self.collection.insert_one(job).await?;
         Ok(())
     }
 
     pub async fn find_by_id(&self, id: &str) -> Result<Option<DispatchJob>> {
-        Ok(self.collection.find_one(doc! { "_id": id }, None).await?)
+        Ok(self.collection.find_one(doc! { "_id": id }).await?)
     }
 
     pub async fn find_by_event_id(&self, event_id: &str) -> Result<Vec<DispatchJob>> {
         let cursor = self.collection
-            .find(doc! { "eventId": event_id }, None)
+            .find(doc! { "eventId": event_id })
             .await?;
         Ok(cursor.try_collect().await?)
     }
 
     pub async fn find_by_subscription_id(&self, subscription_id: &str, _limit: i64) -> Result<Vec<DispatchJob>> {
         let cursor = self.collection
-            .find(doc! { "subscriptionId": subscription_id }, None)
+            .find(doc! { "subscriptionId": subscription_id })
             .await?;
         Ok(cursor.try_collect().await?)
     }
@@ -48,7 +48,7 @@ impl DispatchJobRepository {
             .trim_matches('"')
             .to_string();
         let cursor = self.collection
-            .find(doc! { "status": status_str }, None)
+            .find(doc! { "status": status_str })
             .await?;
         Ok(cursor.try_collect().await?)
     }
@@ -62,7 +62,7 @@ impl DispatchJobRepository {
                     { "nextRetryAt": null },
                     { "nextRetryAt": { "$lte": Utc::now() } }
                 ]
-            }, None)
+            })
             .await?;
         Ok(cursor.try_collect().await?)
     }
@@ -72,28 +72,28 @@ impl DispatchJobRepository {
             .find(doc! {
                 "status": "IN_PROGRESS",
                 "updatedAt": { "$lt": stale_threshold }
-            }, None)
+            })
             .await?;
         Ok(cursor.try_collect().await?)
     }
 
     pub async fn find_by_client(&self, client_id: &str, _limit: i64) -> Result<Vec<DispatchJob>> {
         let cursor = self.collection
-            .find(doc! { "clientId": client_id }, None)
+            .find(doc! { "clientId": client_id })
             .await?;
         Ok(cursor.try_collect().await?)
     }
 
     pub async fn find_by_correlation_id(&self, correlation_id: &str) -> Result<Vec<DispatchJob>> {
         let cursor = self.collection
-            .find(doc! { "correlationId": correlation_id }, None)
+            .find(doc! { "correlationId": correlation_id })
             .await?;
         Ok(cursor.try_collect().await?)
     }
 
     pub async fn update(&self, job: &DispatchJob) -> Result<()> {
         self.collection
-            .replace_one(doc! { "_id": &job.id }, job, None)
+            .replace_one(doc! { "_id": &job.id }, job)
             .await?;
         Ok(())
     }
@@ -107,7 +107,6 @@ impl DispatchJobRepository {
             .update_one(
                 doc! { "_id": id },
                 doc! { "$set": { "status": status_str, "updatedAt": Utc::now() } },
-                None
             )
             .await?;
         Ok(result.modified_count > 0)
@@ -115,17 +114,17 @@ impl DispatchJobRepository {
 
     // Read projection methods
     pub async fn find_read_by_id(&self, id: &str) -> Result<Option<DispatchJobRead>> {
-        Ok(self.read_collection.find_one(doc! { "_id": id }, None).await?)
+        Ok(self.read_collection.find_one(doc! { "_id": id }).await?)
     }
 
     pub async fn insert_read_projection(&self, projection: &DispatchJobRead) -> Result<()> {
-        self.read_collection.insert_one(projection, None).await?;
+        self.read_collection.insert_one(projection).await?;
         Ok(())
     }
 
     pub async fn update_read_projection(&self, projection: &DispatchJobRead) -> Result<()> {
         self.read_collection
-            .replace_one(doc! { "_id": &projection.id }, projection, None)
+            .replace_one(doc! { "_id": &projection.id }, projection)
             .await?;
         Ok(())
     }
@@ -137,14 +136,14 @@ impl DispatchJobRepository {
             .trim_matches('"')
             .to_string();
         let count = self.collection
-            .count_documents(doc! { "status": status_str }, None)
+            .count_documents(doc! { "status": status_str })
             .await?;
         Ok(count)
     }
 
     /// Count all jobs
     pub async fn count_all(&self) -> Result<u64> {
-        let count = self.collection.count_documents(doc! {}, None).await?;
+        let count = self.collection.count_documents(doc! {}).await?;
         Ok(count)
     }
 }

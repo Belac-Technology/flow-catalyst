@@ -4,7 +4,6 @@
 //! Provides REST API for monitoring, health, and message publishing.
 
 use std::sync::Arc;
-use std::net::SocketAddr;
 use fc_router::{
     QueueManager, HttpMediator, LifecycleManager, LifecycleConfig,
     WarningService, WarningServiceConfig,
@@ -17,7 +16,7 @@ use anyhow::Result;
 use tracing::{info, error};
 use tracing_subscriber::EnvFilter;
 use tokio::signal;
-use tower_http::trace::TraceLayer;
+use salvo::prelude::*;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -76,7 +75,7 @@ async fn main() -> Result<()> {
         queues: vec![
             QueueConfig {
                 name: "sqs-queue".to_string(),
-                uri: queue_url,
+                uri: queue_url.clone(),
                 connections: 1,
                 visibility_timeout: visibility_timeout as u32,
             },
@@ -99,23 +98,24 @@ async fn main() -> Result<()> {
         .unwrap_or(8080);
 
     // Create a simple publisher that publishes to SQS
-    let publisher = Arc::new(SqsPublisher::new(sqs_client, std::env::var("QUEUE_URL")
-        .unwrap_or_else(|_| "http://localhost:4566/000000000000/dev-queue".to_string())));
+    let publisher = Arc::new(SqsPublisher::new(sqs_client, queue_url));
 
     let app = create_router(
         publisher,
         queue_manager.clone(),
         warning_service.clone(),
         health_service.clone(),
-    )
-    .layer(TraceLayer::new_for_http());
+    );
 
-    let addr = SocketAddr::from(([0, 0, 0, 0], api_port));
+    let addr = format!("0.0.0.0:{}", api_port);
     info!(port = api_port, "Starting HTTP API server");
 
-    let server_handle = tokio::spawn(async move {
-        let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-        axum::serve(listener, app).await.unwrap();
+    let acceptor = TcpListener::new(&addr).bind().await;
+    let server = Server::new(acceptor);
+    let server_handle = server.handle();
+
+    let server_task = tokio::spawn(async move {
+        server.serve(app).await;
     });
 
     // 9. Start QueueManager in background
@@ -138,7 +138,11 @@ async fn main() -> Result<()> {
     lifecycle.shutdown().await;
     queue_manager.shutdown().await;
 
-    server_handle.abort();
+    server_handle.stop_graceful(None);
+    let _ = tokio::time::timeout(
+        std::time::Duration::from_secs(30),
+        server_task,
+    ).await;
     let _ = tokio::time::timeout(
         std::time::Duration::from_secs(30),
         manager_handle,

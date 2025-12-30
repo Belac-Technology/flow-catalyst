@@ -16,6 +16,7 @@ pub mod role;
 pub mod oauth;
 pub mod auth_config;
 pub mod audit_log;
+pub mod oidc_login_state;
 
 pub use event::*;
 pub use event_type::*;
@@ -30,3 +31,4 @@ pub use role::*;
 pub use oauth::*;
 pub use auth_config::*;
 pub use audit_log::*;
+pub use oidc_login_state::*;

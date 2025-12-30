@@ -17,16 +17,16 @@ impl SubscriptionRepository {
     }
 
     pub async fn insert(&self, subscription: &Subscription) -> Result<()> {
-        self.collection.insert_one(subscription, None).await?;
+        self.collection.insert_one(subscription).await?;
         Ok(())
     }
 
     pub async fn find_by_id(&self, id: &str) -> Result<Option<Subscription>> {
-        Ok(self.collection.find_one(doc! { "_id": id }, None).await?)
+        Ok(self.collection.find_one(doc! { "_id": id }).await?)
     }
 
     pub async fn find_by_code(&self, code: &str) -> Result<Option<Subscription>> {
-        Ok(self.collection.find_one(doc! { "code": code }, None).await?)
+        Ok(self.collection.find_one(doc! { "code": code }).await?)
     }
 
     pub async fn find_by_code_and_client(&self, code: &str, client_id: Option<&str>) -> Result<Option<Subscription>> {
@@ -34,12 +34,12 @@ impl SubscriptionRepository {
             Some(id) => doc! { "code": code, "$or": [{ "clientId": id }, { "clientId": null }] },
             None => doc! { "code": code, "clientId": null },
         };
-        Ok(self.collection.find_one(filter, None).await?)
+        Ok(self.collection.find_one(filter).await?)
     }
 
     pub async fn find_active(&self) -> Result<Vec<Subscription>> {
         let cursor = self.collection
-            .find(doc! { "status": "ACTIVE" }, None)
+            .find(doc! { "status": "ACTIVE" })
             .await?;
         Ok(cursor.try_collect().await?)
     }
@@ -49,7 +49,7 @@ impl SubscriptionRepository {
             Some(id) => doc! { "$or": [{ "clientId": id }, { "clientId": null }] },
             None => doc! { "clientId": null },
         };
-        let cursor = self.collection.find(filter, None).await?;
+        let cursor = self.collection.find(filter).await?;
         Ok(cursor.try_collect().await?)
     }
 
@@ -67,7 +67,7 @@ impl SubscriptionRepository {
                 "eventTypes.eventTypeCode": {
                     "$regex": format!("^{}:", regex::escape(prefix))
                 }
-            }, None)
+            })
             .await?;
 
         let subscriptions: Vec<Subscription> = cursor.try_collect().await?;
@@ -89,27 +89,27 @@ impl SubscriptionRepository {
 
     pub async fn find_by_dispatch_pool(&self, pool_id: &str) -> Result<Vec<Subscription>> {
         let cursor = self.collection
-            .find(doc! { "dispatchPoolId": pool_id }, None)
+            .find(doc! { "dispatchPoolId": pool_id })
             .await?;
         Ok(cursor.try_collect().await?)
     }
 
     pub async fn find_by_service_account(&self, service_account_id: &str) -> Result<Vec<Subscription>> {
         let cursor = self.collection
-            .find(doc! { "serviceAccountId": service_account_id }, None)
+            .find(doc! { "serviceAccountId": service_account_id })
             .await?;
         Ok(cursor.try_collect().await?)
     }
 
     pub async fn update(&self, subscription: &Subscription) -> Result<()> {
         self.collection
-            .replace_one(doc! { "_id": &subscription.id }, subscription, None)
+            .replace_one(doc! { "_id": &subscription.id }, subscription)
             .await?;
         Ok(())
     }
 
     pub async fn delete(&self, id: &str) -> Result<bool> {
-        let result = self.collection.delete_one(doc! { "_id": id }, None).await?;
+        let result = self.collection.delete_one(doc! { "_id": id }).await?;
         Ok(result.deleted_count > 0)
     }
 }

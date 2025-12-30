@@ -130,7 +130,7 @@ impl BlockOnErrorChecker {
             "status": "ERROR"
         };
 
-        let mut cursor = collection.find(filter, None).await?;
+        let mut cursor = collection.find(filter).await?;
         let mut blocked = HashSet::new();
 
         while cursor.advance().await? {
