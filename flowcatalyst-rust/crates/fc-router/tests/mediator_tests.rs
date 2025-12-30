@@ -217,9 +217,11 @@ async fn test_500_server_error_with_retry() {
     let mock_server = MockServer::start().await;
 
     // First 2 calls fail, third succeeds
+    // Use up_to_n_times to limit the 500 responses, then fall through to 200
     Mock::given(method("POST"))
         .and(path("/webhook"))
         .respond_with(ResponseTemplate::new(500))
+        .up_to_n_times(2)
         .expect(2)
         .mount(&mock_server)
         .await;
@@ -401,7 +403,8 @@ async fn test_timeout_handling() {
 async fn test_payload_sent_correctly() {
     let mock_server = MockServer::start().await;
 
-    let expected_payload = serde_json::json!({"test": true, "value": 42});
+    // The mediator sends {"messageId":"<id>"} matching Java behavior, NOT the message payload
+    let expected_payload = serde_json::json!({"messageId": "msg-1"});
 
     Mock::given(method("POST"))
         .and(path("/webhook"))

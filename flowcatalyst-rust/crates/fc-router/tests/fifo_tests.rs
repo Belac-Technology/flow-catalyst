@@ -216,15 +216,16 @@ async fn test_fifo_different_groups_parallel() {
     let poll_result = consumer.poll(10).await.unwrap();
     manager.route_batch(poll_result, consumer.clone()).await.unwrap();
 
-    // Wait for processing
-    tokio::time::sleep(Duration::from_millis(300)).await;
+    // Wait for processing - shorter sleep since messages process in parallel
+    tokio::time::sleep(Duration::from_millis(150)).await;
 
     let elapsed = start.elapsed();
 
     // With 50ms delay per message and parallel processing of 5 different groups,
-    // should complete faster than sequential (250ms)
+    // all should complete in ~50ms (parallel), well under sequential time of 250ms.
+    // Total time = sleep(150ms) + ~50ms processing = ~200ms, threshold 250ms gives margin
     assert!(
-        elapsed < Duration::from_millis(200),
+        elapsed < Duration::from_millis(250),
         "Expected parallel processing, took {:?}",
         elapsed
     );

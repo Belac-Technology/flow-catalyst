@@ -101,10 +101,9 @@ impl QueueManager {
     }
 
     /// Add a queue consumer
-    pub fn add_consumer(&self, consumer: Arc<dyn QueueConsumer + Send + Sync>) {
+    pub async fn add_consumer(&self, consumer: Arc<dyn QueueConsumer + Send + Sync>) {
         let id = consumer.identifier().to_string();
-        // Use blocking_write since this is called during initialization
-        self.consumers.blocking_write().insert(id, consumer);
+        self.consumers.write().await.insert(id, consumer);
     }
 
     /// Apply router configuration (initial setup)
@@ -735,7 +734,9 @@ impl QueueManager {
     /// Note: Concurrency changes take effect on next message batch
     /// Rate limit changes take effect immediately
     pub async fn update_pool_config(&self, pool_code: &str, config: PoolConfig) -> Result<()> {
-        if let Some(existing_pool) = self.pools.get(pool_code) {
+        // Check if pool exists and get current settings
+        // IMPORTANT: Drop the Ref guard before calling insert() to avoid deadlock
+        let pool_exists = if let Some(existing_pool) = self.pools.get(pool_code) {
             let current_concurrency = existing_pool.concurrency();
             let new_concurrency = config.concurrency;
 
@@ -759,7 +760,13 @@ impl QueueManager {
                     "Pool rate limit update requested - creating new pool"
                 );
             }
+            true
+        } else {
+            false
+        };
+        // Ref guard is now dropped
 
+        if pool_exists {
             // For now, we recreate the pool with new config
             // In production, you might want to drain first
             let new_pool = ProcessPool::new(config.clone(), self.mediator.clone());

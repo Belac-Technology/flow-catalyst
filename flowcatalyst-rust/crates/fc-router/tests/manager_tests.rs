@@ -329,7 +329,7 @@ async fn test_add_consumer() {
     let manager = QueueManager::new(mediator);
 
     let consumer = Arc::new(MockQueueConsumer::new("test-consumer"));
-    manager.add_consumer(consumer);
+    manager.add_consumer(consumer).await;
 
     let consumer_ids = manager.consumer_ids().await;
     assert!(consumer_ids.contains(&"test-consumer".to_string()));
@@ -399,7 +399,7 @@ async fn test_consumer_health_check() {
     let manager = QueueManager::new(mediator);
 
     let consumer = Arc::new(MockQueueConsumer::new("healthy-consumer"));
-    manager.add_consumer(consumer);
+    manager.add_consumer(consumer).await;
 
     let is_healthy = manager.is_consumer_healthy("healthy-consumer").await;
     assert!(is_healthy);

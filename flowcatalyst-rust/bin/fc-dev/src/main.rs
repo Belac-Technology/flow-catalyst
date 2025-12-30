@@ -147,7 +147,7 @@ async fn main() -> Result<()> {
 
     // 4. Create QueueManager (central orchestrator)
     let queue_manager = Arc::new(QueueManager::new(mediator.clone()));
-    queue_manager.add_consumer(queue.clone());
+    queue_manager.add_consumer(queue.clone()).await;
 
     // 4b. Create Warning and Health services
     let warning_service = Arc::new(WarningService::new(WarningServiceConfig::default()));

@@ -57,7 +57,7 @@ async fn main() -> Result<()> {
         queue_url.clone(),
         visibility_timeout,
     ).await);
-    queue_manager.add_consumer(consumer);
+    queue_manager.add_consumer(consumer).await;
 
     // 6. Apply configuration
     let pool_concurrency = std::env::var("POOL_CONCURRENCY")

@@ -253,9 +253,11 @@ async fn test_end_to_end_config_error_no_retry() {
 
     tokio::time::sleep(Duration::from_millis(200)).await;
 
-    // Config errors should NACK (no ack, as it's a permanent failure)
-    let nacked = consumer.nacked_handles();
-    assert_eq!(nacked.len(), 1);
+    // Config errors (4xx) should be ACK'd to prevent infinite retries
+    // The message is removed from the queue without retry
+    let acked = consumer.acked_handles();
+    assert_eq!(acked.len(), 1);
+    assert_eq!(acked[0], "receipt-msg-400");
 }
 
 #[tokio::test]
