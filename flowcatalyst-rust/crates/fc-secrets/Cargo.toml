@@ -22,11 +22,15 @@ rand = "0.8"
 aws-config = { workspace = true, optional = true }
 aws-sdk-secretsmanager = { version = "1.14", optional = true }
 
+# AWS Parameter Store / SSM (optional)
+aws-sdk-ssm = { version = "1.14", optional = true }
+
 # HashiCorp Vault (optional)
 reqwest = { workspace = true, optional = true }
 
 [features]
 default = []
 aws = ["aws-config", "aws-sdk-secretsmanager"]
+aws-ssm = ["aws-config", "aws-sdk-ssm"]
 vault = ["reqwest"]
-all = ["aws", "vault"]
+all = ["aws", "aws-ssm", "vault"]

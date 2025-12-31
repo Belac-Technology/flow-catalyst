@@ -16,11 +16,14 @@ import org.bson.conversions.Bson;
 import tech.flowcatalyst.streamprocessor.checkpoint.CheckpointStore;
 import tech.flowcatalyst.streamprocessor.config.StreamConfig;
 import tech.flowcatalyst.streamprocessor.config.StreamProcessorConfig;
+import tech.flowcatalyst.streamprocessor.dispatch.AggregateTracker;
 import tech.flowcatalyst.streamprocessor.dispatch.BatchDispatcher;
 import tech.flowcatalyst.streamprocessor.dispatch.CheckpointTracker;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -50,7 +53,9 @@ public class StreamWatcher {
     private final CheckpointStore checkpointStore;
     private final BatchDispatcher dispatcher;
     private final CheckpointTracker checkpointTracker;
+    private final AggregateTracker aggregateTracker;
     private final String checkpointKey;
+    private final String aggregateIdField;
 
     private volatile boolean running = false;
     private volatile Thread watchThread;
@@ -65,12 +70,14 @@ public class StreamWatcher {
      * @param checkpointStore   checkpoint store for resume tokens
      * @param dispatcher        batch dispatcher for this stream
      * @param checkpointTracker checkpoint tracker for this stream
+     * @param aggregateTracker  aggregate tracker for ordering guarantees
      * @param checkpointKey     key for storing checkpoints
      */
     public StreamWatcher(String streamName, MongoClient mongoClient,
                          StreamProcessorConfig rootConfig, StreamConfig streamConfig,
                          CheckpointStore checkpointStore, BatchDispatcher dispatcher,
-                         CheckpointTracker checkpointTracker, String checkpointKey) {
+                         CheckpointTracker checkpointTracker, AggregateTracker aggregateTracker,
+                         String checkpointKey) {
         this.streamName = streamName;
         this.mongoClient = mongoClient;
         this.rootConfig = rootConfig;
@@ -78,7 +85,9 @@ public class StreamWatcher {
         this.checkpointStore = checkpointStore;
         this.dispatcher = dispatcher;
         this.checkpointTracker = checkpointTracker;
+        this.aggregateTracker = aggregateTracker;
         this.checkpointKey = checkpointKey;
+        this.aggregateIdField = streamConfig.aggregateIdField();
     }
 
     /**
@@ -231,6 +240,7 @@ public class StreamWatcher {
      */
     private void processCursor(MongoCursor<ChangeStreamDocument<Document>> cursor) {
         List<Document> batch = new ArrayList<>(streamConfig.batchMaxSize());
+        Set<String> batchAggregateIds = new HashSet<>();
         BsonDocument lastToken = null;
         String lastOperationType = null;
         long batchStartTime = System.currentTimeMillis();
@@ -255,8 +265,37 @@ public class StreamWatcher {
             }
 
             if (change != null && change.getFullDocument() != null) {
-                batch.add(change.getFullDocument());
-                lastToken = change.getResumeToken();
+                Document doc = change.getFullDocument();
+                BsonDocument resumeToken = change.getResumeToken();
+                String aggregateId = getAggregateId(doc);
+
+                // Check if this aggregate is already in-flight (processing in another batch)
+                if (aggregateId != null && aggregateTracker.isInFlight(aggregateId)) {
+                    LOG.fine("[" + streamName + "] Aggregate " + aggregateId +
+                            " is in-flight, queueing document");
+                    aggregateTracker.addPending(new AggregateTracker.PendingDocument(
+                            aggregateId, doc, resumeToken));
+                    continue; // Skip to next document
+                }
+
+                // Check if this aggregate is already in the current batch
+                if (aggregateId != null && batchAggregateIds.contains(aggregateId)) {
+                    // Flush current batch first to maintain ordering
+                    if (!batch.isEmpty()) {
+                        dispatcher.dispatch(new ArrayList<>(batch),
+                                new HashSet<>(batchAggregateIds), lastToken, lastOperationType);
+                        batch.clear();
+                        batchAggregateIds.clear();
+                        batchStartTime = System.currentTimeMillis();
+                    }
+                }
+
+                // Add to current batch
+                batch.add(doc);
+                if (aggregateId != null) {
+                    batchAggregateIds.add(aggregateId);
+                }
+                lastToken = resumeToken;
                 lastOperationType = change.getOperationType().getValue();
             }
 
@@ -266,8 +305,10 @@ public class StreamWatcher {
 
             if (!batch.isEmpty() && (batchFull || timeoutReached)) {
                 // Dispatch the batch
-                dispatcher.dispatch(new ArrayList<>(batch), lastToken, lastOperationType);
+                dispatcher.dispatch(new ArrayList<>(batch),
+                        new HashSet<>(batchAggregateIds), lastToken, lastOperationType);
                 batch.clear();
+                batchAggregateIds.clear();
                 batchStartTime = System.currentTimeMillis();
             }
 
@@ -281,6 +322,36 @@ public class StreamWatcher {
                 }
             }
         }
+    }
+
+    /**
+     * Extract the aggregate ID from a document.
+     *
+     * @param doc the document
+     * @return the aggregate ID, or null if not found
+     */
+    private String getAggregateId(Document doc) {
+        if (doc == null || aggregateIdField == null || aggregateIdField.isEmpty()) {
+            return null;
+        }
+
+        Object value = doc.get(aggregateIdField);
+        if (value == null) {
+            return null;
+        }
+
+        // Handle ObjectId
+        if (value instanceof org.bson.types.ObjectId) {
+            return ((org.bson.types.ObjectId) value).toHexString();
+        }
+
+        // Handle String
+        if (value instanceof String) {
+            return (String) value;
+        }
+
+        // Fallback to toString
+        return value.toString();
     }
 
     /**

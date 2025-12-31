@@ -9,6 +9,7 @@ import jakarta.inject.Named;
 import tech.flowcatalyst.streamprocessor.checkpoint.CheckpointStore;
 import tech.flowcatalyst.streamprocessor.config.StreamConfig;
 import tech.flowcatalyst.streamprocessor.config.StreamProcessorConfig;
+import tech.flowcatalyst.streamprocessor.dispatch.AggregateTracker;
 import tech.flowcatalyst.streamprocessor.dispatch.BatchDispatcher;
 import tech.flowcatalyst.streamprocessor.dispatch.CheckpointTracker;
 import tech.flowcatalyst.streamprocessor.mapper.ProjectionMapper;
@@ -233,16 +234,17 @@ public class StreamProcessorStarter {
 
         // Create components
         CheckpointTracker checkpointTracker = new CheckpointTracker(checkpointStore, streamName, checkpointKey);
+        AggregateTracker aggregateTracker = new AggregateTracker(streamName);
 
         ProjectionWriter writer = new ProjectionWriter(
                 streamName, mongoClient, config, streamConfig, mapper);
 
         BatchDispatcher dispatcher = new BatchDispatcher(
-                streamName, streamConfig, writer, checkpointTracker);
+                streamName, streamConfig, writer, checkpointTracker, aggregateTracker);
 
         StreamWatcher watcher = new StreamWatcher(
                 streamName, mongoClient, config, streamConfig,
-                checkpointStore, dispatcher, checkpointTracker, checkpointKey);
+                checkpointStore, dispatcher, checkpointTracker, aggregateTracker, checkpointKey);
 
         return new StreamContext(
                 streamName, streamConfig, mapper,

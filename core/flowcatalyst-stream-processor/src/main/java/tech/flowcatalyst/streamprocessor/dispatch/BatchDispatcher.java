@@ -6,7 +6,9 @@ import org.bson.Document;
 import tech.flowcatalyst.streamprocessor.config.StreamConfig;
 import tech.flowcatalyst.streamprocessor.projection.ProjectionWriter;
 
+import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Logger;
@@ -30,6 +32,7 @@ public class BatchDispatcher {
     private final StreamConfig config;
     private final ProjectionWriter writer;
     private final CheckpointTracker checkpointTracker;
+    private final AggregateTracker aggregateTracker;
     private final Semaphore concurrencyLimit;
     private final AtomicLong batchSequence = new AtomicLong(0);
 
@@ -40,13 +43,16 @@ public class BatchDispatcher {
      * @param config            stream configuration
      * @param writer            projection writer for this stream
      * @param checkpointTracker checkpoint tracker for this stream
+     * @param aggregateTracker  aggregate tracker for ordering guarantees
      */
     public BatchDispatcher(String streamName, StreamConfig config,
-                           ProjectionWriter writer, CheckpointTracker checkpointTracker) {
+                           ProjectionWriter writer, CheckpointTracker checkpointTracker,
+                           AggregateTracker aggregateTracker) {
         this.streamName = streamName;
         this.config = config;
         this.writer = writer;
         this.checkpointTracker = checkpointTracker;
+        this.aggregateTracker = aggregateTracker;
         this.concurrencyLimit = new Semaphore(config.concurrency());
         LOG.info("[" + streamName + "] BatchDispatcher initialized with concurrency limit: " + config.concurrency());
     }
@@ -57,10 +63,12 @@ public class BatchDispatcher {
      * <p>This method blocks if we're at max concurrency until a slot is available.</p>
      *
      * @param documents     the documents to process
+     * @param aggregateIds  the set of aggregate IDs in this batch (for ordering)
      * @param resumeToken   the change stream resume token for checkpoint
      * @param operationType the type of change stream operation (insert, update, etc.)
      */
-    public void dispatch(List<Document> documents, BsonDocument resumeToken, String operationType) {
+    public void dispatch(List<Document> documents, Set<String> aggregateIds,
+                         BsonDocument resumeToken, String operationType) {
         if (documents.isEmpty()) {
             return;
         }
@@ -72,6 +80,9 @@ public class BatchDispatcher {
         }
 
         long seq = batchSequence.incrementAndGet();
+
+        // Register aggregate IDs for this batch before processing
+        aggregateTracker.registerBatch(seq, aggregateIds);
 
         try {
             // Block if at max concurrency - this provides backpressure
@@ -108,6 +119,13 @@ public class BatchDispatcher {
             // Fatal error - trigger shutdown to let standby take over
             LOG.severe("[" + streamName + "] Fatal error in batch processing - triggering shutdown");
             triggerShutdown();
+        } finally {
+            // Release aggregate IDs and check for pending documents
+            List<AggregateTracker.PendingDocument> released = aggregateTracker.completeBatch(seq);
+            if (!released.isEmpty()) {
+                LOG.fine("[" + streamName + "] Batch " + seq + " completed, " +
+                        released.size() + " pending documents released (will be replayed by cursor)");
+            }
         }
     }
 

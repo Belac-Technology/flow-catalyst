@@ -83,4 +83,14 @@ public interface StreamConfig {
      */
     @WithDefault("100")
     long batchMaxWaitMs();
+
+    /**
+     * Field to use as aggregate ID for ordering guarantees.
+     * Documents with the same aggregate ID are never processed concurrently
+     * across different batches. This prevents race conditions when multiple
+     * updates to the same entity arrive in quick succession.
+     * Defaults to "_id".
+     */
+    @WithDefault("_id")
+    String aggregateIdField();
 }
