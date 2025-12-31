@@ -2030,6 +2030,7 @@ dependencies = [
  "governor",
  "hex",
  "hmac",
+ "indexmap 2.12.1",
  "metrics",
  "nonzero_ext",
  "parking_lot",

@@ -366,14 +366,14 @@ impl QueueManager {
                 }
             };
 
-            // Check pool capacity
+            // Check pool capacity for ALL messages in this pool
             let available = pool.available_capacity();
             if available < pool_messages.len() {
                 warn!(
                     pool_code = %pool_code,
                     available = available,
                     requested = pool_messages.len(),
-                    "Pool at capacity, NACKing batch"
+                    "Pool at capacity, NACKing all messages for this pool"
                 );
                 for msg in pool_messages {
                     let _ = consumer.nack(&msg.receipt_handle, Some(5)).await;
@@ -381,98 +381,145 @@ impl QueueManager {
                 continue;
             }
 
-            // Check rate limiting
+            // Check rate limiting for this pool
             if pool.is_rate_limited() {
-                warn!(pool_code = %pool_code, "Pool rate limited, NACKing batch");
+                warn!(pool_code = %pool_code, "Pool rate limited, NACKing all messages for this pool");
                 for msg in pool_messages {
                     let _ = consumer.nack(&msg.receipt_handle, Some(10)).await;
                 }
                 continue;
             }
 
-            // Route messages to pool
-            for msg in pool_messages {
-                let (ack_tx, ack_rx) = oneshot::channel();
-                let pipeline_key = format!("{}:{}", msg.queue_identifier, msg.message.id);
-                let receipt_handle = msg.receipt_handle.clone();
-                let broker_message_id = msg.broker_message_id.clone();
-                let app_message_id = msg.message.id.clone();
+            // Phase 3: Group by messageGroupId for FIFO ordering enforcement
+            // This mirrors Java's messagesByGroup logic in routeMessageBatch
+            let messages_by_group = self.group_by_message_group(pool_messages);
 
-                // Track in pipeline with receipt handle
-                let in_flight = InFlightMessage::new(
-                    &msg.message,
-                    msg.broker_message_id.clone(),
-                    msg.queue_identifier.clone(),
-                    Some(batch_id.clone()),
-                    msg.receipt_handle.clone(),
-                );
-                self.in_pipeline.insert(pipeline_key.clone(), in_flight);
+            for (group_id, group_messages) in messages_by_group {
+                let mut nack_remaining = false;
 
-                // Submit to pool - pool will send ACK/NACK through ack_tx
-                let batch_msg = BatchMessage {
-                    message: msg.message,
-                    receipt_handle: msg.receipt_handle,
-                    broker_message_id: msg.broker_message_id,
-                    queue_identifier: msg.queue_identifier,
-                    batch_id: Some(batch_id.clone()),
-                    ack_tx,
-                };
-
-                let consumer_clone = consumer.clone();
-                let pipeline_key_clone = pipeline_key.clone();
-                let in_pipeline = self.in_pipeline.clone();
-                let pending_delete = self.pending_delete_broker_ids.clone();
-
-                // Spawn task to handle callback from pool
-                // Uses latest receipt handle from in_pipeline in case of SQS redelivery
-                tokio::spawn(async move {
-                    // Get the latest receipt handle and broker message ID (may have been updated on redelivery)
-                    let (current_handle, current_broker_id) = in_pipeline
-                        .get(&pipeline_key_clone)
-                        .map(|entry| (entry.receipt_handle.clone(), entry.broker_message_id.clone()))
-                        .unwrap_or((receipt_handle, broker_message_id));
-
-                    match ack_rx.await {
-                        Ok(AckNack::Ack) => {
-                            if let Err(e) = consumer_clone.ack(&current_handle).await {
-                                // ACK failed - likely receipt handle expired
-                                // Add broker message ID to pending delete so it gets deleted on next poll
-                                if let Some(broker_id) = current_broker_id {
-                                    warn!(
-                                        broker_message_id = %broker_id,
-                                        app_message_id = %app_message_id,
-                                        error = %e,
-                                        "ACK failed (receipt handle likely expired) - adding to pending delete"
-                                    );
-                                    pending_delete.lock().insert(broker_id);
-                                } else {
-                                    error!(
-                                        app_message_id = %app_message_id,
-                                        error = %e,
-                                        "ACK failed and no broker message ID to track for pending delete"
-                                    );
-                                }
-                            }
-                        }
-                        Ok(AckNack::Nack { delay_seconds }) => {
-                            let _ = consumer_clone.nack(&current_handle, delay_seconds).await;
-                        }
-                        Ok(AckNack::ExtendVisibility { seconds }) => {
-                            let _ = consumer_clone.extend_visibility(&current_handle, seconds).await;
-                        }
-                        Err(_) => {
-                            // Channel dropped - NACK to be safe
-                            let _ = consumer_clone.nack(&current_handle, None).await;
-                        }
+                for msg in group_messages {
+                    // If previous message in group failed, NACK all remaining in this group
+                    // This enforces FIFO ordering - if message A fails, message B (which depends on A) must also fail
+                    if nack_remaining {
+                        debug!(
+                            message_id = %msg.message.id,
+                            group_id = %group_id,
+                            "NACKing message - previous message in group failed submission"
+                        );
+                        let _ = consumer.nack(&msg.receipt_handle, Some(5)).await;
+                        continue;
                     }
 
-                    // Cleanup from pipeline
-                    in_pipeline.remove(&pipeline_key_clone);
-                });
+                    let (ack_tx, ack_rx) = oneshot::channel();
+                    let app_message_id = msg.message.id.clone();
 
-                // Actually submit to pool
-                if let Err(e) = pool.submit(batch_msg).await {
-                    error!(error = %e, "Failed to submit to pool");
+                    // Use broker_message_id as pipeline key (mirrors Java's sqsMessageId usage)
+                    // Fall back to a composite key if broker_message_id is not available
+                    let pipeline_key = msg.broker_message_id.clone()
+                        .unwrap_or_else(|| format!("fallback:{}:{}", msg.queue_identifier, msg.message.id));
+
+                    let receipt_handle = msg.receipt_handle.clone();
+                    let receipt_handle_for_callback = receipt_handle.clone();  // For async task
+                    let broker_message_id = msg.broker_message_id.clone();
+
+                    // Track in pipeline with receipt handle
+                    let in_flight = InFlightMessage::new(
+                        &msg.message,
+                        msg.broker_message_id.clone(),
+                        msg.queue_identifier.clone(),
+                        Some(batch_id.clone()),
+                        msg.receipt_handle.clone(),
+                    );
+                    self.in_pipeline.insert(pipeline_key.clone(), in_flight);
+
+                    // Track app message ID -> pipeline key for requeue detection
+                    // This mirrors Java's appMessageIdToPipelineKey map
+                    self.app_message_to_pipeline_key.insert(app_message_id.clone(), pipeline_key.clone());
+
+                    // Submit to pool - pool will send ACK/NACK through ack_tx
+                    let batch_msg = BatchMessage {
+                        message: msg.message,
+                        receipt_handle: msg.receipt_handle,
+                        broker_message_id: msg.broker_message_id,
+                        queue_identifier: msg.queue_identifier,
+                        batch_id: Some(batch_id.clone()),
+                        ack_tx,
+                    };
+
+                    let consumer_clone = consumer.clone();
+                    let pipeline_key_clone = pipeline_key.clone();
+                    let app_message_id_clone = app_message_id.clone();
+                    let in_pipeline = self.in_pipeline.clone();
+                    let app_message_to_pipeline_key = self.app_message_to_pipeline_key.clone();
+                    let pending_delete = self.pending_delete_broker_ids.clone();
+
+                    // Spawn task to handle callback from pool
+                    // Uses latest receipt handle from in_pipeline in case of SQS redelivery
+                    tokio::spawn(async move {
+                        // Get the latest receipt handle and broker message ID (may have been updated on redelivery)
+                        let (current_handle, current_broker_id) = in_pipeline
+                            .get(&pipeline_key_clone)
+                            .map(|entry| (entry.receipt_handle.clone(), entry.broker_message_id.clone()))
+                            .unwrap_or((receipt_handle_for_callback, broker_message_id));
+
+                        match ack_rx.await {
+                            Ok(AckNack::Ack) => {
+                                if let Err(e) = consumer_clone.ack(&current_handle).await {
+                                    // ACK failed - likely receipt handle expired
+                                    // Add broker message ID to pending delete so it gets deleted on next poll
+                                    if let Some(broker_id) = current_broker_id {
+                                        warn!(
+                                            broker_message_id = %broker_id,
+                                            app_message_id = %app_message_id_clone,
+                                            error = %e,
+                                            "ACK failed (receipt handle likely expired) - adding to pending delete"
+                                        );
+                                        pending_delete.lock().insert(broker_id);
+                                    } else {
+                                        error!(
+                                            app_message_id = %app_message_id_clone,
+                                            error = %e,
+                                            "ACK failed and no broker message ID to track for pending delete"
+                                        );
+                                    }
+                                }
+                            }
+                            Ok(AckNack::Nack { delay_seconds }) => {
+                                let _ = consumer_clone.nack(&current_handle, delay_seconds).await;
+                            }
+                            Ok(AckNack::ExtendVisibility { seconds }) => {
+                                let _ = consumer_clone.extend_visibility(&current_handle, seconds).await;
+                            }
+                            Err(_) => {
+                                // Channel dropped - NACK to be safe
+                                let _ = consumer_clone.nack(&current_handle, None).await;
+                            }
+                        }
+
+                        // Cleanup from both maps (mirrors Java's cleanup in ack/nack)
+                        in_pipeline.remove(&pipeline_key_clone);
+                        app_message_to_pipeline_key.remove(&app_message_id_clone);
+                    });
+
+                    // Actually submit to pool
+                    if let Err(e) = pool.submit(batch_msg).await {
+                        error!(
+                            message_id = %app_message_id,
+                            group_id = %group_id,
+                            error = %e,
+                            "Failed to submit to pool - NACKing this and remaining messages in group"
+                        );
+
+                        // Remove from pipeline since we're NACKing
+                        self.in_pipeline.remove(&pipeline_key);
+                        self.app_message_to_pipeline_key.remove(&app_message_id);
+
+                        // NACK this message
+                        let _ = consumer.nack(&receipt_handle, Some(5)).await;
+
+                        // Set flag to NACK all remaining messages in this group (FIFO enforcement)
+                        nack_remaining = true;
+                    }
                 }
             }
         }
@@ -481,7 +528,9 @@ impl QueueManager {
     }
 
     /// Filter duplicates from a batch
-    /// Also updates receipt handles for in-flight duplicates (SQS redelivery handling)
+    /// Mirrors Java's deduplication logic:
+    /// 1. Check broker_message_id first (same SQS message = redelivery due to visibility timeout)
+    /// 2. Check app_message_id second (same app ID, different broker ID = external requeue)
     fn filter_duplicates(
         &self,
         messages: &[QueuedMessage],
@@ -492,40 +541,65 @@ impl QueueManager {
         let mut requeued = Vec::new();
 
         for msg in messages {
-            let pipeline_key = format!("{}:{}", msg.queue_identifier, msg.message.id);
+            let broker_id = msg.broker_message_id.clone();
+            let app_id = msg.message.id.clone();
 
-            // Check if already in pipeline
-            if let Some(mut entry) = self.in_pipeline.get_mut(&pipeline_key) {
-                // Update receipt handle if it changed (SQS redelivery)
-                if entry.receipt_handle != msg.receipt_handle {
-                    debug!(
-                        message_id = %msg.message.id,
-                        old_handle = %entry.receipt_handle,
-                        new_handle = %msg.receipt_handle,
-                        "Updating receipt handle for redelivered message"
-                    );
-                    entry.receipt_handle = msg.receipt_handle.clone();
-                }
-                duplicates.push((msg.clone(), pipeline_key));
-                continue;
-            }
-
-            // Check app message ID deduplication
-            if let Some(existing_key) = self.app_message_to_pipeline_key.get(&msg.message.id) {
-                if let Some(mut entry) = self.in_pipeline.get_mut(existing_key.value()) {
-                    // Update receipt handle for cross-queue redelivery
+            // Check 1: Same broker message ID (physical redelivery from SQS due to visibility timeout)
+            // This MUST be checked FIRST because the same broker ID means it's a visibility timeout redelivery,
+            // NOT a requeue by an external process
+            if let Some(ref broker_msg_id) = broker_id {
+                if let Some(mut entry) = self.in_pipeline.get_mut(broker_msg_id) {
+                    // Update receipt handle with the new one from the redelivered message
+                    // This ensures when processing completes, ACK uses the valid (latest) receipt handle
                     if entry.receipt_handle != msg.receipt_handle {
                         debug!(
-                            message_id = %msg.message.id,
-                            "Updating receipt handle for cross-queue redelivered message"
+                            message_id = %app_id,
+                            broker_message_id = %broker_msg_id,
+                            "Updating receipt handle for redelivered message (visibility timeout)"
+                        );
+                        entry.receipt_handle = msg.receipt_handle.clone();
+                        // Also update broker_message_id in case it was a fallback key
+                        if entry.broker_message_id.is_none() {
+                            entry.broker_message_id = Some(broker_msg_id.clone());
+                        }
+                    }
+                    duplicates.push((msg.clone(), broker_msg_id.clone()));
+                    continue;
+                }
+            }
+
+            // Check 2: Same application message ID but DIFFERENT broker message ID (requeued by external process)
+            // This happens when a separate process requeues messages that were stuck in QUEUED status for 20+ min
+            // The external process creates a NEW SQS message with the same application message ID
+            if let Some(existing_pipeline_key) = self.app_message_to_pipeline_key.get(&app_id) {
+                let existing_key = existing_pipeline_key.value().clone();
+
+                // Only treat as requeued duplicate if the broker message IDs are DIFFERENT
+                // If they're the same, it would have been caught by the check above
+                if let Some(ref new_broker_id) = broker_id {
+                    if *new_broker_id != existing_key {
+                        info!(
+                            app_message_id = %app_id,
+                            existing_broker_id = %existing_key,
+                            new_broker_id = %new_broker_id,
+                            "Requeued message detected - app ID already in pipeline, will ACK to remove duplicate"
+                        );
+                        requeued.push((msg.clone(), existing_key));
+                        continue;
+                    }
+                }
+
+                // Same broker ID or no broker ID - check if still in pipeline
+                if let Some(mut entry) = self.in_pipeline.get_mut(&existing_key) {
+                    // Update receipt handle for redelivery
+                    if entry.receipt_handle != msg.receipt_handle {
+                        debug!(
+                            message_id = %app_id,
+                            "Updating receipt handle for redelivered message"
                         );
                         entry.receipt_handle = msg.receipt_handle.clone();
                     }
-                    duplicates.push((msg.clone(), pipeline_key));
-                    continue;
-                } else {
-                    // Was processed before, now requeued
-                    requeued.push((msg.clone(), pipeline_key));
+                    duplicates.push((msg.clone(), existing_key));
                     continue;
                 }
             }
@@ -551,6 +625,21 @@ impl QueueManager {
         }
 
         by_pool
+    }
+
+    /// Group messages by message_group_id for FIFO ordering enforcement
+    /// Mirrors Java's messagesByGroup logic in routeMessageBatch
+    fn group_by_message_group(&self, messages: Vec<QueuedMessage>) -> indexmap::IndexMap<String, Vec<QueuedMessage>> {
+        // Use IndexMap to preserve insertion order (like Java's LinkedHashMap)
+        let mut by_group: indexmap::IndexMap<String, Vec<QueuedMessage>> = indexmap::IndexMap::new();
+
+        for msg in messages {
+            let group_id = msg.message.message_group_id.clone()
+                .unwrap_or_else(|| "__DEFAULT__".to_string());
+            by_group.entry(group_id).or_default().push(msg);
+        }
+
+        by_group
     }
 
     /// Start the queue manager and all consumers
@@ -641,6 +730,7 @@ impl QueueManager {
         if remaining > 0 {
             warn!(remaining = remaining, "Remaining in-flight messages will be NACKed");
             self.in_pipeline.clear();
+            self.app_message_to_pipeline_key.clear();
         }
 
         // Shutdown pools
