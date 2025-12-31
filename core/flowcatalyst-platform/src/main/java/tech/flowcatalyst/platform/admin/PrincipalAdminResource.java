@@ -61,7 +61,7 @@ import java.util.stream.Collectors;
  *
  * All operations require admin-level permissions.
  */
-@Path("/api/admin/platform/principals")
+@Path("/api/admin/principals")
 @Tag(name = "Principal Admin", description = "Administrative operations for user and service account management")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
@@ -119,7 +119,7 @@ public class PrincipalAdminResource {
             @QueryParam("clientId") @Parameter(description = "Filter by client ID") String clientId,
             @QueryParam("type") @Parameter(description = "Filter by type (USER/SERVICE)") PrincipalType type,
             @QueryParam("active") @Parameter(description = "Filter by active status") Boolean active,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @CookieParam("fc_session") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
         var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
@@ -168,7 +168,7 @@ public class PrincipalAdminResource {
     })
     public Response getPrincipal(
             @PathParam("id") String id,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @CookieParam("fc_session") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
         var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
@@ -207,7 +207,7 @@ public class PrincipalAdminResource {
     })
     public Response createUser(
             @Valid CreateUserRequest request,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @CookieParam("fc_session") String sessionToken,
             @HeaderParam("Authorization") String authHeader,
             @Context UriInfo uriInfo) {
 
@@ -260,7 +260,7 @@ public class PrincipalAdminResource {
     public Response updatePrincipal(
             @PathParam("id") String id,
             @Valid UpdatePrincipalRequest request,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @CookieParam("fc_session") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
         var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
@@ -301,7 +301,7 @@ public class PrincipalAdminResource {
     })
     public Response activatePrincipal(
             @PathParam("id") String id,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @CookieParam("fc_session") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
         var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
@@ -339,7 +339,7 @@ public class PrincipalAdminResource {
     })
     public Response deactivatePrincipal(
             @PathParam("id") String id,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @CookieParam("fc_session") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
         var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
@@ -381,7 +381,7 @@ public class PrincipalAdminResource {
     public Response resetPassword(
             @PathParam("id") String id,
             @Valid ResetPasswordRequest request,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @CookieParam("fc_session") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
         var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
@@ -421,7 +421,7 @@ public class PrincipalAdminResource {
     })
     public Response getPrincipalRoles(
             @PathParam("id") String id,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @CookieParam("fc_session") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
         var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
@@ -460,7 +460,7 @@ public class PrincipalAdminResource {
     public Response assignRole(
             @PathParam("id") String id,
             @Valid AssignRoleRequest request,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @CookieParam("fc_session") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
         var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
@@ -507,7 +507,7 @@ public class PrincipalAdminResource {
     public Response removeRole(
             @PathParam("id") String id,
             @PathParam("roleName") String roleName,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @CookieParam("fc_session") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
         var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
@@ -549,7 +549,7 @@ public class PrincipalAdminResource {
     public Response assignRoles(
             @PathParam("id") String id,
             @Valid AssignRolesRequest request,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @CookieParam("fc_session") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
         var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
@@ -603,7 +603,7 @@ public class PrincipalAdminResource {
     })
     public Response getClientAccessGrants(
             @PathParam("id") String id,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @CookieParam("fc_session") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
         var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
@@ -642,7 +642,7 @@ public class PrincipalAdminResource {
     public Response grantClientAccess(
             @PathParam("id") String id,
             @Valid GrantClientAccessRequest request,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @CookieParam("fc_session") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
         var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
@@ -689,7 +689,7 @@ public class PrincipalAdminResource {
     public Response revokeClientAccess(
             @PathParam("id") String id,
             @PathParam("clientId") String clientId,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @CookieParam("fc_session") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
         var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
@@ -819,7 +819,7 @@ public class PrincipalAdminResource {
     })
     public Response checkEmailDomain(
             @QueryParam("email") @Parameter(description = "Email address to check") String email,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @CookieParam("fc_session") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
         var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);

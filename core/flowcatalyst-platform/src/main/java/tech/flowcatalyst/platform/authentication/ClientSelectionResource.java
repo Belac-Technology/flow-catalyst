@@ -71,7 +71,7 @@ public class ClientSelectionResource {
         content = @Content(schema = @Schema(implementation = AccessibleClientsResponse.class)))
     @APIResponse(responseCode = "401", description = "Not authenticated")
     public Response getAccessibleClients(
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @CookieParam("fc_session") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
         var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
@@ -126,7 +126,7 @@ public class ClientSelectionResource {
     @APIResponse(responseCode = "403", description = "Access denied to client")
     public Response switchClient(
             SwitchClientRequest request,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @CookieParam("fc_session") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
         var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
@@ -216,7 +216,7 @@ public class ClientSelectionResource {
     @APIResponse(responseCode = "200", description = "Current client info")
     @APIResponse(responseCode = "401", description = "Not authenticated")
     public Response getCurrentClient(
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @CookieParam("fc_session") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
         var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);

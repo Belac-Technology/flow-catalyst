@@ -64,7 +64,7 @@ public class RoleBffResource {
     public Response listRoles(
         @QueryParam("application") String applicationCode,
         @QueryParam("source") String source,
-        @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+        @CookieParam("fc_session") String sessionToken,
         @HeaderParam("Authorization") String authHeader
     ) {
         List<AuthRole> roles;
@@ -123,7 +123,7 @@ public class RoleBffResource {
     @Operation(summary = "Create a new role (BFF)")
     public Response createRole(
         CreateRoleRequest request,
-        @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+        @CookieParam("fc_session") String sessionToken,
         @HeaderParam("Authorization") String authHeader
     ) {
         var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
@@ -176,7 +176,7 @@ public class RoleBffResource {
     public Response updateRole(
         @PathParam("roleName") String roleName,
         UpdateRoleRequest request,
-        @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+        @CookieParam("fc_session") String sessionToken,
         @HeaderParam("Authorization") String authHeader
     ) {
         var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
@@ -212,7 +212,7 @@ public class RoleBffResource {
     @Operation(summary = "Delete a role (BFF)")
     public Response deleteRole(
         @PathParam("roleName") String roleName,
-        @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+        @CookieParam("fc_session") String sessionToken,
         @HeaderParam("Authorization") String authHeader
     ) {
         var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);

@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use fc_common::PoolConfig;
-use salvo::oapi::ToSchema;
+use utoipa::ToSchema;
 
 /// Request to publish a message
 #[derive(Debug, Deserialize, ToSchema)]

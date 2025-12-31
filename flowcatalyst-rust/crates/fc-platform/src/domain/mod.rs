@@ -17,6 +17,8 @@ pub mod oauth;
 pub mod auth_config;
 pub mod audit_log;
 pub mod oidc_login_state;
+pub mod refresh_token;
+pub mod authorization_code;
 
 pub use event::*;
 pub use event_type::*;
@@ -32,3 +34,5 @@ pub use oauth::*;
 pub use auth_config::*;
 pub use audit_log::*;
 pub use oidc_login_state::*;
+pub use refresh_token::*;
+pub use authorization_code::*;

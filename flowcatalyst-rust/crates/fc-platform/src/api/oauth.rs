@@ -5,27 +5,32 @@
 //! - POST /oauth/token - Token endpoint
 //! - POST /oauth/revoke - Token revocation
 
-use salvo::prelude::*;
-use salvo::oapi::extract::*;
-use salvo::http::header;
+use axum::{
+    routing::{get, post},
+    extract::{State, Query, Form},
+    response::{Json, Redirect, IntoResponse, Response},
+    http::{StatusCode, header},
+    Router,
+};
+use utoipa::{ToSchema, IntoParams};
 use serde::{Deserialize, Serialize};
 use sha2::{Sha256, Digest};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use chrono::{Duration, Utc};
+use chrono::Utc;
 use tracing::{info, warn, error};
 
-use crate::domain::Principal;
-use crate::repository::{OAuthClientRepository, PrincipalRepository};
+use crate::domain::{Principal, AuthorizationCode};
+use crate::repository::{OAuthClientRepository, PrincipalRepository, AuthorizationCodeRepository};
 use crate::service::auth::AuthService;
 use crate::service::oidc::OidcService;
 use crate::error::PlatformError;
 
 /// Authorization request parameters
-#[derive(Debug, Deserialize, ToParameters)]
-#[salvo(parameters(default_parameter_in = Query))]
+#[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct AuthorizeRequest {
     pub response_type: String,
     pub client_id: String,
@@ -79,20 +84,6 @@ pub struct ErrorResponse {
     pub error_description: Option<String>,
 }
 
-/// Stored authorization code
-#[derive(Debug, Clone)]
-pub struct AuthorizationCode {
-    pub code: String,
-    pub client_id: String,
-    pub redirect_uri: String,
-    pub principal_id: String,
-    pub scope: Option<String>,
-    pub code_challenge: Option<String>,
-    pub code_challenge_method: Option<String>,
-    pub nonce: Option<String>,
-    pub expires_at: chrono::DateTime<Utc>,
-}
-
 /// OAuth2 state
 #[derive(Clone)]
 pub struct OAuthState {
@@ -100,8 +91,8 @@ pub struct OAuthState {
     pub principal_repo: Arc<PrincipalRepository>,
     pub auth_service: Arc<AuthService>,
     pub oidc_service: Arc<OidcService>,
-    /// In-memory authorization code storage (should use Redis in production)
-    pub auth_codes: Arc<RwLock<HashMap<String, AuthorizationCode>>>,
+    /// Authorization code storage (MongoDB for distributed deployment)
+    pub auth_code_repo: Arc<AuthorizationCodeRepository>,
     /// Pending authorization states (for CSRF protection)
     pub pending_states: Arc<RwLock<HashMap<String, PendingAuth>>>,
 }
@@ -124,82 +115,84 @@ impl OAuthState {
         principal_repo: Arc<PrincipalRepository>,
         auth_service: Arc<AuthService>,
         oidc_service: Arc<OidcService>,
+        auth_code_repo: Arc<AuthorizationCodeRepository>,
     ) -> Self {
         Self {
             oauth_client_repo,
             principal_repo,
             auth_service,
             oidc_service,
-            auth_codes: Arc::new(RwLock::new(HashMap::new())),
+            auth_code_repo,
             pending_states: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 }
 
-/// Authorization endpoint - initiates the OAuth2 flow
-#[endpoint(tags("OAuth"))]
-pub async fn authorize(
-    depot: &mut Depot,
-    req: AuthorizeRequest,
-    res: &mut Response,
-) {
-    let state = match depot.obtain::<OAuthState>() {
-        Ok(s) => s,
-        Err(_) => {
-            res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
-            res.render(Json(ErrorResponse {
-                error: "server_error".to_string(),
-                error_description: Some("State not found".to_string()),
-            }));
-            return;
-        }
-    };
+/// OIDC callback query parameters
+#[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
+pub struct OidcCallbackParams {
+    pub code: Option<String>,
+    pub state: Option<String>,
+    pub error: Option<String>,
+    pub error_description: Option<String>,
+}
 
+/// Authorization endpoint - initiates the OAuth2 flow
+#[utoipa::path(
+    get,
+    path = "/authorize",
+    tag = "oauth",
+    params(AuthorizeRequest),
+    responses(
+        (status = 302, description = "Redirect to login or IDP"),
+        (status = 400, description = "Invalid request")
+    )
+)]
+pub async fn authorize(
+    State(state): State<OAuthState>,
+    Query(req): Query<AuthorizeRequest>,
+) -> Response {
     // Validate response_type
     if req.response_type != "code" {
-        error_redirect(res, &req.redirect_uri, "unsupported_response_type", "Only 'code' response type is supported", req.state.as_deref());
-        return;
+        return error_redirect(&req.redirect_uri, "unsupported_response_type", "Only 'code' response type is supported", req.state.as_deref());
     }
 
     // Validate client
     let client = match state.oauth_client_repo.find_by_client_id(&req.client_id).await {
         Ok(Some(c)) if c.active => c,
         Ok(Some(_)) => {
-            error_redirect(res, &req.redirect_uri, "unauthorized_client", "Client is not active", req.state.as_deref());
-            return;
+            return error_redirect(&req.redirect_uri, "unauthorized_client", "Client is not active", req.state.as_deref());
         }
         Ok(None) => {
-            error_redirect(res, &req.redirect_uri, "unauthorized_client", "Unknown client", req.state.as_deref());
-            return;
+            return error_redirect(&req.redirect_uri, "unauthorized_client", "Unknown client", req.state.as_deref());
         }
         Err(e) => {
             error!(error = %e, "Failed to lookup client");
-            error_redirect(res, &req.redirect_uri, "server_error", "Internal error", req.state.as_deref());
-            return;
+            return error_redirect(&req.redirect_uri, "server_error", "Internal error", req.state.as_deref());
         }
     };
 
     // Validate redirect_uri
     if !client.redirect_uris.contains(&req.redirect_uri) {
-        res.status_code(StatusCode::BAD_REQUEST);
-        res.render(Json(ErrorResponse {
-            error: "invalid_request".to_string(),
-            error_description: Some("Invalid redirect_uri".to_string()),
-        }));
-        return;
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "invalid_request".to_string(),
+                error_description: Some("Invalid redirect_uri".to_string()),
+            }),
+        ).into_response();
     }
 
     // Validate PKCE if required
     if client.pkce_required && req.code_challenge.is_none() {
-        error_redirect(res, &req.redirect_uri, "invalid_request", "PKCE code_challenge is required", req.state.as_deref());
-        return;
+        return error_redirect(&req.redirect_uri, "invalid_request", "PKCE code_challenge is required", req.state.as_deref());
     }
 
     // Validate code_challenge_method
     if let Some(ref method) = req.code_challenge_method {
         if method != "S256" && method != "plain" {
-            error_redirect(res, &req.redirect_uri, "invalid_request", "Invalid code_challenge_method", req.state.as_deref());
-            return;
+            return error_redirect(&req.redirect_uri, "invalid_request", "Invalid code_challenge_method", req.state.as_deref());
         }
     }
 
@@ -227,13 +220,11 @@ pub async fn authorize(
         match state.oidc_service.get_authorization_url(&provider_id, &state_param, req.nonce.as_deref()).await {
             Ok(url) => {
                 info!(provider = %provider_id, "Redirecting to OIDC provider");
-                res.render(Redirect::temporary(url));
-                return;
+                return Redirect::temporary(&url).into_response();
             }
             Err(e) => {
                 error!(error = %e, "Failed to get authorization URL");
-                error_redirect(res, &req.redirect_uri, "server_error", "Failed to initialize OIDC flow", req.state.as_deref());
-                return;
+                return error_redirect(&req.redirect_uri, "server_error", "Failed to initialize OIDC flow", req.state.as_deref());
             }
         }
     }
@@ -246,102 +237,109 @@ pub async fn authorize(
         urlencoding::encode(&req.redirect_uri),
     );
 
-    res.render(Redirect::temporary(login_url));
+    Redirect::temporary(&login_url).into_response()
 }
 
 /// Token endpoint - exchanges authorization code for tokens
-#[endpoint(tags("OAuth"))]
+#[utoipa::path(
+    post,
+    path = "/token",
+    tag = "oauth",
+    request_body = TokenRequest,
+    responses(
+        (status = 200, description = "Token issued", body = TokenResponse),
+        (status = 400, description = "Invalid request", body = ErrorResponse),
+        (status = 401, description = "Invalid client", body = ErrorResponse)
+    )
+)]
 pub async fn token(
-    depot: &mut Depot,
-    body: FormBody<TokenRequest>,
-    res: &mut Response,
-) {
-    let state = match depot.obtain::<OAuthState>() {
-        Ok(s) => s.clone(),
-        Err(_) => {
-            res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
-            res.render(Json(ErrorResponse {
-                error: "server_error".to_string(),
-                error_description: Some("State not found".to_string()),
-            }));
-            return;
-        }
-    };
-
-    let req = body.into_inner();
+    State(state): State<OAuthState>,
+    Form(req): Form<TokenRequest>,
+) -> Response {
     match req.grant_type.as_str() {
-        "authorization_code" => handle_authorization_code_grant(state, req, res).await,
-        "refresh_token" => handle_refresh_token_grant(state, req, res).await,
-        "client_credentials" => handle_client_credentials_grant(state, req, res).await,
-        _ => {
-            res.status_code(StatusCode::BAD_REQUEST);
-            res.render(Json(ErrorResponse {
+        "authorization_code" => handle_authorization_code_grant(state, req).await,
+        "refresh_token" => handle_refresh_token_grant(state, req).await,
+        "client_credentials" => handle_client_credentials_grant(state, req).await,
+        _ => (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
                 error: "unsupported_grant_type".to_string(),
                 error_description: Some(format!("Grant type '{}' is not supported", req.grant_type)),
-            }));
-        }
+            }),
+        ).into_response(),
     }
 }
 
-async fn handle_authorization_code_grant(state: OAuthState, req: TokenRequest, res: &mut Response) {
+async fn handle_authorization_code_grant(state: OAuthState, req: TokenRequest) -> Response {
     let code = match req.code {
         Some(c) => c,
         None => {
-            res.status_code(StatusCode::BAD_REQUEST);
-            res.render(Json(ErrorResponse {
-                error: "invalid_request".to_string(),
-                error_description: Some("Missing 'code' parameter".to_string()),
-            }));
-            return;
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: "invalid_request".to_string(),
+                    error_description: Some("Missing 'code' parameter".to_string()),
+                }),
+            ).into_response();
         }
     };
 
-    // Retrieve and remove authorization code
-    let auth_code = {
-        let mut codes = state.auth_codes.write().await;
-        codes.remove(&code)
-    };
-
-    let auth_code = match auth_code {
-        Some(c) => c,
-        None => {
-            res.status_code(StatusCode::BAD_REQUEST);
-            res.render(Json(ErrorResponse {
-                error: "invalid_grant".to_string(),
-                error_description: Some("Invalid or expired authorization code".to_string()),
-            }));
-            return;
+    // Find valid authorization code (not used, not expired)
+    let auth_code = match state.auth_code_repo.find_valid_code(&code).await {
+        Ok(Some(c)) => c,
+        Ok(None) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: "invalid_grant".to_string(),
+                    error_description: Some("Invalid or expired authorization code".to_string()),
+                }),
+            ).into_response();
+        }
+        Err(e) => {
+            error!(error = %e, "Failed to lookup authorization code");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "server_error".to_string(),
+                    error_description: None,
+                }),
+            ).into_response();
         }
     };
 
-    // Check expiration
-    if Utc::now() > auth_code.expires_at {
-        res.status_code(StatusCode::BAD_REQUEST);
-        res.render(Json(ErrorResponse {
-            error: "invalid_grant".to_string(),
-            error_description: Some("Authorization code has expired".to_string()),
-        }));
-        return;
+    // Mark code as used (single-use enforcement)
+    if let Err(e) = state.auth_code_repo.mark_as_used(&code).await {
+        error!(error = %e, "Failed to mark authorization code as used");
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: "server_error".to_string(),
+                error_description: None,
+            }),
+        ).into_response();
     }
 
     // Validate redirect_uri
     if req.redirect_uri.as_deref() != Some(&auth_code.redirect_uri) {
-        res.status_code(StatusCode::BAD_REQUEST);
-        res.render(Json(ErrorResponse {
-            error: "invalid_grant".to_string(),
-            error_description: Some("Redirect URI mismatch".to_string()),
-        }));
-        return;
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "invalid_grant".to_string(),
+                error_description: Some("Redirect URI mismatch".to_string()),
+            }),
+        ).into_response();
     }
 
     // Validate client_id
     if req.client_id.as_deref() != Some(&auth_code.client_id) {
-        res.status_code(StatusCode::BAD_REQUEST);
-        res.render(Json(ErrorResponse {
-            error: "invalid_grant".to_string(),
-            error_description: Some("Client ID mismatch".to_string()),
-        }));
-        return;
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "invalid_grant".to_string(),
+                error_description: Some("Client ID mismatch".to_string()),
+            }),
+        ).into_response();
     }
 
     // Validate PKCE if code_challenge was provided
@@ -349,12 +347,13 @@ async fn handle_authorization_code_grant(state: OAuthState, req: TokenRequest, r
         let verifier = match req.code_verifier {
             Some(v) => v,
             None => {
-                res.status_code(StatusCode::BAD_REQUEST);
-                res.render(Json(ErrorResponse {
-                    error: "invalid_grant".to_string(),
-                    error_description: Some("Missing code_verifier".to_string()),
-                }));
-                return;
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(ErrorResponse {
+                        error: "invalid_grant".to_string(),
+                        error_description: Some("Missing code_verifier".to_string()),
+                    }),
+                ).into_response();
             }
         };
 
@@ -368,12 +367,13 @@ async fn handle_authorization_code_grant(state: OAuthState, req: TokenRequest, r
         };
 
         if computed_challenge != *challenge {
-            res.status_code(StatusCode::BAD_REQUEST);
-            res.render(Json(ErrorResponse {
-                error: "invalid_grant".to_string(),
-                error_description: Some("Invalid code_verifier".to_string()),
-            }));
-            return;
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: "invalid_grant".to_string(),
+                    error_description: Some("Invalid code_verifier".to_string()),
+                }),
+            ).into_response();
         }
     }
 
@@ -381,21 +381,23 @@ async fn handle_authorization_code_grant(state: OAuthState, req: TokenRequest, r
     let principal = match state.principal_repo.find_by_id(&auth_code.principal_id).await {
         Ok(Some(p)) => p,
         Ok(None) => {
-            res.status_code(StatusCode::BAD_REQUEST);
-            res.render(Json(ErrorResponse {
-                error: "invalid_grant".to_string(),
-                error_description: Some("Principal not found".to_string()),
-            }));
-            return;
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: "invalid_grant".to_string(),
+                    error_description: Some("Principal not found".to_string()),
+                }),
+            ).into_response();
         }
         Err(e) => {
             error!(error = %e, "Failed to get principal");
-            res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
-            res.render(Json(ErrorResponse {
-                error: "server_error".to_string(),
-                error_description: None,
-            }));
-            return;
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "server_error".to_string(),
+                    error_description: None,
+                }),
+            ).into_response();
         }
     };
 
@@ -404,59 +406,68 @@ async fn handle_authorization_code_grant(state: OAuthState, req: TokenRequest, r
         Ok(t) => t,
         Err(e) => {
             error!(error = %e, "Failed to generate access token");
-            res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
-            res.render(Json(ErrorResponse {
-                error: "server_error".to_string(),
-                error_description: None,
-            }));
-            return;
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "server_error".to_string(),
+                    error_description: None,
+                }),
+            ).into_response();
         }
     };
 
     info!(principal_id = %principal.id, client_id = %auth_code.client_id, "Token issued via authorization code grant");
 
-    res.status_code(StatusCode::OK);
-    res.headers_mut().insert(header::CACHE_CONTROL, "no-store".parse().unwrap());
-    res.headers_mut().insert(header::PRAGMA, "no-cache".parse().unwrap());
-    res.render(Json(TokenResponse {
-        access_token,
-        token_type: "Bearer".to_string(),
-        expires_in: 3600,
-        refresh_token: None,
-        scope: auth_code.scope,
-    }));
+    (
+        StatusCode::OK,
+        [
+            (header::CACHE_CONTROL, "no-store"),
+            (header::PRAGMA, "no-cache"),
+        ],
+        Json(TokenResponse {
+            access_token,
+            token_type: "Bearer".to_string(),
+            expires_in: 3600,
+            refresh_token: None,
+            scope: auth_code.scope,
+        }),
+    ).into_response()
 }
 
-async fn handle_refresh_token_grant(_state: OAuthState, _req: TokenRequest, res: &mut Response) {
-    res.status_code(StatusCode::BAD_REQUEST);
-    res.render(Json(ErrorResponse {
-        error: "unsupported_grant_type".to_string(),
-        error_description: Some("Refresh token grant not yet implemented".to_string()),
-    }));
+async fn handle_refresh_token_grant(_state: OAuthState, _req: TokenRequest) -> Response {
+    (
+        StatusCode::BAD_REQUEST,
+        Json(ErrorResponse {
+            error: "unsupported_grant_type".to_string(),
+            error_description: Some("Refresh token grant not yet implemented".to_string()),
+        }),
+    ).into_response()
 }
 
-async fn handle_client_credentials_grant(state: OAuthState, req: TokenRequest, res: &mut Response) {
+async fn handle_client_credentials_grant(state: OAuthState, req: TokenRequest) -> Response {
     let client_id = match req.client_id {
         Some(id) => id,
         None => {
-            res.status_code(StatusCode::BAD_REQUEST);
-            res.render(Json(ErrorResponse {
-                error: "invalid_request".to_string(),
-                error_description: Some("Missing client_id".to_string()),
-            }));
-            return;
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: "invalid_request".to_string(),
+                    error_description: Some("Missing client_id".to_string()),
+                }),
+            ).into_response();
         }
     };
 
     let client_secret = match req.client_secret {
         Some(s) => s,
         None => {
-            res.status_code(StatusCode::BAD_REQUEST);
-            res.render(Json(ErrorResponse {
-                error: "invalid_request".to_string(),
-                error_description: Some("Missing client_secret".to_string()),
-            }));
-            return;
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: "invalid_request".to_string(),
+                    error_description: Some("Missing client_secret".to_string()),
+                }),
+            ).into_response();
         }
     };
 
@@ -464,42 +475,46 @@ async fn handle_client_credentials_grant(state: OAuthState, req: TokenRequest, r
     let client = match state.oauth_client_repo.find_by_client_id(&client_id).await {
         Ok(Some(c)) if c.active => c,
         Ok(_) => {
-            res.status_code(StatusCode::UNAUTHORIZED);
-            res.render(Json(ErrorResponse {
-                error: "invalid_client".to_string(),
-                error_description: Some("Invalid client credentials".to_string()),
-            }));
-            return;
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(ErrorResponse {
+                    error: "invalid_client".to_string(),
+                    error_description: Some("Invalid client credentials".to_string()),
+                }),
+            ).into_response();
         }
         Err(e) => {
             error!(error = %e, "Failed to lookup client");
-            res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
-            res.render(Json(ErrorResponse {
-                error: "server_error".to_string(),
-                error_description: None,
-            }));
-            return;
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "server_error".to_string(),
+                    error_description: None,
+                }),
+            ).into_response();
         }
     };
 
     // Verify client type is CONFIDENTIAL
     if client.client_type != crate::domain::OAuthClientType::Confidential {
-        res.status_code(StatusCode::UNAUTHORIZED);
-        res.render(Json(ErrorResponse {
-            error: "unauthorized_client".to_string(),
-            error_description: Some("Public clients cannot use client_credentials grant".to_string()),
-        }));
-        return;
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(ErrorResponse {
+                error: "unauthorized_client".to_string(),
+                error_description: Some("Public clients cannot use client_credentials grant".to_string()),
+            }),
+        ).into_response();
     }
 
     // TODO: Verify client_secret (need to integrate with secrets provider)
     if client_secret.is_empty() {
-        res.status_code(StatusCode::UNAUTHORIZED);
-        res.render(Json(ErrorResponse {
-            error: "invalid_client".to_string(),
-            error_description: Some("Invalid client credentials".to_string()),
-        }));
-        return;
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(ErrorResponse {
+                error: "invalid_client".to_string(),
+                error_description: Some("Invalid client credentials".to_string()),
+            }),
+        ).into_response();
     }
 
     // Find or create service account principal for this client
@@ -509,77 +524,75 @@ async fn handle_client_credentials_grant(state: OAuthState, req: TokenRequest, r
         Ok(t) => t,
         Err(e) => {
             error!(error = %e, "Failed to generate access token");
-            res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
-            res.render(Json(ErrorResponse {
-                error: "server_error".to_string(),
-                error_description: None,
-            }));
-            return;
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "server_error".to_string(),
+                    error_description: None,
+                }),
+            ).into_response();
         }
     };
 
     info!(client_id = %client_id, "Token issued via client credentials grant");
 
-    res.status_code(StatusCode::OK);
-    res.headers_mut().insert(header::CACHE_CONTROL, "no-store".parse().unwrap());
-    res.headers_mut().insert(header::PRAGMA, "no-cache".parse().unwrap());
-    res.render(Json(TokenResponse {
-        access_token,
-        token_type: "Bearer".to_string(),
-        expires_in: 3600,
-        refresh_token: None,
-        scope: None,
-    }));
+    (
+        StatusCode::OK,
+        [
+            (header::CACHE_CONTROL, "no-store"),
+            (header::PRAGMA, "no-cache"),
+        ],
+        Json(TokenResponse {
+            access_token,
+            token_type: "Bearer".to_string(),
+            expires_in: 3600,
+            refresh_token: None,
+            scope: None,
+        }),
+    ).into_response()
 }
 
 /// OIDC callback endpoint
-#[endpoint(tags("OAuth"))]
+#[utoipa::path(
+    get,
+    path = "/callback",
+    tag = "oauth",
+    params(OidcCallbackParams),
+    responses(
+        (status = 302, description = "Redirect to client"),
+        (status = 400, description = "Invalid callback", body = ErrorResponse)
+    )
+)]
 pub async fn oidc_callback(
-    depot: &mut Depot,
-    req: &mut Request,
-    res: &mut Response,
-) {
-    let state = match depot.obtain::<OAuthState>() {
-        Ok(s) => s.clone(),
-        Err(_) => {
-            res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
-            res.render(Json(ErrorResponse {
-                error: "server_error".to_string(),
-                error_description: Some("State not found".to_string()),
-            }));
-            return;
-        }
-    };
-
-    let multimap = req.queries();
-    let params: HashMap<String, String> = multimap.iter()
-        .map(|(k, v)| (k.clone(), v.clone()))
-        .collect();
-
-    let _oidc_code = match params.get("code") {
+    State(state): State<OAuthState>,
+    Query(params): Query<OidcCallbackParams>,
+) -> Response {
+    let _oidc_code = match &params.code {
         Some(c) => c,
         None => {
-            let error = params.get("error").cloned().unwrap_or_else(|| "unknown".to_string());
-            let error_desc = params.get("error_description").cloned();
+            let error = params.error.clone().unwrap_or_else(|| "unknown".to_string());
+            let error_desc = params.error_description.clone();
             warn!(error = %error, "OIDC callback received error");
-            res.status_code(StatusCode::BAD_REQUEST);
-            res.render(Json(ErrorResponse {
-                error,
-                error_description: error_desc,
-            }));
-            return;
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error,
+                    error_description: error_desc,
+                }),
+            ).into_response();
         }
     };
 
-    let state_param = match params.get("state") {
+    let state_param = match &params.state {
         Some(s) => s,
         None => {
-            res.status_code(StatusCode::BAD_REQUEST);
-            res.render(Json(ErrorResponse {
-                error: "invalid_request".to_string(),
-                error_description: Some("Missing state parameter".to_string()),
-            }));
-            return;
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: "invalid_request".to_string(),
+                    error_description: Some("Missing state parameter".to_string()),
+                }),
+            ).into_response();
         }
     };
 
@@ -592,41 +605,47 @@ pub async fn oidc_callback(
     let pending = match pending {
         Some(p) => p,
         None => {
-            res.status_code(StatusCode::BAD_REQUEST);
-            res.render(Json(ErrorResponse {
-                error: "invalid_request".to_string(),
-                error_description: Some("Invalid or expired state".to_string()),
-            }));
-            return;
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: "invalid_request".to_string(),
+                    error_description: Some("Invalid or expired state".to_string()),
+                }),
+            ).into_response();
         }
     };
 
-    let auth_code = generate_random_string(32);
+    let auth_code_str = generate_random_string(64);
 
-    // Store the authorization code
-    {
-        let mut codes = state.auth_codes.write().await;
-        codes.insert(auth_code.clone(), AuthorizationCode {
-            code: auth_code.clone(),
-            client_id: pending.client_id.clone(),
-            redirect_uri: pending.redirect_uri.clone(),
-            principal_id: "placeholder".to_string(),
-            scope: pending.scope.clone(),
-            code_challenge: pending.code_challenge.clone(),
-            code_challenge_method: pending.code_challenge_method.clone(),
-            nonce: pending.nonce.clone(),
-            expires_at: Utc::now() + Duration::minutes(10),
-        });
+    // Build authorization code using domain model
+    let mut auth_code = AuthorizationCode::new(
+        auth_code_str.clone(),
+        pending.client_id.clone(),
+        "placeholder".to_string(), // TODO: Set actual principal after OIDC token exchange
+        pending.redirect_uri.clone(),
+    )
+    .with_scope(pending.scope.clone())
+    .with_nonce(pending.nonce.clone())
+    .with_state(params.state.clone());
+
+    if let (Some(challenge), Some(method)) = (pending.code_challenge, pending.code_challenge_method) {
+        auth_code = auth_code.with_pkce(challenge, method);
+    }
+
+    // Store in MongoDB
+    if let Err(e) = state.auth_code_repo.insert(&auth_code).await {
+        error!(error = %e, "Failed to store authorization code");
+        return error_redirect(&pending.redirect_uri, "server_error", "Failed to create authorization code", params.state.as_deref());
     }
 
     // Redirect back to client
     let mut redirect_url = pending.redirect_uri.clone();
-    redirect_url.push_str(&format!("?code={}", urlencoding::encode(&auth_code)));
-    if let Some(s) = params.get("state") {
+    redirect_url.push_str(&format!("?code={}", urlencoding::encode(&auth_code_str)));
+    if let Some(s) = &params.state {
         redirect_url.push_str(&format!("&state={}", urlencoding::encode(s)));
     }
 
-    res.render(Redirect::temporary(redirect_url));
+    Redirect::temporary(&redirect_url).into_response()
 }
 
 /// Issue authorization code after successful login
@@ -644,28 +663,34 @@ pub async fn issue_code(
         message: "Invalid or expired state".to_string(),
     })?;
 
-    let auth_code = generate_random_string(32);
+    let auth_code_str = generate_random_string(64);
 
-    // Store the authorization code
-    {
-        let mut codes = state.auth_codes.write().await;
-        codes.insert(auth_code.clone(), AuthorizationCode {
-            code: auth_code.clone(),
-            client_id: pending.client_id,
-            redirect_uri: pending.redirect_uri,
-            principal_id: principal_id.to_string(),
-            scope: pending.scope,
-            code_challenge: pending.code_challenge,
-            code_challenge_method: pending.code_challenge_method,
-            nonce: pending.nonce,
-            expires_at: Utc::now() + Duration::minutes(10),
-        });
+    // Build authorization code using domain model
+    let mut auth_code = AuthorizationCode::new(
+        auth_code_str.clone(),
+        pending.client_id,
+        principal_id.to_string(),
+        pending.redirect_uri,
+    )
+    .with_scope(pending.scope)
+    .with_nonce(pending.nonce);
+
+    if let (Some(challenge), Some(method)) = (pending.code_challenge, pending.code_challenge_method) {
+        auth_code = auth_code.with_pkce(challenge, method);
     }
 
-    Ok(auth_code)
+    // Store in MongoDB
+    state.auth_code_repo.insert(&auth_code).await.map_err(|e| {
+        error!(error = %e, "Failed to store authorization code");
+        PlatformError::Internal {
+            message: "Failed to create authorization code".to_string(),
+        }
+    })?;
+
+    Ok(auth_code_str)
 }
 
-fn error_redirect(res: &mut Response, redirect_uri: &str, error: &str, description: &str, state: Option<&str>) {
+fn error_redirect(redirect_uri: &str, error: &str, description: &str, state: Option<&str>) -> Response {
     let mut url = redirect_uri.to_string();
     url.push_str(&format!(
         "?error={}&error_description={}",
@@ -675,7 +700,7 @@ fn error_redirect(res: &mut Response, redirect_uri: &str, error: &str, descripti
     if let Some(s) = state {
         url.push_str(&format!("&state={}", urlencoding::encode(s)));
     }
-    res.render(Redirect::temporary(url));
+    Redirect::temporary(&url).into_response()
 }
 
 fn generate_random_string(len: usize) -> String {
@@ -690,8 +715,8 @@ fn generate_random_string(len: usize) -> String {
 /// Create OAuth router
 pub fn oauth_router(state: OAuthState) -> Router {
     Router::new()
-        .push(Router::with_path("authorize").get(authorize))
-        .push(Router::with_path("token").post(token))
-        .push(Router::with_path("callback").get(oidc_callback))
-        .hoop(affix_state::inject(state))
+        .route("/authorize", get(authorize))
+        .route("/token", post(token))
+        .route("/callback", get(oidc_callback))
+        .with_state(state)
 }

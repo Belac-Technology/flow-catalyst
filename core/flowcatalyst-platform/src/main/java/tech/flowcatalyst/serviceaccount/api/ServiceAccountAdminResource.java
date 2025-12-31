@@ -46,7 +46,7 @@ import java.util.List;
  * - Credential management (regenerate token, regenerate secret)
  * - Role assignments
  */
-@Path("/api/admin/platform/service-accounts")
+@Path("/api/admin/service-accounts")
 @Tag(name = "Service Account Admin", description = "Administrative operations for service account management")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
@@ -80,7 +80,7 @@ public class ServiceAccountAdminResource {
             @QueryParam("clientId") @Parameter(description = "Filter by client ID") String clientId,
             @QueryParam("applicationId") @Parameter(description = "Filter by application ID") String applicationId,
             @QueryParam("active") @Parameter(description = "Filter by active status") Boolean active,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @CookieParam("fc_session") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
         var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
@@ -110,7 +110,7 @@ public class ServiceAccountAdminResource {
     })
     public Response getById(
             @PathParam("id") String id,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @CookieParam("fc_session") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
         var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
@@ -132,7 +132,7 @@ public class ServiceAccountAdminResource {
     @Operation(summary = "Get service account by code")
     public Response getByCode(
             @PathParam("code") String code,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @CookieParam("fc_session") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
         var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
@@ -159,7 +159,7 @@ public class ServiceAccountAdminResource {
     })
     public Response create(
             @Valid CreateServiceAccountRequest request,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @CookieParam("fc_session") String sessionToken,
             @HeaderParam("Authorization") String authHeader,
             @Context UriInfo uriInfo) {
 
@@ -209,7 +209,7 @@ public class ServiceAccountAdminResource {
     public Response update(
             @PathParam("id") String id,
             @Valid UpdateServiceAccountRequest request,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @CookieParam("fc_session") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
         var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
@@ -246,7 +246,7 @@ public class ServiceAccountAdminResource {
     @Operation(summary = "Delete service account")
     public Response delete(
             @PathParam("id") String id,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @CookieParam("fc_session") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
         var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
@@ -276,7 +276,7 @@ public class ServiceAccountAdminResource {
     public Response updateAuthToken(
             @PathParam("id") String id,
             @Valid UpdateAuthTokenRequest request,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @CookieParam("fc_session") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
         var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
@@ -306,7 +306,7 @@ public class ServiceAccountAdminResource {
     @Operation(summary = "Regenerate auth token", description = "Generate a new random auth token. Returns the new token (shown only once).")
     public Response regenerateToken(
             @PathParam("id") String id,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @CookieParam("fc_session") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
         var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
@@ -333,7 +333,7 @@ public class ServiceAccountAdminResource {
     @Operation(summary = "Regenerate signing secret", description = "Generate a new signing secret. Returns the new secret (shown only once).")
     public Response regenerateSecret(
             @PathParam("id") String id,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @CookieParam("fc_session") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
         var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
@@ -362,7 +362,7 @@ public class ServiceAccountAdminResource {
     @Operation(summary = "Get assigned roles")
     public Response getRoles(
             @PathParam("id") String id,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @CookieParam("fc_session") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
         var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
@@ -390,7 +390,7 @@ public class ServiceAccountAdminResource {
     public Response assignRoles(
             @PathParam("id") String id,
             @Valid AssignRolesRequest request,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @CookieParam("fc_session") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
         var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);

@@ -42,7 +42,7 @@ import java.util.Set;
  * Permissions are code-first (defined in Java code) and cannot be created via API.
  * External applications can register their own permissions via SDK.
  */
-@Path("/api/admin/platform/roles")
+@Path("/api/admin/roles")
 @Tag(name = "Role Admin", description = "Manage roles and view permissions")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
@@ -86,7 +86,7 @@ public class RoleAdminResource {
     public Response listRoles(
             @QueryParam("application") String application,
             @QueryParam("source") String source,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @CookieParam("fc_session") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
         var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
@@ -138,7 +138,7 @@ public class RoleAdminResource {
     })
     public Response getRole(
             @PathParam("roleName") String roleName,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @CookieParam("fc_session") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
         var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
@@ -171,7 +171,7 @@ public class RoleAdminResource {
     })
     public Response createRole(
             CreateRoleRequest request,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @CookieParam("fc_session") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
         var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
@@ -244,7 +244,7 @@ public class RoleAdminResource {
     public Response updateRole(
             @PathParam("roleName") String roleName,
             UpdateRoleRequest request,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @CookieParam("fc_session") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
         var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
@@ -292,7 +292,7 @@ public class RoleAdminResource {
     })
     public Response deleteRole(
             @PathParam("roleName") String roleName,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @CookieParam("fc_session") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
         var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
@@ -333,7 +333,7 @@ public class RoleAdminResource {
         @APIResponse(responseCode = "401", description = "Not authenticated")
     })
     public Response listPermissions(
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @CookieParam("fc_session") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
         var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
@@ -365,7 +365,7 @@ public class RoleAdminResource {
     })
     public Response getPermission(
             @PathParam("permission") String permission,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @CookieParam("fc_session") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
         var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);

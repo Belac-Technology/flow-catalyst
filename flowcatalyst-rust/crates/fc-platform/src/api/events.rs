@@ -2,8 +2,12 @@
 //!
 //! REST endpoints for event management.
 
-use salvo::prelude::*;
-use salvo::oapi::extract::*;
+use axum::{
+    routing::{get, post},
+    extract::{State, Path, Query},
+    Json, Router,
+};
+use utoipa::{ToSchema, IntoParams};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -126,9 +130,9 @@ impl From<EventRead> for EventReadResponse {
 }
 
 /// Query parameters for events list
-#[derive(Debug, Default, Deserialize, ToParameters)]
+#[derive(Debug, Default, Deserialize, IntoParams)]
 #[serde(rename_all = "camelCase")]
-#[salvo(parameters(default_parameter_in = Query))]
+#[into_params(parameter_in = Query)]
 pub struct EventsQuery {
     #[serde(flatten)]
     pub pagination: PaginationParams,
@@ -150,18 +154,25 @@ pub struct EventsState {
 }
 
 /// Create a new event
-#[endpoint(tags("Events"))]
+#[utoipa::path(
+    post,
+    path = "",
+    tag = "events",
+    request_body = CreateEventRequest,
+    responses(
+        (status = 201, description = "Event created", body = CreatedResponse),
+        (status = 400, description = "Validation error"),
+        (status = 403, description = "No access to client")
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn create_event(
-    depot: &mut Depot,
-    body: JsonBody<CreateEventRequest>,
+    State(state): State<EventsState>,
+    auth: Authenticated,
+    Json(req): Json<CreateEventRequest>,
 ) -> Result<Json<CreatedResponse>, PlatformError> {
-    let auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<EventsState>().map_err(|_| PlatformError::internal("State not found"))?;
-
     // Verify permission
     crate::service::checks::can_write_events(&auth.0)?;
-
-    let req = body.into_inner();
 
     // Determine client ID
     let client_id = req.client_id.or_else(|| {
@@ -205,15 +216,24 @@ pub async fn create_event(
 }
 
 /// Get event by ID
-#[endpoint(tags("Events"))]
+#[utoipa::path(
+    get,
+    path = "/{id}",
+    tag = "events",
+    params(
+        ("id" = String, Path, description = "Event ID")
+    ),
+    responses(
+        (status = 200, description = "Event found", body = EventResponse),
+        (status = 404, description = "Event not found")
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn get_event(
-    depot: &mut Depot,
-    id: PathParam<String>,
+    State(state): State<EventsState>,
+    auth: Authenticated,
+    Path(id): Path<String>,
 ) -> Result<Json<EventResponse>, PlatformError> {
-    let auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<EventsState>().map_err(|_| PlatformError::internal("State not found"))?;
-    let id = id.into_inner();
-
     crate::service::checks::can_read_events(&auth.0)?;
 
     let event = state.event_repo.find_by_id(&id).await?
@@ -230,14 +250,21 @@ pub async fn get_event(
 }
 
 /// List events
-#[endpoint(tags("Events"))]
+#[utoipa::path(
+    get,
+    path = "",
+    tag = "events",
+    params(EventsQuery),
+    responses(
+        (status = 200, description = "List of events", body = Vec<EventResponse>)
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn list_events(
-    depot: &mut Depot,
-    query: EventsQuery,
+    State(state): State<EventsState>,
+    auth: Authenticated,
+    Query(query): Query<EventsQuery>,
 ) -> Result<Json<Vec<EventResponse>>, PlatformError> {
-    let auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<EventsState>().map_err(|_| PlatformError::internal("State not found"))?;
-
     crate::service::checks::can_read_events(&auth.0)?;
 
     let events = if let Some(ref corr_id) = query.correlation_id {
@@ -294,17 +321,23 @@ pub struct BatchFailure {
 }
 
 /// Batch create events
-#[endpoint(tags("Events"))]
+#[utoipa::path(
+    post,
+    path = "/batch",
+    tag = "events",
+    request_body = BatchCreateEventsRequest,
+    responses(
+        (status = 200, description = "Batch result", body = BatchCreateResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn batch_create_events(
-    depot: &mut Depot,
-    body: JsonBody<BatchCreateEventsRequest>,
+    State(state): State<EventsState>,
+    auth: Authenticated,
+    Json(req): Json<BatchCreateEventsRequest>,
 ) -> Result<Json<BatchCreateResponse>, PlatformError> {
-    let auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<EventsState>().map_err(|_| PlatformError::internal("State not found"))?;
-
     crate::service::checks::can_write_events(&auth.0)?;
 
-    let req = body.into_inner();
     let mut created = Vec::new();
     let mut failed = Vec::new();
 
@@ -372,18 +405,8 @@ pub async fn batch_create_events(
 /// Create events router
 pub fn events_router(state: EventsState) -> Router {
     Router::new()
-        .push(
-            Router::new()
-                .post(create_event)
-                .get(list_events)
-        )
-        .push(
-            Router::with_path("batch")
-                .post(batch_create_events)
-        )
-        .push(
-            Router::with_path("<id>")
-                .get(get_event)
-        )
-        .hoop(affix_state::inject(state))
+        .route("/", post(create_event).get(list_events))
+        .route("/batch", post(batch_create_events))
+        .route("/:id", get(get_event))
+        .with_state(state)
 }

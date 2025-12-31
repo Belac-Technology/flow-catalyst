@@ -11,7 +11,7 @@ import java.time.Instant;
  * Used to correlate the callback with the original login request
  * and prevent CSRF attacks.
  */
-@MongoEntity(collection = "oidc_login_state")
+@MongoEntity(collection = "oidc_login_states")
 public class OidcLoginState extends PanacheMongoEntityBase {
 
     @BsonId

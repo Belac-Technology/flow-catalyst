@@ -11,7 +11,7 @@ import java.util.List;
  * Client organization.
  * Only customers get clients (partners don't).
  */
-@MongoEntity(collection = "auth_clients")
+@MongoEntity(collection = "clients")
 public class Client extends PanacheMongoEntityBase {
 
     @BsonId

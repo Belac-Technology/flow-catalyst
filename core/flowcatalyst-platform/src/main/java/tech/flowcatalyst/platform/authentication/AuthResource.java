@@ -3,7 +3,6 @@ package tech.flowcatalyst.platform.authentication;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.*;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.eclipse.microprofile.openapi.annotations.Operation;
 import org.eclipse.microprofile.openapi.annotations.media.Content;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
@@ -35,7 +34,10 @@ import java.util.Set;
 public class AuthResource {
 
     private static final Logger LOG = Logger.getLogger(AuthResource.class);
-    private static final String SESSION_COOKIE_NAME = "FLOWCATALYST_SESSION";
+    private static final String SESSION_COOKIE_NAME = "fc_session";
+
+    @Inject
+    AuthConfig authConfig;
 
     @Inject
     PrincipalRepository principalRepository;
@@ -46,11 +48,6 @@ public class AuthResource {
     @Inject
     JwtKeyService jwtKeyService;
 
-    @ConfigProperty(name = "flowcatalyst.auth.session.secure", defaultValue = "true")
-    boolean secureCookie;
-
-    @ConfigProperty(name = "flowcatalyst.auth.session.same-site", defaultValue = "Strict")
-    String sameSite;
 
     @Context
     UriInfo uriInfo;
@@ -147,13 +144,13 @@ public class AuthResource {
     @Operation(summary = "Logout and clear session")
     @APIResponse(responseCode = "200", description = "Logout successful")
     public Response logout() {
-        NewCookie expiredCookie = new NewCookie.Builder(SESSION_COOKIE_NAME)
+        NewCookie expiredCookie = new NewCookie.Builder(authConfig.session().cookieName())
                 .value("")
                 .path("/")
                 .maxAge(0)
                 .httpOnly(true)
-                .secure(secureCookie)
-                .sameSite(NewCookie.SameSite.valueOf(sameSite.toUpperCase()))
+                .secure(authConfig.session().secure())
+                .sameSite(NewCookie.SameSite.valueOf(authConfig.session().sameSite().toUpperCase()))
                 .build();
 
         return Response.ok(new MessageResponse("Logged out successfully"))
@@ -219,13 +216,13 @@ public class AuthResource {
     private NewCookie createSessionCookie(String token) {
         long maxAgeSeconds = jwtKeyService.getSessionTokenExpiry().toSeconds();
 
-        return new NewCookie.Builder(SESSION_COOKIE_NAME)
+        return new NewCookie.Builder(authConfig.session().cookieName())
                 .value(token)
                 .path("/")
                 .maxAge((int) maxAgeSeconds)
                 .httpOnly(true)
-                .secure(secureCookie)
-                .sameSite(NewCookie.SameSite.valueOf(sameSite.toUpperCase()))
+                .secure(authConfig.session().secure())
+                .sameSite(NewCookie.SameSite.valueOf(authConfig.session().sameSite().toUpperCase()))
                 .build();
     }
 

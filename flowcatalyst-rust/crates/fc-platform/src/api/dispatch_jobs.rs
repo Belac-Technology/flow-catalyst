@@ -2,8 +2,12 @@
 //!
 //! REST endpoints for viewing dispatch job status.
 
-use salvo::prelude::*;
-use salvo::oapi::extract::*;
+use axum::{
+    routing::get,
+    extract::{State, Path, Query},
+    Json, Router,
+};
+use utoipa::{ToSchema, IntoParams};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -122,9 +126,9 @@ impl From<DispatchJobRead> for DispatchJobReadResponse {
 }
 
 /// Query parameters for dispatch jobs list
-#[derive(Debug, Default, Deserialize, ToParameters)]
+#[derive(Debug, Default, Deserialize, IntoParams)]
 #[serde(rename_all = "camelCase")]
-#[salvo(parameters(default_parameter_in = Query))]
+#[into_params(parameter_in = Query)]
 pub struct DispatchJobsQuery {
     #[serde(flatten)]
     pub pagination: PaginationParams,
@@ -152,15 +156,24 @@ pub struct DispatchJobsState {
 }
 
 /// Get dispatch job by ID
-#[endpoint(tags("DispatchJobs"))]
+#[utoipa::path(
+    get,
+    path = "/{id}",
+    tag = "dispatch-jobs",
+    params(
+        ("id" = String, Path, description = "Dispatch job ID")
+    ),
+    responses(
+        (status = 200, description = "Dispatch job found", body = DispatchJobResponse),
+        (status = 404, description = "Dispatch job not found")
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn get_dispatch_job(
-    depot: &mut Depot,
-    id: PathParam<String>,
+    State(state): State<DispatchJobsState>,
+    auth: Authenticated,
+    Path(id): Path<String>,
 ) -> Result<Json<DispatchJobResponse>, PlatformError> {
-    let auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<DispatchJobsState>().map_err(|_| PlatformError::internal("State not found"))?;
-    let id = id.into_inner();
-
     crate::service::checks::can_read_dispatch_jobs(&auth.0)?;
 
     let job = state.dispatch_job_repo.find_by_id(&id).await?
@@ -177,14 +190,21 @@ pub async fn get_dispatch_job(
 }
 
 /// List dispatch jobs
-#[endpoint(tags("DispatchJobs"))]
+#[utoipa::path(
+    get,
+    path = "",
+    tag = "dispatch-jobs",
+    params(DispatchJobsQuery),
+    responses(
+        (status = 200, description = "List of dispatch jobs", body = Vec<DispatchJobResponse>)
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn list_dispatch_jobs(
-    depot: &mut Depot,
-    query: DispatchJobsQuery,
+    State(state): State<DispatchJobsState>,
+    auth: Authenticated,
+    Query(query): Query<DispatchJobsQuery>,
 ) -> Result<Json<Vec<DispatchJobResponse>>, PlatformError> {
-    let auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<DispatchJobsState>().map_err(|_| PlatformError::internal("State not found"))?;
-
     crate::service::checks::can_read_dispatch_jobs(&auth.0)?;
 
     let jobs = if let Some(ref event_id) = query.event_id {
@@ -229,14 +249,23 @@ pub async fn list_dispatch_jobs(
 }
 
 /// Get dispatch jobs for an event
-#[endpoint(tags("DispatchJobs"))]
+#[utoipa::path(
+    get,
+    path = "/by-event/{event_id}",
+    tag = "dispatch-jobs",
+    params(
+        ("event_id" = String, Path, description = "Event ID")
+    ),
+    responses(
+        (status = 200, description = "Dispatch jobs for event", body = Vec<DispatchJobResponse>)
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn get_jobs_for_event(
-    depot: &mut Depot,
-    event_id: PathParam<String>,
+    State(state): State<DispatchJobsState>,
+    auth: Authenticated,
+    Path(event_id): Path<String>,
 ) -> Result<Json<Vec<DispatchJobResponse>>, PlatformError> {
-    let auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<DispatchJobsState>().map_err(|_| PlatformError::internal("State not found"))?;
-
     crate::service::checks::can_read_dispatch_jobs(&auth.0)?;
 
     let jobs = state.dispatch_job_repo.find_by_event_id(&event_id).await?;
@@ -258,17 +287,8 @@ pub async fn get_jobs_for_event(
 /// Create dispatch jobs router
 pub fn dispatch_jobs_router(state: DispatchJobsState) -> Router {
     Router::new()
-        .push(
-            Router::new()
-                .get(list_dispatch_jobs)
-        )
-        .push(
-            Router::with_path("<id>")
-                .get(get_dispatch_job)
-        )
-        .push(
-            Router::with_path("by-event/<event_id>")
-                .get(get_jobs_for_event)
-        )
-        .hoop(affix_state::inject(state))
+        .route("/", get(list_dispatch_jobs))
+        .route("/:id", get(get_dispatch_job))
+        .route("/by-event/:event_id", get(get_jobs_for_event))
+        .with_state(state)
 }

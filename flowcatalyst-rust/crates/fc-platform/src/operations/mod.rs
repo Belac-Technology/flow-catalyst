@@ -30,6 +30,49 @@
 //! }
 //! ```
 
+pub mod client;
 pub mod event_type;
+pub mod principal;
+pub mod role;
+pub mod subscription;
 
-pub use event_type::*;
+// Re-export specific items to avoid ambiguity
+pub use client::{
+    ClientCreated, ClientUpdated, ClientActivated, ClientSuspended,
+    CreateClientCommand, CreateClientUseCase,
+    UpdateClientCommand, UpdateClientUseCase,
+    ActivateClientCommand, ActivateClientUseCase,
+    SuspendClientCommand, SuspendClientUseCase,
+};
+
+pub use event_type::{
+    EventTypeCreated, EventTypeUpdated, EventTypeArchived,
+    CreateEventTypeCommand, CreateEventTypeUseCase,
+    UpdateEventTypeCommand, UpdateEventTypeUseCase,
+    ArchiveEventTypeCommand, ArchiveEventTypeUseCase,
+};
+
+pub use principal::{
+    UserCreated, UserUpdated, UserActivated, UserDeactivated, UserDeleted, RolesAssigned,
+    CreateUserCommand, CreateUserUseCase,
+    UpdateUserCommand, UpdateUserUseCase,
+    ActivateUserCommand, ActivateUserUseCase,
+    DeactivateUserCommand, DeactivateUserUseCase,
+    DeleteUserCommand, DeleteUserUseCase,
+};
+
+pub use role::{
+    RoleCreated, RoleUpdated, RoleDeleted,
+    CreateRoleCommand, CreateRoleUseCase,
+    UpdateRoleCommand, UpdateRoleUseCase,
+    DeleteRoleCommand, DeleteRoleUseCase,
+};
+
+pub use subscription::{
+    SubscriptionCreated, SubscriptionUpdated, SubscriptionPaused, SubscriptionResumed, SubscriptionDeleted,
+    CreateSubscriptionCommand, CreateSubscriptionUseCase, EventTypeBindingInput,
+    UpdateSubscriptionCommand, UpdateSubscriptionUseCase,
+    PauseSubscriptionCommand, PauseSubscriptionUseCase,
+    ResumeSubscriptionCommand, ResumeSubscriptionUseCase,
+    DeleteSubscriptionCommand, DeleteSubscriptionUseCase,
+};

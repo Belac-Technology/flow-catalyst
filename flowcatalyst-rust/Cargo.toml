@@ -24,7 +24,8 @@ resolver = "2"
 tokio = { version = "1.36", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-axum = "0.7"
+axum = { version = "0.7", features = ["macros"] }
+axum-extra = { version = "0.9", features = ["cookie"] }
 reqwest = { version = "0.12.9", features = ["json", "rustls-tls"] }
 sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "sqlite", "postgres", "mysql", "chrono", "uuid"] }
 mongodb = "3.1"
@@ -57,12 +58,10 @@ pin-project-lite = "0.2"
 lapin = "2.3"
 regex = "1.10"
 
-# Salvo web framework with OpenAPI
-salvo = { version = "0.72", features = ["oapi", "affix-state", "cors", "logging", "catch-panic", "jwt-auth", "test"] }
-
-# OpenAPI documentation (legacy - being replaced by salvo)
+# OpenAPI documentation with Axum
 utoipa = { version = "4.2", features = ["axum_extras", "chrono", "uuid"] }
 utoipa-swagger-ui = { version = "6.0", features = ["axum"] }
+utoipa-axum = "0.1"
 
 # Test dependencies
 testcontainers = "0.15"

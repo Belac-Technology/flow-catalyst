@@ -18,7 +18,7 @@ import java.util.Set;
  * The role name is prefixed with the application code (e.g., "platform:tenant-admin").
  * SDK roles are auto-prefixed when registered.
  */
-@MongoEntity(collection = "auth_roles")
+@MongoEntity(collection = "roles")
 public class AuthRole extends PanacheMongoEntityBase {
 
     @BsonId

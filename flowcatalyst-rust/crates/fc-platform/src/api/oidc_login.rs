@@ -9,9 +9,15 @@
 //! 3. User authenticates at external IDP
 //! 4. GET /auth/oidc/callback?code=...&state=... - Handles callback, creates session
 
-use salvo::prelude::*;
-use salvo::oapi::extract::*;
-use salvo::http::cookie::Cookie;
+use axum::{
+    routing::{get, post},
+    extract::{State, Query, Host},
+    response::{Json, Redirect, IntoResponse, Response},
+    http::{StatusCode, header, HeaderMap, Uri},
+    Router,
+};
+use axum_extra::extract::cookie::{Cookie, CookieJar};
+use utoipa::{ToSchema, IntoParams};
 use serde::{Deserialize, Serialize};
 use sha2::{Sha256, Digest};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -109,8 +115,8 @@ pub struct DomainCheckResponse {
 }
 
 /// OIDC login query parameters
-#[derive(Debug, Deserialize, ToParameters)]
-#[salvo(parameters(default_parameter_in = Query))]
+#[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct OidcLoginParams {
     /// Email domain to authenticate
     pub domain: String,
@@ -127,8 +133,8 @@ pub struct OidcLoginParams {
 }
 
 /// OIDC callback query parameters
-#[derive(Debug, Deserialize, ToParameters)]
-#[salvo(parameters(default_parameter_in = Query))]
+#[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct OidcCallbackParams {
     pub code: Option<String>,
     pub state: Option<String>,
@@ -145,34 +151,33 @@ pub struct ErrorResponse {
 // ==================== Endpoints ====================
 
 /// Check authentication method for email domain
-#[endpoint(tags("Auth Discovery"))]
+#[utoipa::path(
+    post,
+    path = "/check-domain",
+    tag = "auth-discovery",
+    request_body = DomainCheckRequest,
+    responses(
+        (status = 200, description = "Domain check result", body = DomainCheckResponse),
+        (status = 400, description = "Invalid email"),
+        (status = 500, description = "Internal error")
+    )
+)]
 pub async fn check_domain(
-    depot: &mut Depot,
-    body: JsonBody<DomainCheckRequest>,
-    res: &mut Response,
-) {
-    let state = match depot.obtain::<OidcLoginApiState>() {
-        Ok(s) => s,
-        Err(_) => {
-            res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
-            res.render(Json(ErrorResponse {
-                error: "Internal configuration error".to_string(),
-            }));
-            return;
-        }
-    };
-
+    State(state): State<OidcLoginApiState>,
+    Json(body): Json<DomainCheckRequest>,
+) -> Response {
     let email = body.email.trim().to_lowercase();
 
     // Validate email format
     let at_index = match email.find('@') {
         Some(idx) if idx > 0 && idx < email.len() - 1 => idx,
         _ => {
-            res.status_code(StatusCode::BAD_REQUEST);
-            res.render(Json(ErrorResponse {
-                error: "Invalid email format".to_string(),
-            }));
-            return;
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: "Invalid email format".to_string(),
+                }),
+            ).into_response();
         }
     };
 
@@ -183,21 +188,21 @@ pub async fn check_domain(
     match state.anchor_domain_repo.is_anchor_domain(domain).await {
         Ok(true) => {
             // Anchor domains can use internal auth
-            res.render(Json(DomainCheckResponse {
+            return Json(DomainCheckResponse {
                 auth_method: "internal".to_string(),
                 login_url: None,
                 idp_issuer: None,
-            }));
-            return;
+            }).into_response();
         }
         Ok(false) => {}
         Err(e) => {
             error!(error = %e, "Failed to check anchor domain");
-            res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
-            res.render(Json(ErrorResponse {
-                error: "Failed to check domain".to_string(),
-            }));
-            return;
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "Failed to check domain".to_string(),
+                }),
+            ).into_response();
         }
     }
 
@@ -207,103 +212,108 @@ pub async fn check_domain(
         Ok(None) => {
             // Default to internal auth if no config
             debug!(domain = %domain, "No auth config, defaulting to internal");
-            res.render(Json(DomainCheckResponse {
+            return Json(DomainCheckResponse {
                 auth_method: "internal".to_string(),
                 login_url: None,
                 idp_issuer: None,
-            }));
-            return;
+            }).into_response();
         }
         Err(e) => {
             error!(error = %e, "Failed to lookup auth config");
-            res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
-            res.render(Json(ErrorResponse {
-                error: "Failed to check domain".to_string(),
-            }));
-            return;
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "Failed to check domain".to_string(),
+                }),
+            ).into_response();
         }
     };
 
     if config.auth_provider == AuthProvider::Oidc && config.oidc_issuer_url.is_some() {
         let login_url = format!("/auth/oidc/login?domain={}", domain);
         debug!(domain = %domain, login_url = %login_url, "Domain uses OIDC");
-        res.render(Json(DomainCheckResponse {
+        Json(DomainCheckResponse {
             auth_method: "external".to_string(),
             login_url: Some(login_url),
             idp_issuer: config.oidc_issuer_url,
-        }));
+        }).into_response()
     } else {
-        res.render(Json(DomainCheckResponse {
+        Json(DomainCheckResponse {
             auth_method: "internal".to_string(),
             login_url: None,
             idp_issuer: None,
-        }));
+        }).into_response()
     }
 }
 
 /// Initiate OIDC login - redirects to external IDP
-#[endpoint(tags("OIDC Federation"))]
+#[utoipa::path(
+    get,
+    path = "/oidc/login",
+    tag = "oidc-federation",
+    params(OidcLoginParams),
+    responses(
+        (status = 303, description = "Redirect to IDP"),
+        (status = 400, description = "Bad request"),
+        (status = 404, description = "Domain not found"),
+        (status = 500, description = "Internal error")
+    )
+)]
 pub async fn oidc_login(
-    depot: &mut Depot,
-    req: &mut Request,
-    params: OidcLoginParams,
-    res: &mut Response,
-) {
-    let state = match depot.obtain::<OidcLoginApiState>() {
-        Ok(s) => s,
-        Err(_) => {
-            res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
-            res.render(Json(ErrorResponse {
-                error: "Internal configuration error".to_string(),
-            }));
-            return;
-        }
-    };
-
+    State(state): State<OidcLoginApiState>,
+    Host(host): Host,
+    uri: Uri,
+    Query(params): Query<OidcLoginParams>,
+) -> Response {
     let domain = params.domain.trim().to_lowercase();
 
     if domain.is_empty() {
-        res.status_code(StatusCode::BAD_REQUEST);
-        res.render(Json(ErrorResponse {
-            error: "domain parameter is required".to_string(),
-        }));
-        return;
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "domain parameter is required".to_string(),
+            }),
+        ).into_response();
     }
 
     // Look up auth config for this domain
     let config = match state.client_auth_config_repo.find_by_email_domain(&domain).await {
         Ok(Some(c)) => c,
         Ok(None) => {
-            res.status_code(StatusCode::NOT_FOUND);
-            res.render(Json(ErrorResponse {
-                error: format!("No authentication configuration found for domain: {}", domain),
-            }));
-            return;
+            return (
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: format!("No authentication configuration found for domain: {}", domain),
+                }),
+            ).into_response();
         }
         Err(e) => {
             error!(error = %e, "Failed to lookup auth config");
-            res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
-            res.render(Json(ErrorResponse {
-                error: "Internal error".to_string(),
-            }));
-            return;
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "Internal error".to_string(),
+                }),
+            ).into_response();
         }
     };
 
     if config.auth_provider != AuthProvider::Oidc {
-        res.status_code(StatusCode::BAD_REQUEST);
-        res.render(Json(ErrorResponse {
-            error: format!("Domain {} uses internal authentication, not OIDC", domain),
-        }));
-        return;
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: format!("Domain {} uses internal authentication, not OIDC", domain),
+            }),
+        ).into_response();
     }
 
     if config.oidc_issuer_url.is_none() || config.oidc_client_id.is_none() {
-        res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
-        res.render(Json(ErrorResponse {
-            error: format!("OIDC configuration incomplete for domain: {}", domain),
-        }));
-        return;
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: format!("OIDC configuration incomplete for domain: {}", domain),
+            }),
+        ).into_response();
     }
 
     // Generate state, nonce, and PKCE
@@ -333,15 +343,16 @@ pub async fn oidc_login(
     // Store state
     if let Err(e) = state.oidc_login_state_repo.insert(&login_state).await {
         error!(error = %e, "Failed to store login state");
-        res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
-        res.render(Json(ErrorResponse {
-            error: "Failed to initiate login".to_string(),
-        }));
-        return;
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: "Failed to initiate login".to_string(),
+            }),
+        ).into_response();
     }
 
     // Build authorization URL
-    let callback_url = get_callback_url(&state, req);
+    let callback_url = get_callback_url(&state, &host, &uri);
     let auth_url = build_authorization_url(
         &config,
         &oidc_state,
@@ -357,29 +368,30 @@ pub async fn oidc_login(
     );
 
     // Redirect to IDP
-    res.status_code(StatusCode::SEE_OTHER);
-    res.headers_mut().insert(
-        salvo::http::header::LOCATION,
-        auth_url.parse().unwrap(),
-    );
+    (
+        StatusCode::SEE_OTHER,
+        [(header::LOCATION, auth_url)],
+    ).into_response()
 }
 
 /// Handle OIDC callback from external IDP
-#[endpoint(tags("OIDC Federation"))]
+#[utoipa::path(
+    get,
+    path = "/oidc/callback",
+    tag = "oidc-federation",
+    params(OidcCallbackParams),
+    responses(
+        (status = 303, description = "Redirect to application"),
+        (status = 400, description = "Callback error")
+    )
+)]
 pub async fn oidc_callback(
-    depot: &mut Depot,
-    req: &mut Request,
-    params: OidcCallbackParams,
-    res: &mut Response,
-) {
-    let state = match depot.obtain::<OidcLoginApiState>() {
-        Ok(s) => s,
-        Err(_) => {
-            error_redirect(res, "Internal configuration error");
-            return;
-        }
-    };
-
+    State(state): State<OidcLoginApiState>,
+    Host(host): Host,
+    uri: Uri,
+    Query(params): Query<OidcCallbackParams>,
+    jar: CookieJar,
+) -> Response {
     // Handle IDP errors
     if let Some(error) = &params.error {
         warn!(
@@ -387,23 +399,20 @@ pub async fn oidc_callback(
             description = params.error_description.as_deref().unwrap_or(""),
             "OIDC callback error"
         );
-        error_redirect(res, params.error_description.as_deref().unwrap_or(error));
-        return;
+        return error_redirect(params.error_description.as_deref().unwrap_or(error));
     }
 
     let code = match &params.code {
         Some(c) if !c.is_empty() => c,
         _ => {
-            error_redirect(res, "No authorization code received");
-            return;
+            return error_redirect("No authorization code received");
         }
     };
 
     let oidc_state = match &params.state {
         Some(s) if !s.is_empty() => s,
         _ => {
-            error_redirect(res, "No state parameter received");
-            return;
+            return error_redirect("No state parameter received");
         }
     };
 
@@ -412,13 +421,11 @@ pub async fn oidc_callback(
         Ok(Some(s)) => s,
         Ok(None) => {
             warn!(state = %oidc_state, "Invalid or expired OIDC state");
-            error_redirect(res, "Invalid or expired login session. Please try again.");
-            return;
+            return error_redirect("Invalid or expired login session. Please try again.");
         }
         Err(e) => {
             error!(error = %e, "Failed to validate state");
-            error_redirect(res, "Failed to validate login session");
-            return;
+            return error_redirect("Failed to validate login session");
         }
     };
 
@@ -431,24 +438,21 @@ pub async fn oidc_callback(
     let config = match state.client_auth_config_repo.find_by_id(&login_state.auth_config_id).await {
         Ok(Some(c)) => c,
         Ok(None) => {
-            error_redirect(res, "Authentication configuration no longer exists");
-            return;
+            return error_redirect("Authentication configuration no longer exists");
         }
         Err(e) => {
             error!(error = %e, "Failed to lookup auth config");
-            error_redirect(res, "Failed to validate configuration");
-            return;
+            return error_redirect("Failed to validate configuration");
         }
     };
 
     // Exchange code for tokens
-    let callback_url = get_callback_url(&state, req);
+    let callback_url = get_callback_url(&state, &host, &uri);
     let tokens = match exchange_code_for_tokens(&config, code, &login_state.code_verifier, &callback_url).await {
         Ok(t) => t,
         Err(e) => {
             error!(error = %e, "Token exchange failed");
-            error_redirect(res, "Failed to exchange authorization code");
-            return;
+            return error_redirect("Failed to exchange authorization code");
         }
     };
 
@@ -457,8 +461,7 @@ pub async fn oidc_callback(
         Ok(c) => c,
         Err(e) => {
             error!(error = %e, "ID token validation failed");
-            error_redirect(res, "Failed to validate identity token");
-            return;
+            return error_redirect("Failed to validate identity token");
         }
     };
 
@@ -482,8 +485,7 @@ pub async fn oidc_callback(
         Ok(p) => p,
         Err(e) => {
             error!(error = %e, "User sync failed");
-            error_redirect(res, "Failed to create user session");
-            return;
+            return error_redirect("Failed to create user session");
         }
     };
 
@@ -492,24 +494,22 @@ pub async fn oidc_callback(
         Ok(t) => t,
         Err(e) => {
             error!(error = %e, "Failed to issue session token");
-            error_redirect(res, "Failed to create session");
-            return;
+            return error_redirect("Failed to create session");
         }
     };
 
     // Build session cookie
-    let mut cookie = Cookie::new(state.session_cookie_name.clone(), session_token);
-    cookie.set_path("/");
-    cookie.set_http_only(true);
-    if state.session_cookie_secure {
-        cookie.set_secure(true);
-    }
-    // Convert i64 seconds to time::Duration
-    cookie.set_max_age(time::Duration::seconds(state.session_token_expiry_secs));
-    res.add_cookie(cookie);
+    let cookie = Cookie::build((state.session_cookie_name.clone(), session_token))
+        .path("/")
+        .http_only(true)
+        .secure(state.session_cookie_secure)
+        .max_age(time::Duration::seconds(state.session_token_expiry_secs))
+        .build();
+
+    let jar = jar.add(cookie);
 
     // Determine redirect URL
-    let redirect_url = determine_redirect_url(&state, req, &login_state);
+    let redirect_url = determine_redirect_url(&state, &host, &uri, &login_state);
 
     info!(
         email = %claims.email,
@@ -517,12 +517,14 @@ pub async fn oidc_callback(
         "OIDC login successful"
     );
 
-    // Redirect
-    res.status_code(StatusCode::SEE_OTHER);
-    res.headers_mut().insert(
-        salvo::http::header::LOCATION,
-        redirect_url.parse().unwrap(),
-    );
+    // Redirect with cookie
+    (
+        jar,
+        (
+            StatusCode::SEE_OTHER,
+            [(header::LOCATION, redirect_url)],
+        ),
+    ).into_response()
 }
 
 // ==================== Helper Functions ====================
@@ -543,23 +545,16 @@ fn generate_code_challenge(verifier: &str) -> String {
     URL_SAFE_NO_PAD.encode(hash)
 }
 
-fn get_external_base_url(state: &OidcLoginApiState, req: &Request) -> String {
+fn get_external_base_url(state: &OidcLoginApiState, host: &str, uri: &Uri) -> String {
     state.external_base_url.clone().unwrap_or_else(|| {
         // Fall back to request host
         let scheme = if state.session_cookie_secure { "https" } else { "http" };
-        let host = req.uri().host().unwrap_or("localhost");
-        let port = req.uri().port_u16();
-        match port {
-            Some(p) if (scheme == "http" && p != 80) || (scheme == "https" && p != 443) => {
-                format!("{}://{}:{}", scheme, host, p)
-            }
-            _ => format!("{}://{}", scheme, host),
-        }
+        format!("{}://{}", scheme, host)
     })
 }
 
-fn get_callback_url(state: &OidcLoginApiState, req: &Request) -> String {
-    format!("{}/auth/oidc/callback", get_external_base_url(state, req))
+fn get_callback_url(state: &OidcLoginApiState, host: &str, uri: &Uri) -> String {
+    format!("{}/auth/oidc/callback", get_external_base_url(state, host, uri))
 }
 
 fn build_authorization_url(
@@ -756,10 +751,11 @@ fn determine_accessible_clients(_principal: &crate::domain::Principal, config: &
 
 fn determine_redirect_url(
     state: &OidcLoginApiState,
-    req: &Request,
+    host: &str,
+    uri: &Uri,
     login_state: &crate::domain::OidcLoginState,
 ) -> String {
-    let base_url = get_external_base_url(state, req);
+    let base_url = get_external_base_url(state, host, uri);
 
     // If this was part of an OAuth flow, redirect back to authorize endpoint
     if let Some(ref client_id) = login_state.oauth_client_id {
@@ -800,22 +796,19 @@ fn determine_redirect_url(
     format!("{}/dashboard", base_url)
 }
 
-fn error_redirect(res: &mut Response, message: &str) {
+fn error_redirect(message: &str) -> Response {
     let error_url = format!("/?error={}", urlencoding::encode(message));
-    res.status_code(StatusCode::SEE_OTHER);
-    res.headers_mut().insert(
-        salvo::http::header::LOCATION,
-        error_url.parse().unwrap(),
-    );
+    (
+        StatusCode::SEE_OTHER,
+        [(header::LOCATION, error_url)],
+    ).into_response()
 }
 
 /// Create the OIDC login router
-pub fn oidc_login_router() -> Router {
+pub fn oidc_login_router(state: OidcLoginApiState) -> Router {
     Router::new()
-        .push(Router::with_path("check-domain").post(check_domain))
-        .push(
-            Router::with_path("oidc")
-                .push(Router::with_path("login").get(oidc_login))
-                .push(Router::with_path("callback").get(oidc_callback))
-        )
+        .route("/check-domain", post(check_domain))
+        .route("/oidc/login", get(oidc_login))
+        .route("/oidc/callback", get(oidc_callback))
+        .with_state(state)
 }

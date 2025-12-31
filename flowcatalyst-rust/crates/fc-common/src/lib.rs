@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
 use std::time::Instant;
-use salvo::oapi::ToSchema;
+use utoipa::ToSchema;
 
 // ============================================================================
 // Core Message Types
@@ -13,6 +13,8 @@ pub struct Message {
     pub id: String,
     pub pool_code: String,
     pub auth_token: Option<String>,
+    /// Signing secret for HMAC-SHA256 webhook signatures
+    pub signing_secret: Option<String>,
     pub mediation_type: MediationType,
     pub mediation_target: String,
     pub message_group_id: Option<String>,

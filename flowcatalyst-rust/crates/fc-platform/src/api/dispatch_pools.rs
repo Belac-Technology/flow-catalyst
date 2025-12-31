@@ -2,8 +2,12 @@
 //!
 //! REST endpoints for dispatch pool management.
 
-use salvo::prelude::*;
-use salvo::oapi::extract::*;
+use axum::{
+    routing::{get, post, put, delete},
+    extract::{State, Path, Query},
+    Json, Router,
+};
+use utoipa::{ToSchema, IntoParams};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -87,9 +91,9 @@ impl From<DispatchPool> for DispatchPoolResponse {
 }
 
 /// Query parameters for dispatch pools list
-#[derive(Debug, Default, Deserialize, ToParameters)]
+#[derive(Debug, Default, Deserialize, IntoParams)]
 #[serde(rename_all = "camelCase")]
-#[salvo(parameters(default_parameter_in = Query))]
+#[into_params(parameter_in = Query)]
 pub struct DispatchPoolsQuery {
     #[serde(flatten)]
     pub pagination: PaginationParams,
@@ -116,16 +120,23 @@ fn parse_status(s: &str) -> Option<DispatchPoolStatus> {
 }
 
 /// Create a new dispatch pool
-#[endpoint(tags("DispatchPools"))]
+#[utoipa::path(
+    post,
+    path = "",
+    tag = "dispatch-pools",
+    request_body = CreateDispatchPoolRequest,
+    responses(
+        (status = 201, description = "Dispatch pool created", body = CreatedResponse),
+        (status = 400, description = "Validation error"),
+        (status = 409, description = "Duplicate code")
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn create_dispatch_pool(
-    depot: &mut Depot,
-    body: JsonBody<CreateDispatchPoolRequest>,
+    State(state): State<DispatchPoolsState>,
+    auth: Authenticated,
+    Json(req): Json<CreateDispatchPoolRequest>,
 ) -> Result<Json<CreatedResponse>, PlatformError> {
-    let auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<DispatchPoolsState>().map_err(|_| PlatformError::internal("State not found"))?;
-
-    let req = body.into_inner();
-
     // Check access - anchor or client admin
     if !auth.0.is_anchor() {
         if let Some(ref client_id) = req.client_id {
@@ -167,15 +178,24 @@ pub async fn create_dispatch_pool(
 }
 
 /// Get dispatch pool by ID
-#[endpoint(tags("DispatchPools"))]
+#[utoipa::path(
+    get,
+    path = "/{id}",
+    tag = "dispatch-pools",
+    params(
+        ("id" = String, Path, description = "Dispatch pool ID")
+    ),
+    responses(
+        (status = 200, description = "Dispatch pool found", body = DispatchPoolResponse),
+        (status = 404, description = "Dispatch pool not found")
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn get_dispatch_pool(
-    depot: &mut Depot,
-    id: PathParam<String>,
+    State(state): State<DispatchPoolsState>,
+    auth: Authenticated,
+    Path(id): Path<String>,
 ) -> Result<Json<DispatchPoolResponse>, PlatformError> {
-    let auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<DispatchPoolsState>().map_err(|_| PlatformError::internal("State not found"))?;
-    let id = id.into_inner();
-
     let pool = state.dispatch_pool_repo.find_by_id(&id).await?
         .ok_or_else(|| PlatformError::not_found("DispatchPool", &id))?;
 
@@ -192,14 +212,21 @@ pub async fn get_dispatch_pool(
 }
 
 /// List dispatch pools
-#[endpoint(tags("DispatchPools"))]
+#[utoipa::path(
+    get,
+    path = "",
+    tag = "dispatch-pools",
+    params(DispatchPoolsQuery),
+    responses(
+        (status = 200, description = "List of dispatch pools", body = Vec<DispatchPoolResponse>)
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn list_dispatch_pools(
-    depot: &mut Depot,
-    query: DispatchPoolsQuery,
+    State(state): State<DispatchPoolsState>,
+    auth: Authenticated,
+    Query(query): Query<DispatchPoolsQuery>,
 ) -> Result<Json<Vec<DispatchPoolResponse>>, PlatformError> {
-    let auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<DispatchPoolsState>().map_err(|_| PlatformError::internal("State not found"))?;
-
     let pools = if let Some(ref client_id) = query.client_id {
         // Check access
         if !auth.0.is_anchor() && !auth.0.can_access_client(client_id) {
@@ -240,16 +267,26 @@ pub async fn list_dispatch_pools(
 }
 
 /// Update dispatch pool
-#[endpoint(tags("DispatchPools"))]
+#[utoipa::path(
+    put,
+    path = "/{id}",
+    tag = "dispatch-pools",
+    params(
+        ("id" = String, Path, description = "Dispatch pool ID")
+    ),
+    request_body = UpdateDispatchPoolRequest,
+    responses(
+        (status = 200, description = "Dispatch pool updated", body = DispatchPoolResponse),
+        (status = 404, description = "Dispatch pool not found")
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn update_dispatch_pool(
-    depot: &mut Depot,
-    id: PathParam<String>,
-    body: JsonBody<UpdateDispatchPoolRequest>,
+    State(state): State<DispatchPoolsState>,
+    auth: Authenticated,
+    Path(id): Path<String>,
+    Json(req): Json<UpdateDispatchPoolRequest>,
 ) -> Result<Json<DispatchPoolResponse>, PlatformError> {
-    let auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<DispatchPoolsState>().map_err(|_| PlatformError::internal("State not found"))?;
-    let id = id.into_inner();
-
     let mut pool = state.dispatch_pool_repo.find_by_id(&id).await?
         .ok_or_else(|| PlatformError::not_found("DispatchPool", &id))?;
 
@@ -264,7 +301,6 @@ pub async fn update_dispatch_pool(
         }
     }
 
-    let req = body.into_inner();
     if let Some(name) = req.name {
         pool.name = name;
     }
@@ -285,15 +321,24 @@ pub async fn update_dispatch_pool(
 }
 
 /// Archive dispatch pool
-#[endpoint(tags("DispatchPools"))]
+#[utoipa::path(
+    post,
+    path = "/{id}/archive",
+    tag = "dispatch-pools",
+    params(
+        ("id" = String, Path, description = "Dispatch pool ID")
+    ),
+    responses(
+        (status = 200, description = "Dispatch pool archived", body = DispatchPoolResponse),
+        (status = 404, description = "Dispatch pool not found")
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn archive_dispatch_pool(
-    depot: &mut Depot,
-    id: PathParam<String>,
+    State(state): State<DispatchPoolsState>,
+    auth: Authenticated,
+    Path(id): Path<String>,
 ) -> Result<Json<DispatchPoolResponse>, PlatformError> {
-    let auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<DispatchPoolsState>().map_err(|_| PlatformError::internal("State not found"))?;
-    let id = id.into_inner();
-
     let mut pool = state.dispatch_pool_repo.find_by_id(&id).await?
         .ok_or_else(|| PlatformError::not_found("DispatchPool", &id))?;
 
@@ -315,15 +360,24 @@ pub async fn archive_dispatch_pool(
 }
 
 /// Delete dispatch pool
-#[endpoint(tags("DispatchPools"))]
+#[utoipa::path(
+    delete,
+    path = "/{id}",
+    tag = "dispatch-pools",
+    params(
+        ("id" = String, Path, description = "Dispatch pool ID")
+    ),
+    responses(
+        (status = 200, description = "Dispatch pool deleted", body = SuccessResponse),
+        (status = 404, description = "Dispatch pool not found")
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn delete_dispatch_pool(
-    depot: &mut Depot,
-    id: PathParam<String>,
+    State(state): State<DispatchPoolsState>,
+    auth: Authenticated,
+    Path(id): Path<String>,
 ) -> Result<Json<SuccessResponse>, PlatformError> {
-    let auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<DispatchPoolsState>().map_err(|_| PlatformError::internal("State not found"))?;
-    let id = id.into_inner();
-
     crate::service::checks::require_anchor(&auth.0)?;
 
     let exists = state.dispatch_pool_repo.find_by_id(&id).await?.is_some();
@@ -339,20 +393,8 @@ pub async fn delete_dispatch_pool(
 /// Create dispatch pools router
 pub fn dispatch_pools_router(state: DispatchPoolsState) -> Router {
     Router::new()
-        .push(
-            Router::new()
-                .post(create_dispatch_pool)
-                .get(list_dispatch_pools)
-        )
-        .push(
-            Router::with_path("<id>")
-                .get(get_dispatch_pool)
-                .put(update_dispatch_pool)
-                .delete(delete_dispatch_pool)
-        )
-        .push(
-            Router::with_path("<id>/archive")
-                .post(archive_dispatch_pool)
-        )
-        .hoop(affix_state::inject(state))
+        .route("/", post(create_dispatch_pool).get(list_dispatch_pools))
+        .route("/:id", get(get_dispatch_pool).put(update_dispatch_pool).delete(delete_dispatch_pool))
+        .route("/:id/archive", post(archive_dispatch_pool))
+        .with_state(state)
 }

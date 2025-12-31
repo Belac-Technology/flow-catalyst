@@ -2,8 +2,12 @@
 //!
 //! REST endpoints for client management.
 
-use salvo::prelude::*;
-use salvo::oapi::{ToSchema, endpoint, extract::*};
+use axum::{
+    routing::{get, post, put, delete},
+    extract::{State, Path, Query},
+    Json, Router,
+};
+use utoipa::ToSchema;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -84,15 +88,23 @@ pub struct ClientsState {
 }
 
 /// Create a new client
-#[endpoint(tags("clients"))]
+#[utoipa::path(
+    post,
+    path = "",
+    tag = "clients",
+    request_body = CreateClientRequest,
+    responses(
+        (status = 201, description = "Client created", body = CreatedResponse),
+        (status = 400, description = "Validation error"),
+        (status = 409, description = "Duplicate identifier")
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn create_client(
-    depot: &mut Depot,
-    body: JsonBody<CreateClientRequest>,
+    State(state): State<ClientsState>,
+    auth: Authenticated,
+    Json(req): Json<CreateClientRequest>,
 ) -> Result<Json<CreatedResponse>, PlatformError> {
-    let auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<ClientsState>().map_err(|_| PlatformError::internal("State not found"))?;
-    let req = body.into_inner();
-
     // Only anchor users can create clients
     crate::service::checks::require_anchor(&auth.0)?;
 
@@ -113,15 +125,24 @@ pub async fn create_client(
 }
 
 /// Get client by ID
-#[endpoint(tags("clients"))]
+#[utoipa::path(
+    get,
+    path = "/{id}",
+    tag = "clients",
+    params(
+        ("id" = String, Path, description = "Client ID")
+    ),
+    responses(
+        (status = 200, description = "Client found", body = ClientResponse),
+        (status = 404, description = "Client not found")
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn get_client(
-    depot: &mut Depot,
-    id: PathParam<String>,
+    State(state): State<ClientsState>,
+    auth: Authenticated,
+    Path(id): Path<String>,
 ) -> Result<Json<ClientResponse>, PlatformError> {
-    let auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<ClientsState>().map_err(|_| PlatformError::internal("State not found"))?;
-    let id = id.into_inner();
-
     // Check access
     if !auth.0.is_anchor() && !auth.0.can_access_client(&id) {
         return Err(PlatformError::forbidden("No access to this client"));
@@ -134,14 +155,25 @@ pub async fn get_client(
 }
 
 /// List clients
-#[endpoint(tags("clients"))]
+#[utoipa::path(
+    get,
+    path = "",
+    tag = "clients",
+    params(
+        ("page" = Option<u32>, Query, description = "Page number"),
+        ("limit" = Option<u32>, Query, description = "Items per page"),
+        ("status" = Option<String>, Query, description = "Filter by status")
+    ),
+    responses(
+        (status = 200, description = "List of clients", body = Vec<ClientResponse>)
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn list_clients(
-    depot: &mut Depot,
-    _query: QueryParam<ClientsQuery, false>,
+    State(state): State<ClientsState>,
+    auth: Authenticated,
+    Query(_query): Query<ClientsQuery>,
 ) -> Result<Json<Vec<ClientResponse>>, PlatformError> {
-    let auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<ClientsState>().map_err(|_| PlatformError::internal("State not found"))?;
-
     let clients = state.client_repo.find_active().await?;
 
     // Filter by access
@@ -154,17 +186,26 @@ pub async fn list_clients(
 }
 
 /// Update client
-#[endpoint(tags("clients"))]
+#[utoipa::path(
+    put,
+    path = "/{id}",
+    tag = "clients",
+    params(
+        ("id" = String, Path, description = "Client ID")
+    ),
+    request_body = UpdateClientRequest,
+    responses(
+        (status = 200, description = "Client updated", body = ClientResponse),
+        (status = 404, description = "Client not found")
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn update_client(
-    depot: &mut Depot,
-    id: PathParam<String>,
-    body: JsonBody<UpdateClientRequest>,
+    State(state): State<ClientsState>,
+    auth: Authenticated,
+    Path(id): Path<String>,
+    Json(req): Json<UpdateClientRequest>,
 ) -> Result<Json<ClientResponse>, PlatformError> {
-    let auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<ClientsState>().map_err(|_| PlatformError::internal("State not found"))?;
-    let id = id.into_inner();
-    let req = body.into_inner();
-
     crate::service::checks::require_anchor(&auth.0)?;
 
     let mut client = state.client_repo.find_by_id(&id).await?
@@ -184,15 +225,24 @@ pub async fn update_client(
 }
 
 /// Delete client (soft delete)
-#[endpoint(tags("clients"))]
+#[utoipa::path(
+    delete,
+    path = "/{id}",
+    tag = "clients",
+    params(
+        ("id" = String, Path, description = "Client ID")
+    ),
+    responses(
+        (status = 200, description = "Client deleted", body = SuccessResponse),
+        (status = 404, description = "Client not found")
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn delete_client(
-    depot: &mut Depot,
-    id: PathParam<String>,
+    State(state): State<ClientsState>,
+    auth: Authenticated,
+    Path(id): Path<String>,
 ) -> Result<Json<SuccessResponse>, PlatformError> {
-    let auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<ClientsState>().map_err(|_| PlatformError::internal("State not found"))?;
-    let id = id.into_inner();
-
     crate::service::checks::require_anchor(&auth.0)?;
 
     let mut client = state.client_repo.find_by_id(&id).await?
@@ -207,16 +257,7 @@ pub async fn delete_client(
 /// Create clients router
 pub fn clients_router(state: ClientsState) -> Router {
     Router::new()
-        .push(
-            Router::new()
-                .post(create_client)
-                .get(list_clients)
-        )
-        .push(
-            Router::with_path("<id>")
-                .get(get_client)
-                .put(update_client)
-                .delete(delete_client)
-        )
-        .hoop(affix_state::inject(state))
+        .route("/", post(create_client).get(list_clients))
+        .route("/:id", get(get_client).put(update_client).delete(delete_client))
+        .with_state(state)
 }

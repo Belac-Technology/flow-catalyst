@@ -21,14 +21,20 @@
 //! | `RUST_LOG` | `info` | Log level |
 
 use std::sync::Arc;
-use salvo::prelude::*;
+use axum::{
+    routing::get,
+    response::Json,
+    Router,
+};
+use tower_http::cors::{CorsLayer, Any};
+use tower_http::trace::TraceLayer;
 use anyhow::Result;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
-use tokio::signal;
+use tokio::{signal, net::TcpListener};
 
 use fc_platform::service::{AuthService, AuthConfig, AuthorizationService, AuditService};
-use fc_platform::api::middleware::{AppState, AuthHandler};
+use fc_platform::api::middleware::{AppState, AuthLayer};
 use fc_platform::api::{
     EventsState, events_router,
     EventTypesState, event_types_router,
@@ -174,40 +180,38 @@ async fn main() -> Result<()> {
     };
 
     // Build platform API router
-    let auth_handler = AuthHandler::new(app_state);
-
     let app = Router::new()
         // BFF APIs
-        .push(Router::with_path("api/bff/events").push(events_router(events_state)))
-        .push(Router::with_path("api/bff/event-types").push(event_types_router(event_types_state)))
-        .push(Router::with_path("api/bff/dispatch-jobs").push(dispatch_jobs_router(dispatch_jobs_state)))
-        .push(Router::with_path("api/bff/filter-options").push(filter_options_router(filter_options_state)))
+        .nest("/api/bff/events", events_router(events_state))
+        .nest("/api/bff/event-types", event_types_router(event_types_state))
+        .nest("/api/bff/dispatch-jobs", dispatch_jobs_router(dispatch_jobs_state))
+        .nest("/api/bff/filter-options", filter_options_router(filter_options_state))
         // Admin APIs
-        .push(Router::with_path("api/admin/clients").push(clients_router(clients_state)))
-        .push(Router::with_path("api/admin/principals").push(principals_router(principals_state)))
-        .push(Router::with_path("api/admin/roles").push(roles_router(roles_state)))
-        .push(Router::with_path("api/admin/subscriptions").push(subscriptions_router(subscriptions_state)))
-        .push(Router::with_path("api/admin/oauth-clients").push(oauth_clients_router(oauth_clients_state)))
-        .push(Router::with_path("api/admin/anchor-domains").push(anchor_domains_router(auth_config_state.clone())))
-        .push(Router::with_path("api/admin/client-auth-configs").push(client_auth_configs_router(auth_config_state.clone())))
-        .push(Router::with_path("api/admin/idp-role-mappings").push(idp_role_mappings_router(auth_config_state)))
-        .push(Router::with_path("api/admin/audit-logs").push(audit_logs_router(audit_logs_state)))
-        .push(Router::with_path("api/admin/applications").push(applications_router(applications_state)))
-        .push(Router::with_path("api/admin/dispatch-pools").push(dispatch_pools_router(dispatch_pools_state)))
+        .nest("/api/admin/clients", clients_router(clients_state))
+        .nest("/api/admin/principals", principals_router(principals_state))
+        .nest("/api/admin/roles", roles_router(roles_state))
+        .nest("/api/admin/subscriptions", subscriptions_router(subscriptions_state))
+        .nest("/api/admin/oauth-clients", oauth_clients_router(oauth_clients_state))
+        .nest("/api/admin/anchor-domains", anchor_domains_router(auth_config_state.clone()))
+        .nest("/api/admin/client-auth-configs", client_auth_configs_router(auth_config_state.clone()))
+        .nest("/api/admin/idp-role-mappings", idp_role_mappings_router(auth_config_state))
+        .nest("/api/admin/audit-logs", audit_logs_router(audit_logs_state))
+        .nest("/api/admin/applications", applications_router(applications_state))
+        .nest("/api/admin/dispatch-pools", dispatch_pools_router(dispatch_pools_state))
         // Monitoring APIs
-        .push(Router::with_path("api/monitoring").push(monitoring_router(monitoring_state)))
+        .nest("/api/monitoring", monitoring_router(monitoring_state))
         // Auth middleware
-        .hoop(auth_handler);
+        .layer(AuthLayer::new(app_state))
+        .layer(TraceLayer::new_for_http())
+        .layer(CorsLayer::new().allow_origin(Any).allow_methods(Any).allow_headers(Any));
 
     // Start API server
     let api_addr = format!("0.0.0.0:{}", api_port);
     info!("API server listening on http://{}", api_addr);
 
-    let api_acceptor = TcpListener::new(&api_addr).bind().await;
-    let api_server = Server::new(api_acceptor);
-    let api_handle = api_server.handle();
+    let api_listener = TcpListener::bind(&api_addr).await?;
     let api_task = tokio::spawn(async move {
-        api_server.serve(app).await;
+        axum::serve(api_listener, app).await.unwrap();
     });
 
     // Start metrics server
@@ -215,15 +219,13 @@ async fn main() -> Result<()> {
     info!("Metrics server listening on http://{}/metrics", metrics_addr);
 
     let metrics_app = Router::new()
-        .push(Router::with_path("metrics").get(metrics_handler))
-        .push(Router::with_path("health").get(health_handler))
-        .push(Router::with_path("ready").get(ready_handler));
+        .route("/metrics", get(metrics_handler))
+        .route("/health", get(health_handler))
+        .route("/ready", get(ready_handler));
 
-    let metrics_acceptor = TcpListener::new(&metrics_addr).bind().await;
-    let metrics_server = Server::new(metrics_acceptor);
-    let metrics_handle = metrics_server.handle();
+    let metrics_listener = TcpListener::bind(&metrics_addr).await?;
     let metrics_task = tokio::spawn(async move {
-        metrics_server.serve(metrics_app).await;
+        axum::serve(metrics_listener, metrics_app).await.unwrap();
     });
 
     info!("FlowCatalyst Platform Server started");
@@ -233,21 +235,17 @@ async fn main() -> Result<()> {
     shutdown_signal().await;
     info!("Shutdown signal received...");
 
-    api_handle.stop_graceful(None);
-    metrics_handle.stop_graceful(None);
-    let _ = api_task.await;
-    let _ = metrics_task.await;
+    api_task.abort();
+    metrics_task.abort();
 
     info!("FlowCatalyst Platform Server shutdown complete");
     Ok(())
 }
 
-#[handler]
-async fn metrics_handler(res: &mut Response) {
-    res.render(Text::Plain("# HELP fc_platform_up Platform is up\n# TYPE fc_platform_up gauge\nfc_platform_up 1\n"));
+async fn metrics_handler() -> &'static str {
+    "# HELP fc_platform_up Platform is up\n# TYPE fc_platform_up gauge\nfc_platform_up 1\n"
 }
 
-#[handler]
 async fn health_handler() -> Json<serde_json::Value> {
     Json(serde_json::json!({
         "status": "UP",
@@ -255,7 +253,6 @@ async fn health_handler() -> Json<serde_json::Value> {
     }))
 }
 
-#[handler]
 async fn ready_handler() -> Json<serde_json::Value> {
     Json(serde_json::json!({
         "status": "READY"

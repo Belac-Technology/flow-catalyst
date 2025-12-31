@@ -7,8 +7,15 @@
 //! - Warning management
 //! - Pool statistics
 
-use salvo::prelude::*;
-use salvo::oapi::{ToSchema, OpenApi, endpoint, extract::*};
+use axum::{
+    routing::{get, post, put},
+    extract::{Path, Query, State},
+    response::{Html, IntoResponse, Response},
+    http::{header, StatusCode},
+    Json, Router,
+};
+use utoipa::{OpenApi, ToSchema};
+use utoipa_swagger_ui::SwaggerUi;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::collections::HashMap;
@@ -23,7 +30,7 @@ use chrono::Utc;
 use tracing::{debug, info, warn, error};
 
 pub mod model;
-use model::{PublishMessageRequest, PublishMessageResponse};
+use model::{PublishMessageRequest, PublishMessageResponse, PoolStatusResponse};
 
 /// Application state shared across handlers
 #[derive(Clone)]
@@ -143,6 +150,66 @@ impl From<QueueMetrics> for QueueMetricsResponse {
     }
 }
 
+/// OpenAPI documentation
+#[derive(OpenApi)]
+#[openapi(
+    info(
+        title = "FlowCatalyst Message Router API",
+        version = "0.1.0",
+        description = "HTTP API for message routing, health monitoring, and pool management"
+    ),
+    paths(
+        health_handler,
+        liveness_probe,
+        readiness_probe,
+        metrics_handler,
+        monitoring_handler,
+        pool_stats_handler,
+        queue_metrics_handler,
+        update_pool_config,
+        reload_config,
+        list_warnings,
+        acknowledge_warning,
+        acknowledge_all_warnings,
+        get_critical_warnings,
+        dashboard_health_handler,
+        dashboard_queue_stats_handler,
+        dashboard_pool_stats_handler,
+        dashboard_warnings_handler,
+        dashboard_circuit_breakers_handler,
+        dashboard_in_flight_messages_handler,
+        publish_message,
+    ),
+    components(schemas(
+        SimpleHealthResponse,
+        ProbeResponse,
+        MonitoringResponse,
+        WarningsQuery,
+        PoolConfigUpdateRequest,
+        ConfigReloadRequest,
+        PoolConfigRequest,
+        ConfigReloadResponse,
+        QueueMetricsResponse,
+        PublishMessageRequest,
+        PublishMessageResponse,
+        PoolStatusResponse,
+        DashboardHealthResponse,
+        DashboardHealthDetails,
+        DashboardQueueStats,
+        DashboardPoolStats,
+        DashboardWarning,
+        DashboardCircuitBreakerStats,
+        InFlightMessagesQuery,
+    )),
+    tags(
+        (name = "health", description = "Health check endpoints"),
+        (name = "monitoring", description = "Monitoring and metrics endpoints"),
+        (name = "warnings", description = "Warning management endpoints"),
+        (name = "messages", description = "Message publishing endpoints"),
+    )
+)]
+pub struct ApiDoc;
+
 /// Create the full router with all endpoints
 pub fn create_router(
     publisher: Arc<dyn QueuePublisher>,
@@ -157,64 +224,59 @@ pub fn create_router(
         health_service,
     };
 
-    let router = Router::new()
+    Router::new()
+        // Swagger UI
+        .merge(SwaggerUi::new("/swagger-ui").url("/api-doc/openapi.json", ApiDoc::openapi()))
         // Basic health
-        .push(Router::with_path("health").get(health_handler))
-        .push(Router::with_path("q/health").get(health_handler))
+        .route("/health", get(health_handler))
+        .route("/q/health", get(health_handler))
         // Kubernetes probes
-        .push(Router::with_path("health/live").get(liveness_probe))
-        .push(Router::with_path("health/ready").get(readiness_probe))
-        .push(Router::with_path("q/health/live").get(liveness_probe))
-        .push(Router::with_path("q/health/ready").get(readiness_probe))
+        .route("/health/live", get(liveness_probe))
+        .route("/health/ready", get(readiness_probe))
+        .route("/q/health/live", get(liveness_probe))
+        .route("/q/health/ready", get(readiness_probe))
         // Prometheus metrics
-        .push(Router::with_path("metrics").get(metrics_handler))
-        .push(Router::with_path("q/metrics").get(metrics_handler))
+        .route("/metrics", get(metrics_handler))
+        .route("/q/metrics", get(metrics_handler))
         // Detailed monitoring
-        .push(Router::with_path("monitoring").get(monitoring_handler))
-        .push(Router::with_path("monitoring/health").get(dashboard_health_handler))
-        .push(Router::with_path("monitoring/pools").get(pool_stats_handler))
-        .push(Router::with_path("monitoring/pools/<pool_code>").put(update_pool_config))
-        .push(Router::with_path("monitoring/queues").get(queue_metrics_handler))
+        .route("/monitoring", get(monitoring_handler))
+        .route("/monitoring/health", get(dashboard_health_handler))
+        .route("/monitoring/pools", get(pool_stats_handler))
+        .route("/monitoring/pools/:pool_code", put(update_pool_config))
+        .route("/monitoring/queues", get(queue_metrics_handler))
         // Dashboard-compatible endpoints
-        .push(Router::with_path("monitoring/queue-stats").get(dashboard_queue_stats_handler))
-        .push(Router::with_path("monitoring/pool-stats").get(dashboard_pool_stats_handler))
-        .push(Router::with_path("monitoring/warnings").get(dashboard_warnings_handler))
-        .push(Router::with_path("monitoring/circuit-breakers").get(dashboard_circuit_breakers_handler))
-        .push(Router::with_path("monitoring/in-flight-messages").get(dashboard_in_flight_messages_handler))
-        .push(Router::with_path("monitoring/dashboard").get(dashboard_html_handler))
+        .route("/monitoring/queue-stats", get(dashboard_queue_stats_handler))
+        .route("/monitoring/pool-stats", get(dashboard_pool_stats_handler))
+        .route("/monitoring/warnings", get(dashboard_warnings_handler))
+        .route("/monitoring/circuit-breakers", get(dashboard_circuit_breakers_handler))
+        .route("/monitoring/in-flight-messages", get(dashboard_in_flight_messages_handler))
+        .route("/monitoring/dashboard", get(dashboard_html_handler))
         // Configuration management
-        .push(Router::with_path("config/reload").post(reload_config))
+        .route("/config/reload", post(reload_config))
         // Warnings management
-        .push(Router::with_path("warnings").get(list_warnings))
-        .push(Router::with_path("warnings/<id>/acknowledge").post(acknowledge_warning))
-        .push(Router::with_path("warnings/acknowledge-all").post(acknowledge_all_warnings))
-        .push(Router::with_path("warnings/critical").get(get_critical_warnings))
+        .route("/warnings", get(list_warnings))
+        .route("/warnings/:id/acknowledge", post(acknowledge_warning))
+        .route("/warnings/acknowledge-all", post(acknowledge_all_warnings))
+        .route("/warnings/critical", get(get_critical_warnings))
         // Message publishing
-        .push(Router::with_path("messages").post(publish_message))
-        .hoop(affix_state::inject(state));
+        .route("/messages", post(publish_message))
+        .with_state(state)
+}
 
-    // Add OpenAPI and SwaggerUI
-    let doc = OpenApi::new("FlowCatalyst Message Router API", env!("CARGO_PKG_VERSION"))
-        .merge_router(&router);
-
-    router
-        .unshift(doc.into_router("/api-doc/openapi.json"))
-        .unshift(SwaggerUi::new("/api-doc/openapi.json").into_router("/swagger-ui"))
+/// Simple state for simple router
+#[derive(Clone)]
+pub struct SimpleState {
+    pub publisher: Arc<dyn QueuePublisher>,
 }
 
 /// Create a simple router with just message publishing
 pub fn create_simple_router(publisher: Arc<dyn QueuePublisher>) -> Router {
-    #[derive(Clone)]
-    struct SimpleState {
-        publisher: Arc<dyn QueuePublisher>,
-    }
-
     let state = SimpleState { publisher };
 
     Router::new()
-        .push(Router::with_path("health").get(simple_health_handler))
-        .push(Router::with_path("messages").post(simple_publish_message))
-        .hoop(affix_state::inject(state))
+        .route("/health", get(simple_health_handler))
+        .route("/messages", post(simple_publish_message))
+        .with_state(state)
 }
 
 // ============================================================================
@@ -222,9 +284,15 @@ pub fn create_simple_router(publisher: Arc<dyn QueuePublisher>) -> Router {
 // ============================================================================
 
 /// Health check endpoint
-#[endpoint(tags("health"))]
-async fn health_handler(depot: &mut Depot) -> Json<SimpleHealthResponse> {
-    let state = depot.obtain::<AppState>().unwrap();
+#[utoipa::path(
+    get,
+    path = "/health",
+    tag = "health",
+    responses(
+        (status = 200, description = "Health status", body = SimpleHealthResponse)
+    )
+)]
+async fn health_handler(State(state): State<AppState>) -> Json<SimpleHealthResponse> {
     let pool_stats = state.queue_manager.get_pool_stats();
     let report = state.health_service.get_health_report(&pool_stats);
 
@@ -241,7 +309,6 @@ async fn health_handler(depot: &mut Depot) -> Json<SimpleHealthResponse> {
 }
 
 /// Simple health handler (no state dependency)
-#[endpoint(tags("health"))]
 async fn simple_health_handler() -> Json<SimpleHealthResponse> {
     Json(SimpleHealthResponse {
         status: "UP".to_string(),
@@ -250,34 +317,52 @@ async fn simple_health_handler() -> Json<SimpleHealthResponse> {
 }
 
 /// Kubernetes liveness probe - returns 200 if the application is running
-#[endpoint(tags("health"))]
-async fn liveness_probe(res: &mut Response) {
-    res.status_code(StatusCode::OK);
-    res.render(Json(ProbeResponse { status: "LIVE".to_string() }));
+#[utoipa::path(
+    get,
+    path = "/health/live",
+    tag = "health",
+    responses(
+        (status = 200, description = "Application is live", body = ProbeResponse)
+    )
+)]
+async fn liveness_probe() -> Json<ProbeResponse> {
+    Json(ProbeResponse { status: "LIVE".to_string() })
 }
 
 /// Kubernetes readiness probe - returns 200 if ready to accept traffic
-#[endpoint(tags("health"))]
-async fn readiness_probe(depot: &mut Depot, res: &mut Response) {
-    let state = depot.obtain::<AppState>().unwrap();
+#[utoipa::path(
+    get,
+    path = "/health/ready",
+    tag = "health",
+    responses(
+        (status = 200, description = "Application is ready", body = ProbeResponse),
+        (status = 503, description = "Application is not ready", body = ProbeResponse)
+    )
+)]
+async fn readiness_probe(State(state): State<AppState>) -> Response {
     let pool_stats = state.queue_manager.get_pool_stats();
     let report = state.health_service.get_health_report(&pool_stats);
 
     match report.status {
         HealthStatus::Healthy | HealthStatus::Warning => {
-            res.status_code(StatusCode::OK);
-            res.render(Json(ProbeResponse { status: "READY".to_string() }));
+            (StatusCode::OK, Json(ProbeResponse { status: "READY".to_string() })).into_response()
         }
         HealthStatus::Degraded => {
-            res.status_code(StatusCode::SERVICE_UNAVAILABLE);
-            res.render(Json(ProbeResponse { status: "NOT_READY".to_string() }));
+            (StatusCode::SERVICE_UNAVAILABLE, Json(ProbeResponse { status: "NOT_READY".to_string() })).into_response()
         }
     }
 }
 
 /// Prometheus metrics endpoint
-#[endpoint(tags("monitoring"))]
-async fn metrics_handler(res: &mut Response) {
+#[utoipa::path(
+    get,
+    path = "/metrics",
+    tag = "monitoring",
+    responses(
+        (status = 200, description = "Prometheus metrics", content_type = "text/plain")
+    )
+)]
+async fn metrics_handler() -> Response {
     let output = "# HELP fc_requests_total Total number of requests
 # TYPE fc_requests_total counter
 fc_requests_total 0
@@ -285,12 +370,11 @@ fc_requests_total 0
 # TYPE fc_active_pools gauge
 fc_active_pools 1
 ";
-    res.status_code(StatusCode::OK);
-    res.headers_mut().insert(
-        salvo::http::header::CONTENT_TYPE,
-        "text/plain; charset=utf-8".parse().unwrap(),
-    );
-    res.render(Text::Plain(output));
+    (
+        StatusCode::OK,
+        [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
+        output,
+    ).into_response()
 }
 
 // ============================================================================
@@ -298,9 +382,15 @@ fc_active_pools 1
 // ============================================================================
 
 /// Detailed monitoring information
-#[endpoint(tags("monitoring"))]
-async fn monitoring_handler(depot: &mut Depot) -> Json<MonitoringResponse> {
-    let state = depot.obtain::<AppState>().unwrap();
+#[utoipa::path(
+    get,
+    path = "/monitoring",
+    tag = "monitoring",
+    responses(
+        (status = 200, description = "Monitoring data", body = MonitoringResponse)
+    )
+)]
+async fn monitoring_handler(State(state): State<AppState>) -> Json<MonitoringResponse> {
     let pool_stats = state.queue_manager.get_pool_stats();
     let health_report = state.health_service.get_health_report(&pool_stats);
     let active_warnings = state.warning_service.unacknowledged_count() as u32;
@@ -323,16 +413,28 @@ async fn monitoring_handler(depot: &mut Depot) -> Json<MonitoringResponse> {
 }
 
 /// Pool statistics
-#[endpoint(tags("monitoring"))]
-async fn pool_stats_handler(depot: &mut Depot) -> Json<Vec<PoolStats>> {
-    let state = depot.obtain::<AppState>().unwrap();
+#[utoipa::path(
+    get,
+    path = "/monitoring/pools",
+    tag = "monitoring",
+    responses(
+        (status = 200, description = "Pool statistics", body = Vec<PoolStats>)
+    )
+)]
+async fn pool_stats_handler(State(state): State<AppState>) -> Json<Vec<PoolStats>> {
     Json(state.queue_manager.get_pool_stats())
 }
 
 /// Queue metrics
-#[endpoint(tags("monitoring"))]
-async fn queue_metrics_handler(depot: &mut Depot) -> Json<Vec<QueueMetricsResponse>> {
-    let state = depot.obtain::<AppState>().unwrap();
+#[utoipa::path(
+    get,
+    path = "/monitoring/queues",
+    tag = "monitoring",
+    responses(
+        (status = 200, description = "Queue metrics", body = Vec<QueueMetricsResponse>)
+    )
+)]
+async fn queue_metrics_handler(State(state): State<AppState>) -> Json<Vec<QueueMetricsResponse>> {
     let metrics = state.queue_manager.get_queue_metrics().await;
     Json(metrics.into_iter().map(QueueMetricsResponse::from).collect())
 }
@@ -342,16 +444,22 @@ async fn queue_metrics_handler(depot: &mut Depot) -> Json<Vec<QueueMetricsRespon
 // ============================================================================
 
 /// Reload configuration (hot reload)
-#[endpoint(tags("monitoring"))]
+#[utoipa::path(
+    post,
+    path = "/config/reload",
+    tag = "monitoring",
+    request_body = ConfigReloadRequest,
+    responses(
+        (status = 200, description = "Configuration reloaded", body = ConfigReloadResponse),
+        (status = 503, description = "Service unavailable", body = ConfigReloadResponse),
+        (status = 500, description = "Internal error", body = ConfigReloadResponse)
+    )
+)]
 async fn reload_config(
-    depot: &mut Depot,
-    body: JsonBody<ConfigReloadRequest>,
-    res: &mut Response,
-) {
+    State(state): State<AppState>,
+    Json(req): Json<ConfigReloadRequest>,
+) -> Response {
     use fc_common::RouterConfig;
-
-    let state = depot.obtain::<AppState>().unwrap();
-    let req = body.into_inner();
 
     let router_config = RouterConfig {
         processing_pools: req.processing_pools
@@ -382,55 +490,59 @@ async fn reload_config(
                 "Configuration reloaded via API"
             );
 
-            res.status_code(StatusCode::OK);
-            res.render(Json(ConfigReloadResponse {
+            (StatusCode::OK, Json(ConfigReloadResponse {
                 success: true,
                 pools_updated: 0,
                 pools_created,
                 pools_removed,
                 total_active_pools: pool_stats.len(),
                 total_draining_pools: 0,
-            }));
+            })).into_response()
         }
         Ok(false) => {
             warn!("Configuration reload was skipped (shutdown in progress)");
-            res.status_code(StatusCode::SERVICE_UNAVAILABLE);
-            res.render(Json(ConfigReloadResponse {
+            (StatusCode::SERVICE_UNAVAILABLE, Json(ConfigReloadResponse {
                 success: false,
                 pools_updated: 0,
                 pools_created: 0,
                 pools_removed: 0,
                 total_active_pools: 0,
                 total_draining_pools: 0,
-            }));
+            })).into_response()
         }
         Err(e) => {
             error!(error = %e, "Failed to reload configuration");
-            res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
-            res.render(Json(ConfigReloadResponse {
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(ConfigReloadResponse {
                 success: false,
                 pools_updated: 0,
                 pools_created: 0,
                 pools_removed: 0,
                 total_active_pools: 0,
                 total_draining_pools: 0,
-            }));
+            })).into_response()
         }
     }
 }
 
 /// Update pool configuration
-#[endpoint(tags("monitoring"))]
+#[utoipa::path(
+    put,
+    path = "/monitoring/pools/{pool_code}",
+    tag = "monitoring",
+    params(
+        ("pool_code" = String, Path, description = "Pool code to update")
+    ),
+    request_body = PoolConfigUpdateRequest,
+    responses(
+        (status = 200, description = "Pool updated"),
+        (status = 500, description = "Internal error")
+    )
+)]
 async fn update_pool_config(
-    depot: &mut Depot,
-    pool_code: PathParam<String>,
-    body: JsonBody<PoolConfigUpdateRequest>,
-    res: &mut Response,
-) {
-    let state = depot.obtain::<AppState>().unwrap();
-    let pool_code = pool_code.into_inner();
-    let req = body.into_inner();
-
+    State(state): State<AppState>,
+    Path(pool_code): Path<String>,
+    Json(req): Json<PoolConfigUpdateRequest>,
+) -> Response {
     let existing_stats: Option<PoolStats> = state.queue_manager
         .get_pool_stats()
         .into_iter()
@@ -456,23 +568,21 @@ async fn update_pool_config(
     match state.queue_manager.update_pool_config(&pool_code, new_config.clone()).await {
         Ok(_) => {
             info!(pool_code = %pool_code, "Pool configuration updated via API");
-            res.status_code(StatusCode::OK);
-            res.render(Json(serde_json::json!({
+            (StatusCode::OK, Json(serde_json::json!({
                 "success": true,
                 "pool_code": pool_code,
                 "new_config": {
                     "concurrency": new_config.concurrency,
                     "rate_limit_per_minute": new_config.rate_limit_per_minute,
                 }
-            })));
+            }))).into_response()
         }
         Err(e) => {
             error!(pool_code = %pool_code, error = %e, "Failed to update pool configuration");
-            res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
-            res.render(Json(serde_json::json!({
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
                 "success": false,
                 "error": e.to_string(),
-            })));
+            }))).into_response()
         }
     }
 }
@@ -482,14 +592,23 @@ async fn update_pool_config(
 // ============================================================================
 
 /// List warnings with optional filters
-#[endpoint(tags("warnings"))]
+#[utoipa::path(
+    get,
+    path = "/warnings",
+    tag = "warnings",
+    params(
+        ("severity" = Option<String>, Query, description = "Filter by severity"),
+        ("category" = Option<String>, Query, description = "Filter by category"),
+        ("acknowledged" = Option<bool>, Query, description = "Filter by acknowledged status")
+    ),
+    responses(
+        (status = 200, description = "List of warnings", body = Vec<Warning>)
+    )
+)]
 async fn list_warnings(
-    depot: &mut Depot,
-    query: QueryParam<WarningsQuery, false>,
+    State(state): State<AppState>,
+    Query(query): Query<WarningsQuery>,
 ) -> Json<Vec<Warning>> {
-    let state = depot.obtain::<AppState>().unwrap();
-    let query = query.into_inner().unwrap_or_default();
-
     let mut warnings = if let Some(false) = query.acknowledged {
         state.warning_service.get_unacknowledged_warnings()
     } else {
@@ -536,38 +655,55 @@ async fn list_warnings(
 }
 
 /// Acknowledge a warning
-#[endpoint(tags("warnings"))]
+#[utoipa::path(
+    post,
+    path = "/warnings/{id}/acknowledge",
+    tag = "warnings",
+    params(
+        ("id" = String, Path, description = "Warning ID to acknowledge")
+    ),
+    responses(
+        (status = 200, description = "Warning acknowledged"),
+        (status = 404, description = "Warning not found")
+    )
+)]
 async fn acknowledge_warning(
-    depot: &mut Depot,
-    id: PathParam<String>,
-    res: &mut Response,
-) {
-    let state = depot.obtain::<AppState>().unwrap();
-    let id = id.into_inner();
-
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Response {
     if state.warning_service.acknowledge_warning(&id) {
         debug!(id = %id, "Warning acknowledged");
-        res.status_code(StatusCode::OK);
-        res.render(Json(serde_json::json!({ "acknowledged": true })));
+        (StatusCode::OK, Json(serde_json::json!({ "acknowledged": true }))).into_response()
     } else {
-        res.status_code(StatusCode::NOT_FOUND);
-        res.render(Json(serde_json::json!({ "error": "Warning not found" })));
+        (StatusCode::NOT_FOUND, Json(serde_json::json!({ "error": "Warning not found" }))).into_response()
     }
 }
 
 /// Acknowledge all warnings
-#[endpoint(tags("warnings"))]
-async fn acknowledge_all_warnings(depot: &mut Depot) -> Json<serde_json::Value> {
-    let state = depot.obtain::<AppState>().unwrap();
+#[utoipa::path(
+    post,
+    path = "/warnings/acknowledge-all",
+    tag = "warnings",
+    responses(
+        (status = 200, description = "All warnings acknowledged")
+    )
+)]
+async fn acknowledge_all_warnings(State(state): State<AppState>) -> Json<serde_json::Value> {
     let count = state.warning_service.acknowledge_matching(|_| true);
     debug!(count = count, "Acknowledged all warnings");
     Json(serde_json::json!({ "acknowledged": count }))
 }
 
 /// Get critical warnings
-#[endpoint(tags("warnings"))]
-async fn get_critical_warnings(depot: &mut Depot) -> Json<Vec<Warning>> {
-    let state = depot.obtain::<AppState>().unwrap();
+#[utoipa::path(
+    get,
+    path = "/warnings/critical",
+    tag = "warnings",
+    responses(
+        (status = 200, description = "Critical warnings", body = Vec<Warning>)
+    )
+)]
+async fn get_critical_warnings(State(state): State<AppState>) -> Json<Vec<Warning>> {
     Json(state.warning_service.get_critical_warnings())
 }
 
@@ -611,9 +747,15 @@ fn get_uptime_millis() -> u64 {
 }
 
 /// Health endpoint for dashboard
-#[endpoint(tags("monitoring"))]
-async fn dashboard_health_handler(depot: &mut Depot) -> Json<DashboardHealthResponse> {
-    let state = depot.obtain::<AppState>().unwrap();
+#[utoipa::path(
+    get,
+    path = "/monitoring/health",
+    tag = "monitoring",
+    responses(
+        (status = 200, description = "Dashboard health", body = DashboardHealthResponse)
+    )
+)]
+async fn dashboard_health_handler(State(state): State<AppState>) -> Json<DashboardHealthResponse> {
     let pool_stats = state.queue_manager.get_pool_stats();
     let health_report = state.health_service.get_health_report(&pool_stats);
 
@@ -681,9 +823,15 @@ struct DashboardQueueStats {
 }
 
 /// Queue stats endpoint for dashboard
-#[endpoint(tags("monitoring"))]
-async fn dashboard_queue_stats_handler(depot: &mut Depot) -> Json<HashMap<String, DashboardQueueStats>> {
-    let state = depot.obtain::<AppState>().unwrap();
+#[utoipa::path(
+    get,
+    path = "/monitoring/queue-stats",
+    tag = "monitoring",
+    responses(
+        (status = 200, description = "Queue stats for dashboard")
+    )
+)]
+async fn dashboard_queue_stats_handler(State(state): State<AppState>) -> Json<HashMap<String, DashboardQueueStats>> {
     let metrics = state.queue_manager.get_queue_metrics().await;
     let mut result = HashMap::new();
 
@@ -757,9 +905,15 @@ struct DashboardPoolStats {
 }
 
 /// Pool stats endpoint for dashboard
-#[endpoint(tags("monitoring"))]
-async fn dashboard_pool_stats_handler(depot: &mut Depot) -> Json<HashMap<String, DashboardPoolStats>> {
-    let state = depot.obtain::<AppState>().unwrap();
+#[utoipa::path(
+    get,
+    path = "/monitoring/pool-stats",
+    tag = "monitoring",
+    responses(
+        (status = 200, description = "Pool stats for dashboard")
+    )
+)]
+async fn dashboard_pool_stats_handler(State(state): State<AppState>) -> Json<HashMap<String, DashboardPoolStats>> {
     let pool_stats = state.queue_manager.get_pool_stats();
     let mut result = HashMap::new();
 
@@ -803,9 +957,15 @@ struct DashboardWarning {
 }
 
 /// Warnings endpoint for dashboard
-#[endpoint(tags("monitoring"))]
-async fn dashboard_warnings_handler(depot: &mut Depot) -> Json<Vec<DashboardWarning>> {
-    let state = depot.obtain::<AppState>().unwrap();
+#[utoipa::path(
+    get,
+    path = "/monitoring/warnings",
+    tag = "monitoring",
+    responses(
+        (status = 200, description = "Warnings for dashboard", body = Vec<DashboardWarning>)
+    )
+)]
+async fn dashboard_warnings_handler(State(state): State<AppState>) -> Json<Vec<DashboardWarning>> {
     let warnings = state.warning_service.get_all_warnings();
 
     let result: Vec<DashboardWarning> = warnings
@@ -844,7 +1004,14 @@ struct DashboardCircuitBreakerStats {
 }
 
 /// Circuit breakers endpoint for dashboard
-#[endpoint(tags("monitoring"))]
+#[utoipa::path(
+    get,
+    path = "/monitoring/circuit-breakers",
+    tag = "monitoring",
+    responses(
+        (status = 200, description = "Circuit breakers for dashboard")
+    )
+)]
 async fn dashboard_circuit_breakers_handler() -> Json<HashMap<String, DashboardCircuitBreakerStats>> {
     Json(HashMap::new())
 }
@@ -858,28 +1025,31 @@ struct InFlightMessagesQuery {
 }
 
 /// In-flight messages endpoint for dashboard
-#[endpoint(tags("monitoring"))]
+#[utoipa::path(
+    get,
+    path = "/monitoring/in-flight-messages",
+    tag = "monitoring",
+    params(
+        ("limit" = Option<usize>, Query, description = "Maximum number of messages to return"),
+        ("messageId" = Option<String>, Query, description = "Filter by message ID")
+    ),
+    responses(
+        (status = 200, description = "In-flight messages", body = Vec<InFlightMessageInfo>)
+    )
+)]
 async fn dashboard_in_flight_messages_handler(
-    depot: &mut Depot,
-    query: QueryParam<InFlightMessagesQuery, false>,
+    State(state): State<AppState>,
+    Query(query): Query<InFlightMessagesQuery>,
 ) -> Json<Vec<InFlightMessageInfo>> {
-    let state = depot.obtain::<AppState>().unwrap();
-    let query = query.into_inner().unwrap_or_default();
     let limit = query.limit.unwrap_or(100);
     let messages = state.queue_manager.get_in_flight_messages(limit, query.message_id.as_deref());
     Json(messages)
 }
 
 /// Serve dashboard HTML
-#[endpoint(tags("monitoring"))]
-async fn dashboard_html_handler(res: &mut Response) {
+async fn dashboard_html_handler() -> impl IntoResponse {
     const DASHBOARD_HTML: &str = include_str!("../resources/dashboard.html");
-    res.status_code(StatusCode::OK);
-    res.headers_mut().insert(
-        salvo::http::header::CONTENT_TYPE,
-        "text/html; charset=utf-8".parse().unwrap(),
-    );
-    res.render(Text::Html(DASHBOARD_HTML));
+    Html(DASHBOARD_HTML)
 }
 
 // ============================================================================
@@ -887,20 +1057,27 @@ async fn dashboard_html_handler(res: &mut Response) {
 // ============================================================================
 
 /// Publish a message
-#[endpoint(tags("messages"))]
+#[utoipa::path(
+    post,
+    path = "/messages",
+    tag = "messages",
+    request_body = PublishMessageRequest,
+    responses(
+        (status = 200, description = "Message published", body = PublishMessageResponse),
+        (status = 500, description = "Failed to publish")
+    )
+)]
 async fn publish_message(
-    depot: &mut Depot,
-    body: JsonBody<PublishMessageRequest>,
-    res: &mut Response,
-) {
-    let state = depot.obtain::<AppState>().unwrap();
-    let req = body.into_inner();
+    State(state): State<AppState>,
+    Json(req): Json<PublishMessageRequest>,
+) -> Response {
     let message_id = Uuid::new_v4().to_string();
 
     let message = Message {
         id: message_id.clone(),
         pool_code: req.pool_code.unwrap_or_else(|| "DEFAULT".to_string()),
         auth_token: None,
+        signing_secret: None,
         mediation_type: MediationType::HTTP,
         mediation_target: req.mediation_target.unwrap_or_else(|| "http://localhost:8080/echo".to_string()),
         message_group_id: req.message_group_id,
@@ -910,39 +1087,29 @@ async fn publish_message(
 
     match state.publisher.publish(message).await {
         Ok(_) => {
-            res.status_code(StatusCode::OK);
-            res.render(Json(PublishMessageResponse {
+            (StatusCode::OK, Json(PublishMessageResponse {
                 message_id,
                 status: "ACCEPTED".to_string(),
-            }));
+            })).into_response()
         }
         Err(_) => {
-            res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
-            res.render(Json(serde_json::json!({ "error": "Failed to publish message" })));
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": "Failed to publish message" }))).into_response()
         }
     }
 }
 
 /// Simple publish message (for simple router)
-#[endpoint(tags("messages"))]
 async fn simple_publish_message(
-    depot: &mut Depot,
-    body: JsonBody<PublishMessageRequest>,
-    res: &mut Response,
-) {
-    #[derive(Clone)]
-    struct SimpleState {
-        publisher: Arc<dyn QueuePublisher>,
-    }
-
-    let state = depot.obtain::<SimpleState>().unwrap();
-    let req = body.into_inner();
+    State(state): State<SimpleState>,
+    Json(req): Json<PublishMessageRequest>,
+) -> Response {
     let message_id = Uuid::new_v4().to_string();
 
     let message = Message {
         id: message_id.clone(),
         pool_code: req.pool_code.unwrap_or_else(|| "DEFAULT".to_string()),
         auth_token: None,
+        signing_secret: None,
         mediation_type: MediationType::HTTP,
         mediation_target: req.mediation_target.unwrap_or_else(|| "http://localhost:8080/echo".to_string()),
         message_group_id: req.message_group_id,
@@ -952,15 +1119,13 @@ async fn simple_publish_message(
 
     match state.publisher.publish(message).await {
         Ok(_) => {
-            res.status_code(StatusCode::OK);
-            res.render(Json(PublishMessageResponse {
+            (StatusCode::OK, Json(PublishMessageResponse {
                 message_id,
                 status: "ACCEPTED".to_string(),
-            }));
+            })).into_response()
         }
         Err(_) => {
-            res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
-            res.render(Json(serde_json::json!({ "error": "Failed to publish message" })));
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": "Failed to publish message" }))).into_response()
         }
     }
 }

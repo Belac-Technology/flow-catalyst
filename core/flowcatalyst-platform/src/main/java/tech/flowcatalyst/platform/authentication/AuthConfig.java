@@ -107,10 +107,10 @@ public interface AuthConfig {
 
         /**
          * Session token expiry duration (for cookie-based sessions).
-         * Default: 8 hours
+         * Default: 24 hours
          */
         @WithName("session-token-expiry")
-        @WithDefault("PT8H")
+        @WithDefault("PT24H")
         Duration sessionTokenExpiry();
 
         /**
@@ -138,14 +138,14 @@ public interface AuthConfig {
          * Options: Strict, Lax, None
          */
         @WithName("same-site")
-        @WithDefault("Strict")
+        @WithDefault("Lax")
         String sameSite();
 
         /**
          * Cookie name for session token.
          */
         @WithName("cookie-name")
-        @WithDefault("FLOWCATALYST_SESSION")
+        @WithDefault("fc_session")
         String cookieName();
     }
 

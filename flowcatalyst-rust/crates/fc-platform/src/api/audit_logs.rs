@@ -2,8 +2,12 @@
 //!
 //! REST endpoints for viewing audit logs.
 
-use salvo::prelude::*;
-use salvo::oapi::extract::*;
+use axum::{
+    routing::get,
+    extract::{State, Path, Query},
+    Json, Router,
+};
+use utoipa::{ToSchema, IntoParams};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use chrono::{DateTime, Utc};
@@ -50,9 +54,9 @@ impl From<AuditLog> for AuditLogResponse {
 }
 
 /// Query parameters for audit logs
-#[derive(Debug, Default, Deserialize, ToParameters)]
+#[derive(Debug, Default, Deserialize, IntoParams)]
 #[serde(rename_all = "camelCase")]
-#[salvo(parameters(default_parameter_in = Query))]
+#[into_params(parameter_in = Query)]
 pub struct AuditLogsQuery {
     #[serde(flatten)]
     pub pagination: PaginationParams,
@@ -115,15 +119,24 @@ fn parse_datetime(s: &str) -> Option<DateTime<Utc>> {
 }
 
 /// Get audit log by ID
-#[endpoint(tags("AuditLogs"))]
+#[utoipa::path(
+    get,
+    path = "/{id}",
+    tag = "audit-logs",
+    params(
+        ("id" = String, Path, description = "Audit log ID")
+    ),
+    responses(
+        (status = 200, description = "Audit log found", body = AuditLogResponse),
+        (status = 404, description = "Audit log not found")
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn get_audit_log(
-    depot: &mut Depot,
-    id: PathParam<String>,
+    State(state): State<AuditLogsState>,
+    auth: Authenticated,
+    Path(id): Path<String>,
 ) -> Result<Json<AuditLogResponse>, PlatformError> {
-    let auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<AuditLogsState>().map_err(|_| PlatformError::internal("State not found"))?;
-    let id = id.into_inner();
-
     crate::service::checks::require_anchor(&auth.0)?;
 
     let log = state.audit_log_repo.find_by_id(&id).await?
@@ -133,14 +146,21 @@ pub async fn get_audit_log(
 }
 
 /// List audit logs with filters
-#[endpoint(tags("AuditLogs"))]
+#[utoipa::path(
+    get,
+    path = "",
+    tag = "audit-logs",
+    params(AuditLogsQuery),
+    responses(
+        (status = 200, description = "List of audit logs", body = Vec<AuditLogResponse>)
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn list_audit_logs(
-    depot: &mut Depot,
-    query: AuditLogsQuery,
+    State(state): State<AuditLogsState>,
+    auth: Authenticated,
+    Query(query): Query<AuditLogsQuery>,
 ) -> Result<Json<Vec<AuditLogResponse>>, PlatformError> {
-    let auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<AuditLogsState>().map_err(|_| PlatformError::internal("State not found"))?;
-
     crate::service::checks::require_anchor(&auth.0)?;
 
     let action = query.action.as_deref().and_then(parse_action);
@@ -170,18 +190,25 @@ pub async fn list_audit_logs(
 }
 
 /// Get audit logs for a specific entity
-#[endpoint(tags("AuditLogs"))]
+#[utoipa::path(
+    get,
+    path = "/entity/{entity_type}/{entity_id}",
+    tag = "audit-logs",
+    params(
+        ("entity_type" = String, Path, description = "Entity type"),
+        ("entity_id" = String, Path, description = "Entity ID")
+    ),
+    responses(
+        (status = 200, description = "Audit logs for entity", body = Vec<AuditLogResponse>)
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn get_entity_audit_logs(
-    depot: &mut Depot,
-    entity_type: PathParam<String>,
-    entity_id: PathParam<String>,
-    query: PaginationParams,
+    State(state): State<AuditLogsState>,
+    auth: Authenticated,
+    Path((entity_type, entity_id)): Path<(String, String)>,
+    Query(query): Query<PaginationParams>,
 ) -> Result<Json<Vec<AuditLogResponse>>, PlatformError> {
-    let auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<AuditLogsState>().map_err(|_| PlatformError::internal("State not found"))?;
-    let entity_type = entity_type.into_inner();
-    let entity_id = entity_id.into_inner();
-
     crate::service::checks::require_anchor(&auth.0)?;
 
     let limit = query.limit as i64;
@@ -196,16 +223,24 @@ pub async fn get_entity_audit_logs(
 }
 
 /// Get audit logs for a principal
-#[endpoint(tags("AuditLogs"))]
+#[utoipa::path(
+    get,
+    path = "/principal/{principal_id}",
+    tag = "audit-logs",
+    params(
+        ("principal_id" = String, Path, description = "Principal ID")
+    ),
+    responses(
+        (status = 200, description = "Audit logs for principal", body = Vec<AuditLogResponse>)
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn get_principal_audit_logs(
-    depot: &mut Depot,
-    principal_id: PathParam<String>,
-    query: PaginationParams,
+    State(state): State<AuditLogsState>,
+    auth: Authenticated,
+    Path(principal_id): Path<String>,
+    Query(query): Query<PaginationParams>,
 ) -> Result<Json<Vec<AuditLogResponse>>, PlatformError> {
-    let auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<AuditLogsState>().map_err(|_| PlatformError::internal("State not found"))?;
-    let principal_id = principal_id.into_inner();
-
     // Allow principals to view their own audit logs
     if !auth.0.is_anchor() && auth.0.principal_id != principal_id {
         return Err(PlatformError::forbidden("Cannot view other principal's audit logs"));
@@ -223,14 +258,20 @@ pub async fn get_principal_audit_logs(
 }
 
 /// Get recent audit logs
-#[endpoint(tags("AuditLogs"))]
+#[utoipa::path(
+    get,
+    path = "/recent",
+    tag = "audit-logs",
+    responses(
+        (status = 200, description = "Recent audit logs", body = Vec<AuditLogResponse>)
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn get_recent_audit_logs(
-    depot: &mut Depot,
-    query: PaginationParams,
+    State(state): State<AuditLogsState>,
+    auth: Authenticated,
+    Query(query): Query<PaginationParams>,
 ) -> Result<Json<Vec<AuditLogResponse>>, PlatformError> {
-    let auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<AuditLogsState>().map_err(|_| PlatformError::internal("State not found"))?;
-
     crate::service::checks::require_anchor(&auth.0)?;
 
     let limit = query.limit.max(100) as i64;
@@ -247,25 +288,10 @@ pub async fn get_recent_audit_logs(
 /// Create audit logs router
 pub fn audit_logs_router(state: AuditLogsState) -> Router {
     Router::new()
-        .push(
-            Router::new()
-                .get(list_audit_logs)
-        )
-        .push(
-            Router::with_path("recent")
-                .get(get_recent_audit_logs)
-        )
-        .push(
-            Router::with_path("<id>")
-                .get(get_audit_log)
-        )
-        .push(
-            Router::with_path("entity/<entity_type>/<entity_id>")
-                .get(get_entity_audit_logs)
-        )
-        .push(
-            Router::with_path("principal/<principal_id>")
-                .get(get_principal_audit_logs)
-        )
-        .hoop(affix_state::inject(state))
+        .route("/", get(list_audit_logs))
+        .route("/recent", get(get_recent_audit_logs))
+        .route("/:id", get(get_audit_log))
+        .route("/entity/:entity_type/:entity_id", get(get_entity_audit_logs))
+        .route("/principal/:principal_id", get(get_principal_audit_logs))
+        .with_state(state)
 }

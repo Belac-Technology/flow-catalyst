@@ -13,7 +13,7 @@ pub mod oidc_sync;
 pub mod password;
 
 pub use audit::AuditService;
-pub use auth::{AuthService, AuthConfig, AccessTokenClaims, extract_bearer_token};
+pub use auth::{AuthService, AuthConfig, AccessTokenClaims, RsaPublicKeyComponents, extract_bearer_token};
 pub use authorization::{AuthorizationService, AuthContext, checks};
 pub use dispatch::{
     DispatchScheduler, DispatchConfig, EventDispatcher,

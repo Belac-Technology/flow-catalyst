@@ -1,6 +1,11 @@
 //! Platform Error Types
 
 use thiserror::Error;
+use axum::{
+    http::StatusCode,
+    response::{IntoResponse, Response, Json},
+};
+use utoipa::ToSchema;
 
 #[derive(Error, Debug)]
 pub enum PlatformError {
@@ -102,6 +107,54 @@ impl PlatformError {
     pub fn internal(message: impl Into<String>) -> Self {
         Self::Internal { message: message.into() }
     }
+
+    pub fn bad_request(message: impl Into<String>) -> Self {
+        Self::Validation { message: message.into() }
+    }
+
+    pub fn conflict(message: impl Into<String>) -> Self {
+        Self::Duplicate {
+            entity_type: "Entity".to_string(),
+            field: "unique".to_string(),
+            value: message.into(),
+        }
+    }
 }
 
 pub type Result<T> = std::result::Result<T, PlatformError>;
+
+/// Error response body
+#[derive(Debug, serde::Serialize, ToSchema)]
+pub struct ErrorResponse {
+    pub error: String,
+    pub message: String,
+}
+
+impl IntoResponse for PlatformError {
+    fn into_response(self) -> Response {
+        let (status, error_type) = match &self {
+            PlatformError::NotFound { .. } => (StatusCode::NOT_FOUND, "NOT_FOUND"),
+            PlatformError::Duplicate { .. } => (StatusCode::CONFLICT, "DUPLICATE"),
+            PlatformError::Validation { .. } => (StatusCode::BAD_REQUEST, "VALIDATION_ERROR"),
+            PlatformError::Unauthorized { .. } => (StatusCode::UNAUTHORIZED, "UNAUTHORIZED"),
+            PlatformError::Forbidden { .. } => (StatusCode::FORBIDDEN, "FORBIDDEN"),
+            PlatformError::InvalidCredentials => (StatusCode::UNAUTHORIZED, "INVALID_CREDENTIALS"),
+            PlatformError::TokenExpired => (StatusCode::UNAUTHORIZED, "TOKEN_EXPIRED"),
+            PlatformError::InvalidToken { .. } => (StatusCode::UNAUTHORIZED, "INVALID_TOKEN"),
+            PlatformError::SchemaValidation { .. } => (StatusCode::BAD_REQUEST, "SCHEMA_ERROR"),
+            PlatformError::EventTypeNotFound { .. } => (StatusCode::NOT_FOUND, "EVENT_TYPE_NOT_FOUND"),
+            PlatformError::SubscriptionNotFound { .. } => (StatusCode::NOT_FOUND, "SUBSCRIPTION_NOT_FOUND"),
+            PlatformError::ClientNotFound { .. } => (StatusCode::NOT_FOUND, "CLIENT_NOT_FOUND"),
+            PlatformError::PrincipalNotFound { .. } => (StatusCode::NOT_FOUND, "PRINCIPAL_NOT_FOUND"),
+            PlatformError::ServiceAccountNotFound { .. } => (StatusCode::NOT_FOUND, "SERVICE_ACCOUNT_NOT_FOUND"),
+            _ => (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR"),
+        };
+
+        let body = ErrorResponse {
+            error: error_type.to_string(),
+            message: self.to_string(),
+        };
+
+        (status, Json(body)).into_response()
+    }
+}

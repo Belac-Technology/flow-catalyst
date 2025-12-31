@@ -20,7 +20,7 @@ use fc_common::{
     PoolConfig, RouterConfig, PoolStats,
 };
 use fc_queue::{QueueConsumer, QueueMetrics};
-use salvo::oapi::ToSchema;
+use utoipa::ToSchema;
 
 use crate::pool::ProcessPool;
 use crate::mediator::Mediator;

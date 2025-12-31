@@ -17,6 +17,7 @@ pub mod error;
 pub mod tsid;
 pub mod usecase;
 pub mod operations;
+pub mod seed;
 
 pub use domain::*;
 pub use error::PlatformError;

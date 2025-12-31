@@ -172,21 +172,46 @@ impl AuthRole {
         self.permissions.contains(permission) || self.has_wildcard_permission(permission)
     }
 
-    /// Check for wildcard permissions (e.g., "orders:*" matches "orders:read")
+    /// Check for wildcard permissions
+    /// Supports hierarchical wildcards for format: platform:category:entity:action
+    /// Examples:
+    ///   - "*:*" matches everything (superuser)
+    ///   - "platform:*" matches all platform permissions
+    ///   - "platform:iam:*" matches all IAM permissions
+    ///   - "platform:iam:user:*" matches all user operations
     fn has_wildcard_permission(&self, permission: &str) -> bool {
-        let parts: Vec<&str> = permission.split(':').collect();
-        if parts.len() < 2 {
-            return false;
-        }
-
-        // Check for resource:* pattern
-        let wildcard = format!("{}:*", parts[0]);
-        if self.permissions.contains(&wildcard) {
+        // Check for *:* (superuser)
+        if self.permissions.contains("*:*") {
             return true;
         }
 
-        // Check for *:* (superuser)
-        self.permissions.contains("*:*")
+        let parts: Vec<&str> = permission.split(':').collect();
+        if parts.is_empty() {
+            return false;
+        }
+
+        // Build progressively longer wildcard patterns
+        // e.g., for "platform:iam:user:view", check:
+        //   - "platform:*"
+        //   - "platform:iam:*"
+        //   - "platform:iam:user:*"
+        let mut prefix = String::new();
+        for (i, part) in parts.iter().enumerate() {
+            if i > 0 {
+                prefix.push(':');
+            }
+            prefix.push_str(part);
+
+            // Don't check wildcard for the full permission (last part)
+            if i < parts.len() - 1 {
+                let wildcard = format!("{}:*", prefix);
+                if self.permissions.contains(&wildcard) {
+                    return true;
+                }
+            }
+        }
+
+        false
     }
 
     pub fn can_modify(&self) -> bool {
@@ -199,48 +224,203 @@ impl AuthRole {
     }
 }
 
-/// Common platform permissions
+/// Platform permissions - Granular format: platform:{category}:{entity}:{action}
+/// Matches Java PermissionRegistry for cross-platform compatibility
 pub mod permissions {
-    // Event permissions
-    pub const EVENTS_READ: &str = "events:read";
-    pub const EVENTS_WRITE: &str = "events:write";
+    /// IAM (Identity & Access Management) permissions
+    pub mod iam {
+        pub const USER_VIEW: &str = "platform:iam:user:view";
+        pub const USER_CREATE: &str = "platform:iam:user:create";
+        pub const USER_UPDATE: &str = "platform:iam:user:update";
+        pub const USER_DELETE: &str = "platform:iam:user:delete";
 
-    // Event type permissions
-    pub const EVENT_TYPES_READ: &str = "event-types:read";
-    pub const EVENT_TYPES_WRITE: &str = "event-types:write";
-    pub const EVENT_TYPES_DELETE: &str = "event-types:delete";
+        pub const ROLE_VIEW: &str = "platform:iam:role:view";
+        pub const ROLE_CREATE: &str = "platform:iam:role:create";
+        pub const ROLE_UPDATE: &str = "platform:iam:role:update";
+        pub const ROLE_DELETE: &str = "platform:iam:role:delete";
 
-    // Dispatch job permissions
-    pub const DISPATCH_JOBS_READ: &str = "dispatch-jobs:read";
-    pub const DISPATCH_JOBS_WRITE: &str = "dispatch-jobs:write";
+        pub const PERMISSION_VIEW: &str = "platform:iam:permission:view";
 
-    // Subscription permissions
-    pub const SUBSCRIPTIONS_READ: &str = "subscriptions:read";
-    pub const SUBSCRIPTIONS_WRITE: &str = "subscriptions:write";
-    pub const SUBSCRIPTIONS_DELETE: &str = "subscriptions:delete";
+        pub const SERVICE_ACCOUNT_VIEW: &str = "platform:iam:service-account:view";
+        pub const SERVICE_ACCOUNT_CREATE: &str = "platform:iam:service-account:create";
+        pub const SERVICE_ACCOUNT_UPDATE: &str = "platform:iam:service-account:update";
+        pub const SERVICE_ACCOUNT_DELETE: &str = "platform:iam:service-account:delete";
 
-    // User management permissions
-    pub const USERS_READ: &str = "users:read";
-    pub const USERS_WRITE: &str = "users:write";
-    pub const USERS_DELETE: &str = "users:delete";
+        pub const IDP_MANAGE: &str = "platform:iam:idp:manage";
 
-    // Role management permissions
-    pub const ROLES_READ: &str = "roles:read";
-    pub const ROLES_WRITE: &str = "roles:write";
-    pub const ROLES_DELETE: &str = "roles:delete";
+        /// All IAM permissions
+        pub const ALL: &[&str] = &[
+            USER_VIEW, USER_CREATE, USER_UPDATE, USER_DELETE,
+            ROLE_VIEW, ROLE_CREATE, ROLE_UPDATE, ROLE_DELETE,
+            PERMISSION_VIEW,
+            SERVICE_ACCOUNT_VIEW, SERVICE_ACCOUNT_CREATE, SERVICE_ACCOUNT_UPDATE, SERVICE_ACCOUNT_DELETE,
+            IDP_MANAGE,
+        ];
+    }
 
-    // Client management permissions
-    pub const CLIENTS_READ: &str = "clients:read";
-    pub const CLIENTS_WRITE: &str = "clients:write";
-    pub const CLIENTS_DELETE: &str = "clients:delete";
+    /// Platform Admin permissions (clients, applications, config)
+    pub mod admin {
+        pub const CLIENT_VIEW: &str = "platform:admin:client:view";
+        pub const CLIENT_CREATE: &str = "platform:admin:client:create";
+        pub const CLIENT_UPDATE: &str = "platform:admin:client:update";
+        pub const CLIENT_DELETE: &str = "platform:admin:client:delete";
 
-    // Application permissions
-    pub const APPLICATIONS_READ: &str = "applications:read";
-    pub const APPLICATIONS_WRITE: &str = "applications:write";
-    pub const APPLICATIONS_DELETE: &str = "applications:delete";
+        pub const APPLICATION_VIEW: &str = "platform:admin:application:view";
+        pub const APPLICATION_CREATE: &str = "platform:admin:application:create";
+        pub const APPLICATION_UPDATE: &str = "platform:admin:application:update";
+        pub const APPLICATION_DELETE: &str = "platform:admin:application:delete";
 
-    // Admin/anchor permissions
+        pub const CONFIG_VIEW: &str = "platform:admin:config:view";
+        pub const CONFIG_UPDATE: &str = "platform:admin:config:update";
+
+        /// All admin permissions
+        pub const ALL: &[&str] = &[
+            CLIENT_VIEW, CLIENT_CREATE, CLIENT_UPDATE, CLIENT_DELETE,
+            APPLICATION_VIEW, APPLICATION_CREATE, APPLICATION_UPDATE, APPLICATION_DELETE,
+            CONFIG_VIEW, CONFIG_UPDATE,
+        ];
+    }
+
+    /// Messaging permissions (events, event types, subscriptions, dispatch)
+    pub mod messaging {
+        pub const EVENT_VIEW: &str = "platform:messaging:event:view";
+        pub const EVENT_VIEW_RAW: &str = "platform:messaging:event:view-raw";
+        pub const EVENT_CREATE: &str = "platform:messaging:event:create";
+
+        pub const EVENT_TYPE_VIEW: &str = "platform:messaging:event-type:view";
+        pub const EVENT_TYPE_CREATE: &str = "platform:messaging:event-type:create";
+        pub const EVENT_TYPE_UPDATE: &str = "platform:messaging:event-type:update";
+        pub const EVENT_TYPE_DELETE: &str = "platform:messaging:event-type:delete";
+
+        pub const SUBSCRIPTION_VIEW: &str = "platform:messaging:subscription:view";
+        pub const SUBSCRIPTION_CREATE: &str = "platform:messaging:subscription:create";
+        pub const SUBSCRIPTION_UPDATE: &str = "platform:messaging:subscription:update";
+        pub const SUBSCRIPTION_DELETE: &str = "platform:messaging:subscription:delete";
+
+        pub const DISPATCH_JOB_VIEW: &str = "platform:messaging:dispatch-job:view";
+        pub const DISPATCH_JOB_VIEW_RAW: &str = "platform:messaging:dispatch-job:view-raw";
+        pub const DISPATCH_JOB_CREATE: &str = "platform:messaging:dispatch-job:create";
+        pub const DISPATCH_JOB_RETRY: &str = "platform:messaging:dispatch-job:retry";
+
+        pub const DISPATCH_POOL_VIEW: &str = "platform:messaging:dispatch-pool:view";
+        pub const DISPATCH_POOL_CREATE: &str = "platform:messaging:dispatch-pool:create";
+        pub const DISPATCH_POOL_UPDATE: &str = "platform:messaging:dispatch-pool:update";
+        pub const DISPATCH_POOL_DELETE: &str = "platform:messaging:dispatch-pool:delete";
+
+        /// All messaging permissions
+        pub const ALL: &[&str] = &[
+            EVENT_VIEW, EVENT_VIEW_RAW, EVENT_CREATE,
+            EVENT_TYPE_VIEW, EVENT_TYPE_CREATE, EVENT_TYPE_UPDATE, EVENT_TYPE_DELETE,
+            SUBSCRIPTION_VIEW, SUBSCRIPTION_CREATE, SUBSCRIPTION_UPDATE, SUBSCRIPTION_DELETE,
+            DISPATCH_JOB_VIEW, DISPATCH_JOB_VIEW_RAW, DISPATCH_JOB_CREATE, DISPATCH_JOB_RETRY,
+            DISPATCH_POOL_VIEW, DISPATCH_POOL_CREATE, DISPATCH_POOL_UPDATE, DISPATCH_POOL_DELETE,
+        ];
+    }
+
+    /// Application Service permissions (scoped to own application)
+    pub mod application_service {
+        pub const EVENT_CREATE: &str = "platform:application-service:event:create";
+
+        pub const EVENT_TYPE_VIEW: &str = "platform:application-service:event-type:view";
+        pub const EVENT_TYPE_CREATE: &str = "platform:application-service:event-type:create";
+        pub const EVENT_TYPE_UPDATE: &str = "platform:application-service:event-type:update";
+        pub const EVENT_TYPE_DELETE: &str = "platform:application-service:event-type:delete";
+
+        pub const SUBSCRIPTION_VIEW: &str = "platform:application-service:subscription:view";
+        pub const SUBSCRIPTION_CREATE: &str = "platform:application-service:subscription:create";
+        pub const SUBSCRIPTION_UPDATE: &str = "platform:application-service:subscription:update";
+        pub const SUBSCRIPTION_DELETE: &str = "platform:application-service:subscription:delete";
+
+        pub const ROLE_VIEW: &str = "platform:application-service:role:view";
+        pub const ROLE_CREATE: &str = "platform:application-service:role:create";
+        pub const ROLE_UPDATE: &str = "platform:application-service:role:update";
+        pub const ROLE_DELETE: &str = "platform:application-service:role:delete";
+
+        pub const PERMISSION_VIEW: &str = "platform:application-service:permission:view";
+        pub const PERMISSION_SYNC: &str = "platform:application-service:permission:sync";
+
+        /// All application service permissions
+        pub const ALL: &[&str] = &[
+            EVENT_CREATE,
+            EVENT_TYPE_VIEW, EVENT_TYPE_CREATE, EVENT_TYPE_UPDATE, EVENT_TYPE_DELETE,
+            SUBSCRIPTION_VIEW, SUBSCRIPTION_CREATE, SUBSCRIPTION_UPDATE, SUBSCRIPTION_DELETE,
+            ROLE_VIEW, ROLE_CREATE, ROLE_UPDATE, ROLE_DELETE,
+            PERMISSION_VIEW, PERMISSION_SYNC,
+        ];
+    }
+
+    /// Superuser permission (grants all access)
     pub const ADMIN_ALL: &str = "*:*";
+}
+
+/// Built-in platform roles
+pub mod roles {
+    use super::*;
+
+    /// Platform super admin - full access to everything
+    pub fn super_admin() -> AuthRole {
+        AuthRole::new("platform", "super-admin", "Platform Super Administrator")
+            .with_description("Full access to all platform features")
+            .with_permission(permissions::ADMIN_ALL)
+            .with_source(RoleSource::Code)
+    }
+
+    /// IAM admin - manages users, roles, permissions
+    pub fn iam_admin() -> AuthRole {
+        let mut role = AuthRole::new("platform", "iam-admin", "IAM Administrator")
+            .with_description("Manages users, roles, permissions, and service accounts")
+            .with_source(RoleSource::Code);
+        for p in permissions::iam::ALL {
+            role.permissions.insert((*p).to_string());
+        }
+        role
+    }
+
+    /// Platform admin - manages clients, applications, config
+    pub fn platform_admin() -> AuthRole {
+        let mut role = AuthRole::new("platform", "platform-admin", "Platform Administrator")
+            .with_description("Manages clients, applications, and platform configuration")
+            .with_source(RoleSource::Code);
+        for p in permissions::admin::ALL {
+            role.permissions.insert((*p).to_string());
+        }
+        // Also include IDP management
+        role.permissions.insert(permissions::iam::IDP_MANAGE.to_string());
+        role
+    }
+
+    /// Messaging admin - manages event types, subscriptions, dispatch
+    pub fn messaging_admin() -> AuthRole {
+        let mut role = AuthRole::new("platform", "messaging-admin", "Messaging Administrator")
+            .with_description("Manages event types, subscriptions, and dispatch jobs")
+            .with_source(RoleSource::Code);
+        for p in permissions::messaging::ALL {
+            role.permissions.insert((*p).to_string());
+        }
+        role
+    }
+
+    /// Application service - auto-assigned to application service accounts
+    pub fn application_service() -> AuthRole {
+        let mut role = AuthRole::new("platform", "application-service", "Application Service Account")
+            .with_description("Permissions for application service accounts (scoped to own application)")
+            .with_source(RoleSource::Code);
+        for p in permissions::application_service::ALL {
+            role.permissions.insert((*p).to_string());
+        }
+        role
+    }
+
+    /// Get all built-in roles
+    pub fn all() -> Vec<AuthRole> {
+        vec![
+            super_admin(),
+            iam_admin(),
+            platform_admin(),
+            messaging_admin(),
+            application_service(),
+        ]
+    }
 }
 
 #[cfg(test)]
@@ -249,28 +429,48 @@ mod tests {
 
     #[test]
     fn test_permission_matching() {
-        let role = AuthRole::new("orders", "admin", "Orders Admin")
-            .with_permission("orders:read")
-            .with_permission("orders:write")
-            .with_permission("users:*");
+        let role = AuthRole::new("platform", "admin", "Platform Admin")
+            .with_permission(permissions::admin::CLIENT_VIEW)
+            .with_permission(permissions::admin::CLIENT_CREATE)
+            .with_permission("platform:iam:*");
 
-        assert!(role.has_permission("orders:read"));
-        assert!(role.has_permission("orders:write"));
-        assert!(!role.has_permission("orders:delete"));
+        assert!(role.has_permission(permissions::admin::CLIENT_VIEW));
+        assert!(role.has_permission(permissions::admin::CLIENT_CREATE));
+        assert!(!role.has_permission(permissions::admin::CLIENT_DELETE));
 
         // Wildcard matching
-        assert!(role.has_permission("users:read"));
-        assert!(role.has_permission("users:write"));
-        assert!(role.has_permission("users:delete"));
+        assert!(role.has_permission(permissions::iam::USER_VIEW));
+        assert!(role.has_permission(permissions::iam::ROLE_CREATE));
     }
 
     #[test]
     fn test_superuser_permission() {
-        let role = AuthRole::new("platform", "superuser", "Superuser")
-            .with_permission("*:*");
+        let role = roles::super_admin();
 
-        assert!(role.has_permission("orders:read"));
-        assert!(role.has_permission("users:delete"));
+        assert!(role.has_permission(permissions::admin::CLIENT_VIEW));
+        assert!(role.has_permission(permissions::iam::USER_DELETE));
+        assert!(role.has_permission(permissions::messaging::EVENT_VIEW));
         assert!(role.has_permission("anything:everything"));
+    }
+
+    #[test]
+    fn test_built_in_roles() {
+        let all_roles = roles::all();
+        assert_eq!(all_roles.len(), 5);
+
+        // Super admin has wildcard
+        let super_admin = roles::super_admin();
+        assert!(super_admin.permissions.contains(permissions::ADMIN_ALL));
+
+        // IAM admin has all IAM permissions
+        let iam_admin = roles::iam_admin();
+        assert!(iam_admin.has_permission(permissions::iam::USER_VIEW));
+        assert!(iam_admin.has_permission(permissions::iam::ROLE_DELETE));
+        assert!(!iam_admin.has_permission(permissions::admin::CLIENT_VIEW));
+
+        // Messaging admin has all messaging permissions
+        let messaging_admin = roles::messaging_admin();
+        assert!(messaging_admin.has_permission(permissions::messaging::EVENT_VIEW));
+        assert!(messaging_admin.has_permission(permissions::messaging::DISPATCH_JOB_RETRY));
     }
 }

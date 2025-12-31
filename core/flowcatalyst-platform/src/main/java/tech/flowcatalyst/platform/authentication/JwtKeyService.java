@@ -55,7 +55,7 @@ public class JwtKeyService {
     @ConfigProperty(name = "flowcatalyst.auth.jwt.access-token-expiry", defaultValue = "PT1H")
     Duration accessTokenExpiry;
 
-    @ConfigProperty(name = "flowcatalyst.auth.jwt.session-token-expiry", defaultValue = "PT8H")
+    @ConfigProperty(name = "flowcatalyst.auth.jwt.session-token-expiry", defaultValue = "PT24H")
     Duration sessionTokenExpiry;
 
     @ConfigProperty(name = "flowcatalyst.auth.jwt.dev-key-dir", defaultValue = ".jwt-keys")
@@ -171,7 +171,7 @@ public class JwtKeyService {
                 .subject(String.valueOf(principalId))
                 .claim("client_id", clientId)
                 .claim("type", "SERVICE")
-                .groups(roles)
+                .claim("roles", roles)
                 .issuedAt(Instant.now())
                 .expiresAt(Instant.now().plus(accessTokenExpiry))
                 .jws()
@@ -197,7 +197,7 @@ public class JwtKeyService {
                 .claim("type", "USER")
                 .claim("clients", clients)
                 .claim("applications", applications)
-                .groups(roles)
+                .claim("roles", roles)
                 .issuedAt(Instant.now())
                 .expiresAt(Instant.now().plus(sessionTokenExpiry))
                 .jws()
@@ -268,7 +268,7 @@ public class JwtKeyService {
                 .claim("email", email)
                 .claim("type", "USER")
                 .claim("applications", applications)
-                .groups(roles);
+                .claim("roles", roles);
 
         // Add client context
         if (clientId != null) {

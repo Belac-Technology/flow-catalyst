@@ -2,9 +2,15 @@
 //!
 //! REST endpoints for fetching filter options for UI dropdowns.
 
-use salvo::prelude::*;
-use serde::Serialize;
+use axum::{
+    routing::get,
+    extract::{State, Query},
+    Json, Router,
+};
+use utoipa::{ToSchema, IntoParams};
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use std::collections::HashSet;
 
 use crate::repository::{
     ClientRepository, EventTypeRepository, SubscriptionRepository,
@@ -73,13 +79,19 @@ pub struct FilterOptionsState {
 }
 
 /// Get client filter options
-#[endpoint(tags("FilterOptions"))]
+#[utoipa::path(
+    get,
+    path = "/clients",
+    tag = "filter-options",
+    responses(
+        (status = 200, description = "Client filter options", body = ClientFilterOptions)
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn get_client_options(
-    depot: &mut Depot,
+    State(state): State<FilterOptionsState>,
+    auth: Authenticated,
 ) -> Result<Json<ClientFilterOptions>, PlatformError> {
-    let auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<FilterOptionsState>().map_err(|_| PlatformError::internal("State not found"))?;
-
     let clients = state.client_repo.find_active().await?;
 
     // Filter by access
@@ -95,13 +107,19 @@ pub async fn get_client_options(
 }
 
 /// Get event type filter options
-#[endpoint(tags("FilterOptions"))]
+#[utoipa::path(
+    get,
+    path = "/event-types",
+    tag = "filter-options",
+    responses(
+        (status = 200, description = "Event type filter options", body = EventTypeFilterOptions)
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn get_event_type_options(
-    depot: &mut Depot,
+    State(state): State<FilterOptionsState>,
+    _auth: Authenticated,
 ) -> Result<Json<EventTypeFilterOptions>, PlatformError> {
-    let _auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<FilterOptionsState>().map_err(|_| PlatformError::internal("State not found"))?;
-
     let event_types = state.event_type_repo.find_active().await?;
 
     // Build event type options
@@ -144,13 +162,19 @@ pub async fn get_event_type_options(
 }
 
 /// Get subscription filter options
-#[endpoint(tags("FilterOptions"))]
+#[utoipa::path(
+    get,
+    path = "/subscriptions",
+    tag = "filter-options",
+    responses(
+        (status = 200, description = "Subscription filter options", body = SubscriptionFilterOptions)
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn get_subscription_options(
-    depot: &mut Depot,
+    State(state): State<FilterOptionsState>,
+    auth: Authenticated,
 ) -> Result<Json<SubscriptionFilterOptions>, PlatformError> {
-    let auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<FilterOptionsState>().map_err(|_| PlatformError::internal("State not found"))?;
-
     let subscriptions = state.subscription_repo.find_active().await?;
 
     // Filter by access
@@ -171,13 +195,19 @@ pub async fn get_subscription_options(
 }
 
 /// Get dispatch pool filter options
-#[endpoint(tags("FilterOptions"))]
+#[utoipa::path(
+    get,
+    path = "/dispatch-pools",
+    tag = "filter-options",
+    responses(
+        (status = 200, description = "Dispatch pool filter options", body = DispatchPoolFilterOptions)
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn get_dispatch_pool_options(
-    depot: &mut Depot,
+    State(state): State<FilterOptionsState>,
+    auth: Authenticated,
 ) -> Result<Json<DispatchPoolFilterOptions>, PlatformError> {
-    let auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<FilterOptionsState>().map_err(|_| PlatformError::internal("State not found"))?;
-
     let pools = state.dispatch_pool_repo.find_active().await?;
 
     // Filter by access
@@ -198,13 +228,19 @@ pub async fn get_dispatch_pool_options(
 }
 
 /// Get all filter options at once
-#[endpoint(tags("FilterOptions"))]
+#[utoipa::path(
+    get,
+    path = "",
+    tag = "filter-options",
+    responses(
+        (status = 200, description = "All filter options", body = AllFilterOptions)
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn get_all_options(
-    depot: &mut Depot,
+    State(state): State<FilterOptionsState>,
+    auth: Authenticated,
 ) -> Result<Json<AllFilterOptions>, PlatformError> {
-    let auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<FilterOptionsState>().map_err(|_| PlatformError::internal("State not found"))?;
-
     // Get clients
     let clients = state.client_repo.find_active().await?;
     let client_options: Vec<FilterOption> = clients.into_iter()
@@ -272,28 +308,323 @@ pub async fn get_all_options(
     }))
 }
 
+/// Events filter options response (for events list page)
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct EventsFilterOptions {
+    pub clients: Vec<FilterOption>,
+    pub event_types: Vec<FilterOption>,
+    pub applications: Vec<FilterOption>,
+    pub subdomains: Vec<FilterOption>,
+}
+
+/// Dispatch jobs filter options response
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct DispatchJobsFilterOptions {
+    pub clients: Vec<FilterOption>,
+    pub event_types: Vec<FilterOption>,
+    pub subscriptions: Vec<FilterOption>,
+    pub statuses: Vec<FilterOption>,
+}
+
+/// Cascading filter query parameters
+#[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
+pub struct CascadingFilterQuery {
+    /// Filter by application(s)
+    #[serde(default, rename = "application[]")]
+    pub applications: Vec<String>,
+    /// Filter by subdomain(s)
+    #[serde(default, rename = "subdomain[]")]
+    pub subdomains: Vec<String>,
+}
+
+/// Get events filter options (cascading)
+#[utoipa::path(
+    get,
+    path = "/events",
+    tag = "filter-options",
+    responses(
+        (status = 200, description = "Events filter options", body = EventsFilterOptions)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn get_events_filter_options(
+    State(state): State<FilterOptionsState>,
+    auth: Authenticated,
+) -> Result<Json<EventsFilterOptions>, PlatformError> {
+    // Get clients the user can access
+    let clients = state.client_repo.find_active().await?;
+    let client_options: Vec<FilterOption> = clients.into_iter()
+        .filter(|c| auth.0.is_anchor() || auth.0.can_access_client(&c.id))
+        .map(|c| FilterOption {
+            value: c.id,
+            label: c.name,
+        })
+        .collect();
+
+    // Get event types
+    let event_types = state.event_type_repo.find_active().await?;
+
+    let event_type_options: Vec<FilterOption> = event_types.iter()
+        .map(|et| FilterOption {
+            value: et.code.clone(),
+            label: et.name.clone(),
+        })
+        .collect();
+
+    // Extract unique applications
+    let mut applications: Vec<FilterOption> = event_types.iter()
+        .map(|et| et.application.clone())
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .map(|app| FilterOption {
+            value: app.clone(),
+            label: app,
+        })
+        .collect();
+    applications.sort_by(|a, b| a.label.cmp(&b.label));
+
+    // Extract unique subdomains
+    let mut subdomains: Vec<FilterOption> = event_types.iter()
+        .map(|et| et.subdomain.clone())
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .map(|sub| FilterOption {
+            value: sub.clone(),
+            label: sub,
+        })
+        .collect();
+    subdomains.sort_by(|a, b| a.label.cmp(&b.label));
+
+    Ok(Json(EventsFilterOptions {
+        clients: client_options,
+        event_types: event_type_options,
+        applications,
+        subdomains,
+    }))
+}
+
+/// Dispatch job status options
+const DISPATCH_JOB_STATUSES: &[(&str, &str)] = &[
+    ("PENDING", "Pending"),
+    ("SCHEDULED", "Scheduled"),
+    ("IN_PROGRESS", "In Progress"),
+    ("COMPLETED", "Completed"),
+    ("FAILED", "Failed"),
+    ("CANCELLED", "Cancelled"),
+];
+
+/// Get dispatch jobs filter options
+#[utoipa::path(
+    get,
+    path = "/dispatch-jobs",
+    tag = "filter-options",
+    responses(
+        (status = 200, description = "Dispatch jobs filter options", body = DispatchJobsFilterOptions)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn get_dispatch_jobs_filter_options(
+    State(state): State<FilterOptionsState>,
+    auth: Authenticated,
+) -> Result<Json<DispatchJobsFilterOptions>, PlatformError> {
+    // Get clients the user can access
+    let clients = state.client_repo.find_active().await?;
+    let client_options: Vec<FilterOption> = clients.into_iter()
+        .filter(|c| auth.0.is_anchor() || auth.0.can_access_client(&c.id))
+        .map(|c| FilterOption {
+            value: c.id,
+            label: c.name,
+        })
+        .collect();
+
+    // Get event types
+    let event_types = state.event_type_repo.find_active().await?;
+    let event_type_options: Vec<FilterOption> = event_types.iter()
+        .map(|et| FilterOption {
+            value: et.code.clone(),
+            label: et.name.clone(),
+        })
+        .collect();
+
+    // Get subscriptions the user can access
+    let subscriptions = state.subscription_repo.find_active().await?;
+    let subscription_options: Vec<FilterOption> = subscriptions.into_iter()
+        .filter(|s| {
+            match &s.client_id {
+                Some(cid) => auth.0.is_anchor() || auth.0.can_access_client(cid),
+                None => auth.0.is_anchor(),
+            }
+        })
+        .map(|s| FilterOption {
+            value: s.id,
+            label: s.name,
+        })
+        .collect();
+
+    // Status options
+    let status_options: Vec<FilterOption> = DISPATCH_JOB_STATUSES.iter()
+        .map(|(value, label)| FilterOption {
+            value: value.to_string(),
+            label: label.to_string(),
+        })
+        .collect();
+
+    Ok(Json(DispatchJobsFilterOptions {
+        clients: client_options,
+        event_types: event_type_options,
+        subscriptions: subscription_options,
+        statuses: status_options,
+    }))
+}
+
+/// Applications list response
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplicationsResponse {
+    pub applications: Vec<FilterOption>,
+}
+
+/// Subdomains list response
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SubdomainsResponse {
+    pub subdomains: Vec<FilterOption>,
+}
+
+/// Aggregates list response
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AggregatesResponse {
+    pub aggregates: Vec<FilterOption>,
+}
+
+/// Get applications for event type cascading filter
+#[utoipa::path(
+    get,
+    path = "/event-types/filters/applications",
+    tag = "filter-options",
+    responses(
+        (status = 200, description = "Application filter options", body = ApplicationsResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn get_event_type_applications(
+    State(state): State<FilterOptionsState>,
+    _auth: Authenticated,
+) -> Result<Json<ApplicationsResponse>, PlatformError> {
+    let event_types = state.event_type_repo.find_active().await?;
+
+    let mut applications: Vec<FilterOption> = event_types.iter()
+        .map(|et| et.application.clone())
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .map(|app| FilterOption {
+            value: app.clone(),
+            label: app,
+        })
+        .collect();
+    applications.sort_by(|a, b| a.label.cmp(&b.label));
+
+    Ok(Json(ApplicationsResponse { applications }))
+}
+
+/// Get subdomains for event type cascading filter (filtered by application)
+#[utoipa::path(
+    get,
+    path = "/event-types/filters/subdomains",
+    tag = "filter-options",
+    params(CascadingFilterQuery),
+    responses(
+        (status = 200, description = "Subdomain filter options", body = SubdomainsResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn get_event_type_subdomains(
+    State(state): State<FilterOptionsState>,
+    Query(query): Query<CascadingFilterQuery>,
+    _auth: Authenticated,
+) -> Result<Json<SubdomainsResponse>, PlatformError> {
+    let event_types = state.event_type_repo.find_active().await?;
+
+    // Filter by applications if specified
+    let filtered = if query.applications.is_empty() {
+        event_types
+    } else {
+        event_types.into_iter()
+            .filter(|et| query.applications.contains(&et.application))
+            .collect()
+    };
+
+    let mut subdomains: Vec<FilterOption> = filtered.iter()
+        .map(|et| et.subdomain.clone())
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .map(|sub| FilterOption {
+            value: sub.clone(),
+            label: sub,
+        })
+        .collect();
+    subdomains.sort_by(|a, b| a.label.cmp(&b.label));
+
+    Ok(Json(SubdomainsResponse { subdomains }))
+}
+
+/// Get aggregates for event type cascading filter (filtered by application and subdomain)
+#[utoipa::path(
+    get,
+    path = "/event-types/filters/aggregates",
+    tag = "filter-options",
+    params(CascadingFilterQuery),
+    responses(
+        (status = 200, description = "Aggregate filter options", body = AggregatesResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn get_event_type_aggregates(
+    State(state): State<FilterOptionsState>,
+    Query(query): Query<CascadingFilterQuery>,
+    _auth: Authenticated,
+) -> Result<Json<AggregatesResponse>, PlatformError> {
+    let event_types = state.event_type_repo.find_active().await?;
+
+    // Filter by applications and subdomains if specified
+    let filtered: Vec<_> = event_types.into_iter()
+        .filter(|et| {
+            let app_match = query.applications.is_empty() || query.applications.contains(&et.application);
+            let sub_match = query.subdomains.is_empty() || query.subdomains.contains(&et.subdomain);
+            app_match && sub_match
+        })
+        .collect();
+
+    let mut aggregates: Vec<FilterOption> = filtered.iter()
+        .map(|et| et.aggregate.clone())
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .map(|agg| FilterOption {
+            value: agg.clone(),
+            label: agg,
+        })
+        .collect();
+    aggregates.sort_by(|a, b| a.label.cmp(&b.label));
+
+    Ok(Json(AggregatesResponse { aggregates }))
+}
+
 /// Create filter options router
 pub fn filter_options_router(state: FilterOptionsState) -> Router {
     Router::new()
-        .push(
-            Router::new()
-                .get(get_all_options)
-        )
-        .push(
-            Router::with_path("clients")
-                .get(get_client_options)
-        )
-        .push(
-            Router::with_path("event-types")
-                .get(get_event_type_options)
-        )
-        .push(
-            Router::with_path("subscriptions")
-                .get(get_subscription_options)
-        )
-        .push(
-            Router::with_path("dispatch-pools")
-                .get(get_dispatch_pool_options)
-        )
-        .hoop(affix_state::inject(state))
+        .route("/", get(get_all_options))
+        .route("/clients", get(get_client_options))
+        .route("/event-types", get(get_event_type_options))
+        .route("/subscriptions", get(get_subscription_options))
+        .route("/dispatch-pools", get(get_dispatch_pool_options))
+        .route("/events", get(get_events_filter_options))
+        .route("/dispatch-jobs", get(get_dispatch_jobs_filter_options))
+        .route("/event-types/filters/applications", get(get_event_type_applications))
+        .route("/event-types/filters/subdomains", get(get_event_type_subdomains))
+        .route("/event-types/filters/aggregates", get(get_event_type_aggregates))
+        .with_state(state)
 }

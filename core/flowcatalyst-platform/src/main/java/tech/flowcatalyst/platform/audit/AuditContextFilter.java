@@ -19,7 +19,7 @@ import tech.flowcatalyst.platform.authentication.JwtKeyService;
 @Priority(Priorities.AUTHENTICATION + 10)
 public class AuditContextFilter implements ContainerRequestFilter {
 
-    private static final String SESSION_COOKIE = "FLOWCATALYST_SESSION";
+    private static final String SESSION_COOKIE = "fc_session";
     private static final org.jboss.logging.Logger LOG = org.jboss.logging.Logger.getLogger(AuditContextFilter.class);
 
     @Inject

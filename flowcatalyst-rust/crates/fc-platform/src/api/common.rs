@@ -1,10 +1,8 @@
 //! Common API types and utilities
 
-use salvo::prelude::*;
-use salvo::oapi::{ToSchema, EndpointOutRegister, Components, Operation};
+use axum::Json;
+use utoipa::{ToSchema, IntoParams};
 use serde::{Deserialize, Serialize};
-use crate::error::PlatformError;
-
 /// Standard API error response
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ApiError {
@@ -14,73 +12,10 @@ pub struct ApiError {
     pub details: Option<serde_json::Value>,
 }
 
-#[async_trait]
-impl Writer for PlatformError {
-    async fn write(mut self, _req: &mut Request, _depot: &mut Depot, res: &mut Response) {
-        let (status, error_type) = match &self {
-            PlatformError::NotFound { .. } => (StatusCode::NOT_FOUND, "NOT_FOUND"),
-            PlatformError::Duplicate { .. } => (StatusCode::CONFLICT, "DUPLICATE"),
-            PlatformError::Validation { .. } => (StatusCode::BAD_REQUEST, "VALIDATION_ERROR"),
-            PlatformError::Unauthorized { .. } => (StatusCode::UNAUTHORIZED, "UNAUTHORIZED"),
-            PlatformError::Forbidden { .. } => (StatusCode::FORBIDDEN, "FORBIDDEN"),
-            PlatformError::InvalidCredentials => (StatusCode::UNAUTHORIZED, "INVALID_CREDENTIALS"),
-            PlatformError::TokenExpired => (StatusCode::UNAUTHORIZED, "TOKEN_EXPIRED"),
-            PlatformError::InvalidToken { .. } => (StatusCode::UNAUTHORIZED, "INVALID_TOKEN"),
-            PlatformError::SchemaValidation { .. } => (StatusCode::BAD_REQUEST, "SCHEMA_ERROR"),
-            PlatformError::EventTypeNotFound { .. } => (StatusCode::NOT_FOUND, "EVENT_TYPE_NOT_FOUND"),
-            PlatformError::SubscriptionNotFound { .. } => (StatusCode::NOT_FOUND, "SUBSCRIPTION_NOT_FOUND"),
-            PlatformError::ClientNotFound { .. } => (StatusCode::NOT_FOUND, "CLIENT_NOT_FOUND"),
-            PlatformError::PrincipalNotFound { .. } => (StatusCode::NOT_FOUND, "PRINCIPAL_NOT_FOUND"),
-            PlatformError::ServiceAccountNotFound { .. } => (StatusCode::NOT_FOUND, "SERVICE_ACCOUNT_NOT_FOUND"),
-            _ => (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR"),
-        };
-
-        let body = ApiError {
-            error: error_type.to_string(),
-            message: self.to_string(),
-            details: None,
-        };
-
-        res.status_code(status);
-        res.render(Json(body));
-    }
-}
-
-impl EndpointOutRegister for PlatformError {
-    fn register(components: &mut Components, operation: &mut Operation) {
-        // Register ApiError schema for error responses
-        operation.responses.insert(
-            "400".to_string(),
-            salvo::oapi::Response::new("Bad Request")
-                .add_content("application/json", ApiError::to_schema(components)),
-        );
-        operation.responses.insert(
-            "401".to_string(),
-            salvo::oapi::Response::new("Unauthorized")
-                .add_content("application/json", ApiError::to_schema(components)),
-        );
-        operation.responses.insert(
-            "403".to_string(),
-            salvo::oapi::Response::new("Forbidden")
-                .add_content("application/json", ApiError::to_schema(components)),
-        );
-        operation.responses.insert(
-            "404".to_string(),
-            salvo::oapi::Response::new("Not Found")
-                .add_content("application/json", ApiError::to_schema(components)),
-        );
-        operation.responses.insert(
-            "500".to_string(),
-            salvo::oapi::Response::new("Internal Server Error")
-                .add_content("application/json", ApiError::to_schema(components)),
-        );
-    }
-}
-
 /// Pagination parameters
-#[derive(Debug, Deserialize, ToSchema, salvo::oapi::ToParameters)]
+#[derive(Debug, Deserialize, ToSchema, IntoParams)]
 #[serde(rename_all = "camelCase")]
-#[salvo(parameters(default_parameter_in = Query))]
+#[into_params(parameter_in = Query)]
 pub struct PaginationParams {
     #[serde(default = "default_page")]
     pub page: u32,
@@ -108,7 +43,16 @@ impl PaginationParams {
 
 /// Paginated response wrapper
 #[derive(Debug, Serialize, ToSchema)]
-pub struct PaginatedResponse<T: ToSchema> {
+#[aliases(
+    PaginatedEvents = PaginatedResponse<crate::api::events::EventReadResponse>,
+    PaginatedEventTypes = PaginatedResponse<crate::api::event_types::EventTypeResponse>,
+    PaginatedDispatchJobs = PaginatedResponse<crate::api::dispatch_jobs::DispatchJobResponse>,
+    PaginatedClients = PaginatedResponse<crate::api::clients::ClientResponse>,
+    PaginatedPrincipals = PaginatedResponse<crate::api::principals::PrincipalResponse>,
+    PaginatedRoles = PaginatedResponse<crate::api::roles::RoleResponse>,
+    PaginatedSubscriptions = PaginatedResponse<crate::api::subscriptions::SubscriptionResponse>,
+)]
+pub struct PaginatedResponse<T> {
     pub data: Vec<T>,
     pub page: u32,
     pub limit: u32,
@@ -116,7 +60,7 @@ pub struct PaginatedResponse<T: ToSchema> {
     pub total_pages: u32,
 }
 
-impl<T: ToSchema> PaginatedResponse<T> {
+impl<T> PaginatedResponse<T> {
     pub fn new(data: Vec<T>, page: u32, limit: u32, total: u64) -> Self {
         let total_pages = ((total as f64) / (limit as f64)).ceil() as u32;
         Self {

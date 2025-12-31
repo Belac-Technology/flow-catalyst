@@ -25,6 +25,10 @@ pub mod dispatch_pools;
 pub mod monitoring;
 pub mod oauth;
 pub mod oidc_login;
+pub mod service_accounts;
+pub mod well_known;
+pub mod health;
+pub mod auth;
 
 pub use common::*;
 pub use middleware::{AppState, Authenticated, OptionalAuth};
@@ -53,6 +57,11 @@ pub use dispatch_pools::{DispatchPoolsState, dispatch_pools_router};
 pub use monitoring::{
     MonitoringState, monitoring_router,
     LeaderState, CircuitBreakerRegistry, InFlightTracker,
+    StatsState, stats_router,
 };
 pub use oauth::{OAuthState, oauth_router, issue_code};
 pub use oidc_login::{OidcLoginApiState, oidc_login_router};
+pub use service_accounts::{ServiceAccountsState, service_accounts_router};
+pub use well_known::{WellKnownState, well_known_router};
+pub use health::{HealthState, health_router};
+pub use auth::{AuthState, auth_router};

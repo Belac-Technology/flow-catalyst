@@ -3,8 +3,12 @@
 //! REST endpoints for application management.
 //! Applications are global platform entities (not client-scoped).
 
-use salvo::prelude::*;
-use salvo::oapi::extract::*;
+use axum::{
+    routing::{get, post, put, delete},
+    extract::{State, Path, Query},
+    Json, Router,
+};
+use utoipa::{ToSchema, IntoParams};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -93,9 +97,9 @@ impl From<Application> for ApplicationResponse {
 }
 
 /// Query parameters for applications list
-#[derive(Debug, Default, Deserialize, ToParameters)]
+#[derive(Debug, Default, Deserialize, IntoParams)]
 #[serde(rename_all = "camelCase")]
-#[salvo(parameters(default_parameter_in = Query))]
+#[into_params(parameter_in = Query)]
 pub struct ApplicationsQuery {
     #[serde(flatten)]
     pub pagination: PaginationParams,
@@ -111,18 +115,25 @@ pub struct ApplicationsState {
 }
 
 /// Create a new application
-#[endpoint(tags("Applications"))]
+#[utoipa::path(
+    post,
+    path = "",
+    tag = "applications",
+    request_body = CreateApplicationRequest,
+    responses(
+        (status = 201, description = "Application created", body = CreatedResponse),
+        (status = 400, description = "Validation error"),
+        (status = 409, description = "Duplicate code")
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn create_application(
-    depot: &mut Depot,
-    body: JsonBody<CreateApplicationRequest>,
+    State(state): State<ApplicationsState>,
+    auth: Authenticated,
+    Json(req): Json<CreateApplicationRequest>,
 ) -> Result<Json<CreatedResponse>, PlatformError> {
-    let auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<ApplicationsState>().map_err(|_| PlatformError::internal("State not found"))?;
-
     // Only anchor users can manage applications
     crate::service::checks::require_anchor(&auth.0)?;
-
-    let req = body.into_inner();
 
     // Check for duplicate code
     if let Some(_) = state.application_repo.find_by_code(&req.code).await? {
@@ -154,15 +165,24 @@ pub async fn create_application(
 }
 
 /// Get application by ID
-#[endpoint(tags("Applications"))]
+#[utoipa::path(
+    get,
+    path = "/{id}",
+    tag = "applications",
+    params(
+        ("id" = String, Path, description = "Application ID")
+    ),
+    responses(
+        (status = 200, description = "Application found", body = ApplicationResponse),
+        (status = 404, description = "Application not found")
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn get_application(
-    depot: &mut Depot,
-    id: PathParam<String>,
+    State(state): State<ApplicationsState>,
+    _auth: Authenticated,
+    Path(id): Path<String>,
 ) -> Result<Json<ApplicationResponse>, PlatformError> {
-    let _auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<ApplicationsState>().map_err(|_| PlatformError::internal("State not found"))?;
-    let id = id.into_inner();
-
     let app = state.application_repo.find_by_id(&id).await?
         .ok_or_else(|| PlatformError::not_found("Application", &id))?;
 
@@ -170,14 +190,21 @@ pub async fn get_application(
 }
 
 /// List applications
-#[endpoint(tags("Applications"))]
+#[utoipa::path(
+    get,
+    path = "",
+    tag = "applications",
+    params(ApplicationsQuery),
+    responses(
+        (status = 200, description = "List of applications", body = Vec<ApplicationResponse>)
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn list_applications(
-    depot: &mut Depot,
-    query: ApplicationsQuery,
+    State(state): State<ApplicationsState>,
+    _auth: Authenticated,
+    Query(query): Query<ApplicationsQuery>,
 ) -> Result<Json<Vec<ApplicationResponse>>, PlatformError> {
-    let _auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<ApplicationsState>().map_err(|_| PlatformError::internal("State not found"))?;
-
     let apps = if query.active.unwrap_or(true) {
         state.application_repo.find_active().await?
     } else {
@@ -192,22 +219,31 @@ pub async fn list_applications(
 }
 
 /// Update application
-#[endpoint(tags("Applications"))]
+#[utoipa::path(
+    put,
+    path = "/{id}",
+    tag = "applications",
+    params(
+        ("id" = String, Path, description = "Application ID")
+    ),
+    request_body = UpdateApplicationRequest,
+    responses(
+        (status = 200, description = "Application updated", body = ApplicationResponse),
+        (status = 404, description = "Application not found")
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn update_application(
-    depot: &mut Depot,
-    id: PathParam<String>,
-    body: JsonBody<UpdateApplicationRequest>,
+    State(state): State<ApplicationsState>,
+    auth: Authenticated,
+    Path(id): Path<String>,
+    Json(req): Json<UpdateApplicationRequest>,
 ) -> Result<Json<ApplicationResponse>, PlatformError> {
-    let auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<ApplicationsState>().map_err(|_| PlatformError::internal("State not found"))?;
-    let id = id.into_inner();
-
     crate::service::checks::require_anchor(&auth.0)?;
 
     let mut app = state.application_repo.find_by_id(&id).await?
         .ok_or_else(|| PlatformError::not_found("Application", &id))?;
 
-    let req = body.into_inner();
     if let Some(name) = req.name {
         app.name = name;
     }
@@ -228,15 +264,24 @@ pub async fn update_application(
 }
 
 /// Delete application (deactivate)
-#[endpoint(tags("Applications"))]
+#[utoipa::path(
+    delete,
+    path = "/{id}",
+    tag = "applications",
+    params(
+        ("id" = String, Path, description = "Application ID")
+    ),
+    responses(
+        (status = 200, description = "Application deleted", body = SuccessResponse),
+        (status = 404, description = "Application not found")
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn delete_application(
-    depot: &mut Depot,
-    id: PathParam<String>,
+    State(state): State<ApplicationsState>,
+    auth: Authenticated,
+    Path(id): Path<String>,
 ) -> Result<Json<SuccessResponse>, PlatformError> {
-    let auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<ApplicationsState>().map_err(|_| PlatformError::internal("State not found"))?;
-    let id = id.into_inner();
-
     crate::service::checks::require_anchor(&auth.0)?;
 
     let mut app = state.application_repo.find_by_id(&id).await?
@@ -251,16 +296,7 @@ pub async fn delete_application(
 /// Create applications router
 pub fn applications_router(state: ApplicationsState) -> Router {
     Router::new()
-        .push(
-            Router::new()
-                .post(create_application)
-                .get(list_applications)
-        )
-        .push(
-            Router::with_path("<id>")
-                .get(get_application)
-                .put(update_application)
-                .delete(delete_application)
-        )
-        .hoop(affix_state::inject(state))
+        .route("/", post(create_application).get(list_applications))
+        .route("/:id", get(get_application).put(update_application).delete(delete_application))
+        .with_state(state)
 }

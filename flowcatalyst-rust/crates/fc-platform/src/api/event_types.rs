@@ -2,8 +2,12 @@
 //!
 //! REST endpoints for event type management.
 
-use salvo::prelude::*;
-use salvo::oapi::extract::*;
+use axum::{
+    routing::{get, post, put, delete},
+    extract::{State, Path, Query},
+    Json, Router,
+};
+use utoipa::{ToSchema, IntoParams};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -117,9 +121,9 @@ impl From<EventType> for EventTypeResponse {
 }
 
 /// Query parameters for event types list
-#[derive(Debug, Default, Deserialize, ToParameters)]
+#[derive(Debug, Default, Deserialize, IntoParams)]
 #[serde(rename_all = "camelCase")]
-#[salvo(parameters(default_parameter_in = Query))]
+#[into_params(parameter_in = Query)]
 pub struct EventTypesQuery {
     #[serde(flatten)]
     pub pagination: PaginationParams,
@@ -141,17 +145,24 @@ pub struct EventTypesState {
 }
 
 /// Create a new event type
-#[endpoint(tags("EventTypes"))]
+#[utoipa::path(
+    post,
+    path = "",
+    tag = "event-types",
+    request_body = CreateEventTypeRequest,
+    responses(
+        (status = 201, description = "Event type created", body = CreatedResponse),
+        (status = 400, description = "Validation error"),
+        (status = 409, description = "Duplicate code")
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn create_event_type(
-    depot: &mut Depot,
-    body: JsonBody<CreateEventTypeRequest>,
+    State(state): State<EventTypesState>,
+    auth: Authenticated,
+    Json(req): Json<CreateEventTypeRequest>,
 ) -> Result<Json<CreatedResponse>, PlatformError> {
-    let auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<EventTypesState>().map_err(|_| PlatformError::internal("State not found"))?;
-
     crate::service::checks::can_write_event_types(&auth.0)?;
-
-    let req = body.into_inner();
 
     // Validate client access if specified
     if let Some(ref cid) = req.client_id {
@@ -188,15 +199,24 @@ pub async fn create_event_type(
 }
 
 /// Get event type by ID
-#[endpoint(tags("EventTypes"))]
+#[utoipa::path(
+    get,
+    path = "/{id}",
+    tag = "event-types",
+    params(
+        ("id" = String, Path, description = "Event type ID")
+    ),
+    responses(
+        (status = 200, description = "Event type found", body = EventTypeResponse),
+        (status = 404, description = "Event type not found")
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn get_event_type(
-    depot: &mut Depot,
-    id: PathParam<String>,
+    State(state): State<EventTypesState>,
+    auth: Authenticated,
+    Path(id): Path<String>,
 ) -> Result<Json<EventTypeResponse>, PlatformError> {
-    let auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<EventTypesState>().map_err(|_| PlatformError::internal("State not found"))?;
-    let id = id.into_inner();
-
     crate::service::checks::can_read_event_types(&auth.0)?;
 
     let event_type = state.event_type_repo.find_by_id(&id).await?
@@ -213,15 +233,24 @@ pub async fn get_event_type(
 }
 
 /// Get event type by code
-#[endpoint(tags("EventTypes"))]
+#[utoipa::path(
+    get,
+    path = "/by-code/{code}",
+    tag = "event-types",
+    params(
+        ("code" = String, Path, description = "Event type code")
+    ),
+    responses(
+        (status = 200, description = "Event type found", body = EventTypeResponse),
+        (status = 404, description = "Event type not found")
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn get_event_type_by_code(
-    depot: &mut Depot,
-    code: PathParam<String>,
+    State(state): State<EventTypesState>,
+    auth: Authenticated,
+    Path(code): Path<String>,
 ) -> Result<Json<EventTypeResponse>, PlatformError> {
-    let auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<EventTypesState>().map_err(|_| PlatformError::internal("State not found"))?;
-    let code = code.into_inner();
-
     crate::service::checks::can_read_event_types(&auth.0)?;
 
     let event_type = state.event_type_repo.find_by_code(&code).await?
@@ -238,14 +267,21 @@ pub async fn get_event_type_by_code(
 }
 
 /// List event types
-#[endpoint(tags("EventTypes"))]
+#[utoipa::path(
+    get,
+    path = "",
+    tag = "event-types",
+    params(EventTypesQuery),
+    responses(
+        (status = 200, description = "List of event types", body = Vec<EventTypeResponse>)
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn list_event_types(
-    depot: &mut Depot,
-    query: EventTypesQuery,
+    State(state): State<EventTypesState>,
+    auth: Authenticated,
+    Query(query): Query<EventTypesQuery>,
 ) -> Result<Json<Vec<EventTypeResponse>>, PlatformError> {
-    let auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<EventTypesState>().map_err(|_| PlatformError::internal("State not found"))?;
-
     crate::service::checks::can_read_event_types(&auth.0)?;
 
     let event_types = if let Some(ref app) = query.application {
@@ -269,16 +305,26 @@ pub async fn list_event_types(
 }
 
 /// Update event type
-#[endpoint(tags("EventTypes"))]
+#[utoipa::path(
+    put,
+    path = "/{id}",
+    tag = "event-types",
+    params(
+        ("id" = String, Path, description = "Event type ID")
+    ),
+    request_body = UpdateEventTypeRequest,
+    responses(
+        (status = 200, description = "Event type updated", body = EventTypeResponse),
+        (status = 404, description = "Event type not found")
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn update_event_type(
-    depot: &mut Depot,
-    id: PathParam<String>,
-    body: JsonBody<UpdateEventTypeRequest>,
+    State(state): State<EventTypesState>,
+    auth: Authenticated,
+    Path(id): Path<String>,
+    Json(req): Json<UpdateEventTypeRequest>,
 ) -> Result<Json<EventTypeResponse>, PlatformError> {
-    let auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<EventTypesState>().map_err(|_| PlatformError::internal("State not found"))?;
-    let id = id.into_inner();
-
     crate::service::checks::can_write_event_types(&auth.0)?;
 
     let mut event_type = state.event_type_repo.find_by_id(&id).await?
@@ -294,7 +340,6 @@ pub async fn update_event_type(
     }
 
     // Update fields
-    let req = body.into_inner();
     if let Some(name) = req.name {
         event_type.name = name;
     }
@@ -309,16 +354,26 @@ pub async fn update_event_type(
 }
 
 /// Add schema version to event type
-#[endpoint(tags("EventTypes"))]
+#[utoipa::path(
+    post,
+    path = "/{id}/versions",
+    tag = "event-types",
+    params(
+        ("id" = String, Path, description = "Event type ID")
+    ),
+    request_body = AddSchemaVersionRequest,
+    responses(
+        (status = 200, description = "Schema version added", body = EventTypeResponse),
+        (status = 404, description = "Event type not found")
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn add_schema_version(
-    depot: &mut Depot,
-    id: PathParam<String>,
-    body: JsonBody<AddSchemaVersionRequest>,
+    State(state): State<EventTypesState>,
+    auth: Authenticated,
+    Path(id): Path<String>,
+    Json(req): Json<AddSchemaVersionRequest>,
 ) -> Result<Json<EventTypeResponse>, PlatformError> {
-    let auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<EventTypesState>().map_err(|_| PlatformError::internal("State not found"))?;
-    let id = id.into_inner();
-
     crate::service::checks::can_write_event_types(&auth.0)?;
 
     let mut event_type = state.event_type_repo.find_by_id(&id).await?
@@ -331,7 +386,6 @@ pub async fn add_schema_version(
         }
     }
 
-    let req = body.into_inner();
     event_type.add_schema_version(req.schema);
     state.event_type_repo.update(&event_type).await?;
 
@@ -339,15 +393,24 @@ pub async fn add_schema_version(
 }
 
 /// Delete event type (archive)
-#[endpoint(tags("EventTypes"))]
+#[utoipa::path(
+    delete,
+    path = "/{id}",
+    tag = "event-types",
+    params(
+        ("id" = String, Path, description = "Event type ID")
+    ),
+    responses(
+        (status = 200, description = "Event type archived", body = SuccessResponse),
+        (status = 404, description = "Event type not found")
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn delete_event_type(
-    depot: &mut Depot,
-    id: PathParam<String>,
+    State(state): State<EventTypesState>,
+    auth: Authenticated,
+    Path(id): Path<String>,
 ) -> Result<Json<SuccessResponse>, PlatformError> {
-    let auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<EventTypesState>().map_err(|_| PlatformError::internal("State not found"))?;
-    let id = id.into_inner();
-
     crate::service::checks::can_write_event_types(&auth.0)?;
 
     let mut event_type = state.event_type_repo.find_by_id(&id).await?
@@ -371,24 +434,9 @@ pub async fn delete_event_type(
 /// Create event types router
 pub fn event_types_router(state: EventTypesState) -> Router {
     Router::new()
-        .push(
-            Router::new()
-                .post(create_event_type)
-                .get(list_event_types)
-        )
-        .push(
-            Router::with_path("<id>")
-                .get(get_event_type)
-                .put(update_event_type)
-                .delete(delete_event_type)
-        )
-        .push(
-            Router::with_path("by-code/<code>")
-                .get(get_event_type_by_code)
-        )
-        .push(
-            Router::with_path("<id>/versions")
-                .post(add_schema_version)
-        )
-        .hoop(affix_state::inject(state))
+        .route("/", post(create_event_type).get(list_event_types))
+        .route("/:id", get(get_event_type).put(update_event_type).delete(delete_event_type))
+        .route("/by-code/:code", get(get_event_type_by_code))
+        .route("/:id/versions", post(add_schema_version))
+        .with_state(state)
 }

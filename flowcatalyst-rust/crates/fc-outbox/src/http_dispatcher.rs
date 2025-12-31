@@ -288,6 +288,7 @@ mod tests {
             id: id.to_string(),
             pool_code: "DEFAULT".to_string(),
             auth_token: None,
+            signing_secret: None,
             mediation_type: MediationType::HTTP,
             mediation_target: "http://target.example.com/webhook".to_string(),
             message_group_id: Some("group-1".to_string()),

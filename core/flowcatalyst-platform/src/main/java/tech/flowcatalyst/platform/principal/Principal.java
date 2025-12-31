@@ -13,7 +13,7 @@ import java.util.stream.Collectors;
  * Unified identity model for both users and service accounts.
  * Follows the architecture documented in docs/auth-architecture.md
  */
-@MongoEntity(collection = "auth_principals")
+@MongoEntity(collection = "principals")
 public class Principal extends PanacheMongoEntityBase {
 
     @BsonId

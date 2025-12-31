@@ -41,7 +41,7 @@ import java.util.List;
  *
  * All operations require messaging-level permissions.
  */
-@Path("/api/admin/platform/dispatch-pools")
+@Path("/api/admin/dispatch-pools")
 @Tag(name = "Dispatch Pool Admin", description = "Administrative operations for dispatch pool management")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)

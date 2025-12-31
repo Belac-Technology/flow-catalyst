@@ -30,7 +30,7 @@ import java.time.Instant;
  *
  * @see ApplicationType
  */
-@MongoEntity(collection = "auth_applications")
+@MongoEntity(collection = "applications")
 public class Application extends PanacheMongoEntityBase {
 
     @BsonId

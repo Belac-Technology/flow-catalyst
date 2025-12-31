@@ -32,7 +32,7 @@ import java.util.List;
  * <p>IMPORTANT: The oidcClientSecretRef field stores a reference to the secret,
  * not the secret itself. Use ClientAuthConfigService to resolve the actual secret.
  */
-@MongoEntity(collection = "client_auth_config")
+@MongoEntity(collection = "auth_configs")
 public class ClientAuthConfig extends PanacheMongoEntityBase {
 
     @BsonId

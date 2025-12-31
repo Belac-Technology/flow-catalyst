@@ -11,4 +11,4 @@ chrono = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
-salvo = { workspace = true }
+utoipa = { workspace = true }

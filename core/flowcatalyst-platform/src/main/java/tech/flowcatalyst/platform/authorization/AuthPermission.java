@@ -15,7 +15,7 @@ import java.time.Instant;
  * Permission format: {app}:{context}:{aggregate}:{action}
  * Example: "myapp:orders:order:create"
  */
-@MongoEntity(collection = "auth_permissions")
+@MongoEntity(collection = "permissions")
 public class AuthPermission extends PanacheMongoEntityBase {
 
     @BsonId

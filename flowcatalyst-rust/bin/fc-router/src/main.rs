@@ -15,8 +15,9 @@ use fc_api::create_router;
 use anyhow::Result;
 use tracing::{info, error};
 use tracing_subscriber::EnvFilter;
-use tokio::signal;
-use salvo::prelude::*;
+use tokio::{signal, net::TcpListener};
+use tower_http::cors::{CorsLayer, Any};
+use tower_http::trace::TraceLayer;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -105,17 +106,16 @@ async fn main() -> Result<()> {
         queue_manager.clone(),
         warning_service.clone(),
         health_service.clone(),
-    );
+    )
+    .layer(TraceLayer::new_for_http())
+    .layer(CorsLayer::new().allow_origin(Any).allow_methods(Any).allow_headers(Any));
 
     let addr = format!("0.0.0.0:{}", api_port);
     info!(port = api_port, "Starting HTTP API server");
 
-    let acceptor = TcpListener::new(&addr).bind().await;
-    let server = Server::new(acceptor);
-    let server_handle = server.handle();
-
+    let listener = TcpListener::bind(&addr).await?;
     let server_task = tokio::spawn(async move {
-        server.serve(app).await;
+        axum::serve(listener, app).await.unwrap();
     });
 
     // 9. Start QueueManager in background
@@ -138,11 +138,7 @@ async fn main() -> Result<()> {
     lifecycle.shutdown().await;
     queue_manager.shutdown().await;
 
-    server_handle.stop_graceful(None);
-    let _ = tokio::time::timeout(
-        std::time::Duration::from_secs(30),
-        server_task,
-    ).await;
+    server_task.abort();
     let _ = tokio::time::timeout(
         std::time::Duration::from_secs(30),
         manager_handle,

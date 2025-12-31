@@ -16,6 +16,9 @@ pub mod oauth_client;
 pub mod auth_config;
 pub mod audit_log;
 pub mod oidc_login_state;
+pub mod refresh_token;
+pub mod authorization_code;
+pub mod indexes;
 
 pub use event::EventRepository;
 pub use event_type::EventTypeRepository;
@@ -36,3 +39,5 @@ pub use auth_config::{
 };
 pub use audit_log::AuditLogRepository;
 pub use oidc_login_state::OidcLoginStateRepository;
+pub use refresh_token::RefreshTokenRepository;
+pub use authorization_code::AuthorizationCodeRepository;

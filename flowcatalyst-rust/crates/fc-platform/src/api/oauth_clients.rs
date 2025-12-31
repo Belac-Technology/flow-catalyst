@@ -2,8 +2,12 @@
 //!
 //! REST endpoints for OAuth client management.
 
-use salvo::prelude::*;
-use salvo::oapi::extract::*;
+use axum::{
+    routing::{get, post, put, delete},
+    extract::{State, Path, Query},
+    Json, Router,
+};
+use utoipa::{ToSchema, IntoParams};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -105,9 +109,9 @@ impl From<OAuthClient> for OAuthClientResponse {
 }
 
 /// Query parameters for OAuth clients list
-#[derive(Debug, Default, Deserialize, ToParameters)]
+#[derive(Debug, Default, Deserialize, IntoParams)]
 #[serde(rename_all = "camelCase")]
-#[salvo(parameters(default_parameter_in = Query))]
+#[into_params(parameter_in = Query)]
 pub struct OAuthClientsQuery {
     #[serde(flatten)]
     pub pagination: PaginationParams,
@@ -140,17 +144,24 @@ fn parse_grant_type(s: &str) -> Option<GrantType> {
 }
 
 /// Create a new OAuth client
-#[endpoint(tags("OAuthClients"))]
+#[utoipa::path(
+    post,
+    path = "",
+    tag = "oauth-clients",
+    request_body = CreateOAuthClientRequest,
+    responses(
+        (status = 201, description = "OAuth client created", body = CreatedResponse),
+        (status = 400, description = "Validation error"),
+        (status = 409, description = "Duplicate client_id")
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn create_oauth_client(
-    depot: &mut Depot,
-    body: JsonBody<CreateOAuthClientRequest>,
+    State(state): State<OAuthClientsState>,
+    auth: Authenticated,
+    Json(req): Json<CreateOAuthClientRequest>,
 ) -> Result<Json<CreatedResponse>, PlatformError> {
-    let auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<OAuthClientsState>().map_err(|_| PlatformError::internal("State not found"))?;
-
     crate::service::checks::require_anchor(&auth.0)?;
-
-    let req = body.into_inner();
 
     // Check for duplicate client_id
     if state.oauth_client_repo.exists_by_client_id(&req.client_id).await? {
@@ -189,15 +200,24 @@ pub async fn create_oauth_client(
 }
 
 /// Get OAuth client by ID
-#[endpoint(tags("OAuthClients"))]
+#[utoipa::path(
+    get,
+    path = "/{id}",
+    tag = "oauth-clients",
+    params(
+        ("id" = String, Path, description = "OAuth client ID")
+    ),
+    responses(
+        (status = 200, description = "OAuth client found", body = OAuthClientResponse),
+        (status = 404, description = "OAuth client not found")
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn get_oauth_client(
-    depot: &mut Depot,
-    id: PathParam<String>,
+    State(state): State<OAuthClientsState>,
+    auth: Authenticated,
+    Path(id): Path<String>,
 ) -> Result<Json<OAuthClientResponse>, PlatformError> {
-    let auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<OAuthClientsState>().map_err(|_| PlatformError::internal("State not found"))?;
-    let id = id.into_inner();
-
     crate::service::checks::require_anchor(&auth.0)?;
 
     let client = state.oauth_client_repo.find_by_id(&id).await?
@@ -207,14 +227,21 @@ pub async fn get_oauth_client(
 }
 
 /// List OAuth clients
-#[endpoint(tags("OAuthClients"))]
+#[utoipa::path(
+    get,
+    path = "",
+    tag = "oauth-clients",
+    params(OAuthClientsQuery),
+    responses(
+        (status = 200, description = "List of OAuth clients", body = Vec<OAuthClientResponse>)
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn list_oauth_clients(
-    depot: &mut Depot,
-    query: OAuthClientsQuery,
+    State(state): State<OAuthClientsState>,
+    auth: Authenticated,
+    Query(query): Query<OAuthClientsQuery>,
 ) -> Result<Json<Vec<OAuthClientResponse>>, PlatformError> {
-    let auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<OAuthClientsState>().map_err(|_| PlatformError::internal("State not found"))?;
-
     crate::service::checks::require_anchor(&auth.0)?;
 
     let clients = if query.active.unwrap_or(true) {
@@ -231,22 +258,31 @@ pub async fn list_oauth_clients(
 }
 
 /// Update OAuth client
-#[endpoint(tags("OAuthClients"))]
+#[utoipa::path(
+    put,
+    path = "/{id}",
+    tag = "oauth-clients",
+    params(
+        ("id" = String, Path, description = "OAuth client ID")
+    ),
+    request_body = UpdateOAuthClientRequest,
+    responses(
+        (status = 200, description = "OAuth client updated", body = OAuthClientResponse),
+        (status = 404, description = "OAuth client not found")
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn update_oauth_client(
-    depot: &mut Depot,
-    id: PathParam<String>,
-    body: JsonBody<UpdateOAuthClientRequest>,
+    State(state): State<OAuthClientsState>,
+    auth: Authenticated,
+    Path(id): Path<String>,
+    Json(req): Json<UpdateOAuthClientRequest>,
 ) -> Result<Json<OAuthClientResponse>, PlatformError> {
-    let auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<OAuthClientsState>().map_err(|_| PlatformError::internal("State not found"))?;
-    let id = id.into_inner();
-
     crate::service::checks::require_anchor(&auth.0)?;
 
     let mut client = state.oauth_client_repo.find_by_id(&id).await?
         .ok_or_else(|| PlatformError::not_found("OAuthClient", &id))?;
 
-    let req = body.into_inner();
     if let Some(name) = req.client_name {
         client.client_name = name;
     }
@@ -275,15 +311,24 @@ pub async fn update_oauth_client(
 }
 
 /// Delete OAuth client
-#[endpoint(tags("OAuthClients"))]
+#[utoipa::path(
+    delete,
+    path = "/{id}",
+    tag = "oauth-clients",
+    params(
+        ("id" = String, Path, description = "OAuth client ID")
+    ),
+    responses(
+        (status = 200, description = "OAuth client deleted", body = SuccessResponse),
+        (status = 404, description = "OAuth client not found")
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn delete_oauth_client(
-    depot: &mut Depot,
-    id: PathParam<String>,
+    State(state): State<OAuthClientsState>,
+    auth: Authenticated,
+    Path(id): Path<String>,
 ) -> Result<Json<SuccessResponse>, PlatformError> {
-    let auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<OAuthClientsState>().map_err(|_| PlatformError::internal("State not found"))?;
-    let id = id.into_inner();
-
     crate::service::checks::require_anchor(&auth.0)?;
 
     let exists = state.oauth_client_repo.find_by_id(&id).await?.is_some();
@@ -299,16 +344,7 @@ pub async fn delete_oauth_client(
 /// Create OAuth clients router
 pub fn oauth_clients_router(state: OAuthClientsState) -> Router {
     Router::new()
-        .push(
-            Router::new()
-                .post(create_oauth_client)
-                .get(list_oauth_clients)
-        )
-        .push(
-            Router::with_path("<id>")
-                .get(get_oauth_client)
-                .put(update_oauth_client)
-                .delete(delete_oauth_client)
-        )
-        .hoop(affix_state::inject(state))
+        .route("/", post(create_oauth_client).get(list_oauth_clients))
+        .route("/:id", get(get_oauth_client).put(update_oauth_client).delete(delete_oauth_client))
+        .with_state(state)
 }

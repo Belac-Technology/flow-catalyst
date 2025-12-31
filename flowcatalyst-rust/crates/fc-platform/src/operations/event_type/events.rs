@@ -215,6 +215,99 @@ impl Default for EventTypeCreatedBuilder {
     }
 }
 
+/// Event emitted when an event type is updated.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EventTypeUpdated {
+    #[serde(flatten)]
+    pub metadata: EventMetadata,
+
+    pub event_type_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+impl_domain_event!(EventTypeUpdated);
+
+impl EventTypeUpdated {
+    const EVENT_TYPE: &'static str = "platform:control-plane:eventtype:updated";
+    const SPEC_VERSION: &'static str = "1.0";
+    const SOURCE: &'static str = "platform:control-plane";
+
+    pub fn new(
+        ctx: &ExecutionContext,
+        event_type_id: &str,
+        name: Option<&str>,
+        description: Option<&str>,
+    ) -> Self {
+        let event_id = TsidGenerator::generate();
+        let subject = format!("platform.eventtype.{}", event_type_id);
+        let message_group = format!("platform:eventtype:{}", event_type_id);
+
+        Self {
+            metadata: EventMetadata::new(
+                event_id,
+                Self::EVENT_TYPE,
+                Self::SPEC_VERSION,
+                Self::SOURCE,
+                subject,
+                message_group,
+                ctx.execution_id.clone(),
+                ctx.correlation_id.clone(),
+                ctx.causation_id.clone(),
+                ctx.principal_id.clone(),
+            ),
+            event_type_id: event_type_id.to_string(),
+            name: name.map(String::from),
+            description: description.map(String::from),
+        }
+    }
+}
+
+/// Event emitted when an event type is archived.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EventTypeArchived {
+    #[serde(flatten)]
+    pub metadata: EventMetadata,
+
+    pub event_type_id: String,
+    pub code: String,
+}
+
+impl_domain_event!(EventTypeArchived);
+
+impl EventTypeArchived {
+    const EVENT_TYPE: &'static str = "platform:control-plane:eventtype:archived";
+    const SPEC_VERSION: &'static str = "1.0";
+    const SOURCE: &'static str = "platform:control-plane";
+
+    pub fn new(ctx: &ExecutionContext, event_type_id: &str, code: &str) -> Self {
+        let event_id = TsidGenerator::generate();
+        let subject = format!("platform.eventtype.{}", event_type_id);
+        let message_group = format!("platform:eventtype:{}", event_type_id);
+
+        Self {
+            metadata: EventMetadata::new(
+                event_id,
+                Self::EVENT_TYPE,
+                Self::SPEC_VERSION,
+                Self::SOURCE,
+                subject,
+                message_group,
+                ctx.execution_id.clone(),
+                ctx.correlation_id.clone(),
+                ctx.causation_id.clone(),
+                ctx.principal_id.clone(),
+            ),
+            event_type_id: event_type_id.to_string(),
+            code: code.to_string(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -261,5 +354,29 @@ mod tests {
 
         assert_eq!(event.subject(), "platform.eventtype.0HZXEQ5Y8JY5Z");
         assert_eq!(event.message_group(), "platform:eventtype:0HZXEQ5Y8JY5Z");
+    }
+
+    #[test]
+    fn test_event_type_updated() {
+        let ctx = ExecutionContext::create("user-123");
+        let event = EventTypeUpdated::new(
+            &ctx,
+            "et-123",
+            Some("New Name"),
+            Some("New Description"),
+        );
+
+        assert_eq!(event.event_type(), "platform:control-plane:eventtype:updated");
+        assert_eq!(event.event_type_id, "et-123");
+        assert_eq!(event.name, Some("New Name".to_string()));
+    }
+
+    #[test]
+    fn test_event_type_archived() {
+        let ctx = ExecutionContext::create("user-123");
+        let event = EventTypeArchived::new(&ctx, "et-123", "orders:fulfillment:order:created");
+
+        assert_eq!(event.event_type(), "platform:control-plane:eventtype:archived");
+        assert_eq!(event.code, "orders:fulfillment:order:created");
     }
 }

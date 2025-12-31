@@ -3,19 +3,55 @@
 //! Mirrors the Java HttpMediator with:
 //! - HTTP POST to mediation target
 //! - Auth token handling
+//! - HMAC-SHA256 webhook signing (X-FLOWCATALYST-SIGNATURE, X-FLOWCATALYST-TIMESTAMP)
 //! - Response code classification
 //! - Retry with exponential backoff
 //! - Circuit breaker pattern
 //! - Custom delay parsing from response
 
 use async_trait::async_trait;
+use chrono::Utc;
 use fc_common::{Message, MediationType, MediationResult, MediationOutcome};
+use hmac::{Hmac, Mac};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use sha2::Sha256;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 use parking_lot::RwLock;
 use tracing::{info, warn, error, debug};
+
+/// FlowCatalyst webhook signature header (matches Java: X-FLOWCATALYST-SIGNATURE)
+pub const SIGNATURE_HEADER: &str = "X-FLOWCATALYST-SIGNATURE";
+/// FlowCatalyst webhook timestamp header (matches Java: X-FLOWCATALYST-TIMESTAMP)
+pub const TIMESTAMP_HEADER: &str = "X-FLOWCATALYST-TIMESTAMP";
+
+type HmacSha256 = Hmac<Sha256>;
+
+/// Generate HMAC-SHA256 signature for webhook payload.
+///
+/// Matches Java WebhookSigner.sign():
+/// - Signature payload = timestamp + body
+/// - HMAC-SHA256 with signing_secret
+/// - Returns hex-encoded signature
+fn sign_webhook(payload: &str, signing_secret: &str) -> (String, String) {
+    // Generate ISO8601 timestamp with millisecond precision (matches Java)
+    let timestamp = Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string();
+
+    // Create signature payload: timestamp + body (matches Java: signaturePayload = timestamp + payload)
+    let signature_payload = format!("{}{}", timestamp, payload);
+
+    // Generate HMAC-SHA256
+    let mut mac = HmacSha256::new_from_slice(signing_secret.as_bytes())
+        .expect("HMAC can take key of any size");
+    mac.update(signature_payload.as_bytes());
+    let result = mac.finalize();
+
+    // Return as lowercase hex (matches Java: HexFormat.of().formatHex())
+    let signature = hex::encode(result.into_bytes());
+
+    (signature, timestamp)
+}
 
 /// Trait for message mediation
 #[async_trait]
@@ -333,15 +369,29 @@ impl HttpMediator {
             "Mediating message"
         );
 
+        // Serialize payload for signing
+        let payload_json = serde_json::to_string(&payload)
+            .expect("Failed to serialize payload");
+
         let mut request = self.client
             .post(&message.mediation_target)
             .header("Content-Type", "application/json")
-            .header("Accept", "application/json")
-            .json(&payload);
+            .header("Accept", "application/json");
+
+        // Add webhook signing headers if signing_secret is present
+        if let Some(ref signing_secret) = message.signing_secret {
+            let (signature, timestamp) = sign_webhook(&payload_json, signing_secret);
+            request = request
+                .header(SIGNATURE_HEADER, signature)
+                .header(TIMESTAMP_HEADER, timestamp);
+        }
 
         if let Some(token) = &message.auth_token {
             request = request.bearer_auth(token);
         }
+
+        // Add the body after all headers are set
+        request = request.body(payload_json);
 
         match request.send().await {
             Ok(response) => {

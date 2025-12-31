@@ -128,7 +128,7 @@ public class AuthorizationResource {
             @Parameter(description = "OIDC nonce for replay protection")
             @QueryParam("nonce") String nonce,
 
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken
+            @CookieParam("fc_session") String sessionToken
     ) {
         // Validate response_type
         if (!"code".equals(responseType)) {

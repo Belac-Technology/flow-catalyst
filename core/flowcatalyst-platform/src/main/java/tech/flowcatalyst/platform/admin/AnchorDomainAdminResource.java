@@ -35,7 +35,7 @@ import java.util.List;
  * - Only Super Admins should have access to these endpoints
  * - Changes affect all users from the domain immediately
  */
-@Path("/api/admin/platform/anchor-domains")
+@Path("/api/admin/anchor-domains")
 @Tag(name = "Anchor Domain Admin", description = "Manage anchor domains (platform operator domains)")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
@@ -68,7 +68,7 @@ public class AnchorDomainAdminResource {
         @APIResponse(responseCode = "403", description = "Insufficient permissions")
     })
     public Response listAnchorDomains(
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @CookieParam("fc_session") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
         var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
@@ -101,7 +101,7 @@ public class AnchorDomainAdminResource {
     })
     public Response getAnchorDomain(
             @PathParam("id") String id,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @CookieParam("fc_session") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
         var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
@@ -131,7 +131,7 @@ public class AnchorDomainAdminResource {
     })
     public Response checkDomain(
             @PathParam("domain") String domain,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @CookieParam("fc_session") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
         var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
@@ -166,7 +166,7 @@ public class AnchorDomainAdminResource {
     })
     public Response createAnchorDomain(
             @Valid CreateAnchorDomainRequest request,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @CookieParam("fc_session") String sessionToken,
             @HeaderParam("Authorization") String authHeader,
             @Context UriInfo uriInfo) {
 
@@ -227,7 +227,7 @@ public class AnchorDomainAdminResource {
     })
     public Response deleteAnchorDomain(
             @PathParam("id") String id,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @CookieParam("fc_session") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
         var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);

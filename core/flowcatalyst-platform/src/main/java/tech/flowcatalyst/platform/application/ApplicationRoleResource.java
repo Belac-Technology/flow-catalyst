@@ -79,7 +79,7 @@ public class ApplicationRoleResource {
     public Response listRoles(
             @PathParam("appCode") String appCode,
             @QueryParam("source") String source,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @CookieParam("fc_session") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
         var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
@@ -141,7 +141,7 @@ public class ApplicationRoleResource {
             @PathParam("appCode") String appCode,
             @QueryParam("removeUnlisted") @DefaultValue("false") boolean removeUnlisted,
             SyncRolesRequest request,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @CookieParam("fc_session") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
         var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
@@ -212,7 +212,7 @@ public class ApplicationRoleResource {
     public Response createRole(
             @PathParam("appCode") String appCode,
             CreateRoleRequest request,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @CookieParam("fc_session") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
         var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
@@ -277,7 +277,7 @@ public class ApplicationRoleResource {
     public Response deleteRole(
             @PathParam("appCode") String appCode,
             @PathParam("roleName") String roleName,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @CookieParam("fc_session") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
         var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);

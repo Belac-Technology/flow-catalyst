@@ -2,8 +2,12 @@
 //!
 //! REST endpoints for principal (user/service account) management.
 
-use salvo::prelude::*;
-use salvo::oapi::{ToSchema, endpoint, extract::*};
+use axum::{
+    routing::{get, post, put, delete},
+    extract::{State, Path, Query},
+    Json, Router,
+};
+use utoipa::ToSchema;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -197,15 +201,23 @@ fn parse_scope(s: &str) -> Result<UserScope, PlatformError> {
 }
 
 /// Create a new user principal
-#[endpoint(tags("principals"))]
+#[utoipa::path(
+    post,
+    path = "",
+    tag = "principals",
+    request_body = CreateUserRequest,
+    responses(
+        (status = 201, description = "User created", body = CreatedResponse),
+        (status = 400, description = "Validation error"),
+        (status = 409, description = "Duplicate email")
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn create_user(
-    depot: &mut Depot,
-    body: JsonBody<CreateUserRequest>,
+    State(state): State<PrincipalsState>,
+    auth: Authenticated,
+    Json(req): Json<CreateUserRequest>,
 ) -> Result<Json<CreatedResponse>, PlatformError> {
-    let auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<PrincipalsState>().map_err(|_| PlatformError::internal("State not found"))?;
-    let req = body.into_inner();
-
     // Only anchor or appropriate access
     crate::service::checks::require_anchor(&auth.0)?;
 
@@ -226,22 +238,22 @@ pub async fn create_user(
     // Update name if provided
     if let Some(ref identity) = principal.user_identity {
         let mut new_identity = identity.clone();
-        if let Some(first) = req.first_name {
+        if let Some(first) = req.first_name.clone() {
             new_identity.first_name = Some(first);
         }
-        if let Some(last) = req.last_name {
+        if let Some(last) = req.last_name.clone() {
             new_identity.last_name = Some(last);
         }
         principal.name = new_identity.display_name();
         principal.user_identity = Some(new_identity);
     }
 
-    if let Some(cid) = req.client_id {
+    if let Some(cid) = req.client_id.clone() {
         principal = principal.with_client_id(cid);
     }
 
     // Assign initial roles
-    for role in req.roles {
+    for role in req.roles.clone() {
         principal.assign_role(role);
     }
 
@@ -257,15 +269,24 @@ pub async fn create_user(
 }
 
 /// Get principal by ID
-#[endpoint(tags("principals"))]
+#[utoipa::path(
+    get,
+    path = "/{id}",
+    tag = "principals",
+    params(
+        ("id" = String, Path, description = "Principal ID")
+    ),
+    responses(
+        (status = 200, description = "Principal found", body = PrincipalResponse),
+        (status = 404, description = "Principal not found")
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn get_principal(
-    depot: &mut Depot,
-    id: PathParam<String>,
+    State(state): State<PrincipalsState>,
+    auth: Authenticated,
+    Path(id): Path<String>,
 ) -> Result<Json<PrincipalResponse>, PlatformError> {
-    let auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<PrincipalsState>().map_err(|_| PlatformError::internal("State not found"))?;
-    let id = id.into_inner();
-
     let principal = state.principal_repo.find_by_id(&id).await?
         .ok_or_else(|| PlatformError::not_found("Principal", &id))?;
 
@@ -282,15 +303,27 @@ pub async fn get_principal(
 }
 
 /// List principals
-#[endpoint(tags("principals"))]
+#[utoipa::path(
+    get,
+    path = "",
+    tag = "principals",
+    params(
+        ("page" = Option<u32>, Query, description = "Page number"),
+        ("limit" = Option<u32>, Query, description = "Items per page"),
+        ("type" = Option<String>, Query, description = "Filter by type"),
+        ("scope" = Option<String>, Query, description = "Filter by scope"),
+        ("client_id" = Option<String>, Query, description = "Filter by client ID")
+    ),
+    responses(
+        (status = 200, description = "List of principals", body = Vec<PrincipalResponse>)
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn list_principals(
-    depot: &mut Depot,
-    query: QueryParam<PrincipalsQuery, false>,
+    State(state): State<PrincipalsState>,
+    auth: Authenticated,
+    Query(query): Query<PrincipalsQuery>,
 ) -> Result<Json<Vec<PrincipalResponse>>, PlatformError> {
-    let auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<PrincipalsState>().map_err(|_| PlatformError::internal("State not found"))?;
-    let query = query.into_inner().unwrap_or_default();
-
     let principals = if let Some(ref client_id) = query.client_id {
         if !auth.0.can_access_client(client_id) {
             return Err(PlatformError::forbidden(format!("No access to client: {}", client_id)));
@@ -325,17 +358,26 @@ pub async fn list_principals(
 }
 
 /// Update principal
-#[endpoint(tags("principals"))]
+#[utoipa::path(
+    put,
+    path = "/{id}",
+    tag = "principals",
+    params(
+        ("id" = String, Path, description = "Principal ID")
+    ),
+    request_body = UpdatePrincipalRequest,
+    responses(
+        (status = 200, description = "Principal updated", body = PrincipalResponse),
+        (status = 404, description = "Principal not found")
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn update_principal(
-    depot: &mut Depot,
-    id: PathParam<String>,
-    body: JsonBody<UpdatePrincipalRequest>,
+    State(state): State<PrincipalsState>,
+    auth: Authenticated,
+    Path(id): Path<String>,
+    Json(req): Json<UpdatePrincipalRequest>,
 ) -> Result<Json<PrincipalResponse>, PlatformError> {
-    let auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<PrincipalsState>().map_err(|_| PlatformError::internal("State not found"))?;
-    let id = id.into_inner();
-    let req = body.into_inner();
-
     let mut principal = state.principal_repo.find_by_id(&id).await?
         .ok_or_else(|| PlatformError::not_found("Principal", &id))?;
 
@@ -386,17 +428,26 @@ pub async fn update_principal(
 }
 
 /// Assign role to principal
-#[endpoint(tags("principals"))]
+#[utoipa::path(
+    post,
+    path = "/{id}/roles",
+    tag = "principals",
+    params(
+        ("id" = String, Path, description = "Principal ID")
+    ),
+    request_body = AssignRoleRequest,
+    responses(
+        (status = 200, description = "Role assigned", body = PrincipalResponse),
+        (status = 404, description = "Principal not found")
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn assign_role(
-    depot: &mut Depot,
-    id: PathParam<String>,
-    body: JsonBody<AssignRoleRequest>,
+    State(state): State<PrincipalsState>,
+    auth: Authenticated,
+    Path(id): Path<String>,
+    Json(req): Json<AssignRoleRequest>,
 ) -> Result<Json<PrincipalResponse>, PlatformError> {
-    let auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<PrincipalsState>().map_err(|_| PlatformError::internal("State not found"))?;
-    let id = id.into_inner();
-    let req = body.into_inner();
-
     crate::service::checks::require_anchor(&auth.0)?;
 
     let mut principal = state.principal_repo.find_by_id(&id).await?
@@ -422,17 +473,25 @@ pub async fn assign_role(
 }
 
 /// Remove role from principal
-#[endpoint(tags("principals"))]
+#[utoipa::path(
+    delete,
+    path = "/{id}/roles/{role}",
+    tag = "principals",
+    params(
+        ("id" = String, Path, description = "Principal ID"),
+        ("role" = String, Path, description = "Role to remove")
+    ),
+    responses(
+        (status = 200, description = "Role removed", body = PrincipalResponse),
+        (status = 404, description = "Principal not found")
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn remove_role(
-    depot: &mut Depot,
-    id: PathParam<String>,
-    role: PathParam<String>,
+    State(state): State<PrincipalsState>,
+    auth: Authenticated,
+    Path((id, role)): Path<(String, String)>,
 ) -> Result<Json<PrincipalResponse>, PlatformError> {
-    let auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<PrincipalsState>().map_err(|_| PlatformError::internal("State not found"))?;
-    let id = id.into_inner();
-    let role = role.into_inner();
-
     crate::service::checks::require_anchor(&auth.0)?;
 
     let mut principal = state.principal_repo.find_by_id(&id).await?
@@ -452,17 +511,26 @@ pub async fn remove_role(
 }
 
 /// Grant client access to principal
-#[endpoint(tags("principals"))]
+#[utoipa::path(
+    post,
+    path = "/{id}/clients",
+    tag = "principals",
+    params(
+        ("id" = String, Path, description = "Principal ID")
+    ),
+    request_body = GrantClientAccessRequest,
+    responses(
+        (status = 200, description = "Client access granted", body = PrincipalResponse),
+        (status = 404, description = "Principal not found")
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn grant_client_access(
-    depot: &mut Depot,
-    id: PathParam<String>,
-    body: JsonBody<GrantClientAccessRequest>,
+    State(state): State<PrincipalsState>,
+    auth: Authenticated,
+    Path(id): Path<String>,
+    Json(req): Json<GrantClientAccessRequest>,
 ) -> Result<Json<PrincipalResponse>, PlatformError> {
-    let auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<PrincipalsState>().map_err(|_| PlatformError::internal("State not found"))?;
-    let id = id.into_inner();
-    let req = body.into_inner();
-
     crate::service::checks::require_anchor(&auth.0)?;
 
     let mut principal = state.principal_repo.find_by_id(&id).await?
@@ -481,17 +549,25 @@ pub async fn grant_client_access(
 }
 
 /// Revoke client access from principal
-#[endpoint(tags("principals"))]
+#[utoipa::path(
+    delete,
+    path = "/{id}/clients/{client_id}",
+    tag = "principals",
+    params(
+        ("id" = String, Path, description = "Principal ID"),
+        ("client_id" = String, Path, description = "Client ID to revoke")
+    ),
+    responses(
+        (status = 200, description = "Client access revoked", body = PrincipalResponse),
+        (status = 404, description = "Principal not found")
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn revoke_client_access(
-    depot: &mut Depot,
-    id: PathParam<String>,
-    client_id: PathParam<String>,
+    State(state): State<PrincipalsState>,
+    auth: Authenticated,
+    Path((id, client_id)): Path<(String, String)>,
 ) -> Result<Json<PrincipalResponse>, PlatformError> {
-    let auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<PrincipalsState>().map_err(|_| PlatformError::internal("State not found"))?;
-    let id = id.into_inner();
-    let client_id = client_id.into_inner();
-
     crate::service::checks::require_anchor(&auth.0)?;
 
     let mut principal = state.principal_repo.find_by_id(&id).await?
@@ -509,15 +585,24 @@ pub async fn revoke_client_access(
 }
 
 /// Delete principal (deactivate)
-#[endpoint(tags("principals"))]
+#[utoipa::path(
+    delete,
+    path = "/{id}",
+    tag = "principals",
+    params(
+        ("id" = String, Path, description = "Principal ID")
+    ),
+    responses(
+        (status = 200, description = "Principal deleted", body = SuccessResponse),
+        (status = 404, description = "Principal not found")
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn delete_principal(
-    depot: &mut Depot,
-    id: PathParam<String>,
+    State(state): State<PrincipalsState>,
+    auth: Authenticated,
+    Path(id): Path<String>,
 ) -> Result<Json<SuccessResponse>, PlatformError> {
-    let auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<PrincipalsState>().map_err(|_| PlatformError::internal("State not found"))?;
-    let id = id.into_inner();
-
     crate::service::checks::require_anchor(&auth.0)?;
 
     let mut principal = state.principal_repo.find_by_id(&id).await?
@@ -537,32 +622,11 @@ pub async fn delete_principal(
 /// Create principals router
 pub fn principals_router(state: PrincipalsState) -> Router {
     Router::new()
-        .push(
-            Router::new()
-                .post(create_user)
-                .get(list_principals)
-        )
-        .push(
-            Router::with_path("<id>")
-                .get(get_principal)
-                .put(update_principal)
-                .delete(delete_principal)
-        )
-        .push(
-            Router::with_path("<id>/roles")
-                .post(assign_role)
-        )
-        .push(
-            Router::with_path("<id>/roles/<role>")
-                .delete(remove_role)
-        )
-        .push(
-            Router::with_path("<id>/clients")
-                .post(grant_client_access)
-        )
-        .push(
-            Router::with_path("<id>/clients/<client_id>")
-                .delete(revoke_client_access)
-        )
-        .hoop(affix_state::inject(state))
+        .route("/", post(create_user).get(list_principals))
+        .route("/:id", get(get_principal).put(update_principal).delete(delete_principal))
+        .route("/:id/roles", post(assign_role))
+        .route("/:id/roles/:role", delete(remove_role))
+        .route("/:id/clients", post(grant_client_access))
+        .route("/:id/clients/:client_id", delete(revoke_client_access))
+        .with_state(state)
 }

@@ -174,6 +174,7 @@ impl OutboxProcessor {
                 id: item.id.clone(),
                 pool_code: item.pool_code.clone().unwrap_or_else(|| "DEFAULT".to_string()),
                 auth_token: None,
+                signing_secret: None,
                 mediation_type: MediationType::HTTP,
                 mediation_target: item.mediation_target.clone().unwrap_or_else(|| "http://localhost:8080".to_string()),
                 message_group_id: item.message_group.clone(),

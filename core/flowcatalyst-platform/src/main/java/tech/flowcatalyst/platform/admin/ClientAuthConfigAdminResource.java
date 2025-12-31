@@ -38,7 +38,7 @@ import java.util.List;
  * All operations require admin-level permissions.
  * Secret resolution is restricted to Super Admin only.
  */
-@Path("/api/admin/platform/auth-configs")
+@Path("/api/admin/auth-configs")
 @Tag(name = "Auth Config Admin", description = "Administrative operations for domain authentication configuration")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
@@ -71,7 +71,7 @@ public class ClientAuthConfigAdminResource {
     })
     public Response listAuthConfigs(
             @QueryParam("clientId") @Parameter(description = "Filter by client ID") String clientId,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @CookieParam("fc_session") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
         var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
@@ -109,7 +109,7 @@ public class ClientAuthConfigAdminResource {
     })
     public Response getAuthConfig(
             @PathParam("id") String id,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @CookieParam("fc_session") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
         var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
@@ -138,7 +138,7 @@ public class ClientAuthConfigAdminResource {
     })
     public Response getAuthConfigByDomain(
             @PathParam("domain") String domain,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @CookieParam("fc_session") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
         var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
@@ -172,7 +172,7 @@ public class ClientAuthConfigAdminResource {
     })
     public Response createInternalConfig(
             @Valid CreateInternalConfigRequest request,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @CookieParam("fc_session") String sessionToken,
             @HeaderParam("Authorization") String authHeader,
             @Context UriInfo uriInfo) {
 
@@ -226,7 +226,7 @@ public class ClientAuthConfigAdminResource {
     })
     public Response createOidcConfig(
             @Valid CreateOidcConfigRequest request,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @CookieParam("fc_session") String sessionToken,
             @HeaderParam("Authorization") String authHeader,
             @Context UriInfo uriInfo) {
 
@@ -287,7 +287,7 @@ public class ClientAuthConfigAdminResource {
     public Response updateOidcConfig(
             @PathParam("id") String id,
             @Valid UpdateOidcConfigRequest request,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @CookieParam("fc_session") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
         var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
@@ -347,7 +347,7 @@ public class ClientAuthConfigAdminResource {
     public Response updateClientBinding(
             @PathParam("id") String id,
             @Valid UpdateClientBindingRequest request,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @CookieParam("fc_session") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
         var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
@@ -394,7 +394,7 @@ public class ClientAuthConfigAdminResource {
     public Response updateConfigType(
             @PathParam("id") String id,
             @Valid UpdateConfigTypeRequest request,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @CookieParam("fc_session") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
         var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
@@ -445,7 +445,7 @@ public class ClientAuthConfigAdminResource {
     public Response updateAdditionalClients(
             @PathParam("id") String id,
             @Valid UpdateAdditionalClientsRequest request,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @CookieParam("fc_session") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
         var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
@@ -496,7 +496,7 @@ public class ClientAuthConfigAdminResource {
     public Response updateGrantedClients(
             @PathParam("id") String id,
             @Valid UpdateGrantedClientsRequest request,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @CookieParam("fc_session") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
         var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
@@ -546,7 +546,7 @@ public class ClientAuthConfigAdminResource {
     })
     public Response deleteAuthConfig(
             @PathParam("id") String id,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @CookieParam("fc_session") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
         var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
@@ -592,7 +592,7 @@ public class ClientAuthConfigAdminResource {
     })
     public Response validateSecretReference(
             @Valid ValidateSecretRequest request,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @CookieParam("fc_session") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
         var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);

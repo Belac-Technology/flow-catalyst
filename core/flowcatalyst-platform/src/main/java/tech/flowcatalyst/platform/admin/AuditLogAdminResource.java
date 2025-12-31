@@ -27,7 +27,7 @@ import java.util.Map;
  * Provides read-only access to the audit trail of operations performed in the system.
  * Audit logs track entity changes with full operation payloads for compliance and debugging.
  */
-@Path("/api/admin/platform/audit-logs")
+@Path("/api/admin/audit-logs")
 @Tag(name = "Audit Log Admin", description = "Audit log viewing endpoints")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
@@ -69,7 +69,7 @@ public class AuditLogAdminResource {
             @QueryParam("page") @DefaultValue("0") int page,
             @Parameter(description = "Page size")
             @QueryParam("pageSize") @DefaultValue("50") int pageSize,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @CookieParam("fc_session") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
         var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
@@ -124,7 +124,7 @@ public class AuditLogAdminResource {
     })
     public Response getAuditLog(
             @PathParam("id") String id,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @CookieParam("fc_session") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
         var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
@@ -158,7 +158,7 @@ public class AuditLogAdminResource {
     public Response getAuditLogsForEntity(
             @PathParam("entityType") String entityType,
             @PathParam("entityId") String entityId,
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @CookieParam("fc_session") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
         var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
@@ -191,7 +191,7 @@ public class AuditLogAdminResource {
         @APIResponse(responseCode = "401", description = "Not authenticated")
     })
     public Response getEntityTypes(
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @CookieParam("fc_session") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
         var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
@@ -219,7 +219,7 @@ public class AuditLogAdminResource {
         @APIResponse(responseCode = "401", description = "Not authenticated")
     })
     public Response getOperations(
-            @CookieParam("FLOWCATALYST_SESSION") String sessionToken,
+            @CookieParam("fc_session") String sessionToken,
             @HeaderParam("Authorization") String authHeader) {
 
         var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);

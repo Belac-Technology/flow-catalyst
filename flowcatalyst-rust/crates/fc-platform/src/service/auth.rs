@@ -222,6 +222,15 @@ impl AuthConfig {
     }
 }
 
+/// RSA public key components for JWKS
+#[derive(Debug, Clone)]
+pub struct RsaPublicKeyComponents {
+    /// Modulus (n) - base64url encoded
+    pub n: String,
+    /// Exponent (e) - base64url encoded
+    pub e: String,
+}
+
 /// Authentication service for token management
 pub struct AuthService {
     config: AuthConfig,
@@ -229,6 +238,8 @@ pub struct AuthService {
     decoding_key: DecodingKey,
     algorithm: Algorithm,
     key_id: Option<String>,
+    /// RSA public key components for JWKS (only set when using RS256)
+    rsa_components: Option<RsaPublicKeyComponents>,
 }
 
 impl AuthService {
@@ -247,6 +258,9 @@ impl AuthService {
         // Generate key ID from public key hash (like Java)
         let key_id = Self::generate_key_id(public_key_pem);
 
+        // Extract RSA components for JWKS
+        let rsa_components = Self::extract_rsa_components(public_key_pem)?;
+
         info!("AuthService initialized with RS256 (key_id: {})", key_id);
 
         Ok(Self {
@@ -255,7 +269,29 @@ impl AuthService {
             decoding_key,
             algorithm: Algorithm::RS256,
             key_id: Some(key_id),
+            rsa_components: Some(rsa_components),
         })
+    }
+
+    /// Extract RSA public key components (n, e) for JWKS
+    fn extract_rsa_components(public_key_pem: &str) -> Result<RsaPublicKeyComponents> {
+        use rsa::{RsaPublicKey, pkcs8::DecodePublicKey, traits::PublicKeyParts};
+        use base64::Engine;
+
+        let public_key = RsaPublicKey::from_public_key_pem(public_key_pem)
+            .map_err(|e| PlatformError::Internal {
+                message: format!("Failed to parse RSA public key: {}", e)
+            })?;
+
+        // Get modulus and exponent as big-endian bytes
+        let n_bytes = public_key.n().to_bytes_be();
+        let e_bytes = public_key.e().to_bytes_be();
+
+        // Base64url encode (no padding)
+        let n = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&n_bytes);
+        let e = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&e_bytes);
+
+        Ok(RsaPublicKeyComponents { n, e })
     }
 
     /// Create auth service with HMAC secret (HS256) - for development/simple setups
@@ -271,6 +307,7 @@ impl AuthService {
             decoding_key,
             algorithm: Algorithm::HS256,
             key_id: None,
+            rsa_components: None,
         }
     }
 
@@ -302,6 +339,11 @@ impl AuthService {
     /// Get the key ID (for JWKS)
     pub fn key_id(&self) -> Option<&str> {
         self.key_id.as_deref()
+    }
+
+    /// Get the RSA public key components (for JWKS)
+    pub fn rsa_components(&self) -> Option<&RsaPublicKeyComponents> {
+        self.rsa_components.as_ref()
     }
 
     /// Get the algorithm being used

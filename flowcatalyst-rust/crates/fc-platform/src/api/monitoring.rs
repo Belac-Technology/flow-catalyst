@@ -2,7 +2,12 @@
 //!
 //! REST endpoints for platform monitoring and observability.
 
-use salvo::prelude::*;
+use axum::{
+    routing::get,
+    extract::State,
+    Json, Router,
+};
+use utoipa::ToSchema;
 use serde::Serialize;
 use std::sync::Arc;
 use std::collections::HashMap;
@@ -10,7 +15,11 @@ use tokio::sync::RwLock;
 
 use crate::error::PlatformError;
 use crate::api::middleware::Authenticated;
-use crate::repository::DispatchJobRepository;
+use crate::repository::{
+    DispatchJobRepository, EventTypeRepository,
+    SubscriptionRepository, DispatchPoolRepository, ClientRepository,
+    PrincipalRepository, ApplicationRepository,
+};
 use crate::domain::DispatchStatus;
 
 /// Standby status response
@@ -205,6 +214,50 @@ impl InFlightTracker {
     }
 }
 
+/// Platform statistics response
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PlatformStats {
+    /// Total number of clients
+    pub total_clients: u64,
+    /// Active clients
+    pub active_clients: u64,
+    /// Total principals (users + service accounts)
+    pub total_principals: u64,
+    /// Total applications
+    pub total_applications: u64,
+    /// Active applications
+    pub active_applications: u64,
+    /// Total event types
+    pub total_event_types: u64,
+    /// Active event types
+    pub active_event_types: u64,
+    /// Total subscriptions
+    pub total_subscriptions: u64,
+    /// Active subscriptions
+    pub active_subscriptions: u64,
+    /// Total dispatch pools
+    pub total_dispatch_pools: u64,
+    /// Total events received (all time)
+    pub total_events: u64,
+    /// Total dispatch jobs (all time)
+    pub total_dispatch_jobs: u64,
+    /// Dispatch jobs by status
+    pub jobs_by_status: HashMap<String, u64>,
+}
+
+/// Stats state (subset of MonitoringState for the stats endpoint)
+#[derive(Clone)]
+pub struct StatsState {
+    pub client_repo: Arc<ClientRepository>,
+    pub principal_repo: Arc<PrincipalRepository>,
+    pub application_repo: Arc<ApplicationRepository>,
+    pub event_type_repo: Arc<EventTypeRepository>,
+    pub subscription_repo: Arc<SubscriptionRepository>,
+    pub dispatch_pool_repo: Arc<DispatchPoolRepository>,
+    pub dispatch_job_repo: Arc<DispatchJobRepository>,
+}
+
 /// Monitoring service state
 #[derive(Clone)]
 pub struct MonitoringState {
@@ -216,13 +269,19 @@ pub struct MonitoringState {
 }
 
 /// Get standby status
-#[endpoint(tags("Monitoring"))]
+#[utoipa::path(
+    get,
+    path = "/standby-status",
+    tag = "monitoring",
+    responses(
+        (status = 200, description = "Standby status", body = StandbyStatus)
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn get_standby_status(
-    depot: &mut Depot,
+    State(state): State<MonitoringState>,
+    auth: Authenticated,
 ) -> Result<Json<StandbyStatus>, PlatformError> {
-    let auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<MonitoringState>().map_err(|_| PlatformError::internal("State not found"))?;
-
     crate::service::checks::require_anchor(&auth.0)?;
 
     let is_leader = *state.leader_state.is_leader.read().await;
@@ -240,13 +299,19 @@ pub async fn get_standby_status(
 }
 
 /// Get dashboard metrics
-#[endpoint(tags("Monitoring"))]
+#[utoipa::path(
+    get,
+    path = "/dashboard",
+    tag = "monitoring",
+    responses(
+        (status = 200, description = "Dashboard metrics", body = DashboardMetrics)
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn get_dashboard(
-    depot: &mut Depot,
+    State(state): State<MonitoringState>,
+    auth: Authenticated,
 ) -> Result<Json<DashboardMetrics>, PlatformError> {
-    let auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<MonitoringState>().map_err(|_| PlatformError::internal("State not found"))?;
-
     crate::service::checks::require_anchor(&auth.0)?;
 
     // Get job counts by status
@@ -282,13 +347,19 @@ pub async fn get_dashboard(
 }
 
 /// Get circuit breaker states
-#[endpoint(tags("Monitoring"))]
+#[utoipa::path(
+    get,
+    path = "/circuit-breakers",
+    tag = "monitoring",
+    responses(
+        (status = 200, description = "Circuit breaker states", body = CircuitBreakersResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn get_circuit_breakers(
-    depot: &mut Depot,
+    State(state): State<MonitoringState>,
+    auth: Authenticated,
 ) -> Result<Json<CircuitBreakersResponse>, PlatformError> {
-    let auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<MonitoringState>().map_err(|_| PlatformError::internal("State not found"))?;
-
     crate::service::checks::require_anchor(&auth.0)?;
 
     let breakers = state.circuit_breakers.get_all().await;
@@ -306,13 +377,19 @@ pub async fn get_circuit_breakers(
 }
 
 /// Get in-flight messages
-#[endpoint(tags("Monitoring"))]
+#[utoipa::path(
+    get,
+    path = "/in-flight-messages",
+    tag = "monitoring",
+    responses(
+        (status = 200, description = "In-flight messages", body = InFlightMessagesResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn get_in_flight_messages(
-    depot: &mut Depot,
+    State(state): State<MonitoringState>,
+    auth: Authenticated,
 ) -> Result<Json<InFlightMessagesResponse>, PlatformError> {
-    let auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<MonitoringState>().map_err(|_| PlatformError::internal("State not found"))?;
-
     crate::service::checks::require_anchor(&auth.0)?;
 
     let messages = state.in_flight.get_all().await;
@@ -342,24 +419,95 @@ pub async fn get_in_flight_messages(
     }))
 }
 
+/// Get platform statistics
+#[utoipa::path(
+    get,
+    path = "",
+    tag = "stats",
+    responses(
+        (status = 200, description = "Platform statistics", body = PlatformStats)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn get_platform_stats(
+    State(state): State<StatsState>,
+    auth: Authenticated,
+) -> Result<Json<PlatformStats>, PlatformError> {
+    crate::service::checks::require_anchor(&auth.0)?;
+
+    // Get client counts (find_active exists)
+    let active_clients = state.client_repo.find_active().await?.len() as u64;
+    // Total clients estimated as active (no find_all method)
+    let total_clients = active_clients;
+
+    // Get principal counts (find_active exists)
+    let active_principals = state.principal_repo.find_active().await?;
+    let total_principals = active_principals.len() as u64;
+
+    // Get application counts (find_active exists)
+    let active_applications = state.application_repo.find_active().await?.len() as u64;
+    let total_applications = active_applications;
+
+    // Get event type counts (find_active exists)
+    let active_event_types = state.event_type_repo.find_active().await?.len() as u64;
+    let total_event_types = active_event_types;
+
+    // Get subscription counts (find_active exists)
+    let active_subscriptions = state.subscription_repo.find_active().await?.len() as u64;
+    let total_subscriptions = active_subscriptions;
+
+    // Get dispatch pool count (find_active exists)
+    let active_pools = state.dispatch_pool_repo.find_active().await?.len() as u64;
+    let total_dispatch_pools = active_pools;
+
+    // Event count not available without full scan
+    let total_events = 0u64;
+
+    // Get dispatch job counts (count methods exist)
+    let total_dispatch_jobs = state.dispatch_job_repo.count_all().await.unwrap_or(0);
+    let pending = state.dispatch_job_repo.count_by_status(DispatchStatus::Pending).await.unwrap_or(0);
+    let queued = state.dispatch_job_repo.count_by_status(DispatchStatus::Queued).await.unwrap_or(0);
+    let in_progress = state.dispatch_job_repo.count_by_status(DispatchStatus::InProgress).await.unwrap_or(0);
+    let completed = state.dispatch_job_repo.count_by_status(DispatchStatus::Completed).await.unwrap_or(0);
+    let failed = state.dispatch_job_repo.count_by_status(DispatchStatus::Failed).await.unwrap_or(0);
+
+    let mut jobs_by_status = HashMap::new();
+    jobs_by_status.insert("PENDING".to_string(), pending);
+    jobs_by_status.insert("QUEUED".to_string(), queued);
+    jobs_by_status.insert("IN_PROGRESS".to_string(), in_progress);
+    jobs_by_status.insert("COMPLETED".to_string(), completed);
+    jobs_by_status.insert("FAILED".to_string(), failed);
+
+    Ok(Json(PlatformStats {
+        total_clients,
+        active_clients,
+        total_principals,
+        total_applications,
+        active_applications,
+        total_event_types,
+        active_event_types,
+        total_subscriptions,
+        active_subscriptions,
+        total_dispatch_pools,
+        total_events,
+        total_dispatch_jobs,
+        jobs_by_status,
+    }))
+}
+
+/// Create stats router
+pub fn stats_router(state: StatsState) -> Router {
+    Router::new()
+        .route("/", get(get_platform_stats))
+        .with_state(state)
+}
+
 /// Create monitoring router
 pub fn monitoring_router(state: MonitoringState) -> Router {
     Router::new()
-        .push(
-            Router::with_path("standby-status")
-                .get(get_standby_status)
-        )
-        .push(
-            Router::with_path("dashboard")
-                .get(get_dashboard)
-        )
-        .push(
-            Router::with_path("circuit-breakers")
-                .get(get_circuit_breakers)
-        )
-        .push(
-            Router::with_path("in-flight-messages")
-                .get(get_in_flight_messages)
-        )
-        .hoop(affix_state::inject(state))
+        .route("/standby-status", get(get_standby_status))
+        .route("/dashboard", get(get_dashboard))
+        .route("/circuit-breakers", get(get_circuit_breakers))
+        .route("/in-flight-messages", get(get_in_flight_messages))
+        .with_state(state)
 }

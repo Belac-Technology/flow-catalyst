@@ -443,6 +443,7 @@ mod tests {
             id: id.to_string(),
             pool_code: "default".to_string(),
             auth_token: None,
+            signing_secret: None,
             mediation_type: MediationType::HTTP,
             mediation_target: "http://localhost".to_string(),
             message_group_id: Some("group-1".to_string()),

@@ -1,41 +1,51 @@
 package tech.flowcatalyst.platform.principal;
 
+import de.mkammerer.argon2.Argon2;
+import de.mkammerer.argon2.Argon2Factory;
 import jakarta.enterprise.context.ApplicationScoped;
-import org.wildfly.security.password.Password;
-import org.wildfly.security.password.PasswordFactory;
-import org.wildfly.security.password.WildFlyElytronPasswordProvider;
-import org.wildfly.security.password.interfaces.BCryptPassword;
-import org.wildfly.security.password.spec.EncryptablePasswordSpec;
-import org.wildfly.security.password.spec.IteratedSaltedPasswordAlgorithmSpec;
-import org.wildfly.security.password.util.ModularCrypt;
-
-import java.security.InvalidKeyException;
-import java.security.NoSuchAlgorithmException;
-import java.security.SecureRandom;
-import java.security.Security;
-import java.security.spec.InvalidKeySpecException;
 
 /**
- * Service for password hashing and validation using BCrypt via WildFly Elytron.
- * Quarkus includes Elytron which provides BCrypt support.
+ * Service for password hashing and validation using Argon2id.
+ * Argon2id is the OWASP-recommended password hashing algorithm,
+ * providing resistance against both GPU and side-channel attacks.
+ *
+ * Configuration matches Rust implementation:
+ * - Memory: 65536 KiB (64 MiB)
+ * - Iterations: 3
+ * - Parallelism: 4
+ * - Hash length: 32 bytes
  */
 @ApplicationScoped
 public class PasswordService {
 
-    private static final String BCRYPT_ALGORITHM = BCryptPassword.ALGORITHM_BCRYPT;
-    private static final int BCRYPT_COST = 10; // BCrypt cost parameter (iterations = 2^10)
-    private static final int SALT_SIZE = 16; // 16 bytes = 128 bits
+    // Argon2id parameters (matching Rust fc-platform)
+    private static final int MEMORY_COST = 65536;  // 64 MiB in KiB
+    private static final int ITERATIONS = 3;       // Time cost
+    private static final int PARALLELISM = 4;      // Parallel threads
+    private static final int HASH_LENGTH = 32;     // Output length in bytes
+    private static final int SALT_LENGTH = 16;     // Salt length in bytes
 
-    static {
-        // Register WildFly Elytron password provider with Java Security
-        Security.addProvider(WildFlyElytronPasswordProvider.getInstance());
+    // Password policy
+    private static final int MIN_PASSWORD_LENGTH = 12;
+    private static final int MAX_PASSWORD_LENGTH = 128;
+    private static final String SPECIAL_CHARS = "!@#$%^&*()_+-=[]{}|;':\",./<>?`~";
+
+    private final Argon2 argon2;
+
+    public PasswordService() {
+        // Create Argon2id instance (the "id" variant combines Argon2i and Argon2d)
+        this.argon2 = Argon2Factory.create(
+            Argon2Factory.Argon2Types.ARGON2id,
+            SALT_LENGTH,
+            HASH_LENGTH
+        );
     }
 
     /**
-     * Hash a password using BCrypt.
+     * Hash a password using Argon2id.
      *
      * @param plainPassword The plain text password
-     * @return The hashed password in Modular Crypt Format
+     * @return The hashed password in PHC format (e.g., $argon2id$v=19$m=65536,t=3,p=4$...)
      */
     public String hashPassword(String plainPassword) {
         if (plainPassword == null || plainPassword.isEmpty()) {
@@ -43,27 +53,10 @@ public class PasswordService {
         }
 
         try {
-            PasswordFactory factory = PasswordFactory.getInstance(BCRYPT_ALGORITHM);
-
-            // Generate random salt
-            byte[] salt = new byte[SALT_SIZE];
-            new SecureRandom().nextBytes(salt);
-
-            // Create algorithm spec with cost and salt
-            IteratedSaltedPasswordAlgorithmSpec spec =
-                new IteratedSaltedPasswordAlgorithmSpec(BCRYPT_COST, salt);
-
-            // Generate password
-            EncryptablePasswordSpec encryptSpec =
-                new EncryptablePasswordSpec(plainPassword.toCharArray(), spec);
-
-            Password password = factory.generatePassword(encryptSpec);
-
-            // Return in Modular Crypt Format (MCF)
-            return ModularCrypt.encodeAsString(password);
-
-        } catch (NoSuchAlgorithmException | InvalidKeySpecException e) {
-            throw new RuntimeException("Failed to hash password", e);
+            // Hash with Argon2id - returns PHC format string
+            return argon2.hash(ITERATIONS, MEMORY_COST, PARALLELISM, plainPassword.toCharArray());
+        } finally {
+            // Clear password from memory (Argon2 library handles internal cleanup)
         }
     }
 
@@ -71,7 +64,7 @@ public class PasswordService {
      * Verify a password against a hash.
      *
      * @param plainPassword The plain text password to verify
-     * @param passwordHash The hash to verify against
+     * @param passwordHash  The hash to verify against (PHC format)
      * @return true if password matches the hash
      */
     public boolean verifyPassword(String plainPassword, String passwordHash) {
@@ -80,20 +73,47 @@ public class PasswordService {
         }
 
         try {
-            PasswordFactory factory = PasswordFactory.getInstance(BCRYPT_ALGORITHM);
-
-            // Decode the stored password hash
-            Password userPassword = ModularCrypt.decode(passwordHash);
-
-            // Translate to BCryptPassword
-            Password inputPassword = factory.translate(userPassword);
-
-            // Verify the password
-            return factory.verify(inputPassword, plainPassword.toCharArray());
-
-        } catch (NoSuchAlgorithmException | InvalidKeyException | InvalidKeySpecException e) {
-            // Invalid hash format or algorithm error
+            // Constant-time verification
+            return argon2.verify(passwordHash, plainPassword.toCharArray());
+        } catch (Exception e) {
+            // Invalid hash format or verification error
             return false;
+        }
+    }
+
+    /**
+     * Check if a password hash needs to be rehashed (e.g., algorithm upgrade).
+     * Currently checks if the hash uses Argon2id with current parameters.
+     *
+     * @param passwordHash The hash to check
+     * @return true if the hash should be regenerated with current parameters
+     */
+    public boolean needsRehash(String passwordHash) {
+        if (passwordHash == null || passwordHash.isEmpty()) {
+            return true;
+        }
+
+        // Check if it's an Argon2id hash with our current parameters
+        // PHC format: $argon2id$v=19$m=65536,t=3,p=4$<salt>$<hash>
+        if (!passwordHash.startsWith("$argon2id$")) {
+            return true; // Not Argon2id, needs rehash
+        }
+
+        // Parse parameters from hash
+        try {
+            String[] parts = passwordHash.split("\\$");
+            if (parts.length < 4) {
+                return true;
+            }
+
+            String params = parts[3]; // m=65536,t=3,p=4
+            boolean hasCorrectMemory = params.contains("m=" + MEMORY_COST);
+            boolean hasCorrectIterations = params.contains("t=" + ITERATIONS);
+            boolean hasCorrectParallelism = params.contains("p=" + PARALLELISM);
+
+            return !(hasCorrectMemory && hasCorrectIterations && hasCorrectParallelism);
+        } catch (Exception e) {
+            return true; // Parse error, needs rehash
         }
     }
 
@@ -104,16 +124,22 @@ public class PasswordService {
      * @throws IllegalArgumentException if password doesn't meet requirements
      */
     public void validatePasswordComplexity(String password) {
-        if (password == null || password.length() < 12) {
-            throw new IllegalArgumentException("Password must be at least 12 characters long");
+        if (password == null || password.length() < MIN_PASSWORD_LENGTH) {
+            throw new IllegalArgumentException(
+                "Password must be at least " + MIN_PASSWORD_LENGTH + " characters long"
+            );
+        }
+
+        if (password.length() > MAX_PASSWORD_LENGTH) {
+            throw new IllegalArgumentException(
+                "Password must be at most " + MAX_PASSWORD_LENGTH + " characters long"
+            );
         }
 
         boolean hasUpper = password.chars().anyMatch(Character::isUpperCase);
         boolean hasLower = password.chars().anyMatch(Character::isLowerCase);
         boolean hasDigit = password.chars().anyMatch(Character::isDigit);
-        boolean hasSpecial = password.chars().anyMatch(ch ->
-            "!@#$%^&*()_+-=[]{}|;:,.<>?".indexOf(ch) >= 0
-        );
+        boolean hasSpecial = password.chars().anyMatch(ch -> SPECIAL_CHARS.indexOf(ch) >= 0);
 
         if (!hasUpper) {
             throw new IllegalArgumentException("Password must contain at least one uppercase letter");
@@ -128,7 +154,9 @@ public class PasswordService {
         }
 
         if (!hasSpecial) {
-            throw new IllegalArgumentException("Password must contain at least one special character (!@#$%^&*()_+-=[]{}|;:,.<>?)");
+            throw new IllegalArgumentException(
+                "Password must contain at least one special character (" + SPECIAL_CHARS + ")"
+            );
         }
     }
 

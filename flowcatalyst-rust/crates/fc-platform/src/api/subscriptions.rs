@@ -2,8 +2,12 @@
 //!
 //! REST endpoints for subscription management.
 
-use salvo::prelude::*;
-use salvo::oapi::extract::*;
+use axum::{
+    routing::{get, post, put, delete},
+    extract::{State, Path, Query},
+    Json, Router,
+};
+use utoipa::{ToSchema, IntoParams};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -158,9 +162,9 @@ impl From<Subscription> for SubscriptionResponse {
 }
 
 /// Query parameters for subscriptions list
-#[derive(Debug, Default, Deserialize, ToParameters)]
+#[derive(Debug, Default, Deserialize, IntoParams)]
 #[serde(rename_all = "camelCase")]
-#[salvo(parameters(default_parameter_in = Query))]
+#[into_params(parameter_in = Query)]
 pub struct SubscriptionsQuery {
     #[serde(flatten)]
     pub pagination: PaginationParams,
@@ -188,17 +192,24 @@ fn parse_mode(s: &str) -> Result<DispatchMode, PlatformError> {
 }
 
 /// Create a new subscription
-#[endpoint(tags("Subscriptions"))]
+#[utoipa::path(
+    post,
+    path = "",
+    tag = "subscriptions",
+    request_body = CreateSubscriptionRequest,
+    responses(
+        (status = 201, description = "Subscription created", body = CreatedResponse),
+        (status = 400, description = "Validation error"),
+        (status = 409, description = "Duplicate code")
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn create_subscription(
-    depot: &mut Depot,
-    body: JsonBody<CreateSubscriptionRequest>,
+    State(state): State<SubscriptionsState>,
+    auth: Authenticated,
+    Json(req): Json<CreateSubscriptionRequest>,
 ) -> Result<Json<CreatedResponse>, PlatformError> {
-    let auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<SubscriptionsState>().map_err(|_| PlatformError::internal("State not found"))?;
-
     crate::service::checks::can_write_subscriptions(&auth.0)?;
-
-    let req = body.into_inner();
 
     // Validate client access if specified
     if let Some(ref cid) = req.client_id {
@@ -257,15 +268,24 @@ pub async fn create_subscription(
 }
 
 /// Get subscription by ID
-#[endpoint(tags("Subscriptions"))]
+#[utoipa::path(
+    get,
+    path = "/{id}",
+    tag = "subscriptions",
+    params(
+        ("id" = String, Path, description = "Subscription ID")
+    ),
+    responses(
+        (status = 200, description = "Subscription found", body = SubscriptionResponse),
+        (status = 404, description = "Subscription not found")
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn get_subscription(
-    depot: &mut Depot,
-    id: PathParam<String>,
+    State(state): State<SubscriptionsState>,
+    auth: Authenticated,
+    Path(id): Path<String>,
 ) -> Result<Json<SubscriptionResponse>, PlatformError> {
-    let auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<SubscriptionsState>().map_err(|_| PlatformError::internal("State not found"))?;
-    let id = id.into_inner();
-
     crate::service::checks::can_read_subscriptions(&auth.0)?;
 
     let subscription = state.subscription_repo.find_by_id(&id).await?
@@ -282,14 +302,21 @@ pub async fn get_subscription(
 }
 
 /// List subscriptions
-#[endpoint(tags("Subscriptions"))]
+#[utoipa::path(
+    get,
+    path = "",
+    tag = "subscriptions",
+    params(SubscriptionsQuery),
+    responses(
+        (status = 200, description = "List of subscriptions", body = Vec<SubscriptionResponse>)
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn list_subscriptions(
-    depot: &mut Depot,
-    query: SubscriptionsQuery,
+    State(state): State<SubscriptionsState>,
+    auth: Authenticated,
+    Query(query): Query<SubscriptionsQuery>,
 ) -> Result<Json<Vec<SubscriptionResponse>>, PlatformError> {
-    let auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<SubscriptionsState>().map_err(|_| PlatformError::internal("State not found"))?;
-
     crate::service::checks::can_read_subscriptions(&auth.0)?;
 
     let subscriptions = if let Some(ref client_id) = query.client_id {
@@ -316,16 +343,26 @@ pub async fn list_subscriptions(
 }
 
 /// Update subscription
-#[endpoint(tags("Subscriptions"))]
+#[utoipa::path(
+    put,
+    path = "/{id}",
+    tag = "subscriptions",
+    params(
+        ("id" = String, Path, description = "Subscription ID")
+    ),
+    request_body = UpdateSubscriptionRequest,
+    responses(
+        (status = 200, description = "Subscription updated", body = SubscriptionResponse),
+        (status = 404, description = "Subscription not found")
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn update_subscription(
-    depot: &mut Depot,
-    id: PathParam<String>,
-    body: JsonBody<UpdateSubscriptionRequest>,
+    State(state): State<SubscriptionsState>,
+    auth: Authenticated,
+    Path(id): Path<String>,
+    Json(req): Json<UpdateSubscriptionRequest>,
 ) -> Result<Json<SubscriptionResponse>, PlatformError> {
-    let auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<SubscriptionsState>().map_err(|_| PlatformError::internal("State not found"))?;
-    let id = id.into_inner();
-
     crate::service::checks::can_write_subscriptions(&auth.0)?;
 
     let mut subscription = state.subscription_repo.find_by_id(&id).await?
@@ -341,7 +378,6 @@ pub async fn update_subscription(
     }
 
     // Update fields
-    let req = body.into_inner();
     if let Some(name) = req.name {
         subscription.name = name;
     }
@@ -365,15 +401,24 @@ pub async fn update_subscription(
 }
 
 /// Pause subscription
-#[endpoint(tags("Subscriptions"))]
+#[utoipa::path(
+    post,
+    path = "/{id}/pause",
+    tag = "subscriptions",
+    params(
+        ("id" = String, Path, description = "Subscription ID")
+    ),
+    responses(
+        (status = 200, description = "Subscription paused", body = SubscriptionResponse),
+        (status = 404, description = "Subscription not found")
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn pause_subscription(
-    depot: &mut Depot,
-    id: PathParam<String>,
+    State(state): State<SubscriptionsState>,
+    auth: Authenticated,
+    Path(id): Path<String>,
 ) -> Result<Json<SubscriptionResponse>, PlatformError> {
-    let auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<SubscriptionsState>().map_err(|_| PlatformError::internal("State not found"))?;
-    let id = id.into_inner();
-
     crate::service::checks::can_write_subscriptions(&auth.0)?;
 
     let mut subscription = state.subscription_repo.find_by_id(&id).await?
@@ -393,15 +438,24 @@ pub async fn pause_subscription(
 }
 
 /// Resume subscription
-#[endpoint(tags("Subscriptions"))]
+#[utoipa::path(
+    post,
+    path = "/{id}/resume",
+    tag = "subscriptions",
+    params(
+        ("id" = String, Path, description = "Subscription ID")
+    ),
+    responses(
+        (status = 200, description = "Subscription resumed", body = SubscriptionResponse),
+        (status = 404, description = "Subscription not found")
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn resume_subscription(
-    depot: &mut Depot,
-    id: PathParam<String>,
+    State(state): State<SubscriptionsState>,
+    auth: Authenticated,
+    Path(id): Path<String>,
 ) -> Result<Json<SubscriptionResponse>, PlatformError> {
-    let auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<SubscriptionsState>().map_err(|_| PlatformError::internal("State not found"))?;
-    let id = id.into_inner();
-
     crate::service::checks::can_write_subscriptions(&auth.0)?;
 
     let mut subscription = state.subscription_repo.find_by_id(&id).await?
@@ -421,15 +475,24 @@ pub async fn resume_subscription(
 }
 
 /// Delete subscription (archive)
-#[endpoint(tags("Subscriptions"))]
+#[utoipa::path(
+    delete,
+    path = "/{id}",
+    tag = "subscriptions",
+    params(
+        ("id" = String, Path, description = "Subscription ID")
+    ),
+    responses(
+        (status = 200, description = "Subscription archived", body = SuccessResponse),
+        (status = 404, description = "Subscription not found")
+    ),
+    security(("bearer_auth" = []))
+)]
 pub async fn delete_subscription(
-    depot: &mut Depot,
-    id: PathParam<String>,
+    State(state): State<SubscriptionsState>,
+    auth: Authenticated,
+    Path(id): Path<String>,
 ) -> Result<Json<SuccessResponse>, PlatformError> {
-    let auth = Authenticated::from_depot(depot)?;
-    let state = depot.obtain::<SubscriptionsState>().map_err(|_| PlatformError::internal("State not found"))?;
-    let id = id.into_inner();
-
     crate::service::checks::can_delete_subscriptions(&auth.0)?;
 
     let mut subscription = state.subscription_repo.find_by_id(&id).await?
@@ -453,24 +516,9 @@ pub async fn delete_subscription(
 /// Create subscriptions router
 pub fn subscriptions_router(state: SubscriptionsState) -> Router {
     Router::new()
-        .push(
-            Router::new()
-                .post(create_subscription)
-                .get(list_subscriptions)
-        )
-        .push(
-            Router::with_path("<id>")
-                .get(get_subscription)
-                .put(update_subscription)
-                .delete(delete_subscription)
-        )
-        .push(
-            Router::with_path("<id>/pause")
-                .post(pause_subscription)
-        )
-        .push(
-            Router::with_path("<id>/resume")
-                .post(resume_subscription)
-        )
-        .hoop(affix_state::inject(state))
+        .route("/", post(create_subscription).get(list_subscriptions))
+        .route("/:id", get(get_subscription).put(update_subscription).delete(delete_subscription))
+        .route("/:id/pause", post(pause_subscription))
+        .route("/:id/resume", post(resume_subscription))
+        .with_state(state)
 }
