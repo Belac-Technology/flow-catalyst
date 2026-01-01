@@ -46,9 +46,11 @@ pub struct AuthorizationCode {
     pub context_client_id: Option<String>,
 
     /// When this code was created.
+    #[serde(with = "chrono_datetime_as_bson_datetime")]
     pub created_at: DateTime<Utc>,
 
     /// When this code expires.
+    #[serde(with = "chrono_datetime_as_bson_datetime")]
     pub expires_at: DateTime<Utc>,
 
     /// Whether this code has been used (single-use enforcement).

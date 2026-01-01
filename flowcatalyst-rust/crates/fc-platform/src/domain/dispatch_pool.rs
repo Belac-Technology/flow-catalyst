@@ -55,7 +55,9 @@ pub struct DispatchPool {
     pub status: DispatchPoolStatus,
 
     /// Audit fields
+    #[serde(with = "chrono_datetime_as_bson_datetime")]
     pub created_at: DateTime<Utc>,
+    #[serde(with = "chrono_datetime_as_bson_datetime")]
     pub updated_at: DateTime<Utc>,
 }
 

@@ -132,10 +132,11 @@ pub struct DispatchAttempt {
     pub attempt_number: u32,
 
     /// When the attempt started
+    #[serde(with = "chrono_datetime_as_bson_datetime")]
     pub attempted_at: DateTime<Utc>,
 
     /// When the attempt completed
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", default, with = "bson::serde_helpers::chrono_datetime_as_bson_datetime_optional")]
     pub completed_at: Option<DateTime<Utc>>,
 
     /// Duration in milliseconds
@@ -342,21 +343,23 @@ pub struct DispatchJob {
     // === Timestamps ===
 
     /// When the job was created
+    #[serde(with = "chrono_datetime_as_bson_datetime")]
     pub created_at: DateTime<Utc>,
 
     /// When the job was last updated
+    #[serde(with = "chrono_datetime_as_bson_datetime")]
     pub updated_at: DateTime<Utc>,
 
     /// When the job was queued
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", default, with = "bson::serde_helpers::chrono_datetime_as_bson_datetime_optional")]
     pub queued_at: Option<DateTime<Utc>>,
 
     /// When the last attempt was made
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", default, with = "bson::serde_helpers::chrono_datetime_as_bson_datetime_optional")]
     pub last_attempt_at: Option<DateTime<Utc>>,
 
     /// When the job completed
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", default, with = "bson::serde_helpers::chrono_datetime_as_bson_datetime_optional")]
     pub completed_at: Option<DateTime<Utc>>,
 
     /// Total duration in milliseconds
@@ -364,7 +367,7 @@ pub struct DispatchJob {
     pub duration_millis: Option<i64>,
 
     /// Next retry scheduled time
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", default, with = "bson::serde_helpers::chrono_datetime_as_bson_datetime_optional")]
     pub next_retry_at: Option<DateTime<Utc>>,
 }
 
@@ -591,8 +594,11 @@ pub struct DispatchJobRead {
     pub attempt_count: u32,
     pub max_retries: u32,
     pub last_error: Option<String>,
+    #[serde(with = "chrono_datetime_as_bson_datetime")]
     pub created_at: DateTime<Utc>,
+    #[serde(skip_serializing_if = "Option::is_none", default, with = "bson::serde_helpers::chrono_datetime_as_bson_datetime_optional")]
     pub queued_at: Option<DateTime<Utc>>,
+    #[serde(skip_serializing_if = "Option::is_none", default, with = "bson::serde_helpers::chrono_datetime_as_bson_datetime_optional")]
     pub completed_at: Option<DateTime<Utc>>,
     pub duration_millis: Option<i64>,
 }

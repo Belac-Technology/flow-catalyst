@@ -31,6 +31,7 @@ pub struct Event {
     pub subject: Option<String>,
 
     /// CloudEvents: Timestamp of event occurrence
+    #[serde(with = "chrono_datetime_as_bson_datetime")]
     pub time: DateTime<Utc>,
 
     /// CloudEvents: Event payload data
@@ -69,6 +70,7 @@ pub struct Event {
     pub context_data: Vec<ContextData>,
 
     /// When the event was stored
+    #[serde(with = "chrono_datetime_as_bson_datetime")]
     pub created_at: DateTime<Utc>,
 }
 
@@ -191,6 +193,7 @@ pub struct EventRead {
     pub event_type: String,
     pub source: String,
     pub subject: Option<String>,
+    #[serde(with = "chrono_datetime_as_bson_datetime")]
     pub time: DateTime<Utc>,
 
     /// Parsed from event_type for filtering
@@ -206,6 +209,7 @@ pub struct EventRead {
     /// Denormalized client name for display
     pub client_name: Option<String>,
 
+    #[serde(with = "chrono_datetime_as_bson_datetime")]
     pub created_at: DateTime<Utc>,
 }
 

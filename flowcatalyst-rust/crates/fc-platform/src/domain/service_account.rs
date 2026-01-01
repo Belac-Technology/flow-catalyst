@@ -138,6 +138,7 @@ pub struct RoleAssignment {
     pub assignment_source: Option<String>,
 
     /// When the role was assigned
+    #[serde(with = "chrono_datetime_as_bson_datetime")]
     pub assigned_at: DateTime<Utc>,
 
     /// Who assigned the role
@@ -221,11 +222,13 @@ pub struct ServiceAccount {
     pub roles: Vec<RoleAssignment>,
 
     /// Last time this account was used
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", default, with = "bson::serde_helpers::chrono_datetime_as_bson_datetime_optional")]
     pub last_used_at: Option<DateTime<Utc>>,
 
     /// Audit fields
+    #[serde(with = "chrono_datetime_as_bson_datetime")]
     pub created_at: DateTime<Utc>,
+    #[serde(with = "chrono_datetime_as_bson_datetime")]
     pub updated_at: DateTime<Utc>,
 
     #[serde(skip_serializing_if = "Option::is_none")]

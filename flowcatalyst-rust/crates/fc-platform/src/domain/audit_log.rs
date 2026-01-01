@@ -110,6 +110,7 @@ pub struct AuditLog {
     pub new_state: Option<serde_json::Value>,
 
     /// Timestamp
+    #[serde(with = "chrono_datetime_as_bson_datetime")]
     pub created_at: DateTime<Utc>,
 }
 

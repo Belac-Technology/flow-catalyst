@@ -74,9 +74,11 @@ pub struct OidcLoginState {
     // ==================== Timestamps ====================
 
     /// When this state was created
+    #[serde(with = "chrono_datetime_as_bson_datetime")]
     pub created_at: DateTime<Utc>,
 
     /// When this state expires (10 minutes from creation)
+    #[serde(with = "chrono_datetime_as_bson_datetime")]
     pub expires_at: DateTime<Utc>,
 }
 

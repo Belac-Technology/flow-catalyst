@@ -48,7 +48,7 @@ pub struct RefreshToken {
     pub revoked: bool,
 
     /// When the token was revoked (if revoked)
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", default, with = "bson::serde_helpers::chrono_datetime_as_bson_datetime_optional")]
     pub revoked_at: Option<DateTime<Utc>>,
 
     /// Token family ID for rotation tracking.
@@ -64,13 +64,15 @@ pub struct RefreshToken {
     pub replaced_by: Option<String>,
 
     /// When the token was created
+    #[serde(with = "chrono_datetime_as_bson_datetime")]
     pub created_at: DateTime<Utc>,
 
     /// When the token expires
+    #[serde(with = "chrono_datetime_as_bson_datetime")]
     pub expires_at: DateTime<Utc>,
 
     /// When the token was last used (for monitoring/security)
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", default, with = "bson::serde_helpers::chrono_datetime_as_bson_datetime_optional")]
     pub last_used_at: Option<DateTime<Utc>>,
 
     /// IP address of the client that created this token
