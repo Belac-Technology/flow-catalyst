@@ -4,6 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
+use bson::serde_helpers::chrono_datetime_as_bson_datetime;
 
 /// Application type
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -62,7 +63,9 @@ pub struct Application {
     pub active: bool,
 
     /// Audit fields
+    #[serde(with = "chrono_datetime_as_bson_datetime")]
     pub created_at: DateTime<Utc>,
+    #[serde(with = "chrono_datetime_as_bson_datetime")]
     pub updated_at: DateTime<Utc>,
 
     #[serde(skip_serializing_if = "Option::is_none")]

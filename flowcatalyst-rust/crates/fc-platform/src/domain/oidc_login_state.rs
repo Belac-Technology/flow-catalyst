@@ -6,6 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc, Duration};
+use bson::serde_helpers::chrono_datetime_as_bson_datetime;
 
 /// OIDC login state for authorization code flow
 ///

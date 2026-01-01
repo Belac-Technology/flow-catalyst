@@ -5,6 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
+use bson::serde_helpers::chrono_datetime_as_bson_datetime;
 
 /// Event type status
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -61,14 +62,15 @@ pub struct SpecVersion {
     pub description: Option<String>,
 
     /// When this version was created
+    #[serde(with = "chrono_datetime_as_bson_datetime")]
     pub created_at: DateTime<Utc>,
 
     /// When this version was finalized
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", default, with = "bson::serde_helpers::chrono_datetime_as_bson_datetime_optional")]
     pub finalized_at: Option<DateTime<Utc>>,
 
     /// When this version was deprecated
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", default, with = "bson::serde_helpers::chrono_datetime_as_bson_datetime_optional")]
     pub deprecated_at: Option<DateTime<Utc>>,
 }
 
@@ -139,7 +141,9 @@ pub struct EventType {
     pub client_id: Option<String>,
 
     /// Audit fields
+    #[serde(with = "chrono_datetime_as_bson_datetime")]
     pub created_at: DateTime<Utc>,
+    #[serde(with = "chrono_datetime_as_bson_datetime")]
     pub updated_at: DateTime<Utc>,
 
     /// Who created this

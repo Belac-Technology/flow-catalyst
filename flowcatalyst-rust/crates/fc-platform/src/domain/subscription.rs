@@ -4,6 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
+use bson::serde_helpers::chrono_datetime_as_bson_datetime;
 use super::dispatch_job::DispatchMode;
 
 /// Subscription status

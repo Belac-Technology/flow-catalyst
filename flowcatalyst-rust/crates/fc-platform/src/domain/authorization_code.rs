@@ -5,6 +5,7 @@
 
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
+use bson::serde_helpers::chrono_datetime_as_bson_datetime;
 
 /// Authorization code for OAuth2 authorization code flow.
 ///

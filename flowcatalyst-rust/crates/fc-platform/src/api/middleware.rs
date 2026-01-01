@@ -56,7 +56,7 @@ where
 {
     type Rejection = AuthError;
 
-    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
         // Get AppState from extensions (set by middleware layer)
         let app_state = parts.extensions.get::<AppState>()
             .ok_or_else(|| AuthError {

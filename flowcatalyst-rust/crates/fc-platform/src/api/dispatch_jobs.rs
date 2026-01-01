@@ -475,7 +475,7 @@ pub async fn create_dispatch_job(
     };
 
     // Create the dispatch job
-    let now = chrono::Utc::now();
+    let _now = chrono::Utc::now();
     let mut job = if kind == DispatchKind::Event {
         DispatchJob::for_event(
             req.event_id.as_deref().unwrap_or(""),

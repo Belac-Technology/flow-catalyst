@@ -53,13 +53,14 @@ use fc_platform::api::{
     ApplicationsState, applications_router,
     DispatchPoolsState, dispatch_pools_router,
     MonitoringState, monitoring_router, LeaderState, CircuitBreakerRegistry, InFlightTracker,
+    DebugState, debug_events_router, debug_dispatch_jobs_router,
 };
 use fc_platform::repository::{
     EventRepository, EventTypeRepository, DispatchJobRepository, DispatchPoolRepository,
     SubscriptionRepository, ServiceAccountRepository, PrincipalRepository, ClientRepository,
     ApplicationRepository, RoleRepository, OAuthClientRepository,
     AnchorDomainRepository, ClientAuthConfigRepository, ClientAccessGrantRepository, IdpRoleMappingRepository,
-    AuditLogRepository,
+    AuditLogRepository, ApplicationClientConfigRepository,
 };
 
 use sqlx::sqlite::SqlitePoolOptions;
@@ -231,7 +232,7 @@ async fn main() -> Result<()> {
     let dispatch_job_repo = Arc::new(DispatchJobRepository::new(&platform_db));
     let dispatch_pool_repo = Arc::new(DispatchPoolRepository::new(&platform_db));
     let subscription_repo = Arc::new(SubscriptionRepository::new(&platform_db));
-    let _service_account_repo = Arc::new(ServiceAccountRepository::new(&platform_db));
+    let service_account_repo = Arc::new(ServiceAccountRepository::new(&platform_db));
     let principal_repo = Arc::new(PrincipalRepository::new(&platform_db));
     let client_repo = Arc::new(ClientRepository::new(&platform_db));
     let application_repo = Arc::new(ApplicationRepository::new(&platform_db));
@@ -242,6 +243,7 @@ async fn main() -> Result<()> {
     let _client_access_grant_repo = Arc::new(ClientAccessGrantRepository::new(&platform_db));
     let idp_role_mapping_repo = Arc::new(IdpRoleMappingRepository::new(&platform_db));
     let audit_log_repo = Arc::new(AuditLogRepository::new(&platform_db));
+    let application_client_config_repo = Arc::new(ApplicationClientConfigRepository::new(&platform_db));
     info!("Platform repositories initialized");
 
     // 8c. Initialize auth services (auto-generate RSA keys for dev, like Java)
@@ -295,8 +297,18 @@ async fn main() -> Result<()> {
         idp_role_mapping_repo: idp_role_mapping_repo.clone(),
     };
     let audit_logs_state = AuditLogsState { audit_log_repo: audit_log_repo.clone() };
-    let applications_state = ApplicationsState { application_repo: application_repo.clone() };
+    let applications_state = ApplicationsState {
+        application_repo: application_repo.clone(),
+        service_account_repo: service_account_repo.clone(),
+        role_repo: role_repo.clone(),
+        client_config_repo: application_client_config_repo.clone(),
+        client_repo: client_repo.clone(),
+    };
     let dispatch_pools_state = DispatchPoolsState { dispatch_pool_repo: dispatch_pool_repo.clone() };
+    let debug_state = DebugState {
+        event_repo: event_repo.clone(),
+        dispatch_job_repo: dispatch_job_repo.clone(),
+    };
 
     // Monitoring state with leader election and circuit breakers
     let monitoring_state = MonitoringState {
@@ -314,6 +326,9 @@ async fn main() -> Result<()> {
         .nest("/api/bff/event-types", event_types_router(event_types_state))
         .nest("/api/bff/dispatch-jobs", dispatch_jobs_router(dispatch_jobs_state))
         .nest("/api/bff/filter-options", filter_options_router(filter_options_state))
+        // Debug BFF APIs (raw data access)
+        .nest("/api/bff/debug/events", debug_events_router(debug_state.clone()))
+        .nest("/api/bff/debug/dispatch-jobs", debug_dispatch_jobs_router(debug_state))
         // Admin APIs
         .nest("/api/admin/clients", clients_router(clients_state))
         .nest("/api/admin/principals", principals_router(principals_state))

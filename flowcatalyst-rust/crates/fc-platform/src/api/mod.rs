@@ -29,6 +29,9 @@ pub mod service_accounts;
 pub mod well_known;
 pub mod health;
 pub mod auth;
+pub mod client_selection;
+pub mod application_roles_sdk;
+pub mod debug;
 
 pub use common::*;
 pub use middleware::{AppState, Authenticated, OptionalAuth};
@@ -65,3 +68,6 @@ pub use service_accounts::{ServiceAccountsState, service_accounts_router};
 pub use well_known::{WellKnownState, well_known_router};
 pub use health::{HealthState, health_router};
 pub use auth::{AuthState, auth_router};
+pub use client_selection::{ClientSelectionState, client_selection_router};
+pub use application_roles_sdk::{ApplicationRolesSdkState, application_roles_sdk_router};
+pub use debug::{DebugState, debug_events_router, debug_dispatch_jobs_router};

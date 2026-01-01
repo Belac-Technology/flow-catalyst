@@ -4,6 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
+use bson::serde_helpers::chrono_datetime_as_bson_datetime;
 
 /// Auth provider type
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -51,6 +52,7 @@ pub struct AnchorDomain {
     pub domain: String,
 
     /// Audit fields
+    #[serde(with = "chrono_datetime_as_bson_datetime")]
     pub created_at: DateTime<Utc>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -124,7 +126,9 @@ pub struct ClientAuthConfig {
     pub oidc_issuer_pattern: Option<String>,
 
     /// Audit fields
+    #[serde(with = "chrono_datetime_as_bson_datetime")]
     pub created_at: DateTime<Utc>,
+    #[serde(with = "chrono_datetime_as_bson_datetime")]
     pub updated_at: DateTime<Utc>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -354,10 +358,11 @@ pub struct ClientAccessGrant {
     pub client_id: String,
 
     /// When the grant was created
+    #[serde(with = "chrono_datetime_as_bson_datetime")]
     pub granted_at: DateTime<Utc>,
 
     /// Optional expiration
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", default, with = "bson::serde_helpers::chrono_datetime_as_bson_datetime_optional")]
     pub expires_at: Option<DateTime<Utc>>,
 
     /// Who granted access
@@ -414,6 +419,7 @@ pub struct IdpRoleMapping {
     pub platform_role_name: String,
 
     /// Audit fields
+    #[serde(with = "chrono_datetime_as_bson_datetime")]
     pub created_at: DateTime<Utc>,
 
     #[serde(skip_serializing_if = "Option::is_none")]

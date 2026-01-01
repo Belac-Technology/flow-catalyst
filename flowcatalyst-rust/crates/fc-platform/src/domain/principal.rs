@@ -5,6 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
+use bson::serde_helpers::chrono_datetime_as_bson_datetime;
 use super::service_account::RoleAssignment;
 
 /// Principal type
@@ -97,7 +98,7 @@ pub struct UserIdentity {
     pub password_hash: Option<String>,
 
     /// Last login time
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", default, with = "bson::serde_helpers::chrono_datetime_as_bson_datetime_optional")]
     pub last_login_at: Option<DateTime<Utc>>,
 }
 
@@ -182,7 +183,9 @@ pub struct Principal {
     pub assigned_clients: Vec<String>,
 
     /// Audit fields
+    #[serde(with = "chrono_datetime_as_bson_datetime")]
     pub created_at: DateTime<Utc>,
+    #[serde(with = "chrono_datetime_as_bson_datetime")]
     pub updated_at: DateTime<Utc>,
 
     #[serde(skip_serializing_if = "Option::is_none")]

@@ -9,8 +9,6 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use async_trait::async_trait;
-use wiremock::{MockServer, Mock, ResponseTemplate};
-use wiremock::matchers::{method, path};
 
 use fc_common::{
     Message, QueuedMessage, MediationType, MediationOutcome, PoolConfig, RouterConfig,
@@ -124,6 +122,7 @@ fn create_message_with_group(id: &str, pool_code: &str, group_id: Option<&str>) 
         id: id.to_string(),
         pool_code: pool_code.to_string(),
         auth_token: None,
+        signing_secret: None,
         mediation_type: MediationType::HTTP,
         mediation_target: "http://localhost:8080/test".to_string(),
         message_group_id: group_id.map(|s| s.to_string()),

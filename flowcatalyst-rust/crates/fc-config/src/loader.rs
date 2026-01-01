@@ -142,6 +142,43 @@ impl ConfigLoader {
             }
         }
 
+        // Router Config Sync
+        if let Ok(val) = env::var("FLOWCATALYST_CONFIG_SYNC_ENABLED") {
+            config.router.config_sync.enabled = val.parse().unwrap_or(false);
+        }
+        if let Ok(val) = env::var("FLOWCATALYST_CONFIG_SYNC_URL") {
+            config.router.config_sync.config_url = val;
+        }
+        if let Ok(val) = env::var("FLOWCATALYST_CONFIG_SYNC_INTERVAL") {
+            if let Ok(interval) = val.parse() {
+                config.router.config_sync.interval_seconds = interval;
+            }
+        }
+        if let Ok(val) = env::var("FLOWCATALYST_CONFIG_SYNC_FAIL_ON_ERROR") {
+            config.router.config_sync.fail_on_initial_error = val.parse().unwrap_or(true);
+        }
+
+        // Router Standby/HA
+        if let Ok(val) = env::var("FLOWCATALYST_STANDBY_ENABLED") {
+            config.router.standby.enabled = val.parse().unwrap_or(false);
+        }
+        if let Ok(val) = env::var("FLOWCATALYST_STANDBY_REDIS_URL") {
+            config.router.standby.redis_url = val;
+        }
+        if let Ok(val) = env::var("FLOWCATALYST_STANDBY_LOCK_KEY") {
+            config.router.standby.lock_key = val;
+        }
+        if let Ok(val) = env::var("FLOWCATALYST_STANDBY_LOCK_TTL") {
+            if let Ok(ttl) = val.parse() {
+                config.router.standby.lock_ttl_seconds = ttl;
+            }
+        }
+        if let Ok(val) = env::var("FLOWCATALYST_STANDBY_HEARTBEAT_INTERVAL") {
+            if let Ok(interval) = val.parse() {
+                config.router.standby.heartbeat_interval_seconds = interval;
+            }
+        }
+
         // Stream
         if let Ok(val) = env::var("FLOWCATALYST_STREAM_BATCH_SIZE") {
             if let Ok(size) = val.parse() {

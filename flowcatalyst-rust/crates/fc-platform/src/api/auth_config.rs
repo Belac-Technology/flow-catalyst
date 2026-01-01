@@ -4,7 +4,7 @@
 //! Includes anchor domains, client auth configs, and IDP role mappings.
 
 use axum::{
-    routing::{get, post, put, delete},
+    routing::{get, post, delete},
     extract::{State, Path, Query},
     Json, Router,
 };

@@ -6,6 +6,8 @@
 //! - Consumer health monitoring
 //! - Warning service cleanup
 //! - Graceful shutdown coordination
+//! - Configuration sync (when enabled)
+//! - Standby/HA coordination (when enabled)
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -16,6 +18,8 @@ use fc_common::{WarningCategory, WarningSeverity};
 use crate::manager::QueueManager;
 use crate::health::HealthService;
 use crate::warning::WarningService;
+use crate::config_sync::{ConfigSyncService, spawn_config_sync_task};
+use crate::standby::{StandbyProcessor, spawn_leadership_monitor};
 
 /// Configuration for the lifecycle manager
 #[derive(Debug, Clone)]
@@ -52,6 +56,10 @@ pub struct LifecycleManager {
     shutdown_tx: broadcast::Sender<()>,
     warning_service: Arc<WarningService>,
     health_service: Arc<HealthService>,
+    /// Optional config sync service
+    config_sync: Option<Arc<ConfigSyncService>>,
+    /// Optional standby processor
+    standby: Option<Arc<StandbyProcessor>>,
 }
 
 impl LifecycleManager {
@@ -65,6 +73,8 @@ impl LifecycleManager {
             shutdown_tx,
             warning_service,
             health_service,
+            config_sync: None,
+            standby: None,
         }
     }
 
@@ -278,7 +288,43 @@ impl LifecycleManager {
             shutdown_tx,
             warning_service,
             health_service,
+            config_sync: None,
+            standby: None,
         }
+    }
+
+    /// Start lifecycle tasks with optional config sync and standby support
+    pub fn start_with_features(
+        manager: Arc<QueueManager>,
+        warning_service: Arc<WarningService>,
+        health_service: Arc<HealthService>,
+        config: LifecycleConfig,
+        config_sync: Option<Arc<ConfigSyncService>>,
+        standby: Option<Arc<StandbyProcessor>>,
+    ) -> Self {
+        // Start the base lifecycle manager
+        let mut lifecycle = Self::start(manager, warning_service, health_service, config);
+
+        // Start config sync task if provided and enabled
+        if let Some(ref sync_service) = config_sync {
+            if sync_service.is_enabled() {
+                info!("Starting configuration sync background task");
+                spawn_config_sync_task(sync_service.clone(), lifecycle.shutdown_tx.clone());
+            }
+        }
+
+        // Start leadership monitor if standby is enabled
+        if let Some(ref standby_proc) = standby {
+            if standby_proc.is_standby_enabled() {
+                info!("Starting leadership monitor background task");
+                spawn_leadership_monitor(standby_proc.clone(), lifecycle.shutdown_tx.clone());
+            }
+        }
+
+        lifecycle.config_sync = config_sync;
+        lifecycle.standby = standby;
+
+        lifecycle
     }
 
     /// Get warning service reference
@@ -291,10 +337,48 @@ impl LifecycleManager {
         &self.health_service
     }
 
+    /// Get config sync service reference if available
+    pub fn config_sync(&self) -> Option<&Arc<ConfigSyncService>> {
+        self.config_sync.as_ref()
+    }
+
+    /// Get standby processor reference if available
+    pub fn standby(&self) -> Option<&Arc<StandbyProcessor>> {
+        self.standby.as_ref()
+    }
+
+    /// Check if this instance should process messages (respects standby mode)
+    pub fn should_process(&self) -> bool {
+        match &self.standby {
+            Some(standby) => standby.should_process(),
+            None => true, // No standby = always process
+        }
+    }
+
+    /// Check if this instance is the leader
+    pub fn is_leader(&self) -> bool {
+        match &self.standby {
+            Some(standby) => standby.is_leader(),
+            None => true, // No standby = always leader
+        }
+    }
+
     /// Signal shutdown to all lifecycle tasks
     pub async fn shutdown(&self) {
         info!("Lifecycle manager shutting down...");
+
+        // Shutdown standby processor first
+        if let Some(ref standby) = self.standby {
+            standby.shutdown().await;
+        }
+
+        // Signal all tasks to stop
         let _ = self.shutdown_tx.send(());
+    }
+
+    /// Get the shutdown sender for spawning additional tasks
+    pub fn shutdown_sender(&self) -> broadcast::Sender<()> {
+        self.shutdown_tx.clone()
     }
 }
 

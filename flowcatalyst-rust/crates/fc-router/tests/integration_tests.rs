@@ -16,7 +16,7 @@ use fc_common::{
     Message, QueuedMessage, MediationType, PoolConfig, RouterConfig,
 };
 use fc_queue::{QueueConsumer, QueueError};
-use fc_router::{QueueManager, HttpMediator, HttpMediatorConfig, Mediator};
+use fc_router::{QueueManager, HttpMediator, HttpMediatorConfig};
 use chrono::Utc;
 
 /// Mock queue consumer that provides test messages
@@ -97,6 +97,7 @@ fn create_test_message(id: &str, pool_code: &str, target: &str) -> Message {
         id: id.to_string(),
         pool_code: pool_code.to_string(),
         auth_token: None,
+        signing_secret: None,
         mediation_type: MediationType::HTTP,
         mediation_target: target.to_string(),
         message_group_id: None,

@@ -202,9 +202,9 @@ impl<U: UnitOfWork> CreateEventTypeUseCase<U> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::usecase::unit_of_work::InMemoryUnitOfWork;
-    use mongodb::{Client, Database};
-    use std::sync::Arc;
+    
+    
+    
 
     // Helper to create a mock repository
     // Note: In a real test, you would use a mock or in-memory MongoDB

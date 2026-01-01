@@ -126,6 +126,7 @@ fn create_test_message(id: &str, pool_code: &str) -> Message {
         id: id.to_string(),
         pool_code: pool_code.to_string(),
         auth_token: None,
+        signing_secret: None,
         mediation_type: MediationType::HTTP,
         mediation_target: "http://localhost:8080/test".to_string(),
         message_group_id: None,

@@ -32,6 +32,8 @@ use anyhow::Result;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 use tokio::{signal, net::TcpListener};
+use utoipa::OpenApi;
+use utoipa_swagger_ui::SwaggerUi;
 
 use fc_platform::service::{AuthService, AuthConfig, AuthorizationService, AuditService};
 use fc_platform::api::middleware::{AppState, AuthLayer};
@@ -50,14 +52,43 @@ use fc_platform::api::{
     ApplicationsState, applications_router,
     DispatchPoolsState, dispatch_pools_router,
     MonitoringState, monitoring_router, LeaderState, CircuitBreakerRegistry, InFlightTracker,
+    DebugState, debug_events_router, debug_dispatch_jobs_router,
 };
 use fc_platform::repository::{
     EventRepository, EventTypeRepository, DispatchJobRepository, DispatchPoolRepository,
     SubscriptionRepository, ServiceAccountRepository, PrincipalRepository, ClientRepository,
     ApplicationRepository, RoleRepository, OAuthClientRepository,
     AnchorDomainRepository, ClientAuthConfigRepository, ClientAccessGrantRepository, IdpRoleMappingRepository,
-    AuditLogRepository,
+    AuditLogRepository, ApplicationClientConfigRepository, OidcLoginStateRepository,
 };
+use fc_platform::service::OidcSyncService;
+use fc_platform::api::{OidcLoginApiState, oidc_login_router};
+use fc_platform::seed::DevDataSeeder;
+
+/// OpenAPI documentation for the Platform API
+#[derive(OpenApi)]
+#[openapi(
+    info(
+        title = "FlowCatalyst Platform API",
+        version = "1.0.0",
+        description = "REST APIs for events, subscriptions, and administration"
+    ),
+    servers(
+        (url = "http://localhost:8080", description = "Local development")
+    ),
+    tags(
+        (name = "events", description = "Event management"),
+        (name = "event-types", description = "Event type definitions"),
+        (name = "dispatch-jobs", description = "Dispatch job tracking"),
+        (name = "subscriptions", description = "Webhook subscriptions"),
+        (name = "clients", description = "Client/tenant management"),
+        (name = "principals", description = "User and service account management"),
+        (name = "roles", description = "Role management"),
+        (name = "applications", description = "Application management"),
+        (name = "monitoring", description = "Health and monitoring")
+    )
+)]
+struct ApiDoc;
 
 fn env_or(key: &str, default: &str) -> String {
     std::env::var(key).unwrap_or_else(|_| default.to_string())
@@ -94,13 +125,24 @@ async fn main() -> Result<()> {
     let mongo_client = mongodb::Client::with_uri_str(&mongo_url).await?;
     let db = mongo_client.database(&mongo_db);
 
+    // Seed development data if in dev mode
+    let dev_mode = std::env::var("FC_DEV_MODE")
+        .map(|v| v == "true" || v == "1")
+        .unwrap_or(false);
+    if dev_mode {
+        let seeder = DevDataSeeder::new(db.clone());
+        if let Err(e) = seeder.seed().await {
+            tracing::warn!("Dev data seeding skipped (data may already exist): {}", e);
+        }
+    }
+
     // Initialize repositories
     let event_repo = Arc::new(EventRepository::new(&db));
     let event_type_repo = Arc::new(EventTypeRepository::new(&db));
     let dispatch_job_repo = Arc::new(DispatchJobRepository::new(&db));
     let dispatch_pool_repo = Arc::new(DispatchPoolRepository::new(&db));
     let subscription_repo = Arc::new(SubscriptionRepository::new(&db));
-    let _service_account_repo = Arc::new(ServiceAccountRepository::new(&db));
+    let service_account_repo = Arc::new(ServiceAccountRepository::new(&db));
     let principal_repo = Arc::new(PrincipalRepository::new(&db));
     let client_repo = Arc::new(ClientRepository::new(&db));
     let application_repo = Arc::new(ApplicationRepository::new(&db));
@@ -111,6 +153,8 @@ async fn main() -> Result<()> {
     let _client_access_grant_repo = Arc::new(ClientAccessGrantRepository::new(&db));
     let idp_role_mapping_repo = Arc::new(IdpRoleMappingRepository::new(&db));
     let audit_log_repo = Arc::new(AuditLogRepository::new(&db));
+    let application_client_config_repo = Arc::new(ApplicationClientConfigRepository::new(&db));
+    let oidc_login_state_repo = Arc::new(OidcLoginStateRepository::new(&db));
     info!("Repositories initialized");
 
     // Initialize auth (load or generate RSA keys)
@@ -134,18 +178,26 @@ async fn main() -> Result<()> {
     };
     let auth_service = Arc::new(AuthService::new(auth_config));
     let authz_service = Arc::new(AuthorizationService::new(role_repo.clone()));
+    let oidc_sync_service = Arc::new(OidcSyncService::new(
+        principal_repo.clone(),
+        idp_role_mapping_repo.clone(),
+    ));
     info!("Auth services initialized");
 
     // Create AppState
     let app_state = AppState {
-        auth_service,
+        auth_service: auth_service.clone(),
         authz_service,
     };
 
     // Build API states
-    let events_state = EventsState { event_repo };
+    let events_state = EventsState { event_repo: event_repo.clone() };
     let event_types_state = EventTypesState { event_type_repo: event_type_repo.clone() };
     let dispatch_jobs_state = DispatchJobsState { dispatch_job_repo: dispatch_job_repo.clone() };
+    let debug_state = DebugState {
+        event_repo,
+        dispatch_job_repo: dispatch_job_repo.clone(),
+    };
     let filter_options_state = FilterOptionsState {
         client_repo: client_repo.clone(),
         event_type_repo,
@@ -153,23 +205,42 @@ async fn main() -> Result<()> {
         dispatch_pool_repo: dispatch_pool_repo.clone(),
         application_repo: application_repo.clone(),
     };
-    let clients_state = ClientsState { client_repo };
+    let clients_state = ClientsState { client_repo: client_repo.clone() };
     let audit_service = Arc::new(AuditService::new(audit_log_repo.clone()));
     let principals_state = PrincipalsState {
         principal_repo,
         audit_service: Some(audit_service),
         password_service: None, // TODO: Configure password service for password reset
     };
-    let roles_state = RolesState { role_repo };
+    let roles_state = RolesState { role_repo: role_repo.clone() };
     let subscriptions_state = SubscriptionsState { subscription_repo };
     let oauth_clients_state = OAuthClientsState { oauth_client_repo };
     let auth_config_state = AuthConfigState {
-        anchor_domain_repo,
+        anchor_domain_repo: anchor_domain_repo.clone(),
+        client_auth_config_repo: client_auth_config_repo.clone(),
+        idp_role_mapping_repo: idp_role_mapping_repo.clone(),
+    };
+    let external_base_url = std::env::var("FC_EXTERNAL_BASE_URL").ok();
+    let oidc_login_state = OidcLoginApiState::new(
         client_auth_config_repo,
-        idp_role_mapping_repo,
+        anchor_domain_repo,
+        oidc_login_state_repo,
+        oidc_sync_service,
+        auth_service,
+    ).with_session_cookie_settings("fc_session", false, "Lax", 86400);
+    let oidc_login_state = if let Some(url) = external_base_url {
+        oidc_login_state.with_external_base_url(url)
+    } else {
+        oidc_login_state
     };
     let audit_logs_state = AuditLogsState { audit_log_repo };
-    let applications_state = ApplicationsState { application_repo };
+    let applications_state = ApplicationsState {
+        application_repo,
+        service_account_repo,
+        role_repo,
+        client_config_repo: application_client_config_repo,
+        client_repo,
+    };
     let dispatch_pools_state = DispatchPoolsState { dispatch_pool_repo };
 
     let monitoring_state = MonitoringState {
@@ -187,6 +258,9 @@ async fn main() -> Result<()> {
         .nest("/api/bff/event-types", event_types_router(event_types_state))
         .nest("/api/bff/dispatch-jobs", dispatch_jobs_router(dispatch_jobs_state))
         .nest("/api/bff/filter-options", filter_options_router(filter_options_state))
+        // Debug BFF APIs (raw data access)
+        .nest("/api/bff/debug/events", debug_events_router(debug_state.clone()))
+        .nest("/api/bff/debug/dispatch-jobs", debug_dispatch_jobs_router(debug_state))
         // Admin APIs
         .nest("/api/admin/clients", clients_router(clients_state))
         .nest("/api/admin/principals", principals_router(principals_state))
@@ -201,6 +275,10 @@ async fn main() -> Result<()> {
         .nest("/api/admin/dispatch-pools", dispatch_pools_router(dispatch_pools_state))
         // Monitoring APIs
         .nest("/api/monitoring", monitoring_router(monitoring_state))
+        // Auth APIs (OIDC login, check-domain, etc.)
+        .nest("/auth", oidc_login_router(oidc_login_state))
+        // OpenAPI / Swagger UI
+        .merge(SwaggerUi::new("/swagger-ui").url("/q/openapi", ApiDoc::openapi()))
         // Auth middleware
         .layer(AuthLayer::new(app_state))
         .layer(TraceLayer::new_for_http())

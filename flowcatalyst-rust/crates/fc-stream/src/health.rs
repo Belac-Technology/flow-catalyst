@@ -169,6 +169,33 @@ impl StreamHealth {
             last_checkpoint_time_ms: self.last_checkpoint_time.load(Ordering::SeqCst),
         }
     }
+
+    /// Get simplified status snapshot for API
+    pub fn status(&self) -> StreamHealthSnapshot {
+        let checkpoint_ms = self.last_checkpoint_time.load(Ordering::SeqCst);
+        let last_checkpoint_at = if checkpoint_ms > 0 {
+            chrono::DateTime::from_timestamp_millis(checkpoint_ms as i64)
+        } else {
+            None
+        };
+
+        let status = if self.has_fatal_error() {
+            StreamStatus::Error
+        } else if self.is_running() {
+            StreamStatus::Running
+        } else {
+            StreamStatus::Stopped
+        };
+
+        StreamHealthSnapshot {
+            status,
+            batch_sequence: self.get_batch_sequence(),
+            in_flight_count: self.get_in_flight_count().max(0) as u32,
+            pending_count: self.get_pending_batches() as u32,
+            error_count: self.reconnect_attempts.load(Ordering::SeqCst),
+            last_checkpoint_at,
+        }
+    }
 }
 
 /// Detailed health status for a stream
@@ -196,6 +223,43 @@ pub struct StreamProcessorHealth {
     pub healthy_streams: usize,
     pub unhealthy_streams: usize,
     pub streams: Vec<StreamHealthStatus>,
+}
+
+/// Aggregated health result with liveness/readiness and errors
+#[derive(Debug, Clone)]
+pub struct AggregatedHealth {
+    live: bool,
+    ready: bool,
+    pub errors: Vec<String>,
+}
+
+impl AggregatedHealth {
+    pub fn is_live(&self) -> bool {
+        self.live
+    }
+
+    pub fn is_ready(&self) -> bool {
+        self.ready
+    }
+}
+
+/// Status enum for stream health
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum StreamStatus {
+    Running,
+    Stopped,
+    Error,
+}
+
+/// Snapshot of stream health status for API responses
+#[derive(Debug, Clone)]
+pub struct StreamHealthSnapshot {
+    pub status: StreamStatus,
+    pub batch_sequence: u64,
+    pub in_flight_count: u32,
+    pub pending_count: u32,
+    pub error_count: u64,
+    pub last_checkpoint_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 /// Health service for the stream processor
@@ -246,6 +310,24 @@ impl StreamHealthService {
             unhealthy_streams: total - healthy_count,
             streams: statuses,
         }
+    }
+
+    /// Get aggregated health with liveness/readiness and error details
+    pub fn get_aggregated_health(&self) -> AggregatedHealth {
+        let live = self.is_live();
+        let ready = self.is_ready();
+
+        let errors: Vec<String> = self.stream_healths
+            .iter()
+            .filter_map(|h| h.get_fatal_error())
+            .collect();
+
+        AggregatedHealth { live, ready, errors }
+    }
+
+    /// Get all registered stream health trackers
+    pub fn get_all_stream_health(&self) -> &[Arc<StreamHealth>] {
+        &self.stream_healths
     }
 }
 

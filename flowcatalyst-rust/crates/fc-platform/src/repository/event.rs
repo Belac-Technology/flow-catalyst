@@ -78,4 +78,25 @@ impl EventRepository {
             .await?;
         Ok(())
     }
+
+    /// Find recent events with pagination (for debug/admin)
+    pub async fn find_recent_paged(&self, page: u32, size: u32) -> Result<Vec<Event>> {
+        use mongodb::options::FindOptions;
+
+        let skip = page as u64 * size as u64;
+        let options = FindOptions::builder()
+            .skip(skip)
+            .limit(size as i64)
+            .sort(doc! { "createdAt": -1 })
+            .build();
+
+        let cursor = self.collection.find(doc! {}).with_options(options).await?;
+        Ok(cursor.try_collect().await?)
+    }
+
+    /// Count all events
+    pub async fn count_all(&self) -> Result<u64> {
+        let count = self.collection.count_documents(doc! {}).await?;
+        Ok(count)
+    }
 }

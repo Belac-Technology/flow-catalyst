@@ -5,6 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
+use bson::serde_helpers::chrono_datetime_as_bson_datetime;
 
 /// CloudEvents spec version
 pub const CLOUDEVENTS_SPEC_VERSION: &str = "1.0";

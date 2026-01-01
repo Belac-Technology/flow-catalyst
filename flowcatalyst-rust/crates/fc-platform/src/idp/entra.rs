@@ -14,7 +14,7 @@ use tracing::debug;
 use crate::domain::UserScope;
 use crate::service::oidc::IdTokenClaims;
 
-use super::{IdpAdapter, IdpRoleMappingConfig, IdpUserInfo, MappedRole, apply_role_mappings};
+use super::{IdpAdapter, IdpRoleMappingConfig, IdpUserInfo, apply_role_mappings};
 
 /// Azure cloud environment
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

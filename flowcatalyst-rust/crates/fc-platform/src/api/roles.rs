@@ -3,7 +3,7 @@
 //! REST endpoints for role management.
 
 use axum::{
-    routing::{get, post, put, delete},
+    routing::{get, post, delete},
     extract::{State, Path, Query},
     Json, Router,
 };

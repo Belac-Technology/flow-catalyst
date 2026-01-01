@@ -1841,6 +1841,7 @@ dependencies = [
  "fc-queue",
  "fc-router",
  "fc-standby",
+ "fc-stream",
  "metrics",
  "metrics-exporter-prometheus",
  "parking_lot",
@@ -2013,6 +2014,8 @@ dependencies = [
  "tower-http 0.5.2",
  "tracing",
  "tracing-subscriber",
+ "utoipa 4.2.3",
+ "utoipa-swagger-ui",
  "uuid",
 ]
 
@@ -2052,6 +2055,7 @@ dependencies = [
  "dashmap",
  "fc-common",
  "fc-queue",
+ "fc-standby",
  "futures",
  "governor",
  "hex",

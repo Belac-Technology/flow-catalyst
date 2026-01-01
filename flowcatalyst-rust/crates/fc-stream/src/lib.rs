@@ -7,6 +7,7 @@ pub mod subscription_matcher;
 pub mod batch_dispatcher;
 pub mod projection;
 pub mod health;
+pub mod index_initializer;
 
 #[cfg(feature = "standby")]
 pub mod standby;
@@ -30,9 +31,15 @@ pub use projection::{
     EventReadProjection, DispatchJobReadProjection, ProjectionBuilder,
     ProjectionLookup, ProjectionStore, EventData, DispatchJobData,
     MongoProjectionStore, InMemoryProjectionStore, InMemoryLookup,
+    BatchWriteResult, ChangeOperationType, ProjectionMapResult,
+    ProjectionMapper, EventMapper, DispatchJobMapper, ProjectionProcessor,
 };
 pub use health::{
     StreamHealth, StreamHealthStatus, StreamProcessorHealth, StreamHealthService,
+    AggregatedHealth, StreamStatus, StreamHealthSnapshot,
+};
+pub use index_initializer::{
+    IndexInitializer, IndexConfig, IndexInitResult, ensure_indexes, ensure_indexes_with_config,
 };
 
 #[cfg(feature = "standby")]

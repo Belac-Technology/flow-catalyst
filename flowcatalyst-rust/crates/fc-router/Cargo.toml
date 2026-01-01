@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 fc-common = { path = "../fc-common" }
 fc-queue = { path = "../fc-queue" }
+fc-standby = { path = "../fc-standby" }
 tokio = { workspace = true }
 async-trait = { workspace = true }
 anyhow = { workspace = true }

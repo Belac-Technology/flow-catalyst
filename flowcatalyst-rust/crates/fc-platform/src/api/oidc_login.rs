@@ -12,8 +12,8 @@
 use axum::{
     routing::{get, post},
     extract::{State, Query, Host},
-    response::{Json, Redirect, IntoResponse, Response},
-    http::{StatusCode, header, HeaderMap, Uri},
+    response::{Json, IntoResponse, Response},
+    http::{StatusCode, header, Uri},
     Router,
 };
 use axum_extra::extract::cookie::{Cookie, CookieJar};
@@ -545,7 +545,7 @@ fn generate_code_challenge(verifier: &str) -> String {
     URL_SAFE_NO_PAD.encode(hash)
 }
 
-fn get_external_base_url(state: &OidcLoginApiState, host: &str, uri: &Uri) -> String {
+fn get_external_base_url(state: &OidcLoginApiState, host: &str, _uri: &Uri) -> String {
     state.external_base_url.clone().unwrap_or_else(|| {
         // Fall back to request host
         let scheme = if state.session_cookie_secure { "https" } else { "http" };

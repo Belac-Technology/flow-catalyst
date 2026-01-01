@@ -5,6 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc, Duration};
+use bson::serde_helpers::chrono_datetime_as_bson_datetime;
 use crate::TsidGenerator;
 
 /// Default refresh token expiry: 30 days

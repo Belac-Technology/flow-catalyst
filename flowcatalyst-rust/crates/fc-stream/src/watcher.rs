@@ -445,7 +445,7 @@ fn is_stale_resume_token_error<E: std::fmt::Display>(e: &E) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::checkpoint::MemoryCheckpointStore;
+    
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     struct CountingProcessor {

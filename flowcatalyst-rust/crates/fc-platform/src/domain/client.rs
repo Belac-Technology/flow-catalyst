@@ -4,6 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
+use bson::serde_helpers::chrono_datetime_as_bson_datetime;
 
 /// Client status
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -40,6 +41,7 @@ pub struct ClientNote {
     pub added_by: Option<String>,
 
     /// When the note was added
+    #[serde(with = "chrono_datetime_as_bson_datetime")]
     pub added_at: DateTime<Utc>,
 }
 
@@ -86,7 +88,7 @@ pub struct Client {
     pub status_reason: Option<String>,
 
     /// When status was last changed
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", default, with = "bson::serde_helpers::chrono_datetime_as_bson_datetime_optional")]
     pub status_changed_at: Option<DateTime<Utc>>,
 
     /// Audit notes
@@ -98,7 +100,9 @@ pub struct Client {
     pub metadata: serde_json::Value,
 
     /// Audit fields
+    #[serde(with = "chrono_datetime_as_bson_datetime")]
     pub created_at: DateTime<Utc>,
+    #[serde(with = "chrono_datetime_as_bson_datetime")]
     pub updated_at: DateTime<Utc>,
 
     #[serde(skip_serializing_if = "Option::is_none")]

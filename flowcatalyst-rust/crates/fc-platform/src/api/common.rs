@@ -1,6 +1,5 @@
 //! Common API types and utilities
 
-use axum::Json;
 use utoipa::{ToSchema, IntoParams};
 use serde::{Deserialize, Serialize};
 /// Standard API error response

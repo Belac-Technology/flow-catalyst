@@ -19,6 +19,7 @@ pub mod audit_log;
 pub mod oidc_login_state;
 pub mod refresh_token;
 pub mod authorization_code;
+pub mod application_client_config;
 
 pub use event::*;
 pub use event_type::*;
@@ -36,3 +37,4 @@ pub use audit_log::*;
 pub use oidc_login_state::*;
 pub use refresh_token::*;
 pub use authorization_code::*;
+pub use application_client_config::*;

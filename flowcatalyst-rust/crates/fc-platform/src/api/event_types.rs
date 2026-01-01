@@ -3,7 +3,7 @@
 //! REST endpoints for event type management.
 
 use axum::{
-    routing::{get, post, put, delete},
+    routing::{get, post},
     extract::{State, Path, Query},
     Json, Router,
 };

@@ -31,6 +31,7 @@ use fc_router::{
     QueueManager, WarningService, HealthService, QueueMetrics, InFlightMessageInfo,
     CircuitBreakerRegistry, CircuitBreakerState,
 };
+use fc_stream::StreamHealthService;
 use uuid::Uuid;
 use chrono::Utc;
 use tracing::{debug, info, warn, error};
@@ -52,6 +53,8 @@ pub struct AppState {
     /// Standby configuration (optional)
     pub standby_enabled: bool,
     pub instance_id: String,
+    /// Stream health service (optional)
+    pub stream_health_service: Option<Arc<StreamHealthService>>,
 }
 
 /// Simple health response for basic health check
@@ -270,6 +273,7 @@ pub fn create_router(
         circuit_breaker_registry,
         false,
         "default".to_string(),
+        None,
     )
 }
 
@@ -282,6 +286,7 @@ pub fn create_router_with_options(
     circuit_breaker_registry: Arc<CircuitBreakerRegistry>,
     standby_enabled: bool,
     instance_id: String,
+    stream_health_service: Option<Arc<StreamHealthService>>,
 ) -> Router {
     let state = AppState {
         publisher,
@@ -291,6 +296,7 @@ pub fn create_router_with_options(
         circuit_breaker_registry,
         standby_enabled,
         instance_id,
+        stream_health_service,
     };
 
     Router::new()
@@ -329,6 +335,10 @@ pub fn create_router_with_options(
         .route("/monitoring/dashboard", get(dashboard_html_handler))
         .route("/monitoring/standby-status", get(get_standby_status))
         .route("/monitoring/traffic-status", get(get_traffic_status))
+        // Stream processor health endpoints
+        .route("/monitoring/stream-health", get(stream_health_handler))
+        .route("/monitoring/stream-health/live", get(stream_liveness_handler))
+        .route("/monitoring/stream-health/ready", get(stream_readiness_handler))
         // Configuration management
         .route("/config/reload", post(reload_config))
         .route("/api/config", get(get_local_config))
@@ -1529,6 +1539,134 @@ async fn get_traffic_status() -> Json<TrafficStatusResponse> {
         last_operation: Some(Utc::now().to_rfc3339()),
         last_error: "none".to_string(),
     })
+}
+
+// ============================================================================
+// Stream Health Endpoints
+// ============================================================================
+
+/// Stream processor health response (Java-compatible)
+#[derive(Serialize, ToSchema)]
+struct StreamHealthResponse {
+    /// Overall status: UP, DEGRADED, DOWN
+    status: String,
+    /// Whether live probe passes
+    live: bool,
+    /// Whether ready probe passes
+    ready: bool,
+    /// Individual stream health details
+    streams: Vec<StreamHealthDetail>,
+    /// Error messages if any
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    errors: Vec<String>,
+}
+
+/// Health detail for a single stream
+#[derive(Serialize, ToSchema)]
+struct StreamHealthDetail {
+    name: String,
+    status: String,
+    #[serde(rename = "batchSequence")]
+    batch_sequence: u64,
+    #[serde(rename = "inFlightCount")]
+    in_flight_count: u32,
+    #[serde(rename = "pendingCount")]
+    pending_count: u32,
+    #[serde(rename = "errorCount")]
+    error_count: u64,
+    #[serde(rename = "lastCheckpointAt")]
+    last_checkpoint_at: Option<String>,
+}
+
+/// Get stream processor health status
+async fn stream_health_handler(State(state): State<AppState>) -> Json<StreamHealthResponse> {
+    match &state.stream_health_service {
+        Some(service) => {
+            let health = service.get_aggregated_health();
+            let streams: Vec<StreamHealthDetail> = service
+                .get_all_stream_health()
+                .iter()
+                .map(|h| {
+                    let status_snapshot = h.status();
+                    StreamHealthDetail {
+                        name: h.name().to_string(),
+                        status: format!("{:?}", status_snapshot.status).to_uppercase(),
+                        batch_sequence: status_snapshot.batch_sequence,
+                        in_flight_count: status_snapshot.in_flight_count,
+                        pending_count: status_snapshot.pending_count,
+                        error_count: status_snapshot.error_count,
+                        last_checkpoint_at: status_snapshot.last_checkpoint_at.map(|dt| dt.to_rfc3339()),
+                    }
+                })
+                .collect();
+
+            let status = if health.is_live() && health.is_ready() {
+                "UP"
+            } else if health.is_live() {
+                "DEGRADED"
+            } else {
+                "DOWN"
+            };
+
+            Json(StreamHealthResponse {
+                status: status.to_string(),
+                live: health.is_live(),
+                ready: health.is_ready(),
+                streams,
+                errors: health.errors,
+            })
+        }
+        None => {
+            // No stream health service configured
+            Json(StreamHealthResponse {
+                status: "DISABLED".to_string(),
+                live: true,
+                ready: true,
+                streams: vec![],
+                errors: vec![],
+            })
+        }
+    }
+}
+
+/// Stream liveness probe - checks if streams are alive
+async fn stream_liveness_handler(State(state): State<AppState>) -> Response {
+    match &state.stream_health_service {
+        Some(service) => {
+            let health = service.get_aggregated_health();
+            if health.is_live() {
+                (StatusCode::OK, Json(serde_json::json!({ "status": "LIVE" }))).into_response()
+            } else {
+                (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
+                    "status": "NOT_LIVE",
+                    "errors": health.errors
+                }))).into_response()
+            }
+        }
+        None => {
+            (StatusCode::OK, Json(serde_json::json!({ "status": "LIVE" }))).into_response()
+        }
+    }
+}
+
+/// Stream readiness probe - checks if streams are ready to process
+async fn stream_readiness_handler(State(state): State<AppState>) -> Response {
+    match &state.stream_health_service {
+        Some(service) => {
+            let health = service.get_aggregated_health();
+            if health.is_ready() {
+                (StatusCode::OK, Json(serde_json::json!({ "status": "READY" }))).into_response()
+            } else {
+                (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
+                    "status": "NOT_READY",
+                    "errors": health.errors
+                }))).into_response()
+            }
+        }
+        None => {
+            (StatusCode::OK, Json(serde_json::json!({ "status": "READY" }))).into_response()
+        }
+    }
 }
 
 // ============================================================================

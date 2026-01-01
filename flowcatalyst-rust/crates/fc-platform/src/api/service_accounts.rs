@@ -4,7 +4,7 @@
 //! Base path: /api/admin/platform/service-accounts
 
 use axum::{
-    routing::{get, post, put, delete},
+    routing::{get, post, put},
     extract::{State, Path, Query},
     http::StatusCode,
     response::IntoResponse,

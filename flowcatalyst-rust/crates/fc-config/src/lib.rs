@@ -198,6 +198,72 @@ pub struct RouterConfig {
     pub circuit_breaker_threshold: u32,
     /// Circuit breaker reset timeout in seconds
     pub circuit_breaker_reset_secs: u64,
+    /// Configuration sync settings
+    pub config_sync: ConfigSyncSettings,
+    /// Standby/HA settings
+    pub standby: StandbySettings,
+}
+
+/// Configuration sync settings for dynamic config updates
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ConfigSyncSettings {
+    /// Enable configuration sync from remote service
+    pub enabled: bool,
+    /// URL to fetch configuration from
+    pub config_url: String,
+    /// Sync interval in seconds (default: 300 = 5 minutes)
+    pub interval_seconds: u64,
+    /// Maximum retry attempts on failure
+    pub max_retry_attempts: u32,
+    /// Delay between retries in seconds
+    pub retry_delay_seconds: u64,
+    /// HTTP request timeout in seconds
+    pub request_timeout_seconds: u64,
+    /// Fail startup if initial sync fails
+    pub fail_on_initial_error: bool,
+}
+
+impl Default for ConfigSyncSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            config_url: String::new(),
+            interval_seconds: 300, // 5 minutes (matches Java)
+            max_retry_attempts: 12,
+            retry_delay_seconds: 5,
+            request_timeout_seconds: 30,
+            fail_on_initial_error: true,
+        }
+    }
+}
+
+/// Standby/High Availability settings
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct StandbySettings {
+    /// Enable active/standby mode (requires Redis)
+    pub enabled: bool,
+    /// Redis URL for leader election (uses main redis.url if empty)
+    pub redis_url: String,
+    /// Lock key for leader election
+    pub lock_key: String,
+    /// Lock TTL in seconds
+    pub lock_ttl_seconds: u64,
+    /// Heartbeat interval in seconds
+    pub heartbeat_interval_seconds: u64,
+}
+
+impl Default for StandbySettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            redis_url: String::new(),
+            lock_key: "fc:router:leader".to_string(),
+            lock_ttl_seconds: 30,
+            heartbeat_interval_seconds: 10,
+        }
+    }
 }
 
 impl Default for RouterConfig {
@@ -210,6 +276,8 @@ impl Default for RouterConfig {
             circuit_breaker_enabled: true,
             circuit_breaker_threshold: 5,
             circuit_breaker_reset_secs: 30,
+            config_sync: ConfigSyncSettings::default(),
+            standby: StandbySettings::default(),
         }
     }
 }

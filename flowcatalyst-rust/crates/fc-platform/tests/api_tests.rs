@@ -3,7 +3,6 @@
 //! Tests for platform domain models, authorization, and error handling.
 
 use std::collections::HashSet;
-use chrono::Utc;
 
 use fc_platform::domain::{Principal, UserScope, AuditLog, AuditAction};
 use fc_platform::TsidGenerator;
@@ -330,7 +329,7 @@ mod tsid_tests {
 
     #[test]
     fn test_multiple_tsids_time_ordered() {
-        let mut ids: Vec<String> = (0..100)
+        let ids: Vec<String> = (0..100)
             .map(|_| {
                 let id = TsidGenerator::generate();
                 std::thread::sleep(std::time::Duration::from_millis(1));

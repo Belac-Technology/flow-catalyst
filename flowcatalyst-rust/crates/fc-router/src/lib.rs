@@ -9,6 +9,8 @@
 //! - Lifecycle: Background tasks for visibility extension, health checks, etc.
 //! - PoolMetricsCollector: Enhanced metrics with sliding windows and percentiles
 //! - CircuitBreakerRegistry: Per-endpoint circuit breaker tracking for monitoring
+//! - ConfigSync: Dynamic configuration sync from central service
+//! - Standby: Active/standby high availability with Redis leader election
 
 pub mod error;
 pub mod manager;
@@ -20,6 +22,8 @@ pub mod warning;
 pub mod health;
 pub mod metrics;
 pub mod circuit_breaker_registry;
+pub mod config_sync;
+pub mod standby;
 
 pub use error::RouterError;
 pub use manager::{QueueManager, InFlightMessageInfo};
@@ -30,6 +34,11 @@ pub use warning::{WarningService, WarningServiceConfig};
 pub use health::{HealthService, HealthServiceConfig};
 pub use metrics::{PoolMetricsCollector, MetricsConfig};
 pub use circuit_breaker_registry::{CircuitBreakerRegistry, CircuitBreakerConfig, CircuitBreakerStats, CircuitBreakerState};
+pub use config_sync::{ConfigSyncService, ConfigSyncConfig, ConfigSyncResult, spawn_config_sync_task};
+pub use standby::{
+    StandbyProcessor, StandbyAwareProcessor, StandbyRouterConfig,
+    LeadershipStatus, spawn_leadership_monitor,
+};
 
 // Re-export QueueMetrics for API
 pub use fc_queue::QueueMetrics;

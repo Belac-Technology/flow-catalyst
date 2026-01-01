@@ -8,7 +8,6 @@
 //! - Custom delay parsing from response
 //! - Auth token handling
 
-use std::sync::Arc;
 use std::time::Duration;
 use wiremock::{MockServer, Mock, ResponseTemplate};
 use wiremock::matchers::{method, path, header, body_json};
@@ -22,6 +21,7 @@ fn create_test_message(target: &str) -> Message {
         id: "msg-1".to_string(),
         pool_code: "DEFAULT".to_string(),
         auth_token: None,
+        signing_secret: None,
         mediation_type: MediationType::HTTP,
         mediation_target: target.to_string(),
         message_group_id: None,
@@ -35,6 +35,7 @@ fn create_test_message_with_auth(target: &str, token: &str) -> Message {
         id: "msg-auth".to_string(),
         pool_code: "DEFAULT".to_string(),
         auth_token: Some(token.to_string()),
+        signing_secret: None,
         mediation_type: MediationType::HTTP,
         mediation_target: target.to_string(),
         message_group_id: None,

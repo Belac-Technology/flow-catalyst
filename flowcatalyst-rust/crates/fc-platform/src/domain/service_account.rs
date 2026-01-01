@@ -4,6 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
+use bson::serde_helpers::chrono_datetime_as_bson_datetime;
 
 /// Webhook authentication type
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
