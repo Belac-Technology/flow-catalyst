@@ -28,11 +28,12 @@ use fc_common::{RouterConfig, PoolConfig, QueueConfig};
 use fc_router::{
     QueueManager, HttpMediator, LifecycleManager, LifecycleConfig,
     WarningService, WarningServiceConfig, HealthService, HealthServiceConfig,
+    CircuitBreakerRegistry as RouterCircuitBreakerRegistry,
 };
 use fc_queue::sqlite::SqliteQueue;
 use fc_queue::{QueuePublisher, EmbeddedQueue};
 use fc_api::create_router as create_api_router;
-use fc_outbox::{OutboxProcessor, repository::OutboxRepository};
+use fc_outbox::{OutboxProcessor, OutboxRepository};
 
 // Platform imports
 use fc_platform::service::{AuthService, AuthConfig, AuthorizationService, AuditService};
@@ -333,11 +334,13 @@ async fn main() -> Result<()> {
     info!("Platform APIs configured");
 
     // 9. Start API server (merge router API with platform APIs)
+    let router_circuit_breaker = Arc::new(RouterCircuitBreakerRegistry::default());
     let router_api = create_api_router(
         queue.clone(),
         queue_manager.clone(),
         warning_service.clone(),
         health_service.clone(),
+        router_circuit_breaker,
     );
 
     let api_app = Router::new()
@@ -472,9 +475,8 @@ async fn create_outbox_repository(args: &Args) -> Result<Arc<dyn OutboxRepositor
             let repo = fc_outbox::mongo::MongoOutboxRepository::new(
                 client,
                 &args.outbox_mongo_db,
-                &args.outbox_mongo_collection,
             );
-            info!("Outbox using MongoDB: {}/{}", args.outbox_mongo_db, args.outbox_mongo_collection);
+            info!("Outbox using MongoDB: {} (collections: outbox_events, outbox_dispatch_jobs)", args.outbox_mongo_db);
             Ok(Arc::new(repo))
         }
         other => {

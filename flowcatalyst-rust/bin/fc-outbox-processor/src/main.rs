@@ -228,10 +228,9 @@ async fn create_outbox_repository(db_type: &str) -> Result<Arc<dyn OutboxReposit
         "mongo" => {
             let url = env_required("FC_OUTBOX_DB_URL")?;
             let db_name = env_or("FC_OUTBOX_MONGO_DB", "flowcatalyst");
-            let collection = env_or("FC_OUTBOX_MONGO_COLLECTION", "outbox");
             let client = mongodb::Client::with_uri_str(&url).await?;
-            let repo = fc_outbox::mongo::MongoOutboxRepository::new(client, &db_name, &collection);
-            info!("Using MongoDB outbox: {}/{}", db_name, collection);
+            let repo = fc_outbox::mongo::MongoOutboxRepository::new(client, &db_name);
+            info!("Using MongoDB outbox: {} (collections: outbox_events, outbox_dispatch_jobs)", db_name);
             Ok(Arc::new(repo))
         }
         other => {

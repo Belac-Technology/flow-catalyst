@@ -58,6 +58,7 @@ hex = "0.4"
 pin-project-lite = "0.2"
 lapin = "2.3"
 regex = "1.10"
+rand = "0.8"
 
 # OpenAPI documentation with Axum
 utoipa = { version = "4.2", features = ["axum_extras", "chrono", "uuid"] }

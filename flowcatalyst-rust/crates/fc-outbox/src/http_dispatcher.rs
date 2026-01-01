@@ -2,11 +2,15 @@
 //!
 //! Sends outbox items to the FlowCatalyst REST API endpoints.
 //! Matches the Java FlowCatalystApiClient behavior.
+//!
+//! Supports dual endpoints:
+//! - `/api/events/batch` for EVENT items
+//! - `/api/dispatch/jobs/batch` for DISPATCH_JOB items
 
 use std::sync::Arc;
 use std::time::Duration;
 use async_trait::async_trait;
-use fc_common::Message;
+use fc_common::{Message, OutboxItem, OutboxItemType, OutboxStatus};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error, warn};
 
@@ -118,6 +122,26 @@ impl ItemStatus {
             ItemStatus::Success | ItemStatus::BadRequest | ItemStatus::Forbidden
         )
     }
+
+    /// Convert to OutboxStatus for database storage
+    pub fn to_outbox_status(&self) -> OutboxStatus {
+        match self {
+            ItemStatus::Success => OutboxStatus::SUCCESS,
+            ItemStatus::BadRequest => OutboxStatus::BAD_REQUEST,
+            ItemStatus::InternalError => OutboxStatus::INTERNAL_ERROR,
+            ItemStatus::Unauthorized => OutboxStatus::UNAUTHORIZED,
+            ItemStatus::Forbidden => OutboxStatus::FORBIDDEN,
+            ItemStatus::GatewayError => OutboxStatus::GATEWAY_ERROR,
+        }
+    }
+}
+
+/// Result for a dispatched outbox item
+#[derive(Debug, Clone)]
+pub struct OutboxDispatchResult {
+    pub id: String,
+    pub status: OutboxStatus,
+    pub error_message: Option<String>,
 }
 
 /// HTTP dispatcher that sends items to FlowCatalyst API
@@ -136,7 +160,98 @@ impl HttpDispatcher {
         Ok(Self { config, client })
     }
 
-    /// Send a batch of messages to the API
+    /// Get the API endpoint for a given item type
+    fn endpoint_for_type(&self, item_type: OutboxItemType) -> String {
+        format!("{}{}", self.config.api_base_url, item_type.api_path())
+    }
+
+    /// Send a batch of OutboxItems to the appropriate API endpoint
+    ///
+    /// This is the Java-compatible method that routes items to the correct endpoint
+    /// based on their type (EVENT → /api/events/batch, DISPATCH_JOB → /api/dispatch/jobs/batch)
+    pub async fn send_outbox_batch(&self, items: &[OutboxItem]) -> Vec<OutboxDispatchResult> {
+        if items.is_empty() {
+            return Vec::new();
+        }
+
+        // All items in a batch should have the same type (enforced by processor)
+        let item_type = items[0].item_type;
+        let url = self.endpoint_for_type(item_type);
+
+        let batch_request = BatchRequest {
+            items: items.iter().map(|item| BatchItem {
+                id: item.id.clone(),
+                pool_code: item.pool_code.clone().unwrap_or_else(|| "DEFAULT".to_string()),
+                auth_token: None, // OutboxItem doesn't have auth_token
+                mediation_type: "HTTP".to_string(),
+                mediation_target: item.mediation_target.clone().unwrap_or_default(),
+                message_group_id: item.message_group.clone(),
+                payload: item.payload.clone(),
+            }).collect(),
+        };
+
+        debug!("Sending batch of {} {} items to {}", items.len(), item_type, url);
+
+        let mut request = self.client.post(&url).json(&batch_request);
+
+        if let Some(ref token) = self.config.api_token {
+            request = request.header("Authorization", format!("Bearer {}", token));
+        }
+
+        match request.send().await {
+            Ok(response) => {
+                let status = response.status();
+                if status.is_success() {
+                    match response.json::<BatchResponse>().await {
+                        Ok(batch_response) => {
+                            batch_response.results.into_iter().map(|r| OutboxDispatchResult {
+                                id: r.id,
+                                status: r.status.to_outbox_status(),
+                                error_message: r.error,
+                            }).collect()
+                        }
+                        Err(e) => {
+                            error!("Failed to parse batch response: {}", e);
+                            items.iter().map(|item| OutboxDispatchResult {
+                                id: item.id.clone(),
+                                status: OutboxStatus::INTERNAL_ERROR,
+                                error_message: Some(format!("Parse error: {}", e)),
+                            }).collect()
+                        }
+                    }
+                } else {
+                    let outbox_status = match status.as_u16() {
+                        400 => OutboxStatus::BAD_REQUEST,
+                        401 => OutboxStatus::UNAUTHORIZED,
+                        403 => OutboxStatus::FORBIDDEN,
+                        500 => OutboxStatus::INTERNAL_ERROR,
+                        502 | 503 | 504 => OutboxStatus::GATEWAY_ERROR,
+                        _ => OutboxStatus::INTERNAL_ERROR,
+                    };
+
+                    let error_body = response.text().await.unwrap_or_default();
+                    warn!("Batch request failed with status {}: {}", status, error_body);
+
+                    items.iter().map(|item| OutboxDispatchResult {
+                        id: item.id.clone(),
+                        status: outbox_status,
+                        error_message: Some(format!("HTTP {}: {}", status, error_body)),
+                    }).collect()
+                }
+            }
+            Err(e) => {
+                error!("HTTP request failed: {}", e);
+                let error_msg = e.to_string();
+                items.iter().map(|item| OutboxDispatchResult {
+                    id: item.id.clone(),
+                    status: OutboxStatus::GATEWAY_ERROR,
+                    error_message: Some(error_msg.clone()),
+                }).collect()
+            }
+        }
+    }
+
+    /// Send a batch of messages to the API (legacy method, uses DISPATCH_JOB endpoint)
     pub async fn send_batch(&self, messages: &[Message]) -> Vec<ItemResult> {
         if messages.is_empty() {
             return Vec::new();

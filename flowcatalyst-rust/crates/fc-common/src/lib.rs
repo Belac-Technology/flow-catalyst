@@ -258,28 +258,177 @@ impl MediationOutcome {
 }
 
 // ============================================================================
-// Outbox Types
+// Outbox Types (Java-compatible)
 // ============================================================================
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Outbox status codes matching Java implementation
+/// These are stored as integers in the database for Java compatibility
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[allow(non_camel_case_types)]
 pub enum OutboxStatus {
+    /// Item is pending processing (code: 0)
     PENDING,
-    PROCESSING,
-    COMPLETED,
-    FAILED,
+    /// Item was successfully processed (code: 1)
+    SUCCESS,
+    /// Client error (4xx) - won't retry (code: 2)
+    BAD_REQUEST,
+    /// Server error (5xx) - will retry (code: 3)
+    INTERNAL_ERROR,
+    /// Authentication failed - will retry (code: 4)
+    UNAUTHORIZED,
+    /// Permission denied - won't retry (code: 5)
+    FORBIDDEN,
+    /// Gateway/upstream error - will retry (code: 6)
+    GATEWAY_ERROR,
+    /// Currently being processed (code: 9)
+    IN_PROGRESS,
 }
 
+// Legacy aliases for backward compatibility
+impl OutboxStatus {
+    /// Alias for IN_PROGRESS (for Rust code compatibility)
+    pub const PROCESSING: OutboxStatus = OutboxStatus::IN_PROGRESS;
+    /// Alias for SUCCESS (for Rust code compatibility)
+    pub const COMPLETED: OutboxStatus = OutboxStatus::SUCCESS;
+    /// Alias for INTERNAL_ERROR (for Rust code compatibility)
+    pub const FAILED: OutboxStatus = OutboxStatus::INTERNAL_ERROR;
+}
+
+impl OutboxStatus {
+    /// Convert status to integer code for database storage
+    pub fn code(&self) -> i32 {
+        match self {
+            OutboxStatus::PENDING => 0,
+            OutboxStatus::SUCCESS => 1,
+            OutboxStatus::BAD_REQUEST => 2,
+            OutboxStatus::INTERNAL_ERROR => 3,
+            OutboxStatus::UNAUTHORIZED => 4,
+            OutboxStatus::FORBIDDEN => 5,
+            OutboxStatus::GATEWAY_ERROR => 6,
+            OutboxStatus::IN_PROGRESS => 9,
+        }
+    }
+
+    /// Alias for code() - for compatibility
+    pub fn to_code(&self) -> i32 {
+        self.code()
+    }
+
+    /// Create status from integer code, defaulting to PENDING for unknown codes
+    pub fn from_code(code: i32) -> Self {
+        match code {
+            0 => OutboxStatus::PENDING,
+            1 => OutboxStatus::SUCCESS,
+            2 => OutboxStatus::BAD_REQUEST,
+            3 => OutboxStatus::INTERNAL_ERROR,
+            4 => OutboxStatus::UNAUTHORIZED,
+            5 => OutboxStatus::FORBIDDEN,
+            6 => OutboxStatus::GATEWAY_ERROR,
+            9 => OutboxStatus::IN_PROGRESS,
+            _ => OutboxStatus::PENDING, // Default for unknown codes
+        }
+    }
+
+    /// Check if this status is retryable
+    pub fn is_retryable(&self) -> bool {
+        matches!(
+            self,
+            OutboxStatus::INTERNAL_ERROR
+                | OutboxStatus::UNAUTHORIZED
+                | OutboxStatus::GATEWAY_ERROR
+                | OutboxStatus::IN_PROGRESS
+        )
+    }
+
+    /// Check if this status is terminal (won't retry)
+    pub fn is_terminal(&self) -> bool {
+        matches!(
+            self,
+            OutboxStatus::SUCCESS
+                | OutboxStatus::BAD_REQUEST
+                | OutboxStatus::FORBIDDEN
+        )
+    }
+}
+
+impl Default for OutboxStatus {
+    fn default() -> Self {
+        OutboxStatus::PENDING
+    }
+}
+
+/// Outbox item type matching Java implementation
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[allow(non_camel_case_types)]
+pub enum OutboxItemType {
+    /// Event items - sent to /api/events/batch
+    EVENT,
+    /// Dispatch job items - sent to /api/dispatch/jobs/batch
+    DISPATCH_JOB,
+}
+
+impl OutboxItemType {
+    /// Get the API endpoint path for this item type
+    pub fn api_path(&self) -> &'static str {
+        match self {
+            OutboxItemType::EVENT => "/api/events/batch",
+            OutboxItemType::DISPATCH_JOB => "/api/dispatch/jobs/batch",
+        }
+    }
+
+    /// Parse from string
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s.to_uppercase().as_str() {
+            "EVENT" => Some(OutboxItemType::EVENT),
+            "DISPATCH_JOB" | "DISPATCHJOB" | "DISPATCH-JOB" => Some(OutboxItemType::DISPATCH_JOB),
+            _ => None,
+        }
+    }
+}
+
+impl Default for OutboxItemType {
+    fn default() -> Self {
+        OutboxItemType::EVENT
+    }
+}
+
+impl std::fmt::Display for OutboxItemType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OutboxItemType::EVENT => write!(f, "EVENT"),
+            OutboxItemType::DISPATCH_JOB => write!(f, "DISPATCH_JOB"),
+        }
+    }
+}
+
+/// Outbox item matching Java implementation
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OutboxItem {
+    /// Unique identifier (TSID Crockford Base32)
     pub id: String,
-    pub item_type: String,
-    pub pool_code: Option<String>,
-    pub mediation_target: Option<String>,
+    /// Item type: EVENT or DISPATCH_JOB
+    pub item_type: OutboxItemType,
+    /// Message group for FIFO ordering (optional)
     pub message_group: Option<String>,
+    /// JSON payload
     pub payload: serde_json::Value,
+    /// Current status (integer code)
     pub status: OutboxStatus,
-    pub retry_count: u32,
+    /// Number of retry attempts
+    pub retry_count: i32,
+    /// Creation timestamp
     pub created_at: DateTime<Utc>,
+    /// Last update timestamp (None if never updated)
+    pub updated_at: Option<DateTime<Utc>>,
+    /// Error message from last failure (optional)
+    pub error_message: Option<String>,
+    // Extended fields for FlowCatalyst routing (not in Java base schema)
+    /// Pool code for routing (optional)
+    pub pool_code: Option<String>,
+    /// Mediation target URL (optional)
+    pub mediation_target: Option<String>,
 }
 
 // ============================================================================

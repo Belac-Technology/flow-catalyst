@@ -6,9 +6,12 @@
 //! - Kubernetes probes (liveness/readiness)
 //! - Warning management
 //! - Pool statistics
+//! - Circuit breaker management
+//! - Standby/traffic status
+//! - Test/seed endpoints (development)
 
 use axum::{
-    routing::{get, post, put},
+    routing::{get, post, put, delete},
     extract::{Path, Query, State},
     response::{Html, IntoResponse, Response},
     http::{header, StatusCode},
@@ -24,13 +27,19 @@ use fc_common::{
     Message, MediationType, HealthStatus, HealthReport, PoolStats, PoolConfig,
     Warning, WarningSeverity, WarningCategory,
 };
-use fc_router::{QueueManager, WarningService, HealthService, QueueMetrics, InFlightMessageInfo};
+use fc_router::{
+    QueueManager, WarningService, HealthService, QueueMetrics, InFlightMessageInfo,
+    CircuitBreakerRegistry, CircuitBreakerState,
+};
 use uuid::Uuid;
 use chrono::Utc;
 use tracing::{debug, info, warn, error};
 
 pub mod model;
+pub mod auth;
+
 use model::{PublishMessageRequest, PublishMessageResponse, PoolStatusResponse};
+pub use auth::{AuthConfig, AuthMode, AuthState, auth_middleware, is_public_path};
 
 /// Application state shared across handlers
 #[derive(Clone)]
@@ -39,6 +48,10 @@ pub struct AppState {
     pub queue_manager: Arc<QueueManager>,
     pub warning_service: Arc<WarningService>,
     pub health_service: Arc<HealthService>,
+    pub circuit_breaker_registry: Arc<CircuitBreakerRegistry>,
+    /// Standby configuration (optional)
+    pub standby_enabled: bool,
+    pub instance_id: String,
 }
 
 /// Simple health response for basic health check
@@ -172,12 +185,34 @@ impl From<QueueMetrics> for QueueMetricsResponse {
         acknowledge_warning,
         acknowledge_all_warnings,
         get_critical_warnings,
+        get_unacknowledged_warnings,
+        get_warnings_by_severity,
+        clear_all_warnings,
+        clear_old_warnings,
         dashboard_health_handler,
         dashboard_queue_stats_handler,
         dashboard_pool_stats_handler,
         dashboard_warnings_handler,
         dashboard_circuit_breakers_handler,
         dashboard_in_flight_messages_handler,
+        monitoring_acknowledge_warning,
+        get_circuit_breaker_state,
+        reset_circuit_breaker,
+        reset_all_circuit_breakers,
+        get_standby_status,
+        get_traffic_status,
+        seed_messages,
+        get_local_config,
+        test_fast,
+        test_slow,
+        test_faulty,
+        test_fail,
+        test_success,
+        test_pending,
+        test_client_error,
+        test_server_error,
+        test_stats,
+        reset_test_stats,
         publish_message,
     ),
     components(schemas(
@@ -200,12 +235,21 @@ impl From<QueueMetrics> for QueueMetricsResponse {
         DashboardWarning,
         DashboardCircuitBreakerStats,
         InFlightMessagesQuery,
+        StandbyStatusResponse,
+        TrafficStatusResponse,
+        SeedMessageRequest,
+        SeedMessageResponse,
+        ClearWarningsQuery,
+        CircuitBreakerStateResponse,
     )),
     tags(
         (name = "health", description = "Health check endpoints"),
         (name = "monitoring", description = "Monitoring and metrics endpoints"),
         (name = "warnings", description = "Warning management endpoints"),
         (name = "messages", description = "Message publishing endpoints"),
+        (name = "circuit-breakers", description = "Circuit breaker management"),
+        (name = "standby", description = "Standby and traffic management"),
+        (name = "test", description = "Test endpoints for development"),
     )
 )]
 pub struct ApiDoc;
@@ -216,12 +260,37 @@ pub fn create_router(
     queue_manager: Arc<QueueManager>,
     warning_service: Arc<WarningService>,
     health_service: Arc<HealthService>,
+    circuit_breaker_registry: Arc<CircuitBreakerRegistry>,
+) -> Router {
+    create_router_with_options(
+        publisher,
+        queue_manager,
+        warning_service,
+        health_service,
+        circuit_breaker_registry,
+        false,
+        "default".to_string(),
+    )
+}
+
+/// Create the full router with all endpoints and options
+pub fn create_router_with_options(
+    publisher: Arc<dyn QueuePublisher>,
+    queue_manager: Arc<QueueManager>,
+    warning_service: Arc<WarningService>,
+    health_service: Arc<HealthService>,
+    circuit_breaker_registry: Arc<CircuitBreakerRegistry>,
+    standby_enabled: bool,
+    instance_id: String,
 ) -> Router {
     let state = AppState {
         publisher,
         queue_manager,
         warning_service,
         health_service,
+        circuit_breaker_registry,
+        standby_enabled,
+        instance_id,
     };
 
     Router::new()
@@ -233,6 +302,7 @@ pub fn create_router(
         // Kubernetes probes
         .route("/health/live", get(liveness_probe))
         .route("/health/ready", get(readiness_probe))
+        .route("/health/startup", get(readiness_probe)) // Same as ready for now
         .route("/q/health/live", get(liveness_probe))
         .route("/q/health/ready", get(readiness_probe))
         // Prometheus metrics
@@ -248,16 +318,39 @@ pub fn create_router(
         .route("/monitoring/queue-stats", get(dashboard_queue_stats_handler))
         .route("/monitoring/pool-stats", get(dashboard_pool_stats_handler))
         .route("/monitoring/warnings", get(dashboard_warnings_handler))
+        .route("/monitoring/warnings/:id/acknowledge", post(monitoring_acknowledge_warning))
+        .route("/monitoring/warnings/unacknowledged", get(get_unacknowledged_warnings))
+        .route("/monitoring/warnings/severity/:severity", get(get_warnings_by_severity))
         .route("/monitoring/circuit-breakers", get(dashboard_circuit_breakers_handler))
+        .route("/monitoring/circuit-breakers/:name/state", get(get_circuit_breaker_state))
+        .route("/monitoring/circuit-breakers/:name/reset", post(reset_circuit_breaker))
+        .route("/monitoring/circuit-breakers/reset-all", post(reset_all_circuit_breakers))
         .route("/monitoring/in-flight-messages", get(dashboard_in_flight_messages_handler))
         .route("/monitoring/dashboard", get(dashboard_html_handler))
+        .route("/monitoring/standby-status", get(get_standby_status))
+        .route("/monitoring/traffic-status", get(get_traffic_status))
         // Configuration management
         .route("/config/reload", post(reload_config))
+        .route("/api/config", get(get_local_config))
         // Warnings management
-        .route("/warnings", get(list_warnings))
+        .route("/warnings", get(list_warnings).delete(clear_all_warnings))
         .route("/warnings/:id/acknowledge", post(acknowledge_warning))
         .route("/warnings/acknowledge-all", post(acknowledge_all_warnings))
         .route("/warnings/critical", get(get_critical_warnings))
+        .route("/warnings/unacknowledged", get(get_unacknowledged_warnings))
+        .route("/warnings/old", delete(clear_old_warnings))
+        // Message seeding (test)
+        .route("/api/seed/messages", post(seed_messages))
+        // Test response endpoints (development)
+        .route("/api/test/fast", post(test_fast))
+        .route("/api/test/slow", post(test_slow))
+        .route("/api/test/faulty", post(test_faulty))
+        .route("/api/test/fail", post(test_fail))
+        .route("/api/test/success", post(test_success))
+        .route("/api/test/pending", post(test_pending))
+        .route("/api/test/client-error", post(test_client_error))
+        .route("/api/test/server-error", post(test_server_error))
+        .route("/api/test/stats", get(test_stats).post(reset_test_stats))
         // Message publishing
         .route("/messages", post(publish_message))
         .with_state(state)
@@ -1012,8 +1105,26 @@ struct DashboardCircuitBreakerStats {
         (status = 200, description = "Circuit breakers for dashboard")
     )
 )]
-async fn dashboard_circuit_breakers_handler() -> Json<HashMap<String, DashboardCircuitBreakerStats>> {
-    Json(HashMap::new())
+async fn dashboard_circuit_breakers_handler(
+    State(state): State<AppState>,
+) -> Json<HashMap<String, DashboardCircuitBreakerStats>> {
+    let stats = state.circuit_breaker_registry.get_all_stats();
+    let result: HashMap<String, DashboardCircuitBreakerStats> = stats
+        .into_iter()
+        .map(|(name, s)| {
+            (name, DashboardCircuitBreakerStats {
+                name: s.name,
+                state: format!("{:?}", s.state).to_uppercase(),
+                successful_calls: s.successful_calls,
+                failed_calls: s.failed_calls,
+                rejected_calls: s.rejected_calls,
+                failure_rate: s.failure_rate,
+                buffered_calls: s.buffered_calls,
+                buffer_size: s.buffer_size,
+            })
+        })
+        .collect();
+    Json(result)
 }
 
 /// Query params for in-flight messages
@@ -1128,6 +1239,579 @@ async fn simple_publish_message(
             (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": "Failed to publish message" }))).into_response()
         }
     }
+}
+
+// ============================================================================
+// Additional Warning Endpoints (Java compatibility)
+// ============================================================================
+
+/// Get unacknowledged warnings
+#[utoipa::path(
+    get,
+    path = "/warnings/unacknowledged",
+    tag = "warnings",
+    responses(
+        (status = 200, description = "Unacknowledged warnings", body = Vec<Warning>)
+    )
+)]
+async fn get_unacknowledged_warnings(State(state): State<AppState>) -> Json<Vec<Warning>> {
+    Json(state.warning_service.get_unacknowledged_warnings())
+}
+
+/// Get warnings by severity
+#[utoipa::path(
+    get,
+    path = "/monitoring/warnings/severity/{severity}",
+    tag = "warnings",
+    params(
+        ("severity" = String, Path, description = "Severity level: CRITICAL, ERROR, WARN, INFO")
+    ),
+    responses(
+        (status = 200, description = "Warnings of specified severity", body = Vec<Warning>)
+    )
+)]
+async fn get_warnings_by_severity(
+    State(state): State<AppState>,
+    Path(severity): Path<String>,
+) -> Json<Vec<Warning>> {
+    let severity_enum = match severity.to_uppercase().as_str() {
+        "INFO" => Some(WarningSeverity::Info),
+        "WARN" | "WARNING" => Some(WarningSeverity::Warn),
+        "ERROR" => Some(WarningSeverity::Error),
+        "CRITICAL" => Some(WarningSeverity::Critical),
+        _ => None,
+    };
+
+    let warnings = match severity_enum {
+        Some(sev) => state.warning_service.get_warnings_by_severity(sev),
+        None => vec![],
+    };
+
+    Json(warnings)
+}
+
+/// Acknowledge warning (monitoring path for Java compatibility)
+#[utoipa::path(
+    post,
+    path = "/monitoring/warnings/{id}/acknowledge",
+    tag = "warnings",
+    params(
+        ("id" = String, Path, description = "Warning ID to acknowledge")
+    ),
+    responses(
+        (status = 200, description = "Warning acknowledged"),
+        (status = 404, description = "Warning not found")
+    )
+)]
+async fn monitoring_acknowledge_warning(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Response {
+    if state.warning_service.acknowledge_warning(&id) {
+        debug!(id = %id, "Warning acknowledged via monitoring endpoint");
+        (StatusCode::OK, Json(serde_json::json!({ "status": "success" }))).into_response()
+    } else {
+        (StatusCode::NOT_FOUND, Json(serde_json::json!({ "error": "Warning not found" }))).into_response()
+    }
+}
+
+/// Query for clearing old warnings
+#[derive(Deserialize, Default, ToSchema)]
+struct ClearWarningsQuery {
+    /// Hours old (default 24)
+    hours: Option<i64>,
+}
+
+/// Clear all warnings
+#[utoipa::path(
+    delete,
+    path = "/warnings",
+    tag = "warnings",
+    responses(
+        (status = 200, description = "All warnings cleared")
+    )
+)]
+async fn clear_all_warnings(State(state): State<AppState>) -> Json<serde_json::Value> {
+    let count = state.warning_service.get_all_warnings().len();
+    // Clear by acknowledging and then removing old
+    state.warning_service.acknowledge_matching(|_| true);
+    state.warning_service.clear_old_warnings(0);
+    debug!(count = count, "Cleared all warnings");
+    Json(serde_json::json!({ "status": "success", "cleared": count }))
+}
+
+/// Clear old warnings
+#[utoipa::path(
+    delete,
+    path = "/warnings/old",
+    tag = "warnings",
+    params(
+        ("hours" = Option<i64>, Query, description = "Clear warnings older than this many hours (default 24)")
+    ),
+    responses(
+        (status = 200, description = "Old warnings cleared")
+    )
+)]
+async fn clear_old_warnings(
+    State(state): State<AppState>,
+    Query(query): Query<ClearWarningsQuery>,
+) -> Json<serde_json::Value> {
+    let hours = query.hours.unwrap_or(24);
+    let removed = state.warning_service.clear_old_warnings(hours);
+    debug!(hours = hours, removed = removed, "Cleared old warnings");
+    Json(serde_json::json!({ "status": "success", "removed": removed }))
+}
+
+// ============================================================================
+// Circuit Breaker Endpoints
+// ============================================================================
+
+/// Circuit breaker state response
+#[derive(Serialize, ToSchema)]
+struct CircuitBreakerStateResponse {
+    name: String,
+    state: String,
+}
+
+/// Get circuit breaker state
+#[utoipa::path(
+    get,
+    path = "/monitoring/circuit-breakers/{name}/state",
+    tag = "circuit-breakers",
+    params(
+        ("name" = String, Path, description = "Circuit breaker name (URL-encoded)")
+    ),
+    responses(
+        (status = 200, description = "Circuit breaker state", body = CircuitBreakerStateResponse),
+        (status = 404, description = "Circuit breaker not found")
+    )
+)]
+async fn get_circuit_breaker_state(
+    State(state): State<AppState>,
+    Path(name): Path<String>,
+) -> Response {
+    // URL decode the name
+    let decoded_name = urlencoding::decode(&name).unwrap_or(std::borrow::Cow::Borrowed(&name));
+
+    match state.circuit_breaker_registry.get_state(&decoded_name) {
+        Some(breaker_state) => {
+            let state_str = match breaker_state {
+                CircuitBreakerState::Closed => "CLOSED",
+                CircuitBreakerState::Open => "OPEN",
+                CircuitBreakerState::HalfOpen => "HALF_OPEN",
+            };
+            (StatusCode::OK, Json(CircuitBreakerStateResponse {
+                name: decoded_name.to_string(),
+                state: state_str.to_string(),
+            })).into_response()
+        }
+        None => {
+            (StatusCode::NOT_FOUND, Json(serde_json::json!({ "error": "Circuit breaker not found" }))).into_response()
+        }
+    }
+}
+
+/// Reset a circuit breaker
+#[utoipa::path(
+    post,
+    path = "/monitoring/circuit-breakers/{name}/reset",
+    tag = "circuit-breakers",
+    params(
+        ("name" = String, Path, description = "Circuit breaker name (URL-encoded)")
+    ),
+    responses(
+        (status = 200, description = "Circuit breaker reset"),
+        (status = 500, description = "Failed to reset")
+    )
+)]
+async fn reset_circuit_breaker(
+    State(state): State<AppState>,
+    Path(name): Path<String>,
+) -> Response {
+    let decoded_name = urlencoding::decode(&name).unwrap_or(std::borrow::Cow::Borrowed(&name));
+
+    if state.circuit_breaker_registry.reset(&decoded_name) {
+        info!(name = %decoded_name, "Circuit breaker reset");
+        (StatusCode::OK, Json(serde_json::json!({ "status": "success" }))).into_response()
+    } else {
+        (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": "Failed to reset circuit breaker" }))).into_response()
+    }
+}
+
+/// Reset all circuit breakers
+#[utoipa::path(
+    post,
+    path = "/monitoring/circuit-breakers/reset-all",
+    tag = "circuit-breakers",
+    responses(
+        (status = 200, description = "All circuit breakers reset")
+    )
+)]
+async fn reset_all_circuit_breakers(State(state): State<AppState>) -> Json<serde_json::Value> {
+    state.circuit_breaker_registry.reset_all();
+    info!("All circuit breakers reset");
+    Json(serde_json::json!({ "status": "success" }))
+}
+
+// ============================================================================
+// Standby/Traffic Status Endpoints
+// ============================================================================
+
+/// Standby status response (matches Java format)
+#[derive(Serialize, ToSchema)]
+struct StandbyStatusResponse {
+    #[serde(rename = "standbyEnabled")]
+    standby_enabled: bool,
+    #[serde(rename = "instanceId")]
+    instance_id: String,
+    role: String,
+    #[serde(rename = "redisAvailable")]
+    redis_available: bool,
+    #[serde(rename = "currentLockHolder")]
+    current_lock_holder: Option<String>,
+    #[serde(rename = "lastSuccessfulRefresh")]
+    last_successful_refresh: Option<String>,
+    #[serde(rename = "hasWarning")]
+    has_warning: bool,
+}
+
+/// Get standby status
+#[utoipa::path(
+    get,
+    path = "/monitoring/standby-status",
+    tag = "standby",
+    responses(
+        (status = 200, description = "Standby status", body = StandbyStatusResponse)
+    )
+)]
+async fn get_standby_status(State(state): State<AppState>) -> Json<StandbyStatusResponse> {
+    Json(StandbyStatusResponse {
+        standby_enabled: state.standby_enabled,
+        instance_id: state.instance_id.clone(),
+        role: "PRIMARY".to_string(), // Always primary when standby not enabled
+        redis_available: false,
+        current_lock_holder: Some(state.instance_id.clone()),
+        last_successful_refresh: Some(Utc::now().to_rfc3339()),
+        has_warning: false,
+    })
+}
+
+/// Traffic status response (matches Java format)
+#[derive(Serialize, ToSchema)]
+struct TrafficStatusResponse {
+    enabled: bool,
+    #[serde(rename = "strategyType")]
+    strategy_type: String,
+    registered: bool,
+    #[serde(rename = "targetInfo")]
+    target_info: Option<String>,
+    #[serde(rename = "lastOperation")]
+    last_operation: Option<String>,
+    #[serde(rename = "lastError")]
+    last_error: String,
+}
+
+/// Get traffic status
+#[utoipa::path(
+    get,
+    path = "/monitoring/traffic-status",
+    tag = "standby",
+    responses(
+        (status = 200, description = "Traffic status", body = TrafficStatusResponse)
+    )
+)]
+async fn get_traffic_status() -> Json<TrafficStatusResponse> {
+    Json(TrafficStatusResponse {
+        enabled: false,
+        strategy_type: "NONE".to_string(),
+        registered: true,
+        target_info: None,
+        last_operation: Some(Utc::now().to_rfc3339()),
+        last_error: "none".to_string(),
+    })
+}
+
+// ============================================================================
+// Local Config Endpoint
+// ============================================================================
+
+/// Get local configuration
+#[utoipa::path(
+    get,
+    path = "/api/config",
+    tag = "monitoring",
+    responses(
+        (status = 200, description = "Local configuration")
+    )
+)]
+async fn get_local_config(State(state): State<AppState>) -> Json<serde_json::Value> {
+    let pool_stats = state.queue_manager.get_pool_stats();
+
+    let pools: Vec<serde_json::Value> = pool_stats
+        .iter()
+        .map(|p| serde_json::json!({
+            "code": p.pool_code,
+            "concurrency": p.concurrency,
+            "rateLimitPerMinute": p.rate_limit_per_minute,
+        }))
+        .collect();
+
+    Json(serde_json::json!({
+        "queues": [],
+        "connections": 1,
+        "processingPools": pools,
+    }))
+}
+
+// ============================================================================
+// Test/Seed Endpoints (Development)
+// ============================================================================
+
+/// Message seed request (matches Java format)
+#[derive(Debug, Deserialize, ToSchema)]
+struct SeedMessageRequest {
+    count: Option<u32>,
+    queue: Option<String>,
+    endpoint: Option<String>,
+    #[serde(rename = "messageGroupMode")]
+    message_group_mode: Option<String>,
+}
+
+/// Message seed response
+#[derive(Serialize, ToSchema)]
+struct SeedMessageResponse {
+    status: String,
+    #[serde(rename = "messagesSent", skip_serializing_if = "Option::is_none")]
+    messages_sent: Option<u32>,
+    #[serde(rename = "totalRequested", skip_serializing_if = "Option::is_none")]
+    total_requested: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    message: Option<String>,
+}
+
+/// Seed test messages
+#[utoipa::path(
+    post,
+    path = "/api/seed/messages",
+    tag = "test",
+    request_body = SeedMessageRequest,
+    responses(
+        (status = 200, description = "Messages seeded", body = SeedMessageResponse)
+    )
+)]
+async fn seed_messages(
+    State(state): State<AppState>,
+    Json(req): Json<SeedMessageRequest>,
+) -> Json<SeedMessageResponse> {
+    let count = req.count.unwrap_or(10).min(1000);
+    let endpoint = req.endpoint.unwrap_or_else(|| "fast".to_string());
+    let _queue = req.queue.unwrap_or_else(|| "high".to_string());
+    let message_group_mode = req.message_group_mode.unwrap_or_else(|| "unique".to_string());
+
+    // Resolve endpoint
+    let target = match endpoint.as_str() {
+        "fast" => "http://localhost:8080/api/test/fast",
+        "slow" => "http://localhost:8080/api/test/slow",
+        "faulty" => "http://localhost:8080/api/test/faulty",
+        "fail" => "http://localhost:8080/api/test/fail",
+        "random" => "http://localhost:8080/api/test/faulty",
+        other if other.starts_with("http") => other,
+        _ => "http://localhost:8080/api/test/fast",
+    };
+
+    let mut sent = 0u32;
+    for i in 0..count {
+        let message_group_id = match message_group_mode.as_str() {
+            "unique" => Some(format!("unique-{}", Uuid::new_v4())),
+            "1of8" => Some(format!("group-{}", i % 8)),
+            "single" => Some("single-group".to_string()),
+            _ => None,
+        };
+
+        let message = Message {
+            id: Uuid::new_v4().to_string(),
+            pool_code: "DEFAULT".to_string(),
+            auth_token: None,
+            signing_secret: None,
+            mediation_type: MediationType::HTTP,
+            mediation_target: target.to_string(),
+            message_group_id,
+            payload: serde_json::json!({ "seeded": true, "index": i }),
+            created_at: Utc::now(),
+        };
+
+        if state.publisher.publish(message).await.is_ok() {
+            sent += 1;
+        }
+    }
+
+    Json(SeedMessageResponse {
+        status: "success".to_string(),
+        messages_sent: Some(sent),
+        total_requested: Some(count),
+        message: None,
+    })
+}
+
+// Global test stats counter
+static TEST_REQUEST_COUNT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Test fast endpoint (100ms delay)
+#[utoipa::path(
+    post,
+    path = "/api/test/fast",
+    tag = "test",
+    responses(
+        (status = 200, description = "Fast response")
+    )
+)]
+async fn test_fast() -> Json<serde_json::Value> {
+    TEST_REQUEST_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    Json(serde_json::json!({ "status": "success", "ack": true }))
+}
+
+/// Test slow endpoint (60s delay)
+#[utoipa::path(
+    post,
+    path = "/api/test/slow",
+    tag = "test",
+    responses(
+        (status = 200, description = "Slow response")
+    )
+)]
+async fn test_slow() -> Json<serde_json::Value> {
+    TEST_REQUEST_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
+    Json(serde_json::json!({ "status": "success", "ack": true }))
+}
+
+/// Test faulty endpoint (random responses)
+#[utoipa::path(
+    post,
+    path = "/api/test/faulty",
+    tag = "test",
+    responses(
+        (status = 200, description = "Success response"),
+        (status = 400, description = "Client error"),
+        (status = 500, description = "Server error")
+    )
+)]
+async fn test_faulty() -> Response {
+    use rand::Rng;
+
+    TEST_REQUEST_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let mut rng = rand::thread_rng();
+    let roll: f64 = rng.gen();
+
+    if roll < 0.6 {
+        // 60% success
+        (StatusCode::OK, Json(serde_json::json!({ "status": "success", "ack": true }))).into_response()
+    } else if roll < 0.8 {
+        // 20% 400 error
+        (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "status": "error", "error": "Client error" }))).into_response()
+    } else {
+        // 20% 500 error
+        (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "status": "error", "error": "Server error" }))).into_response()
+    }
+}
+
+/// Test fail endpoint (always 500)
+#[utoipa::path(
+    post,
+    path = "/api/test/fail",
+    tag = "test",
+    responses(
+        (status = 500, description = "Always fails")
+    )
+)]
+async fn test_fail() -> Response {
+    TEST_REQUEST_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "status": "error", "error": "Always fails" }))).into_response()
+}
+
+/// Test success endpoint (always 200 with ack=true)
+#[utoipa::path(
+    post,
+    path = "/api/test/success",
+    tag = "test",
+    responses(
+        (status = 200, description = "Always succeeds")
+    )
+)]
+async fn test_success() -> Json<serde_json::Value> {
+    TEST_REQUEST_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    Json(serde_json::json!({ "ack": true, "message": "" }))
+}
+
+/// Test pending endpoint (ack=false)
+#[utoipa::path(
+    post,
+    path = "/api/test/pending",
+    tag = "test",
+    responses(
+        (status = 200, description = "Returns pending")
+    )
+)]
+async fn test_pending() -> Json<serde_json::Value> {
+    TEST_REQUEST_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    Json(serde_json::json!({ "ack": false, "message": "notBefore time not reached" }))
+}
+
+/// Test client error endpoint (always 400)
+#[utoipa::path(
+    post,
+    path = "/api/test/client-error",
+    tag = "test",
+    responses(
+        (status = 400, description = "Client error")
+    )
+)]
+async fn test_client_error() -> Response {
+    TEST_REQUEST_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "status": "error", "error": "Record not found" }))).into_response()
+}
+
+/// Test server error endpoint (always 500)
+#[utoipa::path(
+    post,
+    path = "/api/test/server-error",
+    tag = "test",
+    responses(
+        (status = 500, description = "Server error")
+    )
+)]
+async fn test_server_error() -> Response {
+    TEST_REQUEST_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "status": "error", "error": "Internal server error" }))).into_response()
+}
+
+/// Get test stats
+#[utoipa::path(
+    get,
+    path = "/api/test/stats",
+    tag = "test",
+    responses(
+        (status = 200, description = "Test statistics")
+    )
+)]
+async fn test_stats() -> Json<serde_json::Value> {
+    let count = TEST_REQUEST_COUNT.load(std::sync::atomic::Ordering::Relaxed);
+    Json(serde_json::json!({ "totalRequests": count }))
+}
+
+/// Reset test stats
+#[utoipa::path(
+    post,
+    path = "/api/test/stats/reset",
+    tag = "test",
+    responses(
+        (status = 200, description = "Test stats reset")
+    )
+)]
+async fn reset_test_stats() -> Json<serde_json::Value> {
+    let previous = TEST_REQUEST_COUNT.swap(0, std::sync::atomic::Ordering::Relaxed);
+    Json(serde_json::json!({ "previousCount": previous, "currentCount": 0 }))
 }
 
 #[cfg(test)]

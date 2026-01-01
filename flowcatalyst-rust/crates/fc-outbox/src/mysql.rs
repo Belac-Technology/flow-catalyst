@@ -1,44 +1,40 @@
+//! MySQL Outbox Repository Implementation
+//!
+//! Implements the OutboxRepository trait for MySQL with Java-compatible
+//! dual-table support (outbox_events and outbox_dispatch_jobs).
+
 use async_trait::async_trait;
-use fc_common::{OutboxItem, OutboxStatus};
-use crate::repository::OutboxRepository;
+use fc_common::{OutboxItem, OutboxItemType, OutboxStatus};
+use crate::repository::{OutboxRepository, OutboxTableConfig};
 use anyhow::Result;
 use sqlx::{MySqlPool, Row};
-use chrono::{Utc, DateTime};
+use chrono::{DateTime, Utc};
 use std::time::Duration;
-use tracing::info;
+use tracing::{info, debug};
 
+/// MySQL implementation of OutboxRepository
 pub struct MySqlOutboxRepository {
     pool: MySqlPool,
+    table_config: OutboxTableConfig,
 }
 
 impl MySqlOutboxRepository {
+    /// Create a new MySQL outbox repository with default table config
     pub fn new(pool: MySqlPool) -> Self {
-        Self { pool }
+        Self {
+            pool,
+            table_config: OutboxTableConfig::default(),
+        }
     }
 
-    pub async fn init_schema(&self) -> Result<()> {
-        sqlx::query(
-            r#"
-            CREATE TABLE IF NOT EXISTS outbox_items (
-                id VARCHAR(13) PRIMARY KEY,
-                item_type VARCHAR(50) NOT NULL,
-                pool_code VARCHAR(100),
-                mediation_target VARCHAR(500),
-                message_group VARCHAR(255),
-                payload TEXT NOT NULL,
-                status VARCHAR(20) NOT NULL,
-                retry_count INT DEFAULT 0,
-                error_message TEXT,
-                created_at BIGINT NOT NULL,
-                processed_at BIGINT,
-                INDEX idx_outbox_status (status),
-                INDEX idx_outbox_status_group (status, message_group, created_at)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-            "#
-        )
-        .execute(&self.pool)
-        .await?;
-        Ok(())
+    /// Create with custom table configuration
+    pub fn with_config(pool: MySqlPool, table_config: OutboxTableConfig) -> Self {
+        Self { pool, table_config }
+    }
+
+    /// Get the pool reference
+    pub fn pool(&self) -> &MySqlPool {
+        &self.pool
     }
 
     /// Build a query with the appropriate number of placeholders for IN clause
@@ -46,98 +42,305 @@ impl MySqlOutboxRepository {
         let placeholders: Vec<&str> = (0..count).map(|_| "?").collect();
         placeholders.join(", ")
     }
+
+    /// Parse a row into an OutboxItem
+    fn parse_row(&self, row: &sqlx::mysql::MySqlRow, item_type: OutboxItemType) -> Result<OutboxItem> {
+        let created_at_ts: i64 = row.get("created_at");
+        let created_at = DateTime::from_timestamp_millis(created_at_ts)
+            .ok_or_else(|| anyhow::anyhow!("Invalid created_at timestamp"))?;
+
+        let updated_at_ts: Option<i64> = row.try_get("updated_at").ok();
+        let updated_at = updated_at_ts.and_then(DateTime::from_timestamp_millis);
+
+        let status_code: i32 = row.get("status");
+        let status = OutboxStatus::from_code(status_code);
+
+        Ok(OutboxItem {
+            id: row.get("id"),
+            item_type,
+            pool_code: row.try_get("pool_code").ok(),
+            mediation_target: row.try_get("mediation_target").ok(),
+            message_group: row.try_get("message_group").ok(),
+            payload: serde_json::from_str(row.get("payload"))?,
+            status,
+            retry_count: row.get::<i32, _>("retry_count"),
+            error_message: row.try_get("error_message").ok().flatten(),
+            created_at,
+            updated_at,
+        })
+    }
 }
 
 #[async_trait]
 impl OutboxRepository for MySqlOutboxRepository {
-    async fn fetch_pending(&self, limit: u32) -> Result<Vec<OutboxItem>> {
-        let rows = sqlx::query(
-            "SELECT id, item_type, pool_code, mediation_target, message_group, payload, status, retry_count, created_at FROM outbox_items WHERE status = 'PENDING' ORDER BY message_group, created_at LIMIT ?"
-        )
-        .bind(limit as i64)
-        .fetch_all(&self.pool)
-        .await?;
+    async fn fetch_pending_by_type(&self, item_type: OutboxItemType, limit: u32) -> Result<Vec<OutboxItem>> {
+        let table = self.table_config.table_for_type(item_type);
+        let query = format!(
+            "SELECT id, pool_code, mediation_target, message_group, payload, status, retry_count, error_message, created_at, updated_at \
+             FROM {} WHERE status = ? ORDER BY created_at ASC LIMIT ?",
+            table
+        );
 
-        let mut items = Vec::new();
-        for row in rows {
-            let created_at_ts: i64 = row.get("created_at");
-            let created_at = DateTime::from_timestamp_millis(created_at_ts)
-                .ok_or_else(|| anyhow::anyhow!("Invalid timestamp"))?;
+        let rows = sqlx::query(&query)
+            .bind(OutboxStatus::PENDING.code())
+            .bind(limit as i64)
+            .fetch_all(&self.pool)
+            .await?;
 
-            items.push(OutboxItem {
-                id: row.get("id"),
-                item_type: row.get("item_type"),
-                pool_code: row.get("pool_code"),
-                mediation_target: row.get("mediation_target"),
-                message_group: row.get("message_group"),
-                payload: serde_json::from_str(row.get("payload"))?,
-                status: OutboxStatus::PENDING,
-                retry_count: row.get::<i64, _>("retry_count") as u32,
-                created_at,
-            });
+        let mut items = Vec::with_capacity(rows.len());
+        for row in &rows {
+            items.push(self.parse_row(row, item_type)?);
+        }
+
+        debug!(table = %table, count = items.len(), "Fetched pending items");
+        Ok(items)
+    }
+
+    async fn mark_in_progress(&self, item_type: OutboxItemType, ids: Vec<String>) -> Result<()> {
+        if ids.is_empty() {
+            return Ok(());
+        }
+
+        let table = self.table_config.table_for_type(item_type);
+        let now = Utc::now().timestamp_millis();
+        let in_clause = Self::build_in_clause(ids.len());
+
+        let query = format!(
+            "UPDATE {} SET status = ?, updated_at = ? WHERE id IN ({})",
+            table, in_clause
+        );
+
+        let mut q = sqlx::query(&query)
+            .bind(OutboxStatus::IN_PROGRESS.code())
+            .bind(now);
+        for id in &ids {
+            q = q.bind(id);
+        }
+        q.execute(&self.pool).await?;
+
+        debug!(table = %table, count = ids.len(), "Marked items as IN_PROGRESS");
+        Ok(())
+    }
+
+    async fn mark_with_status(
+        &self,
+        item_type: OutboxItemType,
+        ids: Vec<String>,
+        status: OutboxStatus,
+        error_message: Option<String>,
+    ) -> Result<()> {
+        if ids.is_empty() {
+            return Ok(());
+        }
+
+        let table = self.table_config.table_for_type(item_type);
+        let now = Utc::now().timestamp_millis();
+        let in_clause = Self::build_in_clause(ids.len());
+
+        let query = format!(
+            "UPDATE {} SET status = ?, error_message = ?, updated_at = ? WHERE id IN ({})",
+            table, in_clause
+        );
+
+        let mut q = sqlx::query(&query)
+            .bind(status.code())
+            .bind(&error_message)
+            .bind(now);
+        for id in &ids {
+            q = q.bind(id);
+        }
+        q.execute(&self.pool).await?;
+
+        debug!(table = %table, status = ?status, count = ids.len(), "Marked items with status");
+        Ok(())
+    }
+
+    async fn increment_retry_count(&self, item_type: OutboxItemType, ids: Vec<String>) -> Result<()> {
+        if ids.is_empty() {
+            return Ok(());
+        }
+
+        let table = self.table_config.table_for_type(item_type);
+        let now = Utc::now().timestamp_millis();
+        let in_clause = Self::build_in_clause(ids.len());
+
+        let query = format!(
+            "UPDATE {} SET retry_count = retry_count + 1, status = ?, updated_at = ? WHERE id IN ({})",
+            table, in_clause
+        );
+
+        let mut q = sqlx::query(&query)
+            .bind(OutboxStatus::PENDING.code())
+            .bind(now);
+        for id in &ids {
+            q = q.bind(id);
+        }
+        q.execute(&self.pool).await?;
+
+        debug!(table = %table, count = ids.len(), "Incremented retry count");
+        Ok(())
+    }
+
+    async fn fetch_recoverable_items(
+        &self,
+        item_type: OutboxItemType,
+        timeout: Duration,
+        limit: u32,
+    ) -> Result<Vec<OutboxItem>> {
+        let table = self.table_config.table_for_type(item_type);
+        let timeout_ms = timeout.as_millis() as i64;
+        let cutoff = Utc::now().timestamp_millis() - timeout_ms;
+
+        let query = format!(
+            "SELECT id, pool_code, mediation_target, message_group, payload, status, retry_count, error_message, created_at, updated_at \
+             FROM {} WHERE status IN (?, ?, ?, ?, ?, ?) AND updated_at < ? ORDER BY created_at ASC LIMIT ?",
+            table
+        );
+
+        let rows = sqlx::query(&query)
+            .bind(OutboxStatus::IN_PROGRESS.code())
+            .bind(OutboxStatus::BAD_REQUEST.code())
+            .bind(OutboxStatus::INTERNAL_ERROR.code())
+            .bind(OutboxStatus::UNAUTHORIZED.code())
+            .bind(OutboxStatus::FORBIDDEN.code())
+            .bind(OutboxStatus::GATEWAY_ERROR.code())
+            .bind(cutoff)
+            .bind(limit as i64)
+            .fetch_all(&self.pool)
+            .await?;
+
+        let mut items = Vec::with_capacity(rows.len());
+        for row in &rows {
+            items.push(self.parse_row(row, item_type)?);
         }
         Ok(items)
     }
 
-    async fn mark_processing(&self, ids: Vec<String>) -> Result<()> {
-        if ids.is_empty() { return Ok(()); }
+    async fn reset_recoverable_items(&self, item_type: OutboxItemType, ids: Vec<String>) -> Result<()> {
+        if ids.is_empty() {
+            return Ok(());
+        }
 
+        let table = self.table_config.table_for_type(item_type);
         let now = Utc::now().timestamp_millis();
-
-        // MySQL doesn't support ANY(), so we build the IN clause manually
         let in_clause = Self::build_in_clause(ids.len());
+
         let query = format!(
-            "UPDATE outbox_items SET status = 'PROCESSING', processed_at = ? WHERE id IN ({})",
-            in_clause
+            "UPDATE {} SET status = ?, updated_at = ? WHERE id IN ({})",
+            table, in_clause
         );
 
-        // Build the query with dynamic bindings
-        let mut q = sqlx::query(&query).bind(now);
+        let mut q = sqlx::query(&query)
+            .bind(OutboxStatus::PENDING.code())
+            .bind(now);
         for id in &ids {
             q = q.bind(id);
         }
-
         q.execute(&self.pool).await?;
+
+        info!(table = %table, count = ids.len(), "Reset recoverable items to PENDING");
         Ok(())
     }
 
-    async fn update_status(&self, id: &str, status: OutboxStatus, error: Option<String>) -> Result<()> {
-        let status_str = match status {
-            OutboxStatus::PENDING => "PENDING",
-            OutboxStatus::PROCESSING => "PROCESSING",
-            OutboxStatus::COMPLETED => "COMPLETED",
-            OutboxStatus::FAILED => "FAILED",
-        };
-
-        sqlx::query("UPDATE outbox_items SET status = ?, error_message = ? WHERE id = ?")
-            .bind(status_str)
-            .bind(error)
-            .bind(id)
-            .execute(&self.pool)
-            .await?;
-        Ok(())
-    }
-
-    async fn recover_stuck_items(&self, timeout: Duration) -> Result<u64> {
+    async fn fetch_stuck_items(
+        &self,
+        item_type: OutboxItemType,
+        timeout: Duration,
+        limit: u32,
+    ) -> Result<Vec<OutboxItem>> {
+        let table = self.table_config.table_for_type(item_type);
         let timeout_ms = timeout.as_millis() as i64;
         let cutoff = Utc::now().timestamp_millis() - timeout_ms;
 
-        let result = sqlx::query(
-            r#"
-            UPDATE outbox_items
-            SET status = 'PENDING', processed_at = NULL
-            WHERE status = 'PROCESSING'
-            AND processed_at < ?
-            "#
-        )
-        .bind(cutoff)
-        .execute(&self.pool)
-        .await?;
+        let query = format!(
+            "SELECT id, pool_code, mediation_target, message_group, payload, status, retry_count, error_message, created_at, updated_at \
+             FROM {} WHERE status = ? AND updated_at < ? ORDER BY created_at ASC LIMIT ?",
+            table
+        );
 
-        let recovered = result.rows_affected();
-        if recovered > 0 {
-            info!("Recovered {} stuck outbox items (MySQL)", recovered);
+        let rows = sqlx::query(&query)
+            .bind(OutboxStatus::IN_PROGRESS.code())
+            .bind(cutoff)
+            .bind(limit as i64)
+            .fetch_all(&self.pool)
+            .await?;
+
+        let mut items = Vec::with_capacity(rows.len());
+        for row in &rows {
+            items.push(self.parse_row(row, item_type)?);
         }
-        Ok(recovered)
+        Ok(items)
+    }
+
+    async fn reset_stuck_items(&self, item_type: OutboxItemType, ids: Vec<String>) -> Result<()> {
+        self.reset_recoverable_items(item_type, ids).await
+    }
+
+    async fn init_schema(&self) -> Result<()> {
+        // Create events table
+        let events_schema = format!(
+            r#"
+            CREATE TABLE IF NOT EXISTS {} (
+                id VARCHAR(26) PRIMARY KEY,
+                pool_code VARCHAR(100),
+                mediation_target VARCHAR(500),
+                message_group VARCHAR(255),
+                payload JSON NOT NULL,
+                status INT NOT NULL DEFAULT 0,
+                retry_count INT NOT NULL DEFAULT 0,
+                error_message TEXT,
+                created_at BIGINT NOT NULL,
+                updated_at BIGINT,
+                INDEX idx_{}_status (status),
+                INDEX idx_{}_created_at (created_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            "#,
+            self.table_config.events_table,
+            self.table_config.events_table.replace('.', "_"),
+            self.table_config.events_table.replace('.', "_"),
+        );
+
+        sqlx::query(&events_schema)
+            .execute(&self.pool)
+            .await?;
+
+        // Create dispatch_jobs table
+        let dispatch_jobs_schema = format!(
+            r#"
+            CREATE TABLE IF NOT EXISTS {} (
+                id VARCHAR(26) PRIMARY KEY,
+                pool_code VARCHAR(100),
+                mediation_target VARCHAR(500),
+                message_group VARCHAR(255),
+                payload JSON NOT NULL,
+                status INT NOT NULL DEFAULT 0,
+                retry_count INT NOT NULL DEFAULT 0,
+                error_message TEXT,
+                created_at BIGINT NOT NULL,
+                updated_at BIGINT,
+                INDEX idx_{}_status (status),
+                INDEX idx_{}_created_at (created_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            "#,
+            self.table_config.dispatch_jobs_table,
+            self.table_config.dispatch_jobs_table.replace('.', "_"),
+            self.table_config.dispatch_jobs_table.replace('.', "_"),
+        );
+
+        sqlx::query(&dispatch_jobs_schema)
+            .execute(&self.pool)
+            .await?;
+
+        info!(
+            events_table = %self.table_config.events_table,
+            dispatch_jobs_table = %self.table_config.dispatch_jobs_table,
+            "Initialized MySQL outbox schema"
+        );
+
+        Ok(())
+    }
+
+    fn table_config(&self) -> &OutboxTableConfig {
+        &self.table_config
     }
 }

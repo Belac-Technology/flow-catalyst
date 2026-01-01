@@ -18,8 +18,7 @@ pub mod mongo;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::time::{sleep, Duration};
-use crate::repository::OutboxRepository;
-use fc_common::{OutboxStatus, Message, MediationType};
+use fc_common::{OutboxStatus, OutboxItemType, Message, MediationType};
 use anyhow::Result;
 use tracing::{info, error, debug, warn};
 use async_trait::async_trait;
@@ -33,8 +32,12 @@ pub use message_group_processor::{
 };
 pub use group_distributor::{GroupDistributor, GroupDistributorConfig, DistributorStats};
 pub use recovery::{RecoveryTask, RecoveryConfig};
-pub use http_dispatcher::{HttpDispatcher, HttpDispatcherConfig, BatchRequest, BatchResponse, ItemStatus};
+pub use http_dispatcher::{
+    HttpDispatcher, HttpDispatcherConfig, BatchRequest, BatchResponse,
+    ItemStatus, OutboxDispatchResult,
+};
 pub use enhanced_processor::{EnhancedOutboxProcessor, EnhancedProcessorConfig, ProcessorMetrics};
+pub use repository::{OutboxRepository, OutboxTableConfig, OutboxRepositoryExt};
 
 /// Configuration for leader election in outbox processor
 #[derive(Debug, Clone)]
@@ -158,16 +161,24 @@ impl OutboxProcessor {
     }
 
     async fn process_batch(&self) -> Result<()> {
-        let items = self.repository.fetch_pending(self.batch_size).await?;
+        // Process both EVENT and DISPATCH_JOB items
+        for item_type in [OutboxItemType::EVENT, OutboxItemType::DISPATCH_JOB] {
+            self.process_items_of_type(item_type).await?;
+        }
+        Ok(())
+    }
+
+    async fn process_items_of_type(&self, item_type: OutboxItemType) -> Result<()> {
+        let items = self.repository.fetch_pending_by_type(item_type, self.batch_size / 2).await?;
         if items.is_empty() {
             return Ok(());
         }
 
         let ids: Vec<String> = items.iter().map(|i| i.id.clone()).collect();
-        self.repository.mark_processing(ids).await?;
+        self.repository.mark_in_progress(item_type, ids).await?;
 
         for item in items {
-            debug!("Processing outbox item [{}]", item.id);
+            debug!("Processing outbox item [{}] type={}", item.id, item_type);
 
             // Map OutboxItem to Message
             let message = Message {
@@ -184,11 +195,21 @@ impl OutboxProcessor {
 
             match self.queue_publisher.publish(message).await {
                 Ok(_) => {
-                    self.repository.update_status(&item.id, OutboxStatus::COMPLETED, None).await?;
+                    self.repository.mark_with_status(
+                        item_type,
+                        vec![item.id.clone()],
+                        OutboxStatus::SUCCESS,
+                        None,
+                    ).await?;
                 }
                 Err(e) => {
                     error!("Failed to publish outbox item [{}]: {}", item.id, e);
-                    self.repository.update_status(&item.id, OutboxStatus::FAILED, Some(e.to_string())).await?;
+                    self.repository.mark_with_status(
+                        item_type,
+                        vec![item.id.clone()],
+                        OutboxStatus::INTERNAL_ERROR,
+                        Some(e.to_string()),
+                    ).await?;
                 }
             }
         }

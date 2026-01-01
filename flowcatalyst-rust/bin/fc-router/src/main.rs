@@ -8,6 +8,7 @@ use fc_router::{
     QueueManager, HttpMediator, LifecycleManager, LifecycleConfig,
     WarningService, WarningServiceConfig,
     HealthService, HealthServiceConfig,
+    CircuitBreakerRegistry,
 };
 use fc_queue::sqs::SqsQueueConsumer;
 use fc_common::{RouterConfig, PoolConfig, QueueConfig};
@@ -101,11 +102,15 @@ async fn main() -> Result<()> {
     // Create a simple publisher that publishes to SQS
     let publisher = Arc::new(SqsPublisher::new(sqs_client, queue_url));
 
+    // Create circuit breaker registry for endpoint tracking
+    let circuit_breaker_registry = Arc::new(CircuitBreakerRegistry::default());
+
     let app = create_router(
         publisher,
         queue_manager.clone(),
         warning_service.clone(),
         health_service.clone(),
+        circuit_breaker_registry,
     )
     .layer(TraceLayer::new_for_http())
     .layer(CorsLayer::new().allow_origin(Any).allow_methods(Any).allow_headers(Any));

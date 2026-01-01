@@ -10,11 +10,40 @@
 </head>
 <body class="bg-gray-100 min-h-screen">
     <div class="container mx-auto px-4 py-8">
+        <!-- Login Modal (for BasicAuth) -->
+        <div id="loginModal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
+            <div class="bg-white rounded-lg shadow-lg max-w-md w-full mx-4">
+                <div class="px-6 py-4 border-b border-gray-200">
+                    <h3 class="text-lg font-semibold text-gray-900">Login Required</h3>
+                </div>
+                <div class="px-6 py-4">
+                    <div id="loginError" class="hidden mb-4 p-3 bg-red-100 text-red-700 rounded text-sm"></div>
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Username</label>
+                            <input type="text" id="loginUsername" class="w-full border border-gray-300 rounded px-3 py-2 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                            <input type="password" id="loginPassword" class="w-full border border-gray-300 rounded px-3 py-2 text-sm">
+                        </div>
+                    </div>
+                </div>
+                <div class="px-6 py-4 border-t border-gray-200 flex justify-end">
+                    <button id="loginBtn" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded text-sm">
+                        Login
+                    </button>
+                </div>
+            </div>
+        </div>
+
         <!-- Header -->
         <div class="mb-8">
             <div class="flex justify-between items-start mb-4">
-                <h1 class="text-3xl font-bold text-gray-900">FlowCatalyst Dashboard</h1>
-                <span class="text-sm text-gray-500">Rust Edition</span>
+                <h1 class="text-3xl font-bold text-gray-900">Flow Catalyst Dashboard</h1>
+                <button id="logoutBtn" class="hidden bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded text-sm">
+                    Logout
+                </button>
             </div>
             <div class="flex items-center space-x-4">
                 <div id="statusContainer" class="flex items-center cursor-pointer hover:opacity-70">
@@ -25,6 +54,19 @@
                 <button id="refreshBtn" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded text-sm">
                     Refresh
                 </button>
+            </div>
+        </div>
+
+        <!-- Time Period Filter -->
+        <div class="mb-6 bg-white rounded-lg shadow p-6">
+            <div class="flex items-center space-x-4">
+                <label for="timePeriodSelect" class="text-sm font-medium text-gray-700">Time Period:</label>
+                <select id="timePeriodSelect" class="border border-gray-300 rounded px-3 py-2 text-sm">
+                    <option value="5min">Last 5 Minutes</option>
+                    <option value="30min" selected>Last 30 Minutes (Default)</option>
+                    <option value="all-time">All Time</option>
+                </select>
+                <span class="text-sm text-gray-500 ml-4">Note: Total Processed and System Health always show current state</span>
             </div>
         </div>
 
@@ -281,6 +323,8 @@
         class Dashboard {
             constructor() {
                 this.charts = {};
+                this.basicAuth = null;
+                this.timePeriod = '30min';
                 this.data = {
                     health: null,
                     queueStats: {},
@@ -295,10 +339,109 @@
                     poolName: ''
                 };
 
+                this.checkAuth();
+            }
+
+            async checkAuth() {
+                // Check for stored BasicAuth
+                const stored = localStorage.getItem('flowcatalyst_auth');
+                if (stored) {
+                    this.basicAuth = stored;
+                }
+
+                try {
+                    const response = await this.fetchWithAuth('/monitoring/health');
+
+                    if (response.ok) {
+                        this.showDashboard();
+                        return;
+                    }
+
+                    if (response.status === 401 || response.status === 403) {
+                        const authMode = response.headers.get('X-Auth-Mode');
+                        if (authMode === 'BASIC') {
+                            this.showLoginModal();
+                        } else if (authMode === 'OIDC') {
+                            // Redirect to OIDC login
+                            window.location.href = '/monitoring/health';
+                        } else {
+                            // No auth required
+                            this.showDashboard();
+                        }
+                        return;
+                    }
+
+                    // Other errors - try to show dashboard anyway
+                    this.showDashboard();
+                } catch (error) {
+                    console.error('Auth check failed:', error);
+                    // Try to show dashboard anyway
+                    this.showDashboard();
+                }
+            }
+
+            showLoginModal() {
+                document.getElementById('loginModal').classList.remove('hidden');
+                document.getElementById('loginBtn').addEventListener('click', () => this.handleLogin());
+                document.getElementById('loginPassword').addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') this.handleLogin();
+                });
+            }
+
+            async handleLogin() {
+                const username = document.getElementById('loginUsername').value.trim();
+                const password = document.getElementById('loginPassword').value;
+                const errorDiv = document.getElementById('loginError');
+
+                if (!username || !password) {
+                    errorDiv.textContent = 'Please enter both username and password';
+                    errorDiv.classList.remove('hidden');
+                    return;
+                }
+
+                const encoded = btoa(`${username}:${password}`);
+                this.basicAuth = encoded;
+
+                try {
+                    const response = await this.fetchWithAuth('/monitoring/health');
+                    if (response.ok) {
+                        localStorage.setItem('flowcatalyst_auth', encoded);
+                        document.getElementById('loginModal').classList.add('hidden');
+                        this.showDashboard();
+                    } else {
+                        errorDiv.textContent = 'Invalid username or password';
+                        errorDiv.classList.remove('hidden');
+                        this.basicAuth = null;
+                    }
+                } catch (error) {
+                    errorDiv.textContent = 'Connection error. Please try again.';
+                    errorDiv.classList.remove('hidden');
+                }
+            }
+
+            logout() {
+                localStorage.removeItem('flowcatalyst_auth');
+                this.basicAuth = null;
+                window.location.reload();
+            }
+
+            showDashboard() {
+                document.getElementById('loginModal').classList.add('hidden');
+                if (this.basicAuth) {
+                    document.getElementById('logoutBtn').classList.remove('hidden');
+                }
                 this.init();
                 this.setupEventListeners();
                 this.setupTabListeners();
                 this.startPeriodicRefresh();
+            }
+
+            async fetchWithAuth(url) {
+                const headers = {};
+                if (this.basicAuth) {
+                    headers['Authorization'] = 'Basic ' + this.basicAuth;
+                }
+                return fetch(url, { headers, credentials: 'include' });
             }
 
             async init() {
@@ -393,6 +536,11 @@
             setupEventListeners() {
                 document.getElementById('statusContainer').addEventListener('click', () => this.showHealthModal());
                 document.getElementById('refreshBtn').addEventListener('click', () => this.loadData());
+                document.getElementById('logoutBtn').addEventListener('click', () => this.logout());
+                document.getElementById('timePeriodSelect').addEventListener('change', (e) => {
+                    this.timePeriod = e.target.value;
+                    this.updateUI();
+                });
                 document.getElementById('severityFilter').addEventListener('change', (e) => {
                     this.filters.severity = e.target.value;
                     this.filterWarnings();
@@ -414,11 +562,11 @@
             async loadData() {
                 try {
                     const responses = await Promise.all([
-                        fetch('/monitoring/health'),
-                        fetch('/monitoring/queue-stats'),
-                        fetch('/monitoring/pool-stats'),
-                        fetch('/monitoring/warnings'),
-                        fetch('/monitoring/circuit-breakers')
+                        this.fetchWithAuth('/monitoring/health'),
+                        this.fetchWithAuth('/monitoring/queue-stats'),
+                        this.fetchWithAuth('/monitoring/pool-stats'),
+                        this.fetchWithAuth('/monitoring/warnings'),
+                        this.fetchWithAuth('/monitoring/circuit-breakers')
                     ]);
 
                     const [health, queueStats, poolStats, warnings, circuitBreakers] =
@@ -665,7 +813,7 @@
 
             async loadInFlightMessages() {
                 try {
-                    const response = await fetch('/monitoring/in-flight-messages?limit=100');
+                    const response = await this.fetchWithAuth('/monitoring/in-flight-messages?limit=100');
                     if (!response.ok) throw new Error('Failed to load in-flight messages');
                     const inFlightMessages = await response.json();
                     this.data.inFlightMessages = inFlightMessages;
@@ -674,6 +822,29 @@
                     console.error('Failed to load in-flight messages:', error);
                     document.getElementById('inFlightTable').innerHTML = '';
                     document.getElementById('noInFlight').classList.remove('hidden');
+                }
+            }
+
+            // Get success rate based on time period
+            getSuccessRate(stats) {
+                switch (this.timePeriod) {
+                    case '5min':
+                        return stats.successRate5min !== undefined ? stats.successRate5min : stats.successRate;
+                    case '30min':
+                        return stats.successRate30min !== undefined ? stats.successRate30min : stats.successRate;
+                    default:
+                        return stats.successRate;
+                }
+            }
+
+            getTotal(stats, field) {
+                switch (this.timePeriod) {
+                    case '5min':
+                        return stats[`${field}5min`] !== undefined ? stats[`${field}5min`] : stats[field];
+                    case '30min':
+                        return stats[`${field}30min`] !== undefined ? stats[`${field}30min`] : stats[field];
+                    default:
+                        return stats[field];
                 }
             }
 
