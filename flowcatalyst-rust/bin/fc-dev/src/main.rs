@@ -283,6 +283,7 @@ async fn main() -> Result<()> {
     let principals_state = PrincipalsState {
         principal_repo: principal_repo.clone(),
         audit_service: Some(audit_service),
+        password_service: None, // TODO: Configure password service for password reset
     };
     let roles_state = RolesState { role_repo: role_repo.clone() };
     let subscriptions_state = SubscriptionsState { subscription_repo: subscription_repo.clone() };

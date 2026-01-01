@@ -502,6 +502,73 @@ pub fn stats_router(state: StatsState) -> Router {
         .with_state(state)
 }
 
+/// Pool statistics response (with enhanced metrics)
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PoolStatsResponse {
+    pub pools: Vec<fc_common::PoolStats>,
+    pub total_pools: usize,
+    pub total_active_workers: u32,
+    pub total_queue_size: u32,
+    /// Aggregate success rate across all pools
+    pub aggregate_success_rate: f64,
+    /// Aggregate throughput (messages/sec) across all pools
+    pub aggregate_throughput_per_sec: f64,
+}
+
+/// Get pool statistics with enhanced metrics
+#[utoipa::path(
+    get,
+    path = "/pool-stats",
+    tag = "monitoring",
+    responses(
+        (status = 200, description = "Pool statistics with enhanced metrics", body = PoolStatsResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn get_pool_stats(
+    State(_state): State<MonitoringState>,
+    auth: Authenticated,
+) -> Result<Json<PoolStatsResponse>, PlatformError> {
+    crate::service::checks::require_anchor(&auth.0)?;
+
+    // Note: In a full implementation, the router's QueueManager would be
+    // passed to the monitoring state to get real pool stats.
+    // For now, return empty stats as the router runs in a separate process.
+    let pools: Vec<fc_common::PoolStats> = Vec::new();
+
+    let total_active_workers: u32 = pools.iter().map(|p| p.active_workers).sum();
+    let total_queue_size: u32 = pools.iter().map(|p| p.queue_size).sum();
+
+    // Calculate aggregate metrics from enhanced metrics if available
+    let mut total_success = 0u64;
+    let mut total_failure = 0u64;
+    let mut total_throughput = 0.0f64;
+
+    for pool in &pools {
+        if let Some(ref metrics) = pool.metrics {
+            total_success += metrics.total_success;
+            total_failure += metrics.total_failure;
+            total_throughput += metrics.last_5_min.throughput_per_sec;
+        }
+    }
+
+    let aggregate_success_rate = if total_success + total_failure > 0 {
+        total_success as f64 / (total_success + total_failure) as f64
+    } else {
+        1.0
+    };
+
+    Ok(Json(PoolStatsResponse {
+        total_pools: pools.len(),
+        pools,
+        total_active_workers,
+        total_queue_size,
+        aggregate_success_rate,
+        aggregate_throughput_per_sec: total_throughput,
+    }))
+}
+
 /// Create monitoring router
 pub fn monitoring_router(state: MonitoringState) -> Router {
     Router::new()
@@ -509,5 +576,6 @@ pub fn monitoring_router(state: MonitoringState) -> Router {
         .route("/dashboard", get(get_dashboard))
         .route("/circuit-breakers", get(get_circuit_breakers))
         .route("/in-flight-messages", get(get_in_flight_messages))
+        .route("/pool-stats", get(get_pool_stats))
         .with_state(state)
 }

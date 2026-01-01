@@ -17,9 +17,10 @@ use tracing::{info, warn, error, debug};
 
 use fc_common::{
     Message, BatchMessage, AckNack, PoolConfig, PoolStats,
-    MediationResult,
+    MediationResult, EnhancedPoolMetrics,
 };
 use crate::mediator::Mediator;
+use crate::metrics::PoolMetricsCollector;
 use crate::Result;
 
 const DEFAULT_GROUP: &str = "__DEFAULT__";
@@ -67,6 +68,9 @@ pub struct ProcessPool {
 
     /// Active workers counter (Arc for sharing across tasks)
     active_workers: Arc<AtomicU32>,
+
+    /// Enhanced metrics collector
+    metrics_collector: Arc<PoolMetricsCollector>,
 }
 
 impl ProcessPool {
@@ -91,6 +95,7 @@ impl ProcessPool {
             running: AtomicBool::new(false),
             queue_size: Arc::new(AtomicU32::new(0)),
             active_workers: Arc::new(AtomicU32::new(0)),
+            metrics_collector: Arc::new(PoolMetricsCollector::new()),
         }
     }
 
@@ -219,6 +224,7 @@ impl ProcessPool {
         let batch_group_message_count = self.batch_group_message_count.clone();
         let rate_limiter = self.rate_limiter.clone();
         let message_group_queues = self.message_group_queues.clone();
+        let metrics_collector = self.metrics_collector.clone();
 
         tokio::spawn(async move {
             Self::run_group_worker(
@@ -234,6 +240,7 @@ impl ProcessPool {
                 batch_group_message_count,
                 rate_limiter,
                 message_group_queues,
+                metrics_collector,
             ).await;
         });
 
@@ -254,6 +261,7 @@ impl ProcessPool {
         batch_group_message_count: Arc<DashMap<String, AtomicU32>>,
         rate_limiter: Option<Arc<RateLimiter<NotKeyed, InMemoryState, DefaultClock>>>,
         message_group_queues: DashMap<String, mpsc::Sender<PoolTask>>,
+        metrics_collector: Arc<PoolMetricsCollector>,
     ) {
         debug!(group_id = %group_id, pool_code = %pool_code, "Group worker started");
 
@@ -351,7 +359,7 @@ impl ProcessPool {
             let outcome = mediator.mediate(&task.message).await;
             let duration_ms = start.elapsed().as_millis() as u64;
 
-            // Handle outcome
+            // Handle outcome and record metrics
             let ack_nack = match outcome.result {
                 MediationResult::Success => {
                     debug!(
@@ -359,6 +367,8 @@ impl ProcessPool {
                         duration_ms = duration_ms,
                         "Message processed successfully"
                     );
+                    // Record success metric
+                    metrics_collector.record_success(duration_ms);
                     AckNack::Ack
                 }
                 MediationResult::ErrorConfig => {
@@ -367,6 +377,8 @@ impl ProcessPool {
                         error = ?outcome.error_message,
                         "Configuration error, ACKing to prevent retry"
                     );
+                    // Config errors count as failures for metrics
+                    metrics_collector.record_failure(duration_ms);
                     AckNack::Ack
                 }
                 MediationResult::ErrorProcess => {
@@ -375,6 +387,8 @@ impl ProcessPool {
                         error = ?outcome.error_message,
                         "Transient error, NACKing for retry"
                     );
+                    // Record failure metric
+                    metrics_collector.record_failure(duration_ms);
 
                     // Mark batch+group as failed to trigger cascading NACKs
                     if let Some(ref key) = task.batch_group_key {
@@ -395,6 +409,8 @@ impl ProcessPool {
                         error = ?outcome.error_message,
                         "Connection error, NACKing for retry"
                     );
+                    // Record failure metric
+                    metrics_collector.record_failure(duration_ms);
 
                     // Mark batch+group as failed to trigger cascading NACKs
                     if let Some(ref key) = task.batch_group_key {
@@ -518,7 +534,18 @@ impl ProcessPool {
             message_group_count: self.message_group_queues.len() as u32,
             rate_limit_per_minute: self.config.rate_limit_per_minute,
             is_rate_limited: self.is_rate_limited(),
+            metrics: Some(self.metrics_collector.get_metrics()),
         }
+    }
+
+    /// Get enhanced metrics for this pool
+    pub fn get_enhanced_metrics(&self) -> EnhancedPoolMetrics {
+        self.metrics_collector.get_metrics()
+    }
+
+    /// Reset metrics (useful for testing)
+    pub fn reset_metrics(&self) {
+        self.metrics_collector.reset();
     }
 
     /// Get the pool code

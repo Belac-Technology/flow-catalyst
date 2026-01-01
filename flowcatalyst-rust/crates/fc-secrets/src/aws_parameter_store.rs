@@ -12,9 +12,11 @@ use tracing::{debug, info};
 use crate::{Provider, SecretsError};
 
 /// AWS Parameter Store secret provider
+///
+/// NOTE: Unlike AWS Secrets Manager, Parameter Store does NOT apply a prefix.
+/// The parameter name in the reference is used as-is. This matches Java behavior.
 pub struct AwsParameterStoreProvider {
     client: Client,
-    prefix: String,
 }
 
 impl AwsParameterStoreProvider {
@@ -22,8 +24,8 @@ impl AwsParameterStoreProvider {
     ///
     /// # Arguments
     /// * `region` - Optional AWS region (uses default if not specified)
-    /// * `prefix` - Prefix for parameter names (e.g., "/flowcatalyst/")
-    pub async fn new(region: Option<String>, prefix: String) -> Result<Self, SecretsError> {
+    /// * `_prefix` - Ignored (kept for API compatibility, no prefix is applied)
+    pub async fn new(region: Option<String>, _prefix: String) -> Result<Self, SecretsError> {
         let config = if let Some(region) = region {
             aws_config::defaults(aws_config::BehaviorVersion::latest())
                 .region(aws_config::Region::new(region))
@@ -34,9 +36,9 @@ impl AwsParameterStoreProvider {
         };
 
         let client = Client::new(&config);
-        info!(prefix = %prefix, "Initialized AWS Parameter Store provider");
+        info!("Initialized AWS Parameter Store provider (no prefix applied)");
 
-        Ok(Self { client, prefix })
+        Ok(Self { client })
     }
 
     /// Resolve a reference in the format `aws-ps://parameter-name`
@@ -107,19 +109,19 @@ impl AwsParameterStoreProvider {
 #[async_trait]
 impl Provider for AwsParameterStoreProvider {
     async fn get(&self, key: &str) -> Result<String, SecretsError> {
-        let full_key = format!("{}{}", self.prefix, key);
-        debug!(parameter_name = %full_key, "Retrieving parameter from AWS Parameter Store");
+        // No prefix applied - use key as-is (matches Java behavior)
+        debug!(parameter_name = %key, "Retrieving parameter from AWS Parameter Store");
 
         let response = self.client
             .get_parameter()
-            .name(&full_key)
+            .name(key)
             .with_decryption(true)  // Automatically decrypt SecureString parameters
             .send()
             .await
             .map_err(|e| {
                 let err_msg = e.to_string();
                 if err_msg.contains("ParameterNotFound") {
-                    SecretsError::NotFound(full_key.clone())
+                    SecretsError::NotFound(key.to_string())
                 } else {
                     SecretsError::ProviderError(format!(
                         "Failed to retrieve parameter from AWS Parameter Store: {}",

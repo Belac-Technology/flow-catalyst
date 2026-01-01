@@ -151,6 +151,48 @@ impl Default for StandbyConfig {
     }
 }
 
+/// Configuration for stall detection
+///
+/// Stall detection monitors message groups that have been processing for too long.
+/// When detected, it can emit warnings and optionally force-NACK stalled messages.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StallConfig {
+    /// Whether stall detection is enabled
+    pub enabled: bool,
+    /// Threshold in seconds before a message is considered stalled
+    pub stall_threshold_seconds: u64,
+    /// Whether to force-NACK stalled messages after timeout
+    pub force_nack_stalled: bool,
+    /// Timeout in seconds after which to force-NACK stalled messages
+    /// Only applies if force_nack_stalled is true
+    pub force_nack_after_seconds: u64,
+    /// Delay in seconds when NACKing stalled messages
+    pub nack_delay_seconds: u32,
+}
+
+impl Default for StallConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            stall_threshold_seconds: 300, // 5 minutes
+            force_nack_stalled: false,
+            force_nack_after_seconds: 600, // 10 minutes
+            nack_delay_seconds: 30,
+        }
+    }
+}
+
+/// Information about a stalled message group
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StalledMessageInfo {
+    pub message_id: String,
+    pub message_group_id: Option<String>,
+    pub pool_code: String,
+    pub queue_identifier: String,
+    pub elapsed_seconds: u64,
+    pub detected_at: DateTime<Utc>,
+}
+
 // ============================================================================
 // Mediation Types
 // ============================================================================
@@ -355,6 +397,95 @@ pub struct PoolStats {
     pub message_group_count: u32,
     pub rate_limit_per_minute: Option<u32>,
     pub is_rate_limited: bool,
+    /// Enhanced metrics (optional, available when metrics collection is enabled)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metrics: Option<EnhancedPoolMetrics>,
+}
+
+/// Enhanced metrics for a processing pool
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct EnhancedPoolMetrics {
+    /// Total messages processed successfully (all time)
+    pub total_success: u64,
+    /// Total messages failed (all time)
+    pub total_failure: u64,
+    /// Success rate (0.0 - 1.0)
+    pub success_rate: f64,
+    /// Processing time metrics (all time)
+    pub processing_time: ProcessingTimeMetrics,
+    /// Metrics for the last 5 minutes
+    pub last_5_min: WindowedMetrics,
+    /// Metrics for the last 30 minutes
+    pub last_30_min: WindowedMetrics,
+}
+
+/// Processing time metrics with percentiles
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ProcessingTimeMetrics {
+    /// Average processing time in milliseconds
+    pub avg_ms: f64,
+    /// Minimum processing time in milliseconds
+    pub min_ms: u64,
+    /// Maximum processing time in milliseconds
+    pub max_ms: u64,
+    /// 50th percentile (median) in milliseconds
+    pub p50_ms: u64,
+    /// 95th percentile in milliseconds
+    pub p95_ms: u64,
+    /// 99th percentile in milliseconds
+    pub p99_ms: u64,
+    /// Total samples collected
+    pub sample_count: u64,
+}
+
+impl Default for ProcessingTimeMetrics {
+    fn default() -> Self {
+        Self {
+            avg_ms: 0.0,
+            min_ms: 0,
+            max_ms: 0,
+            p50_ms: 0,
+            p95_ms: 0,
+            p99_ms: 0,
+            sample_count: 0,
+        }
+    }
+}
+
+/// Time-windowed metrics
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct WindowedMetrics {
+    /// Messages processed successfully in this window
+    pub success_count: u64,
+    /// Messages failed in this window
+    pub failure_count: u64,
+    /// Success rate in this window (0.0 - 1.0)
+    pub success_rate: f64,
+    /// Throughput (messages per second)
+    pub throughput_per_sec: f64,
+    /// Processing time metrics for this window
+    pub processing_time: ProcessingTimeMetrics,
+    /// Window start time
+    pub window_start: DateTime<Utc>,
+    /// Window duration in seconds
+    pub window_duration_secs: u64,
+}
+
+impl Default for WindowedMetrics {
+    fn default() -> Self {
+        Self {
+            success_count: 0,
+            failure_count: 0,
+            success_rate: 0.0,
+            throughput_per_sec: 0.0,
+            processing_time: ProcessingTimeMetrics::default(),
+            window_start: Utc::now(),
+            window_duration_secs: 300, // 5 minutes default
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

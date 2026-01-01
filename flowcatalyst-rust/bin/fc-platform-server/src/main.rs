@@ -158,6 +158,7 @@ async fn main() -> Result<()> {
     let principals_state = PrincipalsState {
         principal_repo,
         audit_service: Some(audit_service),
+        password_service: None, // TODO: Configure password service for password reset
     };
     let roles_state = RolesState { role_repo };
     let subscriptions_state = SubscriptionsState { subscription_repo };

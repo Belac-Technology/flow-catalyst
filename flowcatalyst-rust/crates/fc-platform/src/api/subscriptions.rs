@@ -513,6 +513,57 @@ pub async fn delete_subscription(
     Ok(Json(SuccessResponse::ok()))
 }
 
+/// Reactivate an archived subscription
+///
+/// Reactivates a previously archived subscription, setting it back to active status.
+#[utoipa::path(
+    post,
+    path = "/{id}/reactivate",
+    tag = "subscriptions",
+    params(
+        ("id" = String, Path, description = "Subscription ID")
+    ),
+    responses(
+        (status = 200, description = "Subscription reactivated", body = SubscriptionResponse),
+        (status = 404, description = "Subscription not found"),
+        (status = 400, description = "Subscription is not archived")
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn reactivate_subscription(
+    State(state): State<SubscriptionsState>,
+    auth: Authenticated,
+    Path(id): Path<String>,
+) -> Result<Json<SubscriptionResponse>, PlatformError> {
+    crate::service::checks::can_write_subscriptions(&auth.0)?;
+
+    let mut subscription = state.subscription_repo.find_by_id(&id).await?
+        .ok_or_else(|| PlatformError::not_found("Subscription", &id))?;
+
+    // Check client access
+    if let Some(ref cid) = subscription.client_id {
+        if !auth.0.can_access_client(cid) {
+            return Err(PlatformError::forbidden("No access to this subscription"));
+        }
+    } else if !auth.0.is_anchor() {
+        return Err(PlatformError::forbidden("Only anchor users can reactivate anchor-level subscriptions"));
+    }
+
+    // Check that subscription is archived
+    if subscription.status != crate::domain::SubscriptionStatus::Archived {
+        return Err(PlatformError::validation(
+            "Only archived subscriptions can be reactivated. Use /resume for paused subscriptions."
+        ));
+    }
+
+    subscription.resume(); // This sets status back to Active
+    state.subscription_repo.update(&subscription).await?;
+
+    tracing::info!(subscription_id = %id, principal_id = %auth.0.principal_id, "Subscription reactivated");
+
+    Ok(Json(subscription.into()))
+}
+
 /// Create subscriptions router
 pub fn subscriptions_router(state: SubscriptionsState) -> Router {
     Router::new()
@@ -520,5 +571,6 @@ pub fn subscriptions_router(state: SubscriptionsState) -> Router {
         .route("/:id", get(get_subscription).put(update_subscription).delete(delete_subscription))
         .route("/:id/pause", post(pause_subscription))
         .route("/:id/resume", post(resume_subscription))
+        .route("/:id/reactivate", post(reactivate_subscription))
         .with_state(state)
 }

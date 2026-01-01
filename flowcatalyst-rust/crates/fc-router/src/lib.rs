@@ -7,6 +7,7 @@
 //! - WarningService: In-memory warning storage with categories and severity
 //! - HealthService: System health monitoring with rolling windows
 //! - Lifecycle: Background tasks for visibility extension, health checks, etc.
+//! - PoolMetricsCollector: Enhanced metrics with sliding windows and percentiles
 
 pub mod error;
 pub mod manager;
@@ -16,6 +17,7 @@ pub mod lifecycle;
 pub mod router_metrics;
 pub mod warning;
 pub mod health;
+pub mod metrics;
 
 pub use error::RouterError;
 pub use manager::{QueueManager, InFlightMessageInfo};
@@ -24,6 +26,7 @@ pub use mediator::{Mediator, HttpMediator, CircuitState, HttpMediatorConfig, Htt
 pub use lifecycle::{LifecycleManager, LifecycleConfig};
 pub use warning::{WarningService, WarningServiceConfig};
 pub use health::{HealthService, HealthServiceConfig};
+pub use metrics::{PoolMetricsCollector, MetricsConfig};
 
 // Re-export QueueMetrics for API
 pub use fc_queue::QueueMetrics;

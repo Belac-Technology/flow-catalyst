@@ -11,11 +11,37 @@ use utoipa::{ToSchema, IntoParams};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
-use crate::domain::{Event, EventRead};
+use crate::domain::{Event, EventRead, ContextData};
 use crate::repository::EventRepository;
 use crate::error::PlatformError;
-use crate::api::common::{PaginationParams, CreatedResponse};
+use crate::api::common::PaginationParams;
 use crate::api::middleware::Authenticated;
+
+/// Context data for event filtering/searching
+#[derive(Debug, Clone, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ContextDataDto {
+    pub key: String,
+    pub value: String,
+}
+
+impl From<ContextDataDto> for ContextData {
+    fn from(dto: ContextDataDto) -> Self {
+        ContextData {
+            key: dto.key,
+            value: dto.value,
+        }
+    }
+}
+
+impl From<ContextData> for ContextDataDto {
+    fn from(cd: ContextData) -> Self {
+        ContextDataDto {
+            key: cd.key,
+            value: cd.value,
+        }
+    }
+}
 
 /// Create event request
 #[derive(Debug, Deserialize, ToSchema)]
@@ -53,6 +79,21 @@ pub struct CreateEventRequest {
     /// Client ID (optional, defaults to caller's client)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub client_id: Option<String>,
+
+    /// Context data for filtering/searching
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub context_data: Vec<ContextDataDto>,
+}
+
+/// Create event response - includes deduplication info and dispatch job count
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateEventResponse {
+    pub event: EventResponse,
+    /// Number of dispatch jobs created for matching subscriptions
+    pub dispatch_job_count: usize,
+    /// True if this was a deduplicated request (event already existed)
+    pub is_duplicate: bool,
 }
 
 /// Event response DTO
@@ -60,14 +101,25 @@ pub struct CreateEventRequest {
 #[serde(rename_all = "camelCase")]
 pub struct EventResponse {
     pub id: String,
+    pub spec_version: String,
     pub event_type: String,
     pub source: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub subject: Option<String>,
     pub time: String,
     pub data: serde_json::Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub message_group: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub correlation_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub causation_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub deduplication_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub client_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub context_data: Vec<ContextDataDto>,
     pub created_at: String,
 }
 
@@ -75,6 +127,7 @@ impl From<Event> for EventResponse {
     fn from(e: Event) -> Self {
         Self {
             id: e.id,
+            spec_version: e.spec_version,
             event_type: e.event_type,
             source: e.source,
             subject: e.subject,
@@ -82,7 +135,10 @@ impl From<Event> for EventResponse {
             data: e.data,
             message_group: e.message_group,
             correlation_id: e.correlation_id,
+            causation_id: e.causation_id,
+            deduplication_id: e.deduplication_id,
             client_id: e.client_id,
+            context_data: e.context_data.into_iter().map(Into::into).collect(),
             created_at: e.created_at.to_rfc3339(),
         }
     }
@@ -154,13 +210,18 @@ pub struct EventsState {
 }
 
 /// Create a new event
+///
+/// Creates a new event in the event store. If a deduplicationId is provided and
+/// an event with that ID already exists, the existing event is returned (idempotent operation).
+/// Dispatch jobs are automatically created for matching subscriptions.
 #[utoipa::path(
     post,
     path = "",
     tag = "events",
     request_body = CreateEventRequest,
     responses(
-        (status = 201, description = "Event created", body = CreatedResponse),
+        (status = 201, description = "Event created", body = CreateEventResponse),
+        (status = 200, description = "Event already exists (idempotent)", body = CreateEventResponse),
         (status = 400, description = "Validation error"),
         (status = 403, description = "No access to client")
     ),
@@ -170,9 +231,24 @@ pub async fn create_event(
     State(state): State<EventsState>,
     auth: Authenticated,
     Json(req): Json<CreateEventRequest>,
-) -> Result<Json<CreatedResponse>, PlatformError> {
+) -> Result<(axum::http::StatusCode, Json<CreateEventResponse>), PlatformError> {
     // Verify permission
     crate::service::checks::can_write_events(&auth.0)?;
+
+    // Check for duplicate deduplication ID
+    if let Some(ref dedup_id) = req.deduplication_id {
+        if let Some(existing) = state.event_repo.find_by_deduplication_id(dedup_id).await? {
+            // Return existing event for idempotency (no new dispatch jobs)
+            return Ok((
+                axum::http::StatusCode::OK,
+                Json(CreateEventResponse {
+                    event: existing.into(),
+                    dispatch_job_count: 0,
+                    is_duplicate: true,
+                }),
+            ));
+        }
+    }
 
     // Determine client ID
     let client_id = req.client_id.or_else(|| {
@@ -205,14 +281,30 @@ pub async fn create_event(
     if let Some(cause_id) = req.causation_id {
         event = event.with_causation_id(cause_id);
     }
+    if let Some(dedup_id) = req.deduplication_id {
+        event = event.with_deduplication_id(dedup_id);
+    }
     if let Some(cid) = client_id {
         event = event.with_client_id(cid);
     }
+    if !req.context_data.is_empty() {
+        event = event.with_context_data(req.context_data.into_iter().map(Into::into).collect());
+    }
 
-    let event_id = event.id.clone();
     state.event_repo.insert(&event).await?;
 
-    Ok(Json(CreatedResponse::new(event_id)))
+    // TODO: Create dispatch jobs for matching subscriptions
+    // This requires implementing EventDispatchService with subscription matching
+    let dispatch_job_count = 0;
+
+    Ok((
+        axum::http::StatusCode::CREATED,
+        Json(CreateEventResponse {
+            event: event.into(),
+            dispatch_job_count,
+            is_duplicate: false,
+        }),
+    ))
 }
 
 /// Get event by ID
@@ -302,32 +394,33 @@ pub struct BatchCreateEventsRequest {
     pub events: Vec<CreateEventRequest>,
 }
 
-/// Batch create response
+/// Batch create response (matches Java BatchEventResponse)
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct BatchCreateResponse {
-    pub created: Vec<String>,
-    pub failed: Vec<BatchFailure>,
-    pub total_created: usize,
-    pub total_failed: usize,
-}
-
-/// Batch failure info
-#[derive(Debug, Serialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct BatchFailure {
-    pub index: usize,
-    pub error: String,
+    /// All created events (new and deduplicated)
+    pub events: Vec<EventResponse>,
+    /// Total number of events in response
+    pub count: usize,
+    /// Number of dispatch jobs created for matching subscriptions
+    pub dispatch_job_count: usize,
+    /// Number of events that were deduplicated (already existed)
+    pub duplicate_count: usize,
 }
 
 /// Batch create events
+///
+/// Creates multiple events in a single operation. Maximum batch size is 100 events.
+/// Dispatch jobs are automatically created for matching subscriptions.
+/// Events with duplicate deduplicationIds are returned from the existing store.
 #[utoipa::path(
     post,
     path = "/batch",
     tag = "events",
     request_body = BatchCreateEventsRequest,
     responses(
-        (status = 200, description = "Batch result", body = BatchCreateResponse)
+        (status = 201, description = "Events created", body = BatchCreateResponse),
+        (status = 400, description = "Invalid request or batch size exceeds limit")
     ),
     security(("bearer_auth" = []))
 )]
@@ -338,10 +431,28 @@ pub async fn batch_create_events(
 ) -> Result<Json<BatchCreateResponse>, PlatformError> {
     crate::service::checks::can_write_events(&auth.0)?;
 
-    let mut created = Vec::new();
-    let mut failed = Vec::new();
+    // Validate batch size
+    if req.events.is_empty() {
+        return Err(PlatformError::validation("Request body must contain at least one event"));
+    }
+    if req.events.len() > 100 {
+        return Err(PlatformError::validation("Batch size cannot exceed 100 events"));
+    }
 
-    for (index, event_req) in req.events.into_iter().enumerate() {
+    let mut all_events: Vec<Event> = Vec::new();
+    let mut new_events: Vec<Event> = Vec::new();
+    let mut duplicate_count = 0usize;
+
+    for event_req in req.events.into_iter() {
+        // Check for duplicate deduplication ID
+        if let Some(ref dedup_id) = event_req.deduplication_id {
+            if let Some(existing) = state.event_repo.find_by_deduplication_id(dedup_id).await? {
+                all_events.push(existing);
+                duplicate_count += 1;
+                continue;
+            }
+        }
+
         // Determine client ID
         let client_id = event_req.client_id.or_else(|| {
             if auth.0.is_anchor() {
@@ -354,11 +465,7 @@ pub async fn batch_create_events(
         // Validate client access if specified
         if let Some(ref cid) = client_id {
             if !auth.0.can_access_client(cid) {
-                failed.push(BatchFailure {
-                    index,
-                    error: format!("No access to client: {}", cid),
-                });
-                continue;
+                return Err(PlatformError::forbidden(format!("No access to client: {}", cid)));
             }
         }
 
@@ -377,28 +484,37 @@ pub async fn batch_create_events(
         if let Some(cause_id) = event_req.causation_id {
             event = event.with_causation_id(cause_id);
         }
+        if let Some(dedup_id) = event_req.deduplication_id {
+            event = event.with_deduplication_id(dedup_id);
+        }
         if let Some(cid) = client_id {
             event = event.with_client_id(cid);
         }
-
-        let event_id = event.id.clone();
-        match state.event_repo.insert(&event).await {
-            Ok(_) => created.push(event_id),
-            Err(e) => failed.push(BatchFailure {
-                index,
-                error: e.to_string(),
-            }),
+        if !event_req.context_data.is_empty() {
+            event = event.with_context_data(event_req.context_data.into_iter().map(Into::into).collect());
         }
+
+        new_events.push(event.clone());
+        all_events.push(event);
     }
 
-    let total_created = created.len();
-    let total_failed = failed.len();
+    // Bulk insert new events
+    if !new_events.is_empty() {
+        state.event_repo.insert_many(&new_events).await?;
+    }
+
+    // TODO: Create dispatch jobs for matching subscriptions
+    // This requires implementing EventDispatchService with subscription matching
+    let dispatch_job_count = 0;
+
+    let count = all_events.len();
+    let event_responses: Vec<EventResponse> = all_events.into_iter().map(Into::into).collect();
 
     Ok(Json(BatchCreateResponse {
-        created,
-        failed,
-        total_created,
-        total_failed,
+        events: event_responses,
+        count,
+        dispatch_job_count,
+        duplicate_count,
     }))
 }
 

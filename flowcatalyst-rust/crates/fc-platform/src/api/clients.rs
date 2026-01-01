@@ -43,6 +43,21 @@ pub struct UpdateClientRequest {
     pub description: Option<String>,
 }
 
+/// Status change request (for suspend/deactivate)
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct StatusChangeRequest {
+    /// Reason for the status change
+    pub reason: String,
+}
+
+/// Status change response
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct StatusChangeResponse {
+    pub message: String,
+}
+
 /// Client response DTO
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -254,10 +269,142 @@ pub async fn delete_client(
     Ok(Json(SuccessResponse::ok()))
 }
 
+// ============================================================================
+// Status Management Endpoints
+// ============================================================================
+
+/// Activate a client
+///
+/// Transitions a suspended or pending client to active status.
+#[utoipa::path(
+    post,
+    path = "/{id}/activate",
+    tag = "clients",
+    params(
+        ("id" = String, Path, description = "Client ID")
+    ),
+    responses(
+        (status = 200, description = "Client activated", body = StatusChangeResponse),
+        (status = 404, description = "Client not found"),
+        (status = 403, description = "Insufficient permissions")
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn activate_client(
+    State(state): State<ClientsState>,
+    auth: Authenticated,
+    Path(id): Path<String>,
+) -> Result<Json<StatusChangeResponse>, PlatformError> {
+    crate::service::checks::require_anchor(&auth.0)?;
+
+    let mut client = state.client_repo.find_by_id(&id).await?
+        .ok_or_else(|| PlatformError::not_found("Client", &id))?;
+
+    client.activate();
+    state.client_repo.update(&client).await?;
+
+    tracing::info!(client_id = %id, principal_id = %auth.0.principal_id, "Client activated");
+
+    Ok(Json(StatusChangeResponse {
+        message: "Client activated".to_string(),
+    }))
+}
+
+/// Suspend a client
+///
+/// Suspends a client (e.g., for billing issues). Requires a reason.
+#[utoipa::path(
+    post,
+    path = "/{id}/suspend",
+    tag = "clients",
+    params(
+        ("id" = String, Path, description = "Client ID")
+    ),
+    request_body = StatusChangeRequest,
+    responses(
+        (status = 200, description = "Client suspended", body = StatusChangeResponse),
+        (status = 404, description = "Client not found"),
+        (status = 403, description = "Insufficient permissions")
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn suspend_client(
+    State(state): State<ClientsState>,
+    auth: Authenticated,
+    Path(id): Path<String>,
+    Json(req): Json<StatusChangeRequest>,
+) -> Result<Json<StatusChangeResponse>, PlatformError> {
+    crate::service::checks::require_anchor(&auth.0)?;
+
+    let mut client = state.client_repo.find_by_id(&id).await?
+        .ok_or_else(|| PlatformError::not_found("Client", &id))?;
+
+    client.suspend(&req.reason);
+    state.client_repo.update(&client).await?;
+
+    tracing::info!(
+        client_id = %id,
+        principal_id = %auth.0.principal_id,
+        reason = %req.reason,
+        "Client suspended"
+    );
+
+    Ok(Json(StatusChangeResponse {
+        message: "Client suspended".to_string(),
+    }))
+}
+
+/// Deactivate a client (soft delete)
+///
+/// Deactivates/soft-deletes a client. Requires a reason.
+#[utoipa::path(
+    post,
+    path = "/{id}/deactivate",
+    tag = "clients",
+    params(
+        ("id" = String, Path, description = "Client ID")
+    ),
+    request_body = StatusChangeRequest,
+    responses(
+        (status = 200, description = "Client deactivated", body = StatusChangeResponse),
+        (status = 404, description = "Client not found"),
+        (status = 403, description = "Insufficient permissions")
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn deactivate_client(
+    State(state): State<ClientsState>,
+    auth: Authenticated,
+    Path(id): Path<String>,
+    Json(req): Json<StatusChangeRequest>,
+) -> Result<Json<StatusChangeResponse>, PlatformError> {
+    crate::service::checks::require_anchor(&auth.0)?;
+
+    let mut client = state.client_repo.find_by_id(&id).await?
+        .ok_or_else(|| PlatformError::not_found("Client", &id))?;
+
+    client.delete(Some(req.reason.clone()));
+    state.client_repo.update(&client).await?;
+
+    tracing::info!(
+        client_id = %id,
+        principal_id = %auth.0.principal_id,
+        reason = %req.reason,
+        "Client deactivated"
+    );
+
+    Ok(Json(StatusChangeResponse {
+        message: "Client deactivated".to_string(),
+    }))
+}
+
 /// Create clients router
 pub fn clients_router(state: ClientsState) -> Router {
     Router::new()
         .route("/", post(create_client).get(list_clients))
         .route("/:id", get(get_client).put(update_client).delete(delete_client))
+        .route("/:id/activate", post(activate_client))
+        .route("/:id/suspend", post(suspend_client))
+        .route("/:id/deactivate", post(deactivate_client))
         .with_state(state)
 }

@@ -48,6 +48,20 @@ impl EventRepository {
         Ok(cursor.try_collect().await?)
     }
 
+    /// Find event by deduplication ID for exactly-once semantics
+    pub async fn find_by_deduplication_id(&self, deduplication_id: &str) -> Result<Option<Event>> {
+        Ok(self.collection.find_one(doc! { "deduplicationId": deduplication_id }).await?)
+    }
+
+    /// Bulk insert multiple events
+    pub async fn insert_many(&self, events: &[Event]) -> Result<()> {
+        if events.is_empty() {
+            return Ok(());
+        }
+        self.collection.insert_many(events).await?;
+        Ok(())
+    }
+
     // Read projection methods
     pub async fn find_read_by_id(&self, id: &str) -> Result<Option<EventRead>> {
         Ok(self.read_collection.find_one(doc! { "_id": id }).await?)

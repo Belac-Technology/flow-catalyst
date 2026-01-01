@@ -17,9 +17,10 @@ use tracing::{info, warn, error, debug};
 
 use fc_common::{
     QueuedMessage, BatchMessage, AckNack, InFlightMessage,
-    PoolConfig, RouterConfig, PoolStats,
+    PoolConfig, RouterConfig, PoolStats, StallConfig, StalledMessageInfo,
 };
 use fc_queue::{QueueConsumer, QueueMetrics};
+use chrono::Utc;
 use utoipa::ToSchema;
 
 use crate::pool::ProcessPool;
@@ -73,6 +74,9 @@ pub struct QueueManager {
 
     /// Pool count warning threshold
     pool_warning_threshold: usize,
+
+    /// Stall detection configuration
+    stall_config: StallConfig,
 }
 
 impl QueueManager {
@@ -81,6 +85,15 @@ impl QueueManager {
     }
 
     pub fn with_limits(mediator: Arc<dyn Mediator + 'static>, max_pools: usize, pool_warning_threshold: usize) -> Self {
+        Self::with_config(mediator, max_pools, pool_warning_threshold, StallConfig::default())
+    }
+
+    pub fn with_config(
+        mediator: Arc<dyn Mediator + 'static>,
+        max_pools: usize,
+        pool_warning_threshold: usize,
+        stall_config: StallConfig,
+    ) -> Self {
         let (shutdown_tx, _) = broadcast::channel(1);
 
         Self {
@@ -98,6 +111,7 @@ impl QueueManager {
             pending_delete_broker_ids: Arc::new(Mutex::new(HashSet::new())),
             max_pools,
             pool_warning_threshold,
+            stall_config,
         }
     }
 
@@ -819,6 +833,146 @@ impl QueueManager {
         }
 
         true
+    }
+
+    // ============================================================================
+    // Stall Detection
+    // ============================================================================
+
+    /// Detect stalled messages that have been processing beyond the threshold.
+    ///
+    /// Returns a list of stalled message information for monitoring/alerting.
+    pub fn detect_stalled_messages(&self) -> Vec<StalledMessageInfo> {
+        if !self.stall_config.enabled {
+            return Vec::new();
+        }
+
+        let threshold = self.stall_config.stall_threshold_seconds;
+        let now = Utc::now();
+
+        self.in_pipeline
+            .iter()
+            .filter(|entry| entry.value().elapsed_seconds() >= threshold)
+            .map(|entry| {
+                let msg = entry.value();
+                StalledMessageInfo {
+                    message_id: msg.message_id.clone(),
+                    message_group_id: msg.message_group_id.clone(),
+                    pool_code: msg.pool_code.clone(),
+                    queue_identifier: msg.queue_identifier.clone(),
+                    elapsed_seconds: msg.elapsed_seconds(),
+                    detected_at: now,
+                }
+            })
+            .collect()
+    }
+
+    /// Check for stalled messages and optionally force-NACK them.
+    ///
+    /// This method should be called periodically (e.g., every 30 seconds).
+    /// It will:
+    /// 1. Detect messages that have exceeded the stall threshold
+    /// 2. Log warnings for stalled messages
+    /// 3. If force_nack_stalled is enabled, NACK messages exceeding the force_nack_after_seconds threshold
+    ///
+    /// Returns the number of messages that were force-NACKed.
+    pub async fn check_and_handle_stalled_messages(&self) -> usize {
+        if !self.stall_config.enabled {
+            return 0;
+        }
+
+        let stalled = self.detect_stalled_messages();
+        if stalled.is_empty() {
+            return 0;
+        }
+
+        // Log warnings for all stalled messages
+        for msg in &stalled {
+            warn!(
+                message_id = %msg.message_id,
+                message_group_id = ?msg.message_group_id,
+                pool_code = %msg.pool_code,
+                queue_identifier = %msg.queue_identifier,
+                elapsed_seconds = msg.elapsed_seconds,
+                "Stalled message detected - processing time exceeds threshold"
+            );
+        }
+
+        // If force-NACK is not enabled, just return the count of detected stalls
+        if !self.stall_config.force_nack_stalled {
+            info!(
+                stalled_count = stalled.len(),
+                threshold_seconds = self.stall_config.stall_threshold_seconds,
+                "Stalled messages detected (force-NACK disabled)"
+            );
+            return 0;
+        }
+
+        // Force-NACK messages that have exceeded the force_nack_after_seconds threshold
+        let force_threshold = self.stall_config.force_nack_after_seconds;
+        let nack_delay = self.stall_config.nack_delay_seconds;
+        let consumers = self.consumers.read().await;
+        let mut force_nacked = 0;
+
+        for msg in &stalled {
+            if msg.elapsed_seconds >= force_threshold {
+                // Get the in-flight message to get the receipt handle
+                if let Some(in_flight) = self.in_pipeline.get(&msg.message_id) {
+                    let receipt_handle = in_flight.receipt_handle.clone();
+                    let queue_id = in_flight.queue_identifier.clone();
+                    drop(in_flight); // Release the lock before async call
+
+                    if let Some(consumer) = consumers.get(&queue_id) {
+                        warn!(
+                            message_id = %msg.message_id,
+                            elapsed_seconds = msg.elapsed_seconds,
+                            force_threshold_seconds = force_threshold,
+                            "Force-NACKing stalled message"
+                        );
+
+                        if let Err(e) = consumer.nack(&receipt_handle, Some(nack_delay)).await {
+                            error!(
+                                message_id = %msg.message_id,
+                                error = %e,
+                                "Failed to force-NACK stalled message"
+                            );
+                        } else {
+                            // Remove from pipeline since we've force-NACKed
+                            self.in_pipeline.remove(&msg.message_id);
+                            self.app_message_to_pipeline_key.remove(&msg.message_id);
+                            force_nacked += 1;
+                        }
+                    }
+                }
+            }
+        }
+
+        if force_nacked > 0 {
+            info!(
+                force_nacked = force_nacked,
+                total_stalled = stalled.len(),
+                "Force-NACKed stalled messages"
+            );
+        }
+
+        force_nacked
+    }
+
+    /// Get stall detection configuration
+    pub fn stall_config(&self) -> &StallConfig {
+        &self.stall_config
+    }
+
+    /// Update stall detection configuration at runtime
+    pub fn update_stall_config(&mut self, config: StallConfig) {
+        info!(
+            enabled = config.enabled,
+            stall_threshold_seconds = config.stall_threshold_seconds,
+            force_nack_stalled = config.force_nack_stalled,
+            force_nack_after_seconds = config.force_nack_after_seconds,
+            "Updating stall detection configuration"
+        );
+        self.stall_config = config;
     }
 
     /// Update pool configuration at runtime (hot-reload)

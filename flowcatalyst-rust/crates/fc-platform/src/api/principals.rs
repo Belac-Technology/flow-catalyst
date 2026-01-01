@@ -17,7 +17,7 @@ use crate::repository::PrincipalRepository;
 use crate::error::PlatformError;
 use crate::api::common::{PaginationParams, CreatedResponse, SuccessResponse};
 use crate::api::middleware::Authenticated;
-use crate::service::AuditService;
+use crate::service::{AuditService, PasswordService};
 
 /// Create user request
 #[derive(Debug, Deserialize, ToSchema)]
@@ -81,6 +81,21 @@ pub struct AssignRoleRequest {
 pub struct GrantClientAccessRequest {
     /// Client ID to grant access to
     pub client_id: String,
+}
+
+/// Reset password request
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ResetPasswordRequest {
+    /// New password (min 12 characters)
+    pub new_password: String,
+}
+
+/// Status change response
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct StatusChangeResponse {
+    pub message: String,
 }
 
 /// Role assignment response
@@ -189,6 +204,7 @@ pub struct PrincipalsQuery {
 pub struct PrincipalsState {
     pub principal_repo: Arc<PrincipalRepository>,
     pub audit_service: Option<Arc<AuditService>>,
+    pub password_service: Option<Arc<PasswordService>>,
 }
 
 fn parse_scope(s: &str) -> Result<UserScope, PlatformError> {
@@ -619,11 +635,174 @@ pub async fn delete_principal(
     Ok(Json(SuccessResponse::ok()))
 }
 
+// ============================================================================
+// Status Management Endpoints
+// ============================================================================
+
+/// Activate a principal
+///
+/// Reactivates a deactivated principal.
+#[utoipa::path(
+    post,
+    path = "/{id}/activate",
+    tag = "principals",
+    params(
+        ("id" = String, Path, description = "Principal ID")
+    ),
+    responses(
+        (status = 200, description = "Principal activated", body = StatusChangeResponse),
+        (status = 404, description = "Principal not found"),
+        (status = 403, description = "Insufficient permissions")
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn activate_principal(
+    State(state): State<PrincipalsState>,
+    auth: Authenticated,
+    Path(id): Path<String>,
+) -> Result<Json<StatusChangeResponse>, PlatformError> {
+    crate::service::checks::require_anchor(&auth.0)?;
+
+    let mut principal = state.principal_repo.find_by_id(&id).await?
+        .ok_or_else(|| PlatformError::not_found("Principal", &id))?;
+
+    principal.activate();
+    state.principal_repo.update(&principal).await?;
+
+    tracing::info!(principal_id = %id, admin_id = %auth.0.principal_id, "Principal activated");
+
+    // Audit log
+    if let Some(ref audit) = state.audit_service {
+        let _ = audit.log_update(&auth.0, "Principal", &id, "Activated principal".to_string()).await;
+    }
+
+    Ok(Json(StatusChangeResponse {
+        message: "Principal activated".to_string(),
+    }))
+}
+
+/// Deactivate a principal
+///
+/// Deactivates an active principal.
+#[utoipa::path(
+    post,
+    path = "/{id}/deactivate",
+    tag = "principals",
+    params(
+        ("id" = String, Path, description = "Principal ID")
+    ),
+    responses(
+        (status = 200, description = "Principal deactivated", body = StatusChangeResponse),
+        (status = 404, description = "Principal not found"),
+        (status = 403, description = "Insufficient permissions")
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn deactivate_principal(
+    State(state): State<PrincipalsState>,
+    auth: Authenticated,
+    Path(id): Path<String>,
+) -> Result<Json<StatusChangeResponse>, PlatformError> {
+    crate::service::checks::require_anchor(&auth.0)?;
+
+    let mut principal = state.principal_repo.find_by_id(&id).await?
+        .ok_or_else(|| PlatformError::not_found("Principal", &id))?;
+
+    principal.deactivate();
+    state.principal_repo.update(&principal).await?;
+
+    tracing::info!(principal_id = %id, admin_id = %auth.0.principal_id, "Principal deactivated");
+
+    // Audit log
+    if let Some(ref audit) = state.audit_service {
+        let _ = audit.log_update(&auth.0, "Principal", &id, "Deactivated principal".to_string()).await;
+    }
+
+    Ok(Json(StatusChangeResponse {
+        message: "Principal deactivated".to_string(),
+    }))
+}
+
+/// Reset a user's password
+///
+/// Resets the password for an internal auth user. Does not work for OIDC users.
+#[utoipa::path(
+    post,
+    path = "/{id}/reset-password",
+    tag = "principals",
+    params(
+        ("id" = String, Path, description = "Principal ID")
+    ),
+    request_body = ResetPasswordRequest,
+    responses(
+        (status = 200, description = "Password reset", body = StatusChangeResponse),
+        (status = 400, description = "User is not internal auth or invalid password"),
+        (status = 404, description = "Principal not found"),
+        (status = 403, description = "Insufficient permissions")
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn reset_password(
+    State(state): State<PrincipalsState>,
+    auth: Authenticated,
+    Path(id): Path<String>,
+    Json(req): Json<ResetPasswordRequest>,
+) -> Result<Json<StatusChangeResponse>, PlatformError> {
+    crate::service::checks::require_anchor(&auth.0)?;
+
+    // Get password service
+    let password_service = state.password_service.as_ref()
+        .ok_or_else(|| PlatformError::internal("Password service not configured"))?;
+
+    // Validate password
+    password_service.validate_password(&req.new_password)?;
+
+    let mut principal = state.principal_repo.find_by_id(&id).await?
+        .ok_or_else(|| PlatformError::not_found("Principal", &id))?;
+
+    // Check that this is a user with internal auth
+    if !principal.is_user() {
+        return Err(PlatformError::validation("Password reset only applies to users"));
+    }
+
+    // Check for OIDC user (cannot reset password)
+    if principal.external_identity.is_some() {
+        return Err(PlatformError::validation(
+            "Cannot reset password for OIDC-authenticated users"
+        ));
+    }
+
+    // Hash the new password
+    let password_hash = password_service.hash_password(&req.new_password)?;
+
+    // Update the password hash
+    if let Some(ref mut identity) = principal.user_identity {
+        identity.password_hash = Some(password_hash);
+    }
+
+    principal.updated_at = chrono::Utc::now();
+    state.principal_repo.update(&principal).await?;
+
+    tracing::info!(principal_id = %id, admin_id = %auth.0.principal_id, "Password reset");
+
+    // Audit log
+    if let Some(ref audit) = state.audit_service {
+        let _ = audit.log_update(&auth.0, "Principal", &id, "Password reset by admin".to_string()).await;
+    }
+
+    Ok(Json(StatusChangeResponse {
+        message: "Password reset successfully".to_string(),
+    }))
+}
+
 /// Create principals router
 pub fn principals_router(state: PrincipalsState) -> Router {
     Router::new()
         .route("/", post(create_user).get(list_principals))
         .route("/:id", get(get_principal).put(update_principal).delete(delete_principal))
+        .route("/:id/activate", post(activate_principal))
+        .route("/:id/deactivate", post(deactivate_principal))
+        .route("/:id/reset-password", post(reset_password))
         .route("/:id/roles", post(assign_role))
         .route("/:id/roles/:role", delete(remove_role))
         .route("/:id/clients", post(grant_client_access))

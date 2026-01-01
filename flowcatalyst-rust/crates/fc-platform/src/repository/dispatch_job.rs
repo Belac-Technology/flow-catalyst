@@ -98,6 +98,15 @@ impl DispatchJobRepository {
         Ok(())
     }
 
+    /// Bulk insert multiple dispatch jobs
+    pub async fn insert_many(&self, jobs: &[DispatchJob]) -> Result<()> {
+        if jobs.is_empty() {
+            return Ok(());
+        }
+        self.collection.insert_many(jobs).await?;
+        Ok(())
+    }
+
     pub async fn update_status(&self, id: &str, status: DispatchStatus) -> Result<bool> {
         let status_str = serde_json::to_string(&status)
             .unwrap_or_default()

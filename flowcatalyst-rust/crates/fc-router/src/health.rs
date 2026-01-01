@@ -368,6 +368,7 @@ mod tests {
             message_group_count: 0,
             rate_limit_per_minute: None,
             is_rate_limited: false,
+            metrics: None,
         }];
 
         let report = service.get_health_report(&stats);

@@ -139,11 +139,21 @@ impl Event {
         self
     }
 
+    pub fn with_deduplication_id(mut self, id: impl Into<String>) -> Self {
+        self.deduplication_id = Some(id.into());
+        self
+    }
+
     pub fn with_context(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
         self.context_data.push(ContextData {
             key: key.into(),
             value: value.into(),
         });
+        self
+    }
+
+    pub fn with_context_data(mut self, data: Vec<ContextData>) -> Self {
+        self.context_data = data;
         self
     }
 
