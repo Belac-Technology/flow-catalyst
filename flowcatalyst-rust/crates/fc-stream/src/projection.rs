@@ -5,6 +5,7 @@
 use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
+use bson::serde_helpers::chrono_datetime_as_bson_datetime;
 use async_trait::async_trait;
 use tracing::debug;
 
@@ -27,6 +28,7 @@ pub struct EventReadProjection {
     pub correlation_id: Option<String>,
     pub data_summary: Option<String>,
     pub dispatch_job_count: u32,
+    #[serde(with = "chrono_datetime_as_bson_datetime")]
     pub created_at: DateTime<Utc>,
 }
 
@@ -48,13 +50,18 @@ pub struct DispatchJobReadProjection {
     pub attempt_count: u32,
     pub max_retries: u32,
     pub last_error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default, with = "bson::serde_helpers::chrono_datetime_as_bson_datetime_optional")]
     pub last_attempt_at: Option<DateTime<Utc>>,
+    #[serde(skip_serializing_if = "Option::is_none", default, with = "bson::serde_helpers::chrono_datetime_as_bson_datetime_optional")]
     pub next_retry_at: Option<DateTime<Utc>>,
+    #[serde(skip_serializing_if = "Option::is_none", default, with = "bson::serde_helpers::chrono_datetime_as_bson_datetime_optional")]
     pub completed_at: Option<DateTime<Utc>>,
     pub correlation_id: Option<String>,
     pub dispatch_pool_id: Option<String>,
     pub dispatch_pool_name: Option<String>,
+    #[serde(with = "chrono_datetime_as_bson_datetime")]
     pub created_at: DateTime<Utc>,
+    #[serde(with = "chrono_datetime_as_bson_datetime")]
     pub updated_at: DateTime<Utc>,
 }
 

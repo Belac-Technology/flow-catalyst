@@ -13,6 +13,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use bson::{doc, Document};
 use chrono::{DateTime, Utc};
+use bson::serde_helpers::chrono_datetime_as_bson_datetime;
 use mongodb::{Collection, Database};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -80,8 +81,11 @@ pub struct DispatchJob {
     pub mode: DispatchMode,
     pub target_url: Option<String>,
     pub payload: Option<Document>,
+    #[serde(with = "chrono_datetime_as_bson_datetime")]
     pub created_at: DateTime<Utc>,
+    #[serde(skip_serializing_if = "Option::is_none", default, with = "bson::serde_helpers::chrono_datetime_as_bson_datetime_optional")]
     pub updated_at: Option<DateTime<Utc>>,
+    #[serde(skip_serializing_if = "Option::is_none", default, with = "bson::serde_helpers::chrono_datetime_as_bson_datetime_optional")]
     pub queued_at: Option<DateTime<Utc>>,
     pub error_message: Option<String>,
 }
