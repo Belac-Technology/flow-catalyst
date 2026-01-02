@@ -121,6 +121,14 @@ pub struct ClientAuthConfigResponse {
     pub updated_at: String,
 }
 
+/// Client auth config list response (wrapped)
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AuthConfigListResponse {
+    pub configs: Vec<ClientAuthConfigResponse>,
+    pub total: usize,
+}
+
 impl From<ClientAuthConfig> for ClientAuthConfigResponse {
     fn from(c: ClientAuthConfig) -> Self {
         Self {
@@ -392,22 +400,23 @@ pub async fn get_client_auth_config(
     path = "",
     tag = "auth-config",
     responses(
-        (status = 200, description = "List of client auth configs", body = Vec<ClientAuthConfigResponse>)
+        (status = 200, description = "List of client auth configs", body = AuthConfigListResponse)
     ),
     security(("bearer_auth" = []))
 )]
 pub async fn list_client_auth_configs(
     State(state): State<AuthConfigState>,
     auth: Authenticated,
-) -> Result<Json<Vec<ClientAuthConfigResponse>>, PlatformError> {
+) -> Result<Json<AuthConfigListResponse>, PlatformError> {
     crate::service::checks::require_anchor(&auth.0)?;
 
     let configs = state.client_auth_config_repo.find_all().await?;
-    let response: Vec<ClientAuthConfigResponse> = configs.into_iter()
+    let configs: Vec<ClientAuthConfigResponse> = configs.into_iter()
         .map(|c| c.into())
         .collect();
+    let total = configs.len();
 
-    Ok(Json(response))
+    Ok(Json(AuthConfigListResponse { configs, total }))
 }
 
 /// Update client auth config
@@ -487,6 +496,48 @@ pub async fn delete_client_auth_config(
     state.client_auth_config_repo.delete(&id).await?;
 
     Ok(Json(SuccessResponse::ok()))
+}
+
+/// Update config type request
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateConfigTypeRequest {
+    /// Config type: ANCHOR, PARTNER, or CLIENT
+    pub config_type: String,
+}
+
+/// Update client auth config type
+#[utoipa::path(
+    put,
+    path = "/{id}/config-type",
+    tag = "auth-config",
+    params(
+        ("id" = String, Path, description = "Client auth config ID")
+    ),
+    request_body = UpdateConfigTypeRequest,
+    responses(
+        (status = 200, description = "Config type updated", body = ClientAuthConfigResponse),
+        (status = 404, description = "Client auth config not found")
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn update_config_type(
+    State(state): State<AuthConfigState>,
+    auth: Authenticated,
+    Path(id): Path<String>,
+    Json(req): Json<UpdateConfigTypeRequest>,
+) -> Result<Json<ClientAuthConfigResponse>, PlatformError> {
+    crate::service::checks::require_anchor(&auth.0)?;
+
+    let mut config = state.client_auth_config_repo.find_by_id(&id).await?
+        .ok_or_else(|| PlatformError::not_found("ClientAuthConfig", &id))?;
+
+    config.config_type = parse_config_type(&req.config_type);
+    config.updated_at = chrono::Utc::now();
+
+    state.client_auth_config_repo.update(&config).await?;
+
+    Ok(Json(config.into()))
 }
 
 // ============================================================================
@@ -613,6 +664,7 @@ pub fn client_auth_configs_router(state: AuthConfigState) -> Router {
     Router::new()
         .route("/", post(create_client_auth_config).get(list_client_auth_configs))
         .route("/:id", get(get_client_auth_config).put(update_client_auth_config).delete(delete_client_auth_config))
+        .route("/:id/config-type", axum::routing::put(update_config_type))
         .with_state(state)
 }
 

@@ -292,7 +292,7 @@ async fn main() -> Result<()> {
         .nest("/api/admin/platform/subscriptions", subscriptions_router(subscriptions_state))
         .nest("/api/admin/platform/oauth-clients", oauth_clients_router(oauth_clients_state))
         .nest("/api/admin/platform/anchor-domains", anchor_domains_router(auth_config_state.clone()))
-        .nest("/api/admin/platform/client-auth-configs", client_auth_configs_router(auth_config_state.clone()))
+        .nest("/api/admin/platform/auth-configs", client_auth_configs_router(auth_config_state.clone()))
         .nest("/api/admin/platform/idp-role-mappings", idp_role_mappings_router(auth_config_state))
         .nest("/api/admin/platform/audit-logs", audit_logs_router(audit_logs_state))
         .nest("/api/admin/platform/applications", applications_router(applications_state))

@@ -56,7 +56,7 @@ pub struct ClientAuthConfigRepository {
 impl ClientAuthConfigRepository {
     pub fn new(db: &Database) -> Self {
         Self {
-            collection: db.collection("client_auth_configs"),
+            collection: db.collection("auth_configs"),
         }
     }
 
