@@ -64,6 +64,18 @@ use fc_platform::repository::{
     AnchorDomainRepository, ClientAuthConfigRepository, ClientAccessGrantRepository, IdpRoleMappingRepository,
     AuditLogRepository, ApplicationClientConfigRepository, OidcLoginStateRepository, RefreshTokenRepository,
 };
+use fc_platform::usecase::MongoUnitOfWork;
+use fc_platform::operations::{
+    // Service Account use cases
+    CreateServiceAccountUseCase, UpdateServiceAccountUseCase, DeleteServiceAccountUseCase,
+    AssignRolesUseCase, RegenerateAuthTokenUseCase, RegenerateSigningSecretUseCase,
+    // Application use cases
+    CreateApplicationUseCase, UpdateApplicationUseCase,
+    ActivateApplicationUseCase, DeactivateApplicationUseCase,
+    // Dispatch Pool use cases
+    CreateDispatchPoolUseCase, UpdateDispatchPoolUseCase,
+    ArchiveDispatchPoolUseCase, DeleteDispatchPoolUseCase,
+};
 use fc_platform::service::PasswordService;
 use fc_platform::service::OidcSyncService;
 use fc_platform::api::{OidcLoginApiState, oidc_login_router};
@@ -221,12 +233,19 @@ async fn main() -> Result<()> {
         dispatch_pool_repo: dispatch_pool_repo.clone(),
         application_repo: application_repo.clone(),
     };
-    let clients_state = ClientsState { client_repo: client_repo.clone() };
     let audit_service = Arc::new(AuditService::new(audit_log_repo.clone()));
+    let clients_state = ClientsState {
+        client_repo: client_repo.clone(),
+        application_repo: Some(application_repo.clone()),
+        application_client_config_repo: Some(application_client_config_repo.clone()),
+        audit_service: Some(audit_service.clone()),
+    };
     let principals_state = PrincipalsState {
         principal_repo: principal_repo.clone(),
         audit_service: Some(audit_service),
         password_service: None, // TODO: Configure password service for password reset
+        anchor_domain_repo: Some(anchor_domain_repo.clone()),
+        client_auth_config_repo: Some(client_auth_config_repo.clone()),
     };
     let roles_state = RolesState { role_repo: role_repo.clone(), application_repo: Some(application_repo.clone()) };
     let subscriptions_state = SubscriptionsState { subscription_repo };
@@ -256,15 +275,100 @@ async fn main() -> Result<()> {
         refresh_token_repo,
     );
     let audit_logs_state = AuditLogsState { audit_log_repo };
+
+    // Create UnitOfWork for atomic commits with events and audit logs
+    let unit_of_work = Arc::new(MongoUnitOfWork::new(mongo_client.clone(), db.clone()));
+
+    // Create Service Account use cases
+    let create_sa_use_case = Arc::new(CreateServiceAccountUseCase::new(
+        service_account_repo.clone(),
+        unit_of_work.clone(),
+    ));
+    let update_sa_use_case = Arc::new(UpdateServiceAccountUseCase::new(
+        service_account_repo.clone(),
+        unit_of_work.clone(),
+    ));
+    let delete_sa_use_case = Arc::new(DeleteServiceAccountUseCase::new(
+        service_account_repo.clone(),
+        unit_of_work.clone(),
+    ));
+    let assign_roles_use_case = Arc::new(AssignRolesUseCase::new(
+        service_account_repo.clone(),
+        unit_of_work.clone(),
+    ));
+    let regenerate_token_use_case = Arc::new(RegenerateAuthTokenUseCase::new(
+        service_account_repo.clone(),
+        unit_of_work.clone(),
+    ));
+    let regenerate_secret_use_case = Arc::new(RegenerateSigningSecretUseCase::new(
+        service_account_repo.clone(),
+        unit_of_work.clone(),
+    ));
+
+    // Create Application use cases
+    let create_app_use_case = Arc::new(CreateApplicationUseCase::new(
+        application_repo.clone(),
+        unit_of_work.clone(),
+    ));
+    let update_app_use_case = Arc::new(UpdateApplicationUseCase::new(
+        application_repo.clone(),
+        unit_of_work.clone(),
+    ));
+    let activate_app_use_case = Arc::new(ActivateApplicationUseCase::new(
+        application_repo.clone(),
+        unit_of_work.clone(),
+    ));
+    let deactivate_app_use_case = Arc::new(DeactivateApplicationUseCase::new(
+        application_repo.clone(),
+        unit_of_work.clone(),
+    ));
+
+    // Create Dispatch Pool use cases
+    let create_pool_use_case = Arc::new(CreateDispatchPoolUseCase::new(
+        dispatch_pool_repo.clone(),
+        unit_of_work.clone(),
+    ));
+    let update_pool_use_case = Arc::new(UpdateDispatchPoolUseCase::new(
+        dispatch_pool_repo.clone(),
+        unit_of_work.clone(),
+    ));
+    let archive_pool_use_case = Arc::new(ArchiveDispatchPoolUseCase::new(
+        dispatch_pool_repo.clone(),
+        unit_of_work.clone(),
+    ));
+    let delete_pool_use_case = Arc::new(DeleteDispatchPoolUseCase::new(
+        dispatch_pool_repo.clone(),
+        unit_of_work.clone(),
+    ));
+
+    // Build API states with use cases
     let applications_state = ApplicationsState {
         application_repo,
         service_account_repo: service_account_repo.clone(),
         role_repo,
         client_config_repo: application_client_config_repo,
         client_repo,
+        create_use_case: create_app_use_case,
+        update_use_case: update_app_use_case,
+        activate_use_case: activate_app_use_case,
+        deactivate_use_case: deactivate_app_use_case,
     };
-    let service_accounts_state = ServiceAccountsState { repo: service_account_repo };
-    let dispatch_pools_state = DispatchPoolsState { dispatch_pool_repo };
+    let service_accounts_state = ServiceAccountsState {
+        repo: service_account_repo,
+        create_use_case: create_sa_use_case,
+        update_use_case: update_sa_use_case,
+        delete_use_case: delete_sa_use_case,
+        assign_roles_use_case,
+        regenerate_token_use_case,
+        regenerate_secret_use_case,
+    };
+    let dispatch_pools_state = DispatchPoolsState {
+        dispatch_pool_repo: dispatch_pool_repo.clone(),
+        create_use_case: create_pool_use_case,
+        update_use_case: update_pool_use_case,
+        archive_use_case: archive_pool_use_case,
+        delete_use_case: delete_pool_use_case,
+    };
 
     let monitoring_state = MonitoringState {
         leader_state: LeaderState::new(uuid::Uuid::new_v4().to_string()),

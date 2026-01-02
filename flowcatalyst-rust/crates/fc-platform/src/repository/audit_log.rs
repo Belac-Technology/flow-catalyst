@@ -204,6 +204,52 @@ impl AuditLogRepository {
         Ok(self.collection.count_documents(doc! {}).await?)
     }
 
+    /// Count audit logs with filters (for pagination)
+    pub async fn count_with_filters(
+        &self,
+        entity_type: Option<&str>,
+        entity_id: Option<&str>,
+        action: Option<AuditAction>,
+        principal_id: Option<&str>,
+    ) -> Result<i64> {
+        let mut filter = doc! {};
+
+        if let Some(et) = entity_type {
+            filter.insert("entityType", et);
+        }
+        if let Some(eid) = entity_id {
+            filter.insert("entityId", eid);
+        }
+        if let Some(a) = action {
+            let action_str = serde_json::to_string(&a)
+                .unwrap_or_default()
+                .trim_matches('"')
+                .to_string();
+            filter.insert("action", action_str);
+        }
+        if let Some(pid) = principal_id {
+            filter.insert("principalId", pid);
+        }
+
+        Ok(self.collection.count_documents(filter).await? as i64)
+    }
+
+    /// Find distinct entity types
+    pub async fn find_distinct_entity_types(&self) -> Result<Vec<String>> {
+        let values = self.collection.distinct("entityType", doc! {}).await?;
+        Ok(values.into_iter()
+            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+            .collect())
+    }
+
+    /// Find distinct operations/actions
+    pub async fn find_distinct_operations(&self) -> Result<Vec<String>> {
+        let values = self.collection.distinct("action", doc! {}).await?;
+        Ok(values.into_iter()
+            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+            .collect())
+    }
+
     /// Delete logs older than a given date (for retention policy)
     pub async fn delete_older_than(&self, date: DateTime<Utc>) -> Result<u64> {
         let date_bson = mongodb::bson::DateTime::from_chrono(date);

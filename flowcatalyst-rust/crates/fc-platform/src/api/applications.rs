@@ -18,6 +18,13 @@ use crate::repository::{ApplicationRepository, ServiceAccountRepository, RoleRep
 use crate::error::PlatformError;
 use crate::api::common::{PaginationParams, CreatedResponse, SuccessResponse};
 use crate::api::middleware::Authenticated;
+use crate::usecase::{ExecutionContext, UnitOfWork, UseCaseResult};
+use crate::operations::application::{
+    CreateApplicationCommand, CreateApplicationUseCase,
+    UpdateApplicationCommand, UpdateApplicationUseCase,
+    ActivateApplicationCommand, ActivateApplicationUseCase,
+    DeactivateApplicationCommand, DeactivateApplicationUseCase,
+};
 
 /// Create application request
 #[derive(Debug, Deserialize, ToSchema)]
@@ -167,12 +174,16 @@ impl From<AuthRole> for ApplicationRoleResponse {
 
 /// Applications service state
 #[derive(Clone)]
-pub struct ApplicationsState {
+pub struct ApplicationsState<U: UnitOfWork + 'static> {
     pub application_repo: Arc<ApplicationRepository>,
     pub service_account_repo: Arc<ServiceAccountRepository>,
     pub role_repo: Arc<RoleRepository>,
     pub client_config_repo: Arc<ApplicationClientConfigRepository>,
     pub client_repo: Arc<ClientRepository>,
+    pub create_use_case: Arc<CreateApplicationUseCase<U>>,
+    pub update_use_case: Arc<UpdateApplicationUseCase<U>>,
+    pub activate_use_case: Arc<ActivateApplicationUseCase<U>>,
+    pub deactivate_use_case: Arc<DeactivateApplicationUseCase<U>>,
 }
 
 /// Create a new application
@@ -188,41 +199,31 @@ pub struct ApplicationsState {
     ),
     security(("bearer_auth" = []))
 )]
-pub async fn create_application(
-    State(state): State<ApplicationsState>,
+pub async fn create_application<U: UnitOfWork>(
+    State(state): State<ApplicationsState<U>>,
     auth: Authenticated,
     Json(req): Json<CreateApplicationRequest>,
 ) -> Result<Json<CreatedResponse>, PlatformError> {
     // Only anchor users can manage applications
     crate::service::checks::require_anchor(&auth.0)?;
 
-    // Check for duplicate code
-    if let Some(_) = state.application_repo.find_by_code(&req.code).await? {
-        return Err(PlatformError::duplicate("Application", "code", &req.code));
-    }
-
-    let mut app = if req.application_type.as_deref() == Some("INTEGRATION") {
-        Application::integration(&req.code, &req.name)
-    } else {
-        Application::new(&req.code, &req.name)
+    let command = CreateApplicationCommand {
+        code: req.code,
+        name: req.name,
+        description: req.description,
+        application_type: req.application_type,
+        default_base_url: req.default_base_url,
+        icon_url: req.icon_url,
     };
 
-    if let Some(desc) = req.description {
-        app = app.with_description(desc);
+    let ctx = ExecutionContext::create(auth.0.principal_id.clone());
+
+    match state.create_use_case.execute(command, ctx).await {
+        UseCaseResult::Success(event) => {
+            Ok(Json(CreatedResponse::new(event.application_id)))
+        }
+        UseCaseResult::Failure(err) => Err(err.into()),
     }
-
-    if let Some(url) = req.default_base_url {
-        app = app.with_base_url(url);
-    }
-
-    if let Some(url) = req.icon_url {
-        app = app.with_icon_url(url);
-    }
-
-    let id = app.id.clone();
-    state.application_repo.insert(&app).await?;
-
-    Ok(Json(CreatedResponse::new(id)))
 }
 
 /// Get application by ID
@@ -239,8 +240,8 @@ pub async fn create_application(
     ),
     security(("bearer_auth" = []))
 )]
-pub async fn get_application(
-    State(state): State<ApplicationsState>,
+pub async fn get_application<U: UnitOfWork>(
+    State(state): State<ApplicationsState<U>>,
     _auth: Authenticated,
     Path(id): Path<String>,
 ) -> Result<Json<ApplicationResponse>, PlatformError> {
@@ -250,6 +251,14 @@ pub async fn get_application(
     Ok(Json(app.into()))
 }
 
+/// Applications list response (wrapped)
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplicationListResponse {
+    pub applications: Vec<ApplicationResponse>,
+    pub total: usize,
+}
+
 /// List applications
 #[utoipa::path(
     get,
@@ -257,26 +266,28 @@ pub async fn get_application(
     tag = "applications",
     params(ApplicationsQuery),
     responses(
-        (status = 200, description = "List of applications", body = Vec<ApplicationResponse>)
+        (status = 200, description = "List of applications", body = ApplicationListResponse)
     ),
     security(("bearer_auth" = []))
 )]
-pub async fn list_applications(
-    State(state): State<ApplicationsState>,
+pub async fn list_applications<U: UnitOfWork>(
+    State(state): State<ApplicationsState<U>>,
     _auth: Authenticated,
     Query(query): Query<ApplicationsQuery>,
-) -> Result<Json<Vec<ApplicationResponse>>, PlatformError> {
-    let apps = if query.active.unwrap_or(true) {
-        state.application_repo.find_active().await?
-    } else {
+) -> Result<Json<ApplicationListResponse>, PlatformError> {
+    let apps = if query.active == Some(false) {
         state.application_repo.find_all().await?
+    } else {
+        // Default: activeOnly = true
+        state.application_repo.find_active().await?
     };
 
-    let response: Vec<ApplicationResponse> = apps.into_iter()
+    let applications: Vec<ApplicationResponse> = apps.into_iter()
         .map(|a| a.into())
         .collect();
+    let total = applications.len();
 
-    Ok(Json(response))
+    Ok(Json(ApplicationListResponse { applications, total }))
 }
 
 /// Update application
@@ -294,34 +305,33 @@ pub async fn list_applications(
     ),
     security(("bearer_auth" = []))
 )]
-pub async fn update_application(
-    State(state): State<ApplicationsState>,
+pub async fn update_application<U: UnitOfWork>(
+    State(state): State<ApplicationsState<U>>,
     auth: Authenticated,
     Path(id): Path<String>,
     Json(req): Json<UpdateApplicationRequest>,
 ) -> Result<Json<ApplicationResponse>, PlatformError> {
     crate::service::checks::require_anchor(&auth.0)?;
 
-    let mut app = state.application_repo.find_by_id(&id).await?
-        .ok_or_else(|| PlatformError::not_found("Application", &id))?;
+    let command = UpdateApplicationCommand {
+        id: id.clone(),
+        name: req.name,
+        description: req.description,
+        default_base_url: req.default_base_url,
+        icon_url: req.icon_url,
+    };
 
-    if let Some(name) = req.name {
-        app.name = name;
-    }
-    if let Some(desc) = req.description {
-        app.description = Some(desc);
-    }
-    if let Some(url) = req.default_base_url {
-        app.default_base_url = Some(url);
-    }
-    if let Some(url) = req.icon_url {
-        app.icon_url = Some(url);
-    }
+    let ctx = ExecutionContext::create(auth.0.principal_id.clone());
 
-    app.updated_at = chrono::Utc::now();
-    state.application_repo.update(&app).await?;
-
-    Ok(Json(app.into()))
+    match state.update_use_case.execute(command, ctx).await {
+        UseCaseResult::Success(_event) => {
+            // Fetch the updated entity for response
+            let app = state.application_repo.find_by_id(&id).await?
+                .ok_or_else(|| PlatformError::not_found("Application", &id))?;
+            Ok(Json(app.into()))
+        }
+        UseCaseResult::Failure(err) => Err(err.into()),
+    }
 }
 
 /// Delete application (deactivate)
@@ -338,20 +348,20 @@ pub async fn update_application(
     ),
     security(("bearer_auth" = []))
 )]
-pub async fn delete_application(
-    State(state): State<ApplicationsState>,
+pub async fn delete_application<U: UnitOfWork>(
+    State(state): State<ApplicationsState<U>>,
     auth: Authenticated,
     Path(id): Path<String>,
 ) -> Result<Json<SuccessResponse>, PlatformError> {
     crate::service::checks::require_anchor(&auth.0)?;
 
-    let mut app = state.application_repo.find_by_id(&id).await?
-        .ok_or_else(|| PlatformError::not_found("Application", &id))?;
+    let command = DeactivateApplicationCommand { id };
+    let ctx = ExecutionContext::create(auth.0.principal_id.clone());
 
-    app.deactivate();
-    state.application_repo.update(&app).await?;
-
-    Ok(Json(SuccessResponse::ok()))
+    match state.deactivate_use_case.execute(command, ctx).await {
+        UseCaseResult::Success(_event) => Ok(Json(SuccessResponse::ok())),
+        UseCaseResult::Failure(err) => Err(err.into()),
+    }
 }
 
 /// Activate application
@@ -368,20 +378,24 @@ pub async fn delete_application(
     ),
     security(("bearer_auth" = []))
 )]
-pub async fn activate_application(
-    State(state): State<ApplicationsState>,
+pub async fn activate_application<U: UnitOfWork>(
+    State(state): State<ApplicationsState<U>>,
     auth: Authenticated,
     Path(id): Path<String>,
 ) -> Result<Json<ApplicationResponse>, PlatformError> {
     crate::service::checks::require_anchor(&auth.0)?;
 
-    let mut app = state.application_repo.find_by_id(&id).await?
-        .ok_or_else(|| PlatformError::not_found("Application", &id))?;
+    let command = ActivateApplicationCommand { id: id.clone() };
+    let ctx = ExecutionContext::create(auth.0.principal_id.clone());
 
-    app.activate();
-    state.application_repo.update(&app).await?;
-
-    Ok(Json(app.into()))
+    match state.activate_use_case.execute(command, ctx).await {
+        UseCaseResult::Success(_event) => {
+            let app = state.application_repo.find_by_id(&id).await?
+                .ok_or_else(|| PlatformError::not_found("Application", &id))?;
+            Ok(Json(app.into()))
+        }
+        UseCaseResult::Failure(err) => Err(err.into()),
+    }
 }
 
 /// Deactivate application
@@ -398,20 +412,24 @@ pub async fn activate_application(
     ),
     security(("bearer_auth" = []))
 )]
-pub async fn deactivate_application(
-    State(state): State<ApplicationsState>,
+pub async fn deactivate_application<U: UnitOfWork>(
+    State(state): State<ApplicationsState<U>>,
     auth: Authenticated,
     Path(id): Path<String>,
 ) -> Result<Json<ApplicationResponse>, PlatformError> {
     crate::service::checks::require_anchor(&auth.0)?;
 
-    let mut app = state.application_repo.find_by_id(&id).await?
-        .ok_or_else(|| PlatformError::not_found("Application", &id))?;
+    let command = DeactivateApplicationCommand { id: id.clone() };
+    let ctx = ExecutionContext::create(auth.0.principal_id.clone());
 
-    app.deactivate();
-    state.application_repo.update(&app).await?;
-
-    Ok(Json(app.into()))
+    match state.deactivate_use_case.execute(command, ctx).await {
+        UseCaseResult::Success(_event) => {
+            let app = state.application_repo.find_by_id(&id).await?
+                .ok_or_else(|| PlatformError::not_found("Application", &id))?;
+            Ok(Json(app.into()))
+        }
+        UseCaseResult::Failure(err) => Err(err.into()),
+    }
 }
 
 /// Get application by code
@@ -428,8 +446,8 @@ pub async fn deactivate_application(
     ),
     security(("bearer_auth" = []))
 )]
-pub async fn get_application_by_code(
-    State(state): State<ApplicationsState>,
+pub async fn get_application_by_code<U: UnitOfWork>(
+    State(state): State<ApplicationsState<U>>,
     _auth: Authenticated,
     Path(code): Path<String>,
 ) -> Result<Json<ApplicationResponse>, PlatformError> {
@@ -440,6 +458,7 @@ pub async fn get_application_by_code(
 }
 
 /// Provision a service account for an application
+/// NOTE: This endpoint still bypasses UnitOfWork - needs ProvisionServiceAccountUseCase
 #[utoipa::path(
     post,
     path = "/{id}/provision-service-account",
@@ -454,8 +473,8 @@ pub async fn get_application_by_code(
     ),
     security(("bearer_auth" = []))
 )]
-pub async fn provision_service_account(
-    State(state): State<ApplicationsState>,
+pub async fn provision_service_account<U: UnitOfWork>(
+    State(state): State<ApplicationsState<U>>,
     auth: Authenticated,
     Path(id): Path<String>,
 ) -> Result<Json<ServiceAccountResponse>, PlatformError> {
@@ -473,6 +492,7 @@ pub async fn provision_service_account(
     }
 
     // Create the service account
+    // TODO: Use ProvisionServiceAccountUseCase to emit events and audit logs
     let sa_code = format!("app:{}", app.code);
     let sa_name = format!("{} Service Account", app.name);
 
@@ -511,8 +531,8 @@ pub async fn provision_service_account(
     ),
     security(("bearer_auth" = []))
 )]
-pub async fn get_application_service_account(
-    State(state): State<ApplicationsState>,
+pub async fn get_application_service_account<U: UnitOfWork>(
+    State(state): State<ApplicationsState<U>>,
     _auth: Authenticated,
     Path(id): Path<String>,
 ) -> Result<Json<ServiceAccountResponse>, PlatformError> {
@@ -544,8 +564,8 @@ pub async fn get_application_service_account(
     ),
     security(("bearer_auth" = []))
 )]
-pub async fn list_application_roles(
-    State(state): State<ApplicationsState>,
+pub async fn list_application_roles<U: UnitOfWork>(
+    State(state): State<ApplicationsState<U>>,
     _auth: Authenticated,
     Path(id): Path<String>,
 ) -> Result<Json<Vec<ApplicationRoleResponse>>, PlatformError> {
@@ -609,8 +629,8 @@ pub struct ClientConfigRequest {
     ),
     security(("bearer_auth" = []))
 )]
-pub async fn list_client_configs(
-    State(state): State<ApplicationsState>,
+pub async fn list_client_configs<U: UnitOfWork>(
+    State(state): State<ApplicationsState<U>>,
     _auth: Authenticated,
     Path(id): Path<String>,
 ) -> Result<Json<ClientConfigsResponse>, PlatformError> {
@@ -646,6 +666,7 @@ pub async fn list_client_configs(
 }
 
 /// Update client config for an application
+/// NOTE: This endpoint still bypasses UnitOfWork - needs ApplicationClientConfig use cases
 #[utoipa::path(
     put,
     path = "/{id}/clients/{client_id}",
@@ -661,8 +682,8 @@ pub async fn list_client_configs(
     ),
     security(("bearer_auth" = []))
 )]
-pub async fn update_client_config(
-    State(state): State<ApplicationsState>,
+pub async fn update_client_config<U: UnitOfWork>(
+    State(state): State<ApplicationsState<U>>,
     auth: Authenticated,
     Path((id, client_id)): Path<(String, String)>,
     Json(req): Json<ClientConfigRequest>,
@@ -719,6 +740,7 @@ pub async fn update_client_config(
 }
 
 /// Enable application for a client
+/// NOTE: This endpoint still bypasses UnitOfWork - needs ApplicationClientConfig use cases
 #[utoipa::path(
     post,
     path = "/{id}/clients/{client_id}/enable",
@@ -733,8 +755,8 @@ pub async fn update_client_config(
     ),
     security(("bearer_auth" = []))
 )]
-pub async fn enable_for_client(
-    State(state): State<ApplicationsState>,
+pub async fn enable_for_client<U: UnitOfWork>(
+    State(state): State<ApplicationsState<U>>,
     auth: Authenticated,
     Path((id, client_id)): Path<(String, String)>,
 ) -> Result<Json<ClientConfigResponse>, PlatformError> {
@@ -780,6 +802,7 @@ pub async fn enable_for_client(
 }
 
 /// Disable application for a client
+/// NOTE: This endpoint still bypasses UnitOfWork - needs ApplicationClientConfig use cases
 #[utoipa::path(
     post,
     path = "/{id}/clients/{client_id}/disable",
@@ -794,8 +817,8 @@ pub async fn enable_for_client(
     ),
     security(("bearer_auth" = []))
 )]
-pub async fn disable_for_client(
-    State(state): State<ApplicationsState>,
+pub async fn disable_for_client<U: UnitOfWork>(
+    State(state): State<ApplicationsState<U>>,
     auth: Authenticated,
     Path((id, client_id)): Path<(String, String)>,
 ) -> Result<Json<ClientConfigResponse>, PlatformError> {
@@ -841,19 +864,19 @@ pub async fn disable_for_client(
 }
 
 /// Create applications router
-pub fn applications_router(state: ApplicationsState) -> Router {
+pub fn applications_router<U: UnitOfWork + Clone>(state: ApplicationsState<U>) -> Router {
     Router::new()
-        .route("/", post(create_application).get(list_applications))
-        .route("/:id", get(get_application).put(update_application).delete(delete_application))
-        .route("/:id/activate", post(activate_application))
-        .route("/:id/deactivate", post(deactivate_application))
-        .route("/:id/provision-service-account", post(provision_service_account))
-        .route("/:id/service-account", get(get_application_service_account))
-        .route("/:id/roles", get(list_application_roles))
-        .route("/:id/clients", get(list_client_configs))
-        .route("/:id/clients/:client_id", put(update_client_config))
-        .route("/:id/clients/:client_id/enable", post(enable_for_client))
-        .route("/:id/clients/:client_id/disable", post(disable_for_client))
-        .route("/by-code/:code", get(get_application_by_code))
+        .route("/", post(create_application::<U>).get(list_applications::<U>))
+        .route("/:id", get(get_application::<U>).put(update_application::<U>).delete(delete_application::<U>))
+        .route("/:id/activate", post(activate_application::<U>))
+        .route("/:id/deactivate", post(deactivate_application::<U>))
+        .route("/:id/provision-service-account", post(provision_service_account::<U>))
+        .route("/:id/service-account", get(get_application_service_account::<U>))
+        .route("/:id/roles", get(list_application_roles::<U>))
+        .route("/:id/clients", get(list_client_configs::<U>))
+        .route("/:id/clients/:client_id", put(update_client_config::<U>))
+        .route("/:id/clients/:client_id/enable", post(enable_for_client::<U>))
+        .route("/:id/clients/:client_id/disable", post(disable_for_client::<U>))
+        .route("/by-code/:code", get(get_application_by_code::<U>))
         .with_state(state)
 }

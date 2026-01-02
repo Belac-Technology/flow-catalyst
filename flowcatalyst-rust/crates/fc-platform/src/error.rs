@@ -7,6 +7,8 @@ use axum::{
 };
 use utoipa::ToSchema;
 
+use crate::usecase::UseCaseError;
+
 #[derive(Error, Debug)]
 pub enum PlatformError {
     #[error("Entity not found: {entity_type} with id {id}")]
@@ -156,5 +158,34 @@ impl IntoResponse for PlatformError {
         };
 
         (status, Json(body)).into_response()
+    }
+}
+
+impl From<UseCaseError> for PlatformError {
+    fn from(err: UseCaseError) -> Self {
+        match err {
+            UseCaseError::ValidationError { message, .. } => {
+                PlatformError::Validation { message }
+            }
+            UseCaseError::BusinessRuleViolation { message, .. } => {
+                PlatformError::Duplicate {
+                    entity_type: "Entity".to_string(),
+                    field: "constraint".to_string(),
+                    value: message,
+                }
+            }
+            UseCaseError::NotFoundError { message, .. } => {
+                PlatformError::NotFound {
+                    entity_type: "Entity".to_string(),
+                    id: message,
+                }
+            }
+            UseCaseError::ConcurrencyError { message, .. } => {
+                PlatformError::Internal { message }
+            }
+            UseCaseError::CommitError { message, .. } => {
+                PlatformError::Internal { message }
+            }
+        }
     }
 }

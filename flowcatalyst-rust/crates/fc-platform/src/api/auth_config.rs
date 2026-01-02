@@ -45,6 +45,14 @@ pub struct AnchorDomainResponse {
     pub created_by: Option<String>,
 }
 
+/// Anchor domain list response (wrapped)
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AnchorDomainListResponse {
+    pub domains: Vec<AnchorDomainResponse>,
+    pub total: usize,
+}
+
 impl From<AnchorDomain> for AnchorDomainResponse {
     fn from(d: AnchorDomain) -> Self {
         Self {
@@ -105,7 +113,91 @@ pub struct UpdateClientAuthConfigRequest {
     pub additional_client_ids: Option<Vec<String>>,
 }
 
-/// Client auth config response DTO
+/// Create internal auth config request
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateInternalAuthConfigRequest {
+    /// Email domain
+    pub email_domain: String,
+    /// Config type: CLIENT or PARTNER
+    pub config_type: String,
+    /// Primary client ID (required for CLIENT type)
+    pub primary_client_id: Option<String>,
+}
+
+/// Create OIDC auth config request
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateOidcAuthConfigRequest {
+    /// Email domain
+    pub email_domain: String,
+    /// Config type: CLIENT or PARTNER
+    pub config_type: String,
+    /// Primary client ID (required for CLIENT type)
+    pub primary_client_id: Option<String>,
+    /// OIDC issuer URL
+    pub oidc_issuer_url: String,
+    /// OIDC client ID
+    pub oidc_client_id: String,
+    /// OIDC client secret reference (optional)
+    pub oidc_client_secret_ref: Option<String>,
+}
+
+/// Update OIDC config request
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateOidcConfigRequest {
+    /// OIDC issuer URL
+    pub oidc_issuer_url: Option<String>,
+    /// OIDC client ID
+    pub oidc_client_id: Option<String>,
+    /// OIDC client secret reference
+    pub oidc_client_secret_ref: Option<String>,
+}
+
+/// Update client binding request
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateClientBindingRequest {
+    /// Primary client ID
+    pub primary_client_id: String,
+}
+
+/// Update additional clients request
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateAdditionalClientsRequest {
+    /// Additional client IDs
+    pub additional_client_ids: Vec<String>,
+}
+
+/// Update granted clients request
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateGrantedClientsRequest {
+    /// Granted client IDs
+    pub granted_client_ids: Vec<String>,
+}
+
+/// Validate secret request
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ValidateSecretRequest {
+    /// Secret reference to validate
+    pub secret_ref: String,
+}
+
+/// Validate secret response
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ValidateSecretResponse {
+    /// Whether the secret is valid
+    pub valid: bool,
+    /// Error message if invalid
+    pub error: Option<String>,
+}
+
+/// Client auth config response DTO (matches Java AuthConfigDto)
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ClientAuthConfigResponse {
@@ -114,9 +206,21 @@ pub struct ClientAuthConfigResponse {
     pub config_type: String,
     pub primary_client_id: Option<String>,
     pub additional_client_ids: Vec<String>,
+    /// Granted client IDs (for PARTNER type configs)
+    pub granted_client_ids: Vec<String>,
+    /// Deprecated - use primaryClientId
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client_id: Option<String>,
     pub auth_provider: String,
     pub oidc_issuer_url: Option<String>,
     pub oidc_client_id: Option<String>,
+    /// Whether a client secret is configured
+    pub has_client_secret: bool,
+    /// Whether OIDC is multi-tenant
+    pub oidc_multi_tenant: bool,
+    /// Issuer pattern for multi-tenant validation
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub oidc_issuer_pattern: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -132,14 +236,19 @@ pub struct AuthConfigListResponse {
 impl From<ClientAuthConfig> for ClientAuthConfigResponse {
     fn from(c: ClientAuthConfig) -> Self {
         Self {
-            id: c.id,
+            id: c.id.clone(),
             email_domain: c.email_domain,
             config_type: format!("{:?}", c.config_type).to_uppercase(),
-            primary_client_id: c.primary_client_id,
-            additional_client_ids: c.additional_client_ids,
+            primary_client_id: c.primary_client_id.clone(),
+            additional_client_ids: c.additional_client_ids.clone(),
+            granted_client_ids: c.granted_client_ids,
+            client_id: c.primary_client_id, // deprecated
             auth_provider: format!("{:?}", c.auth_provider).to_uppercase(),
             oidc_issuer_url: c.oidc_issuer_url,
             oidc_client_id: c.oidc_client_id,
+            has_client_secret: c.oidc_client_secret_ref.is_some(),
+            oidc_multi_tenant: c.oidc_multi_tenant,
+            oidc_issuer_pattern: c.oidc_issuer_pattern,
             created_at: c.created_at.to_rfc3339(),
             updated_at: c.updated_at.to_rfc3339(),
         }
@@ -173,6 +282,14 @@ pub struct IdpRoleMappingResponse {
     pub idp_role_name: String,
     pub platform_role_name: String,
     pub created_at: String,
+}
+
+/// IDP role mapping list response (wrapped)
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct IdpRoleMappingListResponse {
+    pub mappings: Vec<IdpRoleMappingResponse>,
+    pub total: usize,
 }
 
 impl From<IdpRoleMapping> for IdpRoleMappingResponse {
@@ -259,22 +376,85 @@ pub async fn create_anchor_domain(
     path = "",
     tag = "auth-config",
     responses(
-        (status = 200, description = "List of anchor domains", body = Vec<AnchorDomainResponse>)
+        (status = 200, description = "List of anchor domains", body = AnchorDomainListResponse)
     ),
     security(("bearer_auth" = []))
 )]
 pub async fn list_anchor_domains(
     State(state): State<AuthConfigState>,
     auth: Authenticated,
-) -> Result<Json<Vec<AnchorDomainResponse>>, PlatformError> {
+) -> Result<Json<AnchorDomainListResponse>, PlatformError> {
     crate::service::checks::require_anchor(&auth.0)?;
 
     let domains = state.anchor_domain_repo.find_all().await?;
-    let response: Vec<AnchorDomainResponse> = domains.into_iter()
+    let domains: Vec<AnchorDomainResponse> = domains.into_iter()
         .map(|d| d.into())
         .collect();
+    let total = domains.len();
 
-    Ok(Json(response))
+    Ok(Json(AnchorDomainListResponse { domains, total }))
+}
+
+/// Get anchor domain by ID
+#[utoipa::path(
+    get,
+    path = "/{id}",
+    tag = "auth-config",
+    params(
+        ("id" = String, Path, description = "Anchor domain ID")
+    ),
+    responses(
+        (status = 200, description = "Anchor domain found", body = AnchorDomainResponse),
+        (status = 404, description = "Anchor domain not found")
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn get_anchor_domain(
+    State(state): State<AuthConfigState>,
+    auth: Authenticated,
+    Path(id): Path<String>,
+) -> Result<Json<AnchorDomainResponse>, PlatformError> {
+    crate::service::checks::require_anchor(&auth.0)?;
+
+    let domain = state.anchor_domain_repo.find_by_id(&id).await?
+        .ok_or_else(|| PlatformError::not_found("AnchorDomain", &id))?;
+
+    Ok(Json(domain.into()))
+}
+
+/// Check anchor domain response
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CheckAnchorDomainResponse {
+    /// Whether the domain is an anchor domain
+    pub is_anchor_domain: bool,
+}
+
+/// Check if domain is anchor domain
+#[utoipa::path(
+    get,
+    path = "/check/{domain}",
+    tag = "auth-config",
+    params(
+        ("domain" = String, Path, description = "Domain to check")
+    ),
+    responses(
+        (status = 200, description = "Domain check result", body = CheckAnchorDomainResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn check_anchor_domain(
+    State(state): State<AuthConfigState>,
+    auth: Authenticated,
+    Path(domain): Path<String>,
+) -> Result<Json<CheckAnchorDomainResponse>, PlatformError> {
+    crate::service::checks::require_anchor(&auth.0)?;
+
+    let is_anchor = state.anchor_domain_repo.is_anchor_domain(&domain.to_lowercase()).await?;
+
+    Ok(Json(CheckAnchorDomainResponse {
+        is_anchor_domain: is_anchor,
+    }))
 }
 
 /// Delete anchor domain
@@ -540,6 +720,289 @@ pub async fn update_config_type(
     Ok(Json(config.into()))
 }
 
+/// Get client auth config by email domain
+#[utoipa::path(
+    get,
+    path = "/by-domain/{domain}",
+    tag = "auth-config",
+    params(
+        ("domain" = String, Path, description = "Email domain")
+    ),
+    responses(
+        (status = 200, description = "Client auth config found", body = ClientAuthConfigResponse),
+        (status = 404, description = "Client auth config not found")
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn get_by_domain(
+    State(state): State<AuthConfigState>,
+    auth: Authenticated,
+    Path(domain): Path<String>,
+) -> Result<Json<ClientAuthConfigResponse>, PlatformError> {
+    crate::service::checks::require_anchor(&auth.0)?;
+
+    let config = state.client_auth_config_repo.find_by_email_domain(&domain.to_lowercase()).await?
+        .ok_or_else(|| PlatformError::not_found("ClientAuthConfig", &domain))?;
+
+    Ok(Json(config.into()))
+}
+
+/// Create internal auth config
+#[utoipa::path(
+    post,
+    path = "/internal",
+    tag = "auth-config",
+    request_body = CreateInternalAuthConfigRequest,
+    responses(
+        (status = 201, description = "Internal auth config created", body = CreatedResponse),
+        (status = 400, description = "Validation error"),
+        (status = 409, description = "Duplicate email domain")
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn create_internal_auth_config(
+    State(state): State<AuthConfigState>,
+    auth: Authenticated,
+    Json(req): Json<CreateInternalAuthConfigRequest>,
+) -> Result<Json<CreatedResponse>, PlatformError> {
+    crate::service::checks::require_anchor(&auth.0)?;
+
+    let email_domain = req.email_domain.to_lowercase();
+
+    if state.client_auth_config_repo.find_by_email_domain(&email_domain).await?.is_some() {
+        return Err(PlatformError::duplicate("ClientAuthConfig", "emailDomain", &email_domain));
+    }
+
+    let config_type = parse_config_type(&req.config_type);
+    let config = match config_type {
+        AuthConfigType::Partner => ClientAuthConfig::new_partner(&email_domain),
+        _ => {
+            let client_id = req.primary_client_id.unwrap_or_default();
+            ClientAuthConfig::new_client(&email_domain, &client_id)
+        }
+    };
+
+    let id = config.id.clone();
+    state.client_auth_config_repo.insert(&config).await?;
+
+    Ok(Json(CreatedResponse::new(id)))
+}
+
+/// Create OIDC auth config
+#[utoipa::path(
+    post,
+    path = "/oidc",
+    tag = "auth-config",
+    request_body = CreateOidcAuthConfigRequest,
+    responses(
+        (status = 201, description = "OIDC auth config created", body = CreatedResponse),
+        (status = 400, description = "Validation error"),
+        (status = 409, description = "Duplicate email domain")
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn create_oidc_auth_config(
+    State(state): State<AuthConfigState>,
+    auth: Authenticated,
+    Json(req): Json<CreateOidcAuthConfigRequest>,
+) -> Result<Json<CreatedResponse>, PlatformError> {
+    crate::service::checks::require_anchor(&auth.0)?;
+
+    let email_domain = req.email_domain.to_lowercase();
+
+    if state.client_auth_config_repo.find_by_email_domain(&email_domain).await?.is_some() {
+        return Err(PlatformError::duplicate("ClientAuthConfig", "emailDomain", &email_domain));
+    }
+
+    let config_type = parse_config_type(&req.config_type);
+    let mut config = match config_type {
+        AuthConfigType::Partner => ClientAuthConfig::new_partner(&email_domain),
+        _ => {
+            let client_id = req.primary_client_id.unwrap_or_default();
+            ClientAuthConfig::new_client(&email_domain, &client_id)
+        }
+    };
+
+    config = config.with_oidc(&req.oidc_issuer_url, &req.oidc_client_id);
+
+    let id = config.id.clone();
+    state.client_auth_config_repo.insert(&config).await?;
+
+    Ok(Json(CreatedResponse::new(id)))
+}
+
+/// Update OIDC config
+#[utoipa::path(
+    put,
+    path = "/{id}/oidc",
+    tag = "auth-config",
+    params(
+        ("id" = String, Path, description = "Client auth config ID")
+    ),
+    request_body = UpdateOidcConfigRequest,
+    responses(
+        (status = 200, description = "OIDC config updated", body = ClientAuthConfigResponse),
+        (status = 404, description = "Client auth config not found")
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn update_oidc_config(
+    State(state): State<AuthConfigState>,
+    auth: Authenticated,
+    Path(id): Path<String>,
+    Json(req): Json<UpdateOidcConfigRequest>,
+) -> Result<Json<ClientAuthConfigResponse>, PlatformError> {
+    crate::service::checks::require_anchor(&auth.0)?;
+
+    let mut config = state.client_auth_config_repo.find_by_id(&id).await?
+        .ok_or_else(|| PlatformError::not_found("ClientAuthConfig", &id))?;
+
+    if let Some(issuer) = req.oidc_issuer_url {
+        config.oidc_issuer_url = Some(issuer);
+    }
+    if let Some(client_id) = req.oidc_client_id {
+        config.oidc_client_id = Some(client_id);
+    }
+    config.auth_provider = AuthProvider::Oidc;
+    config.updated_at = chrono::Utc::now();
+
+    state.client_auth_config_repo.update(&config).await?;
+
+    Ok(Json(config.into()))
+}
+
+/// Update client binding
+#[utoipa::path(
+    put,
+    path = "/{id}/client-binding",
+    tag = "auth-config",
+    params(
+        ("id" = String, Path, description = "Client auth config ID")
+    ),
+    request_body = UpdateClientBindingRequest,
+    responses(
+        (status = 200, description = "Client binding updated", body = ClientAuthConfigResponse),
+        (status = 404, description = "Client auth config not found")
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn update_client_binding(
+    State(state): State<AuthConfigState>,
+    auth: Authenticated,
+    Path(id): Path<String>,
+    Json(req): Json<UpdateClientBindingRequest>,
+) -> Result<Json<ClientAuthConfigResponse>, PlatformError> {
+    crate::service::checks::require_anchor(&auth.0)?;
+
+    let mut config = state.client_auth_config_repo.find_by_id(&id).await?
+        .ok_or_else(|| PlatformError::not_found("ClientAuthConfig", &id))?;
+
+    config.primary_client_id = Some(req.primary_client_id);
+    config.updated_at = chrono::Utc::now();
+
+    state.client_auth_config_repo.update(&config).await?;
+
+    Ok(Json(config.into()))
+}
+
+/// Update additional clients
+#[utoipa::path(
+    put,
+    path = "/{id}/additional-clients",
+    tag = "auth-config",
+    params(
+        ("id" = String, Path, description = "Client auth config ID")
+    ),
+    request_body = UpdateAdditionalClientsRequest,
+    responses(
+        (status = 200, description = "Additional clients updated", body = ClientAuthConfigResponse),
+        (status = 404, description = "Client auth config not found")
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn update_additional_clients(
+    State(state): State<AuthConfigState>,
+    auth: Authenticated,
+    Path(id): Path<String>,
+    Json(req): Json<UpdateAdditionalClientsRequest>,
+) -> Result<Json<ClientAuthConfigResponse>, PlatformError> {
+    crate::service::checks::require_anchor(&auth.0)?;
+
+    let mut config = state.client_auth_config_repo.find_by_id(&id).await?
+        .ok_or_else(|| PlatformError::not_found("ClientAuthConfig", &id))?;
+
+    config.additional_client_ids = req.additional_client_ids;
+    config.updated_at = chrono::Utc::now();
+
+    state.client_auth_config_repo.update(&config).await?;
+
+    Ok(Json(config.into()))
+}
+
+/// Update granted clients
+#[utoipa::path(
+    put,
+    path = "/{id}/granted-clients",
+    tag = "auth-config",
+    params(
+        ("id" = String, Path, description = "Client auth config ID")
+    ),
+    request_body = UpdateGrantedClientsRequest,
+    responses(
+        (status = 200, description = "Granted clients updated", body = ClientAuthConfigResponse),
+        (status = 404, description = "Client auth config not found")
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn update_granted_clients(
+    State(state): State<AuthConfigState>,
+    auth: Authenticated,
+    Path(id): Path<String>,
+    Json(req): Json<UpdateGrantedClientsRequest>,
+) -> Result<Json<ClientAuthConfigResponse>, PlatformError> {
+    crate::service::checks::require_anchor(&auth.0)?;
+
+    let mut config = state.client_auth_config_repo.find_by_id(&id).await?
+        .ok_or_else(|| PlatformError::not_found("ClientAuthConfig", &id))?;
+
+    // For now, store granted clients in additional_client_ids
+    // TODO: Add dedicated granted_client_ids field if needed
+    config.additional_client_ids = req.granted_client_ids;
+    config.updated_at = chrono::Utc::now();
+
+    state.client_auth_config_repo.update(&config).await?;
+
+    Ok(Json(config.into()))
+}
+
+/// Validate secret reference
+#[utoipa::path(
+    post,
+    path = "/validate-secret",
+    tag = "auth-config",
+    request_body = ValidateSecretRequest,
+    responses(
+        (status = 200, description = "Secret validation result", body = ValidateSecretResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn validate_secret(
+    State(_state): State<AuthConfigState>,
+    auth: Authenticated,
+    Json(req): Json<ValidateSecretRequest>,
+) -> Result<Json<ValidateSecretResponse>, PlatformError> {
+    crate::service::checks::require_anchor(&auth.0)?;
+
+    // Basic validation - check if secret ref format is valid
+    // In a real implementation, this would verify the secret exists in a vault
+    let valid = !req.secret_ref.is_empty() && req.secret_ref.starts_with("secret://");
+
+    Ok(Json(ValidateSecretResponse {
+        valid,
+        error: if valid { None } else { Some("Invalid secret reference format".to_string()) },
+    }))
+}
+
 // ============================================================================
 // IDP Role Mapping Handlers
 // ============================================================================
@@ -592,7 +1055,7 @@ pub struct IdpRoleMappingQuery {
     tag = "auth-config",
     params(IdpRoleMappingQuery),
     responses(
-        (status = 200, description = "List of IDP role mappings", body = Vec<IdpRoleMappingResponse>)
+        (status = 200, description = "List of IDP role mappings", body = IdpRoleMappingListResponse)
     ),
     security(("bearer_auth" = []))
 )]
@@ -600,7 +1063,7 @@ pub async fn list_idp_role_mappings(
     State(state): State<AuthConfigState>,
     auth: Authenticated,
     Query(query): Query<IdpRoleMappingQuery>,
-) -> Result<Json<Vec<IdpRoleMappingResponse>>, PlatformError> {
+) -> Result<Json<IdpRoleMappingListResponse>, PlatformError> {
     crate::service::checks::require_anchor(&auth.0)?;
 
     let mappings = if let Some(ref idp_type) = query.idp_type {
@@ -609,11 +1072,12 @@ pub async fn list_idp_role_mappings(
         state.idp_role_mapping_repo.find_all().await?
     };
 
-    let response: Vec<IdpRoleMappingResponse> = mappings.into_iter()
+    let mappings: Vec<IdpRoleMappingResponse> = mappings.into_iter()
         .map(|m| m.into())
         .collect();
+    let total = mappings.len();
 
-    Ok(Json(response))
+    Ok(Json(IdpRoleMappingListResponse { mappings, total }))
 }
 
 /// Delete IDP role mapping
@@ -655,7 +1119,8 @@ pub async fn delete_idp_role_mapping(
 pub fn anchor_domains_router(state: AuthConfigState) -> Router {
     Router::new()
         .route("/", post(create_anchor_domain).get(list_anchor_domains))
-        .route("/:id", delete(delete_anchor_domain))
+        .route("/check/:domain", get(check_anchor_domain))
+        .route("/:id", get(get_anchor_domain).delete(delete_anchor_domain))
         .with_state(state)
 }
 
@@ -663,8 +1128,16 @@ pub fn anchor_domains_router(state: AuthConfigState) -> Router {
 pub fn client_auth_configs_router(state: AuthConfigState) -> Router {
     Router::new()
         .route("/", post(create_client_auth_config).get(list_client_auth_configs))
+        .route("/internal", post(create_internal_auth_config))
+        .route("/oidc", post(create_oidc_auth_config))
+        .route("/validate-secret", post(validate_secret))
+        .route("/by-domain/:domain", get(get_by_domain))
         .route("/:id", get(get_client_auth_config).put(update_client_auth_config).delete(delete_client_auth_config))
         .route("/:id/config-type", axum::routing::put(update_config_type))
+        .route("/:id/oidc", axum::routing::put(update_oidc_config))
+        .route("/:id/client-binding", axum::routing::put(update_client_binding))
+        .route("/:id/additional-clients", axum::routing::put(update_additional_clients))
+        .route("/:id/granted-clients", axum::routing::put(update_granted_clients))
         .with_state(state)
 }
 

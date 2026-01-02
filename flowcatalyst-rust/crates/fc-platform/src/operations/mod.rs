@@ -30,10 +30,13 @@
 //! }
 //! ```
 
+pub mod application;
 pub mod client;
+pub mod dispatch_pool;
 pub mod event_type;
 pub mod principal;
 pub mod role;
+pub mod service_account;
 pub mod subscription;
 
 // Re-export specific items to avoid ambiguity
@@ -75,4 +78,32 @@ pub use subscription::{
     PauseSubscriptionCommand, PauseSubscriptionUseCase,
     ResumeSubscriptionCommand, ResumeSubscriptionUseCase,
     DeleteSubscriptionCommand, DeleteSubscriptionUseCase,
+};
+
+pub use service_account::{
+    ServiceAccountCreated, ServiceAccountUpdated, ServiceAccountDeleted,
+    ServiceAccountRolesAssigned, ServiceAccountTokenRegenerated, ServiceAccountSecretRegenerated,
+    CreateServiceAccountCommand, CreateServiceAccountUseCase, CreateServiceAccountResult,
+    UpdateServiceAccountCommand, UpdateServiceAccountUseCase,
+    DeleteServiceAccountCommand, DeleteServiceAccountUseCase,
+    AssignRolesCommand, AssignRolesUseCase,
+    RegenerateAuthTokenCommand, RegenerateAuthTokenUseCase, RegenerateAuthTokenResult,
+    RegenerateSigningSecretCommand, RegenerateSigningSecretUseCase, RegenerateSigningSecretResult,
+};
+
+pub use application::{
+    ApplicationCreated, ApplicationUpdated, ApplicationActivated, ApplicationDeactivated,
+    ApplicationServiceAccountProvisioned,
+    CreateApplicationCommand, CreateApplicationUseCase,
+    UpdateApplicationCommand, UpdateApplicationUseCase,
+    ActivateApplicationCommand, ActivateApplicationUseCase,
+    DeactivateApplicationCommand, DeactivateApplicationUseCase,
+};
+
+pub use dispatch_pool::{
+    DispatchPoolCreated, DispatchPoolUpdated, DispatchPoolArchived, DispatchPoolDeleted,
+    CreateDispatchPoolCommand, CreateDispatchPoolUseCase,
+    UpdateDispatchPoolCommand, UpdateDispatchPoolUseCase,
+    ArchiveDispatchPoolCommand, ArchiveDispatchPoolUseCase,
+    DeleteDispatchPoolCommand, DeleteDispatchPoolUseCase,
 };

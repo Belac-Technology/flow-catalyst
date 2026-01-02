@@ -75,6 +75,48 @@ pub struct AssignRoleRequest {
     pub client_id: Option<String>,
 }
 
+/// Batch assign roles request (for PUT /roles - declarative update)
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct BatchAssignRolesRequest {
+    /// List of role codes to assign (replaces existing roles)
+    pub roles: Vec<String>,
+}
+
+/// Batch assign roles response (matches Java RolesAssignedResponse)
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct BatchAssignRolesResponse {
+    /// Current role assignments after update
+    pub roles: Vec<RoleAssignmentDto>,
+    /// Roles that were added
+    pub added: Vec<String>,
+    /// Roles that were removed
+    pub removed: Vec<String>,
+}
+
+/// Check email domain query params
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CheckEmailDomainQuery {
+    /// Email domain to check
+    pub domain: String,
+}
+
+/// Check email domain response
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CheckEmailDomainResponse {
+    /// The domain that was checked
+    pub domain: String,
+    /// Whether this domain is configured
+    pub configured: bool,
+    /// Config type if configured (ANCHOR, PARTNER, CLIENT)
+    pub config_type: Option<String>,
+    /// Auth provider if configured (INTERNAL, OIDC)
+    pub auth_provider: Option<String>,
+}
+
 /// Grant client access request
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -249,6 +291,8 @@ pub struct PrincipalsState {
     pub principal_repo: Arc<PrincipalRepository>,
     pub audit_service: Option<Arc<AuditService>>,
     pub password_service: Option<Arc<PasswordService>>,
+    pub anchor_domain_repo: Option<Arc<crate::repository::AnchorDomainRepository>>,
+    pub client_auth_config_repo: Option<Arc<crate::repository::ClientAuthConfigRepository>>,
 }
 
 fn parse_scope(s: &str) -> Result<UserScope, PlatformError> {
@@ -576,6 +620,68 @@ pub async fn assign_role(
     }
 
     Ok(Json(principal.into()))
+}
+
+/// Batch assign roles to principal (declarative - replaces all roles)
+#[utoipa::path(
+    put,
+    path = "/{id}/roles",
+    tag = "principals",
+    params(
+        ("id" = String, Path, description = "Principal ID")
+    ),
+    request_body = BatchAssignRolesRequest,
+    responses(
+        (status = 200, description = "Roles updated", body = BatchAssignRolesResponse),
+        (status = 404, description = "Principal not found")
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn batch_assign_roles(
+    State(state): State<PrincipalsState>,
+    auth: Authenticated,
+    Path(id): Path<String>,
+    Json(req): Json<BatchAssignRolesRequest>,
+) -> Result<Json<BatchAssignRolesResponse>, PlatformError> {
+    crate::service::checks::require_anchor(&auth.0)?;
+
+    let mut principal = state.principal_repo.find_by_id(&id).await?
+        .ok_or_else(|| PlatformError::not_found("Principal", &id))?;
+
+    // Track what was added/removed
+    let old_roles: std::collections::HashSet<String> = principal.roles.iter()
+        .map(|r| r.role.clone())
+        .collect();
+    let new_roles: std::collections::HashSet<String> = req.roles.iter().cloned().collect();
+
+    let added: Vec<String> = new_roles.difference(&old_roles).cloned().collect();
+    let removed: Vec<String> = old_roles.difference(&new_roles).cloned().collect();
+
+    // Clear existing roles and assign new ones
+    principal.roles.clear();
+    for role in req.roles {
+        principal.assign_role(role);
+    }
+    principal.updated_at = chrono::Utc::now();
+
+    state.principal_repo.update(&principal).await?;
+
+    // Build response with role DTOs
+    let roles: Vec<RoleAssignmentDto> = principal.roles.iter()
+        .enumerate()
+        .map(|(i, r)| RoleAssignmentDto {
+            id: format!("{}-role-{}", id, i),
+            role_name: r.role.clone(),
+            assignment_source: "ADMIN".to_string(),
+            assigned_at: r.assigned_at.to_rfc3339(),
+        })
+        .collect();
+
+    Ok(Json(BatchAssignRolesResponse {
+        roles,
+        added,
+        removed,
+    }))
 }
 
 /// Remove role from principal
@@ -936,15 +1042,71 @@ pub async fn reset_password(
     }))
 }
 
+/// Check email domain configuration
+#[utoipa::path(
+    get,
+    path = "/check-email-domain",
+    tag = "principals",
+    params(
+        ("domain" = String, Query, description = "Email domain to check")
+    ),
+    responses(
+        (status = 200, description = "Domain check result", body = CheckEmailDomainResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn check_email_domain(
+    State(state): State<PrincipalsState>,
+    auth: Authenticated,
+    Query(query): Query<CheckEmailDomainQuery>,
+) -> Result<Json<CheckEmailDomainResponse>, PlatformError> {
+    crate::service::checks::require_anchor(&auth.0)?;
+
+    let domain = query.domain.to_lowercase();
+
+    // Check if it's an anchor domain
+    if let Some(ref anchor_repo) = state.anchor_domain_repo {
+        if anchor_repo.is_anchor_domain(&domain).await? {
+            return Ok(Json(CheckEmailDomainResponse {
+                domain: domain.clone(),
+                configured: true,
+                config_type: Some("ANCHOR".to_string()),
+                auth_provider: Some("INTERNAL".to_string()),
+            }));
+        }
+    }
+
+    // Check client auth config
+    if let Some(ref auth_config_repo) = state.client_auth_config_repo {
+        if let Some(config) = auth_config_repo.find_by_email_domain(&domain).await? {
+            return Ok(Json(CheckEmailDomainResponse {
+                domain: domain.clone(),
+                configured: true,
+                config_type: Some(format!("{:?}", config.config_type).to_uppercase()),
+                auth_provider: Some(format!("{:?}", config.auth_provider).to_uppercase()),
+            }));
+        }
+    }
+
+    // Not configured
+    Ok(Json(CheckEmailDomainResponse {
+        domain,
+        configured: false,
+        config_type: None,
+        auth_provider: None,
+    }))
+}
+
 /// Create principals router
 pub fn principals_router(state: PrincipalsState) -> Router {
     Router::new()
         .route("/", post(create_user).get(list_principals))
+        .route("/check-email-domain", get(check_email_domain))
         .route("/:id", get(get_principal).put(update_principal).delete(delete_principal))
         .route("/:id/activate", post(activate_principal))
         .route("/:id/deactivate", post(deactivate_principal))
         .route("/:id/reset-password", post(reset_password))
-        .route("/:id/roles", get(get_roles).post(assign_role))
+        .route("/:id/roles", get(get_roles).post(assign_role).put(batch_assign_roles))
         .route("/:id/roles/:role", delete(remove_role))
         .route("/:id/client-access", get(get_client_access).post(grant_client_access))
         .route("/:id/client-access/:client_id", delete(revoke_client_access))

@@ -102,11 +102,11 @@ impl From<AuthRole> for RoleResponse {
     }
 }
 
-/// Role list response (matches Java BffRoleListResponse - uses 'items' field)
+/// Role list response (matches Java RoleListResponse)
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct RoleListResponse {
-    pub items: Vec<RoleResponse>,
+    pub roles: Vec<RoleResponse>,
     pub total: usize,
 }
 
@@ -167,7 +167,7 @@ pub struct PermissionResponse {
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PermissionListResponse {
-    pub items: Vec<PermissionResponse>,
+    pub permissions: Vec<PermissionResponse>,
     pub total: usize,
 }
 
@@ -223,13 +223,16 @@ pub async fn create_role(
     Ok(Json(CreatedResponse::new(id)))
 }
 
-/// Get role by ID
+/// Get role by ID or name (code)
+///
+/// The frontend calls this with the role name (e.g., "platform:super-admin"),
+/// so we try by code first if it contains ":", otherwise by ID.
 #[utoipa::path(
     get,
-    path = "/{id}",
+    path = "/{role_name}",
     tag = "roles",
     params(
-        ("id" = String, Path, description = "Role ID")
+        ("role_name" = String, Path, description = "Role name (code) or ID")
     ),
     responses(
         (status = 200, description = "Role found", body = RoleResponse),
@@ -240,12 +243,17 @@ pub async fn create_role(
 pub async fn get_role(
     State(state): State<RolesState>,
     _auth: Authenticated,
-    Path(id): Path<String>,
+    Path(role_name): Path<String>,
 ) -> Result<Json<RoleResponse>, PlatformError> {
-    // Roles are readable by any authenticated user
-    let role = state.role_repo.find_by_id(&id).await?
-        .ok_or_else(|| PlatformError::not_found("Role", &id))?;
+    // Try by code first if it looks like a role code (contains ":")
+    let role = if role_name.contains(':') {
+        state.role_repo.find_by_code(&role_name).await?
+    } else {
+        // Fall back to ID lookup
+        state.role_repo.find_by_id(&role_name).await?
+    };
 
+    let role = role.ok_or_else(|| PlatformError::not_found("Role", &role_name))?;
     Ok(Json(role.into()))
 }
 
@@ -301,21 +309,21 @@ pub async fn list_roles(
         state.role_repo.find_all().await?
     };
 
-    let responses: Vec<RoleResponse> = roles.into_iter()
+    let roles: Vec<RoleResponse> = roles.into_iter()
         .map(|r| r.into())
         .collect();
 
-    let total = responses.len();
-    Ok(Json(RoleListResponse { items: responses, total }))
+    let total = roles.len();
+    Ok(Json(RoleListResponse { roles, total }))
 }
 
 /// Update role
 #[utoipa::path(
     put,
-    path = "/{id}",
+    path = "/{role_name}",
     tag = "roles",
     params(
-        ("id" = String, Path, description = "Role ID")
+        ("role_name" = String, Path, description = "Role name (code) or ID")
     ),
     request_body = UpdateRoleRequest,
     responses(
@@ -327,13 +335,17 @@ pub async fn list_roles(
 pub async fn update_role(
     State(state): State<RolesState>,
     auth: Authenticated,
-    Path(id): Path<String>,
+    Path(role_name): Path<String>,
     Json(req): Json<UpdateRoleRequest>,
 ) -> Result<Json<RoleResponse>, PlatformError> {
     crate::service::checks::require_anchor(&auth.0)?;
 
-    let mut role = state.role_repo.find_by_id(&id).await?
-        .ok_or_else(|| PlatformError::not_found("Role", &id))?;
+    // Try by code first if it looks like a role code (contains ":")
+    let mut role = if role_name.contains(':') {
+        state.role_repo.find_by_code(&role_name).await?
+    } else {
+        state.role_repo.find_by_id(&role_name).await?
+    }.ok_or_else(|| PlatformError::not_found("Role", &role_name))?;
 
     // Check if role can be modified
     if !role.can_modify() {
@@ -362,10 +374,10 @@ pub async fn update_role(
 /// Grant permission to role
 #[utoipa::path(
     post,
-    path = "/{id}/permissions",
+    path = "/{role_name}/permissions",
     tag = "roles",
     params(
-        ("id" = String, Path, description = "Role ID")
+        ("role_name" = String, Path, description = "Role name (code) or ID")
     ),
     request_body = GrantPermissionRequest,
     responses(
@@ -377,13 +389,16 @@ pub async fn update_role(
 pub async fn grant_permission(
     State(state): State<RolesState>,
     auth: Authenticated,
-    Path(id): Path<String>,
+    Path(role_name): Path<String>,
     Json(req): Json<GrantPermissionRequest>,
 ) -> Result<Json<RoleResponse>, PlatformError> {
     crate::service::checks::require_anchor(&auth.0)?;
 
-    let mut role = state.role_repo.find_by_id(&id).await?
-        .ok_or_else(|| PlatformError::not_found("Role", &id))?;
+    let mut role = if role_name.contains(':') {
+        state.role_repo.find_by_code(&role_name).await?
+    } else {
+        state.role_repo.find_by_id(&role_name).await?
+    }.ok_or_else(|| PlatformError::not_found("Role", &role_name))?;
 
     if !role.can_modify() {
         return Err(PlatformError::validation("This role cannot be modified"));
@@ -398,10 +413,10 @@ pub async fn grant_permission(
 /// Revoke permission from role
 #[utoipa::path(
     delete,
-    path = "/{id}/permissions/{permission}",
+    path = "/{role_name}/permissions/{permission}",
     tag = "roles",
     params(
-        ("id" = String, Path, description = "Role ID"),
+        ("role_name" = String, Path, description = "Role name (code) or ID"),
         ("permission" = String, Path, description = "Permission to revoke")
     ),
     responses(
@@ -413,12 +428,15 @@ pub async fn grant_permission(
 pub async fn revoke_permission(
     State(state): State<RolesState>,
     auth: Authenticated,
-    Path((id, permission)): Path<(String, String)>,
+    Path((role_name, permission)): Path<(String, String)>,
 ) -> Result<Json<RoleResponse>, PlatformError> {
     crate::service::checks::require_anchor(&auth.0)?;
 
-    let mut role = state.role_repo.find_by_id(&id).await?
-        .ok_or_else(|| PlatformError::not_found("Role", &id))?;
+    let mut role = if role_name.contains(':') {
+        state.role_repo.find_by_code(&role_name).await?
+    } else {
+        state.role_repo.find_by_id(&role_name).await?
+    }.ok_or_else(|| PlatformError::not_found("Role", &role_name))?;
 
     if !role.can_modify() {
         return Err(PlatformError::validation("This role cannot be modified"));
@@ -433,10 +451,10 @@ pub async fn revoke_permission(
 /// Delete role
 #[utoipa::path(
     delete,
-    path = "/{id}",
+    path = "/{role_name}",
     tag = "roles",
     params(
-        ("id" = String, Path, description = "Role ID")
+        ("role_name" = String, Path, description = "Role name (code) or ID")
     ),
     responses(
         (status = 200, description = "Role deleted", body = SuccessResponse),
@@ -447,18 +465,22 @@ pub async fn revoke_permission(
 pub async fn delete_role(
     State(state): State<RolesState>,
     auth: Authenticated,
-    Path(id): Path<String>,
+    Path(role_name): Path<String>,
 ) -> Result<Json<SuccessResponse>, PlatformError> {
     crate::service::checks::require_anchor(&auth.0)?;
 
-    let role = state.role_repo.find_by_id(&id).await?
-        .ok_or_else(|| PlatformError::not_found("Role", &id))?;
+    // Try by code first if it looks like a role code (contains ":")
+    let role = if role_name.contains(':') {
+        state.role_repo.find_by_code(&role_name).await?
+    } else {
+        state.role_repo.find_by_id(&role_name).await?
+    }.ok_or_else(|| PlatformError::not_found("Role", &role_name))?;
 
     if !role.can_modify() {
         return Err(PlatformError::validation("This role cannot be deleted"));
     }
 
-    state.role_repo.delete(&id).await?;
+    state.role_repo.delete(&role.id).await?;
 
     Ok(Json(SuccessResponse::ok()))
 }
@@ -509,7 +531,7 @@ pub async fn list_permissions(
     // Return built-in platform permissions
     let permissions = get_builtin_permissions();
     let total = permissions.len();
-    Ok(Json(PermissionListResponse { items: permissions, total }))
+    Ok(Json(PermissionListResponse { permissions, total }))
 }
 
 /// Get permission by string
@@ -607,9 +629,9 @@ pub fn roles_router(state: RolesState) -> Router {
         .route("/filters/applications", get(get_filter_applications))
         .route("/permissions", get(list_permissions))
         .route("/permissions/:permission", get(get_permission))
-        .route("/:id", get(get_role).put(update_role).delete(delete_role))
-        .route("/by-code/:code", get(get_role_by_code))
-        .route("/:id/permissions", post(grant_permission))
-        .route("/:id/permissions/:permission", delete(revoke_permission))
+        // Role endpoints use role_name (code like "platform:admin") or ID
+        .route("/:role_name", get(get_role).put(update_role).delete(delete_role))
+        .route("/:role_name/permissions", post(grant_permission))
+        .route("/:role_name/permissions/:permission", delete(revoke_permission))
         .with_state(state)
 }

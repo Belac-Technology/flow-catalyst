@@ -4,7 +4,7 @@
 //! Base path: /api/admin/platform/service-accounts
 
 use axum::{
-    routing::{get, post, put},
+    routing::{get, post},
     extract::{State, Path, Query},
     http::StatusCode,
     response::IntoResponse,
@@ -13,14 +13,20 @@ use axum::{
 use utoipa::ToSchema;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use chrono::Utc;
-use rand::Rng;
 
-use crate::domain::{ServiceAccount, WebhookCredentials, WebhookAuthType};
-use crate::domain::service_account::RoleAssignment;
+use crate::domain::ServiceAccount;
 use crate::repository::ServiceAccountRepository;
 use crate::error::PlatformError;
 use crate::api::middleware::Authenticated;
+use crate::usecase::{ExecutionContext, UnitOfWork, UseCaseResult};
+use crate::operations::service_account::{
+    CreateServiceAccountCommand, CreateServiceAccountUseCase,
+    UpdateServiceAccountCommand, UpdateServiceAccountUseCase,
+    DeleteServiceAccountCommand, DeleteServiceAccountUseCase,
+    AssignRolesCommand, AssignRolesUseCase,
+    RegenerateAuthTokenCommand, RegenerateAuthTokenUseCase,
+    RegenerateSigningSecretCommand, RegenerateSigningSecretUseCase,
+};
 
 // ============================================================================
 // Request/Response DTOs
@@ -64,14 +70,6 @@ pub struct UpdateServiceAccountRequest {
     /// Updated client IDs
     #[serde(skip_serializing_if = "Option::is_none")]
     pub client_ids: Option<Vec<String>>,
-}
-
-/// Update auth token request (custom value)
-#[derive(Debug, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct UpdateAuthTokenRequest {
-    /// Custom auth token
-    pub auth_token: String,
 }
 
 /// Assign roles request (declarative - replaces all)
@@ -197,35 +195,16 @@ pub struct AssignRolesResponse {
 // State
 // ============================================================================
 
-/// Service accounts API state
+/// Service accounts API state with use cases
 #[derive(Clone)]
-pub struct ServiceAccountsState {
+pub struct ServiceAccountsState<U: UnitOfWork + 'static> {
     pub repo: Arc<ServiceAccountRepository>,
-}
-
-// ============================================================================
-// Helpers
-// ============================================================================
-
-/// Generate a bearer token with fc_ prefix
-fn generate_auth_token() -> String {
-    let random_part: String = (0..32)
-        .map(|_| {
-            let idx = rand::thread_rng().gen_range(0..36);
-            if idx < 10 {
-                (b'0' + idx) as char
-            } else {
-                (b'a' + idx - 10) as char
-            }
-        })
-        .collect();
-    format!("fc_{}", random_part)
-}
-
-/// Generate a signing secret (URL-safe base64)
-fn generate_signing_secret() -> String {
-    let bytes: [u8; 32] = rand::thread_rng().gen();
-    base64::Engine::encode(&base64::engine::general_purpose::URL_SAFE_NO_PAD, &bytes)
+    pub create_use_case: Arc<CreateServiceAccountUseCase<U>>,
+    pub update_use_case: Arc<UpdateServiceAccountUseCase<U>>,
+    pub delete_use_case: Arc<DeleteServiceAccountUseCase<U>>,
+    pub assign_roles_use_case: Arc<AssignRolesUseCase<U>>,
+    pub regenerate_token_use_case: Arc<RegenerateAuthTokenUseCase<U>>,
+    pub regenerate_secret_use_case: Arc<RegenerateSigningSecretUseCase<U>>,
 }
 
 // ============================================================================
@@ -247,8 +226,8 @@ fn generate_signing_secret() -> String {
     ),
     security(("bearer_auth" = []))
 )]
-pub async fn list_service_accounts(
-    State(state): State<ServiceAccountsState>,
+pub async fn list_service_accounts<U: UnitOfWork>(
+    State(state): State<ServiceAccountsState<U>>,
     _auth: Authenticated,
     Query(query): Query<ServiceAccountsQuery>,
 ) -> Result<Json<ServiceAccountListResponse>, PlatformError> {
@@ -259,11 +238,9 @@ pub async fn list_service_accounts(
     } else if query.active == Some(true) {
         state.repo.find_active().await?
     } else {
-        // Find all - fallback to active for now
         state.repo.find_active().await?
     };
 
-    // Apply active filter if specified
     if let Some(is_active) = query.active {
         accounts.retain(|a| a.active == is_active);
     }
@@ -293,8 +270,8 @@ pub async fn list_service_accounts(
     ),
     security(("bearer_auth" = []))
 )]
-pub async fn get_service_account(
-    State(state): State<ServiceAccountsState>,
+pub async fn get_service_account<U: UnitOfWork>(
+    State(state): State<ServiceAccountsState<U>>,
     _auth: Authenticated,
     Path(id): Path<String>,
 ) -> Result<Json<ServiceAccountResponse>, PlatformError> {
@@ -318,8 +295,8 @@ pub async fn get_service_account(
     ),
     security(("bearer_auth" = []))
 )]
-pub async fn get_service_account_by_code(
-    State(state): State<ServiceAccountsState>,
+pub async fn get_service_account_by_code<U: UnitOfWork>(
+    State(state): State<ServiceAccountsState<U>>,
     _auth: Authenticated,
     Path(code): Path<String>,
 ) -> Result<Json<ServiceAccountResponse>, PlatformError> {
@@ -342,53 +319,35 @@ pub async fn get_service_account_by_code(
     ),
     security(("bearer_auth" = []))
 )]
-pub async fn create_service_account(
-    State(state): State<ServiceAccountsState>,
+pub async fn create_service_account<U: UnitOfWork>(
+    State(state): State<ServiceAccountsState<U>>,
     auth: Authenticated,
     Json(req): Json<CreateServiceAccountRequest>,
 ) -> Result<Json<CreateServiceAccountResponse>, PlatformError> {
-    // Validate code
-    if req.code.is_empty() || req.code.len() > 50 {
-        return Err(PlatformError::bad_request("Code must be 1-50 characters"));
-    }
+    let command = CreateServiceAccountCommand {
+        code: req.code,
+        name: req.name,
+        description: req.description,
+        client_ids: req.client_ids,
+        application_id: req.application_id,
+    };
 
-    // Validate name
-    if req.name.is_empty() || req.name.len() > 100 {
-        return Err(PlatformError::bad_request("Name must be 1-100 characters"));
-    }
+    let ctx = ExecutionContext::create(auth.0.principal_id.clone());
 
-    // Validate description
-    if let Some(ref desc) = req.description {
-        if desc.len() > 500 {
-            return Err(PlatformError::bad_request("Description must be max 500 characters"));
+    match state.create_use_case.execute(command, ctx).await {
+        UseCaseResult::Success(result) => {
+            // Fetch the created service account to return
+            let account = state.repo.find_by_id(&result.event.service_account_id).await?
+                .ok_or_else(|| PlatformError::internal("Created service account not found"))?;
+
+            Ok(Json(CreateServiceAccountResponse {
+                service_account: ServiceAccountResponse::from(account),
+                auth_token: result.auth_token,
+                signing_secret: result.signing_secret,
+            }))
         }
+        UseCaseResult::Failure(err) => Err(err.into()),
     }
-
-    // Check for duplicate code
-    if state.repo.find_by_code(&req.code).await?.is_some() {
-        return Err(PlatformError::conflict("Service account with this code already exists"));
-    }
-
-    // Generate credentials
-    let auth_token = generate_auth_token();
-    let signing_secret = generate_signing_secret();
-
-    // Create service account
-    let mut account = ServiceAccount::new(&req.code, &req.name);
-    account.description = req.description;
-    account.client_ids = req.client_ids;
-    account.application_id = req.application_id;
-    account.webhook_credentials = WebhookCredentials::bearer_token(&auth_token);
-    account.webhook_credentials.signing_secret = Some(signing_secret.clone());
-    account.created_by = Some(auth.0.principal_id.clone());
-
-    state.repo.insert(&account).await?;
-
-    Ok(Json(CreateServiceAccountResponse {
-        service_account: ServiceAccountResponse::from(account),
-        auth_token,
-        signing_secret,
-    }))
 }
 
 /// Update service account
@@ -406,39 +365,30 @@ pub async fn create_service_account(
     ),
     security(("bearer_auth" = []))
 )]
-pub async fn update_service_account(
-    State(state): State<ServiceAccountsState>,
-    _auth: Authenticated,
+pub async fn update_service_account<U: UnitOfWork>(
+    State(state): State<ServiceAccountsState<U>>,
+    auth: Authenticated,
     Path(id): Path<String>,
     Json(req): Json<UpdateServiceAccountRequest>,
 ) -> Result<Json<ServiceAccountResponse>, PlatformError> {
-    let mut account = state.repo.find_by_id(&id).await?
-        .ok_or_else(|| PlatformError::ServiceAccountNotFound { id: id.clone() })?;
+    let command = UpdateServiceAccountCommand {
+        id: id.clone(),
+        name: req.name,
+        description: req.description,
+        client_ids: req.client_ids,
+    };
 
-    // Apply updates
-    if let Some(name) = req.name {
-        if name.is_empty() || name.len() > 100 {
-            return Err(PlatformError::bad_request("Name must be 1-100 characters"));
+    let ctx = ExecutionContext::create(auth.0.principal_id.clone());
+
+    match state.update_use_case.execute(command, ctx).await {
+        UseCaseResult::Success(event) => {
+            let account = state.repo.find_by_id(&event.service_account_id).await?
+                .ok_or_else(|| PlatformError::ServiceAccountNotFound { id })?;
+
+            Ok(Json(ServiceAccountResponse::from(account)))
         }
-        account.name = name;
+        UseCaseResult::Failure(err) => Err(err.into()),
     }
-
-    if let Some(description) = req.description {
-        if description.len() > 500 {
-            return Err(PlatformError::bad_request("Description must be max 500 characters"));
-        }
-        account.description = Some(description);
-    }
-
-    if let Some(client_ids) = req.client_ids {
-        account.client_ids = client_ids;
-    }
-
-    account.updated_at = Utc::now();
-
-    state.repo.update(&account).await?;
-
-    Ok(Json(ServiceAccountResponse::from(account)))
 }
 
 /// Delete service account
@@ -455,17 +405,18 @@ pub async fn update_service_account(
     ),
     security(("bearer_auth" = []))
 )]
-pub async fn delete_service_account(
-    State(state): State<ServiceAccountsState>,
-    _auth: Authenticated,
+pub async fn delete_service_account<U: UnitOfWork>(
+    State(state): State<ServiceAccountsState<U>>,
+    auth: Authenticated,
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, PlatformError> {
-    let deleted = state.repo.delete(&id).await?;
+    let command = DeleteServiceAccountCommand { id };
 
-    if deleted {
-        Ok(StatusCode::NO_CONTENT)
-    } else {
-        Err(PlatformError::ServiceAccountNotFound { id: id.clone() })
+    let ctx = ExecutionContext::create(auth.0.principal_id.clone());
+
+    match state.delete_use_case.execute(command, ctx).await {
+        UseCaseResult::Success(_) => Ok(StatusCode::NO_CONTENT),
+        UseCaseResult::Failure(err) => Err(err.into()),
     }
 }
 
@@ -483,55 +434,23 @@ pub async fn delete_service_account(
     ),
     security(("bearer_auth" = []))
 )]
-pub async fn regenerate_auth_token(
-    State(state): State<ServiceAccountsState>,
-    _auth: Authenticated,
+pub async fn regenerate_auth_token<U: UnitOfWork>(
+    State(state): State<ServiceAccountsState<U>>,
+    auth: Authenticated,
     Path(id): Path<String>,
 ) -> Result<Json<RegenerateTokenResponse>, PlatformError> {
-    let mut account = state.repo.find_by_id(&id).await?
-        .ok_or_else(|| PlatformError::ServiceAccountNotFound { id: id.clone() })?;
+    let command = RegenerateAuthTokenCommand { service_account_id: id };
 
-    let auth_token = generate_auth_token();
-    account.webhook_credentials.token = Some(auth_token.clone());
-    account.webhook_credentials.auth_type = WebhookAuthType::BearerToken;
-    account.updated_at = Utc::now();
+    let ctx = ExecutionContext::create(auth.0.principal_id.clone());
 
-    state.repo.update(&account).await?;
-
-    Ok(Json(RegenerateTokenResponse { auth_token }))
-}
-
-/// Update auth token (custom value)
-#[utoipa::path(
-    put,
-    path = "/{id}/auth-token",
-    tag = "service-accounts",
-    params(
-        ("id" = String, Path, description = "Service account ID")
-    ),
-    request_body = UpdateAuthTokenRequest,
-    responses(
-        (status = 200, description = "Token updated", body = ServiceAccountResponse),
-        (status = 404, description = "Service account not found")
-    ),
-    security(("bearer_auth" = []))
-)]
-pub async fn update_auth_token(
-    State(state): State<ServiceAccountsState>,
-    _auth: Authenticated,
-    Path(id): Path<String>,
-    Json(req): Json<UpdateAuthTokenRequest>,
-) -> Result<Json<ServiceAccountResponse>, PlatformError> {
-    let mut account = state.repo.find_by_id(&id).await?
-        .ok_or_else(|| PlatformError::ServiceAccountNotFound { id: id.clone() })?;
-
-    account.webhook_credentials.token = Some(req.auth_token);
-    account.webhook_credentials.auth_type = WebhookAuthType::BearerToken;
-    account.updated_at = Utc::now();
-
-    state.repo.update(&account).await?;
-
-    Ok(Json(ServiceAccountResponse::from(account)))
+    match state.regenerate_token_use_case.execute(command, ctx).await {
+        UseCaseResult::Success(result) => {
+            Ok(Json(RegenerateTokenResponse {
+                auth_token: result.auth_token,
+            }))
+        }
+        UseCaseResult::Failure(err) => Err(err.into()),
+    }
 }
 
 /// Regenerate signing secret
@@ -548,21 +467,23 @@ pub async fn update_auth_token(
     ),
     security(("bearer_auth" = []))
 )]
-pub async fn regenerate_signing_secret(
-    State(state): State<ServiceAccountsState>,
-    _auth: Authenticated,
+pub async fn regenerate_signing_secret<U: UnitOfWork>(
+    State(state): State<ServiceAccountsState<U>>,
+    auth: Authenticated,
     Path(id): Path<String>,
 ) -> Result<Json<RegenerateSecretResponse>, PlatformError> {
-    let mut account = state.repo.find_by_id(&id).await?
-        .ok_or_else(|| PlatformError::ServiceAccountNotFound { id: id.clone() })?;
+    let command = RegenerateSigningSecretCommand { service_account_id: id };
 
-    let signing_secret = generate_signing_secret();
-    account.webhook_credentials.signing_secret = Some(signing_secret.clone());
-    account.updated_at = Utc::now();
+    let ctx = ExecutionContext::create(auth.0.principal_id.clone());
 
-    state.repo.update(&account).await?;
-
-    Ok(Json(RegenerateSecretResponse { signing_secret }))
+    match state.regenerate_secret_use_case.execute(command, ctx).await {
+        UseCaseResult::Success(result) => {
+            Ok(Json(RegenerateSecretResponse {
+                signing_secret: result.signing_secret,
+            }))
+        }
+        UseCaseResult::Failure(err) => Err(err.into()),
+    }
 }
 
 /// Get assigned roles
@@ -579,8 +500,8 @@ pub async fn regenerate_signing_secret(
     ),
     security(("bearer_auth" = []))
 )]
-pub async fn get_roles(
-    State(state): State<ServiceAccountsState>,
+pub async fn get_roles<U: UnitOfWork>(
+    State(state): State<ServiceAccountsState<U>>,
     _auth: Authenticated,
     Path(id): Path<String>,
 ) -> Result<Json<RolesResponse>, PlatformError> {
@@ -613,45 +534,41 @@ pub async fn get_roles(
     ),
     security(("bearer_auth" = []))
 )]
-pub async fn assign_roles(
-    State(state): State<ServiceAccountsState>,
-    _auth: Authenticated,
+pub async fn assign_roles<U: UnitOfWork>(
+    State(state): State<ServiceAccountsState<U>>,
+    auth: Authenticated,
     Path(id): Path<String>,
     Json(req): Json<AssignRolesRequest>,
 ) -> Result<Json<AssignRolesResponse>, PlatformError> {
-    let mut account = state.repo.find_by_id(&id).await?
-        .ok_or_else(|| PlatformError::ServiceAccountNotFound { id: id.clone() })?;
+    let command = AssignRolesCommand {
+        service_account_id: id.clone(),
+        roles: req.roles,
+    };
 
-    // Calculate diff
-    let current_roles: std::collections::HashSet<String> = account.roles.iter()
-        .map(|r| r.role.clone())
-        .collect();
-    let new_roles: std::collections::HashSet<String> = req.roles.iter().cloned().collect();
+    let ctx = ExecutionContext::create(auth.0.principal_id.clone());
 
-    let added_roles: Vec<String> = new_roles.difference(&current_roles).cloned().collect();
-    let removed_roles: Vec<String> = current_roles.difference(&new_roles).cloned().collect();
+    match state.assign_roles_use_case.execute(command, ctx).await {
+        UseCaseResult::Success(event) => {
+            // Fetch updated account to get role details
+            let account = state.repo.find_by_id(&id).await?
+                .ok_or_else(|| PlatformError::ServiceAccountNotFound { id })?;
 
-    // Replace roles
-    account.roles = req.roles.iter()
-        .map(|r| RoleAssignment::new(r))
-        .collect();
-    account.updated_at = Utc::now();
+            let roles: Vec<RoleAssignmentResponse> = account.roles.iter()
+                .map(|r| RoleAssignmentResponse {
+                    role_name: r.role.clone(),
+                    assignment_source: r.assignment_source.clone(),
+                    assigned_at: r.assigned_at.to_rfc3339(),
+                })
+                .collect();
 
-    state.repo.update(&account).await?;
-
-    let roles: Vec<RoleAssignmentResponse> = account.roles.iter()
-        .map(|r| RoleAssignmentResponse {
-            role_name: r.role.clone(),
-            assignment_source: r.assignment_source.clone(),
-            assigned_at: r.assigned_at.to_rfc3339(),
-        })
-        .collect();
-
-    Ok(Json(AssignRolesResponse {
-        roles,
-        added_roles,
-        removed_roles,
-    }))
+            Ok(Json(AssignRolesResponse {
+                roles,
+                added_roles: event.roles_added,
+                removed_roles: event.roles_removed,
+            }))
+        }
+        UseCaseResult::Failure(err) => Err(err.into()),
+    }
 }
 
 // ============================================================================
@@ -659,14 +576,13 @@ pub async fn assign_roles(
 // ============================================================================
 
 /// Create the service accounts router
-pub fn service_accounts_router(state: ServiceAccountsState) -> Router {
+pub fn service_accounts_router<U: UnitOfWork + Clone>(state: ServiceAccountsState<U>) -> Router {
     Router::new()
-        .route("/", get(list_service_accounts).post(create_service_account))
-        .route("/:id", get(get_service_account).put(update_service_account).delete(delete_service_account))
-        .route("/code/:code", get(get_service_account_by_code))
-        .route("/:id/auth-token", put(update_auth_token))
-        .route("/:id/regenerate-token", post(regenerate_auth_token))
-        .route("/:id/regenerate-secret", post(regenerate_signing_secret))
-        .route("/:id/roles", get(get_roles).put(assign_roles))
+        .route("/", get(list_service_accounts::<U>).post(create_service_account::<U>))
+        .route("/:id", get(get_service_account::<U>).put(update_service_account::<U>).delete(delete_service_account::<U>))
+        .route("/code/:code", get(get_service_account_by_code::<U>))
+        .route("/:id/regenerate-token", post(regenerate_auth_token::<U>))
+        .route("/:id/regenerate-secret", post(regenerate_signing_secret::<U>))
+        .route("/:id/roles", get(get_roles::<U>).put(assign_roles::<U>))
         .with_state(state)
 }

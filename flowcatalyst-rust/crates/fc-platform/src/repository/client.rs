@@ -41,6 +41,24 @@ impl ClientRepository {
         Ok(cursor.try_collect().await?)
     }
 
+    /// Search clients by name or identifier (case-insensitive partial match)
+    pub async fn search(&self, term: &str) -> Result<Vec<Client>> {
+        use mongodb::bson::Regex;
+        let pattern = Regex {
+            pattern: term.to_string(),
+            options: "i".to_string(), // case-insensitive
+        };
+        let cursor = self.collection
+            .find(doc! {
+                "$or": [
+                    { "name": { "$regex": &pattern } },
+                    { "identifier": { "$regex": &pattern } }
+                ]
+            })
+            .await?;
+        Ok(cursor.try_collect().await?)
+    }
+
     pub async fn find_by_status(&self, status: ClientStatus) -> Result<Vec<Client>> {
         let status_str = serde_json::to_string(&status)
             .unwrap_or_default()

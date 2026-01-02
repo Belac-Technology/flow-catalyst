@@ -16,6 +16,13 @@ use crate::repository::DispatchPoolRepository;
 use crate::error::PlatformError;
 use crate::api::common::{PaginationParams, CreatedResponse, SuccessResponse};
 use crate::api::middleware::Authenticated;
+use crate::usecase::{ExecutionContext, UnitOfWork, UseCaseResult};
+use crate::operations::dispatch_pool::{
+    CreateDispatchPoolCommand, CreateDispatchPoolUseCase,
+    UpdateDispatchPoolCommand, UpdateDispatchPoolUseCase,
+    ArchiveDispatchPoolCommand, ArchiveDispatchPoolUseCase,
+    DeleteDispatchPoolCommand, DeleteDispatchPoolUseCase,
+};
 
 /// Create dispatch pool request
 #[derive(Debug, Deserialize, ToSchema)]
@@ -107,8 +114,12 @@ pub struct DispatchPoolsQuery {
 
 /// Dispatch pools service state
 #[derive(Clone)]
-pub struct DispatchPoolsState {
+pub struct DispatchPoolsState<U: UnitOfWork + 'static> {
     pub dispatch_pool_repo: Arc<DispatchPoolRepository>,
+    pub create_use_case: Arc<CreateDispatchPoolUseCase<U>>,
+    pub update_use_case: Arc<UpdateDispatchPoolUseCase<U>>,
+    pub archive_use_case: Arc<ArchiveDispatchPoolUseCase<U>>,
+    pub delete_use_case: Arc<DeleteDispatchPoolUseCase<U>>,
 }
 
 fn parse_status(s: &str) -> Option<DispatchPoolStatus> {
@@ -132,8 +143,8 @@ fn parse_status(s: &str) -> Option<DispatchPoolStatus> {
     ),
     security(("bearer_auth" = []))
 )]
-pub async fn create_dispatch_pool(
-    State(state): State<DispatchPoolsState>,
+pub async fn create_dispatch_pool<U: UnitOfWork>(
+    State(state): State<DispatchPoolsState<U>>,
     auth: Authenticated,
     Json(req): Json<CreateDispatchPoolRequest>,
 ) -> Result<Json<CreatedResponse>, PlatformError> {
@@ -148,33 +159,23 @@ pub async fn create_dispatch_pool(
         }
     }
 
-    // Check for duplicate code
-    if let Some(_) = state.dispatch_pool_repo.find_by_code(&req.code).await? {
-        return Err(PlatformError::duplicate("DispatchPool", "code", &req.code));
+    let command = CreateDispatchPoolCommand {
+        code: req.code,
+        name: req.name,
+        description: req.description,
+        client_id: req.client_id,
+        rate_limit: req.rate_limit,
+        concurrency: req.concurrency,
+    };
+
+    let ctx = ExecutionContext::create(auth.0.principal_id.clone());
+
+    match state.create_use_case.execute(command, ctx).await {
+        UseCaseResult::Success(event) => {
+            Ok(Json(CreatedResponse::new(event.dispatch_pool_id)))
+        }
+        UseCaseResult::Failure(err) => Err(err.into()),
     }
-
-    let mut pool = DispatchPool::new(&req.code, &req.name);
-
-    if let Some(desc) = req.description {
-        pool = pool.with_description(desc);
-    }
-
-    if let Some(ref client_id) = req.client_id {
-        pool = pool.with_client_id(client_id);
-    }
-
-    if let Some(rate) = req.rate_limit {
-        pool = pool.with_rate_limit(rate);
-    }
-
-    if let Some(conc) = req.concurrency {
-        pool = pool.with_concurrency(conc);
-    }
-
-    let id = pool.id.clone();
-    state.dispatch_pool_repo.insert(&pool).await?;
-
-    Ok(Json(CreatedResponse::new(id)))
 }
 
 /// Get dispatch pool by ID
@@ -191,8 +192,8 @@ pub async fn create_dispatch_pool(
     ),
     security(("bearer_auth" = []))
 )]
-pub async fn get_dispatch_pool(
-    State(state): State<DispatchPoolsState>,
+pub async fn get_dispatch_pool<U: UnitOfWork>(
+    State(state): State<DispatchPoolsState<U>>,
     auth: Authenticated,
     Path(id): Path<String>,
 ) -> Result<Json<DispatchPoolResponse>, PlatformError> {
@@ -222,8 +223,8 @@ pub async fn get_dispatch_pool(
     ),
     security(("bearer_auth" = []))
 )]
-pub async fn list_dispatch_pools(
-    State(state): State<DispatchPoolsState>,
+pub async fn list_dispatch_pools<U: UnitOfWork>(
+    State(state): State<DispatchPoolsState<U>>,
     auth: Authenticated,
     Query(query): Query<DispatchPoolsQuery>,
 ) -> Result<Json<Vec<DispatchPoolResponse>>, PlatformError> {
@@ -281,16 +282,16 @@ pub async fn list_dispatch_pools(
     ),
     security(("bearer_auth" = []))
 )]
-pub async fn update_dispatch_pool(
-    State(state): State<DispatchPoolsState>,
+pub async fn update_dispatch_pool<U: UnitOfWork>(
+    State(state): State<DispatchPoolsState<U>>,
     auth: Authenticated,
     Path(id): Path<String>,
     Json(req): Json<UpdateDispatchPoolRequest>,
 ) -> Result<Json<DispatchPoolResponse>, PlatformError> {
-    let mut pool = state.dispatch_pool_repo.find_by_id(&id).await?
+    // Check access first
+    let pool = state.dispatch_pool_repo.find_by_id(&id).await?
         .ok_or_else(|| PlatformError::not_found("DispatchPool", &id))?;
 
-    // Check access
     if !auth.0.is_anchor() {
         if let Some(ref client_id) = pool.client_id {
             if !auth.0.can_access_client(client_id) {
@@ -301,23 +302,25 @@ pub async fn update_dispatch_pool(
         }
     }
 
-    if let Some(name) = req.name {
-        pool.name = name;
-    }
-    if let Some(desc) = req.description {
-        pool.description = Some(desc);
-    }
-    if let Some(rate) = req.rate_limit {
-        pool.rate_limit = Some(rate);
-    }
-    if let Some(conc) = req.concurrency {
-        pool.concurrency = Some(conc);
-    }
+    let command = UpdateDispatchPoolCommand {
+        id: id.clone(),
+        name: req.name,
+        description: req.description,
+        rate_limit: req.rate_limit,
+        concurrency: req.concurrency,
+    };
 
-    pool.updated_at = chrono::Utc::now();
-    state.dispatch_pool_repo.update(&pool).await?;
+    let ctx = ExecutionContext::create(auth.0.principal_id.clone());
 
-    Ok(Json(pool.into()))
+    match state.update_use_case.execute(command, ctx).await {
+        UseCaseResult::Success(_event) => {
+            // Fetch updated pool for response
+            let pool = state.dispatch_pool_repo.find_by_id(&id).await?
+                .ok_or_else(|| PlatformError::not_found("DispatchPool", &id))?;
+            Ok(Json(pool.into()))
+        }
+        UseCaseResult::Failure(err) => Err(err.into()),
+    }
 }
 
 /// Archive dispatch pool
@@ -334,15 +337,15 @@ pub async fn update_dispatch_pool(
     ),
     security(("bearer_auth" = []))
 )]
-pub async fn archive_dispatch_pool(
-    State(state): State<DispatchPoolsState>,
+pub async fn archive_dispatch_pool<U: UnitOfWork>(
+    State(state): State<DispatchPoolsState<U>>,
     auth: Authenticated,
     Path(id): Path<String>,
 ) -> Result<Json<DispatchPoolResponse>, PlatformError> {
-    let mut pool = state.dispatch_pool_repo.find_by_id(&id).await?
+    // Check access first
+    let pool = state.dispatch_pool_repo.find_by_id(&id).await?
         .ok_or_else(|| PlatformError::not_found("DispatchPool", &id))?;
 
-    // Check access
     if !auth.0.is_anchor() {
         if let Some(ref client_id) = pool.client_id {
             if !auth.0.can_access_client(client_id) {
@@ -353,10 +356,17 @@ pub async fn archive_dispatch_pool(
         }
     }
 
-    pool.archive();
-    state.dispatch_pool_repo.update(&pool).await?;
+    let command = ArchiveDispatchPoolCommand { id: id.clone() };
+    let ctx = ExecutionContext::create(auth.0.principal_id.clone());
 
-    Ok(Json(pool.into()))
+    match state.archive_use_case.execute(command, ctx).await {
+        UseCaseResult::Success(_event) => {
+            let pool = state.dispatch_pool_repo.find_by_id(&id).await?
+                .ok_or_else(|| PlatformError::not_found("DispatchPool", &id))?;
+            Ok(Json(pool.into()))
+        }
+        UseCaseResult::Failure(err) => Err(err.into()),
+    }
 }
 
 /// Delete dispatch pool
@@ -373,28 +383,27 @@ pub async fn archive_dispatch_pool(
     ),
     security(("bearer_auth" = []))
 )]
-pub async fn delete_dispatch_pool(
-    State(state): State<DispatchPoolsState>,
+pub async fn delete_dispatch_pool<U: UnitOfWork>(
+    State(state): State<DispatchPoolsState<U>>,
     auth: Authenticated,
     Path(id): Path<String>,
 ) -> Result<Json<SuccessResponse>, PlatformError> {
     crate::service::checks::require_anchor(&auth.0)?;
 
-    let exists = state.dispatch_pool_repo.find_by_id(&id).await?.is_some();
-    if !exists {
-        return Err(PlatformError::not_found("DispatchPool", &id));
+    let command = DeleteDispatchPoolCommand { id };
+    let ctx = ExecutionContext::create(auth.0.principal_id.clone());
+
+    match state.delete_use_case.execute(command, ctx).await {
+        UseCaseResult::Success(_event) => Ok(Json(SuccessResponse::ok())),
+        UseCaseResult::Failure(err) => Err(err.into()),
     }
-
-    state.dispatch_pool_repo.delete(&id).await?;
-
-    Ok(Json(SuccessResponse::ok()))
 }
 
 /// Create dispatch pools router
-pub fn dispatch_pools_router(state: DispatchPoolsState) -> Router {
+pub fn dispatch_pools_router<U: UnitOfWork + Clone>(state: DispatchPoolsState<U>) -> Router {
     Router::new()
-        .route("/", post(create_dispatch_pool).get(list_dispatch_pools))
-        .route("/:id", get(get_dispatch_pool).put(update_dispatch_pool).delete(delete_dispatch_pool))
-        .route("/:id/archive", post(archive_dispatch_pool))
+        .route("/", post(create_dispatch_pool::<U>).get(list_dispatch_pools::<U>))
+        .route("/:id", get(get_dispatch_pool::<U>).put(update_dispatch_pool::<U>).delete(delete_dispatch_pool::<U>))
+        .route("/:id/archive", post(archive_dispatch_pool::<U>))
         .with_state(state)
 }

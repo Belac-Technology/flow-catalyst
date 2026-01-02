@@ -122,6 +122,7 @@ pub trait SerializableAggregate: Send + Sync {
 /// - MongoDB 4.0+ (for multi-document transactions)
 /// - Replica set deployment (transactions require replica set)
 /// - Aggregates must implement `HasId` trait
+#[derive(Clone)]
 pub struct MongoUnitOfWork {
     client: Client,
     database: Database,

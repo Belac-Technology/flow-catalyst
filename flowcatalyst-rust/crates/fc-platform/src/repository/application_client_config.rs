@@ -80,4 +80,47 @@ impl ApplicationClientConfigRepository {
         }).await?;
         Ok(result.deleted_count > 0)
     }
+
+    /// Enable an application for a client (upsert)
+    pub async fn enable_for_client(&self, application_id: &str, client_id: &str) -> Result<()> {
+        use mongodb::options::UpdateOptions;
+
+        let options = UpdateOptions::builder().upsert(true).build();
+        self.collection.update_one(
+            doc! {
+                "applicationId": application_id,
+                "clientId": client_id
+            },
+            doc! {
+                "$set": {
+                    "enabled": true,
+                    "updatedAt": mongodb::bson::DateTime::now()
+                },
+                "$setOnInsert": {
+                    "_id": crate::tsid::TsidGenerator::generate(),
+                    "applicationId": application_id,
+                    "clientId": client_id,
+                    "createdAt": mongodb::bson::DateTime::now()
+                }
+            }
+        ).with_options(options).await?;
+        Ok(())
+    }
+
+    /// Disable an application for a client
+    pub async fn disable_for_client(&self, application_id: &str, client_id: &str) -> Result<()> {
+        self.collection.update_one(
+            doc! {
+                "applicationId": application_id,
+                "clientId": client_id
+            },
+            doc! {
+                "$set": {
+                    "enabled": false,
+                    "updatedAt": mongodb::bson::DateTime::now()
+                }
+            }
+        ).await?;
+        Ok(())
+    }
 }

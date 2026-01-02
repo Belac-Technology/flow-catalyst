@@ -292,12 +292,19 @@ async fn main() -> Result<()> {
         dispatch_pool_repo: dispatch_pool_repo.clone(),
         application_repo: application_repo.clone(),
     };
-    let clients_state = ClientsState { client_repo: client_repo.clone() };
     let audit_service = Arc::new(AuditService::new(audit_log_repo.clone()));
+    let clients_state = ClientsState {
+        client_repo: client_repo.clone(),
+        application_repo: Some(application_repo.clone()),
+        application_client_config_repo: Some(application_client_config_repo.clone()),
+        audit_service: Some(audit_service.clone()),
+    };
     let principals_state = PrincipalsState {
         principal_repo: principal_repo.clone(),
         audit_service: Some(audit_service),
         password_service: None, // TODO: Configure password service for password reset
+        anchor_domain_repo: Some(anchor_domain_repo.clone()),
+        client_auth_config_repo: Some(client_auth_config_repo.clone()),
     };
     let roles_state = RolesState { role_repo: role_repo.clone(), application_repo: Some(application_repo.clone()) };
     let subscriptions_state = SubscriptionsState { subscription_repo: subscription_repo.clone() };
