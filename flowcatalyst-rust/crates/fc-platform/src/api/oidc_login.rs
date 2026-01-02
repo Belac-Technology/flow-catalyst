@@ -16,7 +16,7 @@ use axum::{
     http::{StatusCode, header, Uri},
     Router,
 };
-use axum_extra::extract::cookie::{Cookie, CookieJar};
+use axum_extra::extract::cookie::{Cookie, CookieJar, SameSite};
 use utoipa::{ToSchema, IntoParams};
 use serde::{Deserialize, Serialize};
 use sha2::{Sha256, Digest};
@@ -498,11 +498,18 @@ pub async fn oidc_callback(
         }
     };
 
-    // Build session cookie
+    // Build session cookie with same settings as regular login
+    let same_site = match state.session_cookie_same_site.to_lowercase().as_str() {
+        "strict" => SameSite::Strict,
+        "none" => SameSite::None,
+        _ => SameSite::Lax,
+    };
+
     let cookie = Cookie::build((state.session_cookie_name.clone(), session_token))
         .path("/")
         .http_only(true)
         .secure(state.session_cookie_secure)
+        .same_site(same_site)
         .max_age(time::Duration::seconds(state.session_token_expiry_secs))
         .build();
 

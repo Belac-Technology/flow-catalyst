@@ -5,6 +5,7 @@
 
 pub mod common;
 pub mod middleware;
+pub mod openapi;
 
 // BFF APIs
 pub mod events;
@@ -41,7 +42,7 @@ pub use middleware::{AppState, Authenticated, OptionalAuth};
 pub use events::{EventsState, events_router};
 pub use event_types::{EventTypesState, event_types_router};
 pub use dispatch_jobs::{DispatchJobsState, dispatch_jobs_router};
-pub use filter_options::{FilterOptionsState, filter_options_router};
+pub use filter_options::{FilterOptionsState, filter_options_router, event_type_filters_router};
 
 // Admin routers
 pub use clients::{ClientsState, clients_router};
@@ -73,3 +74,4 @@ pub use client_selection::{ClientSelectionState, client_selection_router};
 pub use application_roles_sdk::{ApplicationRolesSdkState, application_roles_sdk_router};
 pub use debug::{DebugState, debug_events_router, debug_dispatch_jobs_router};
 pub use platform_config::platform_config_router;
+pub use openapi::PlatformApiDoc;

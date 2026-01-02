@@ -628,3 +628,14 @@ pub fn filter_options_router(state: FilterOptionsState) -> Router {
         .route("/event-types/filters/aggregates", get(get_event_type_aggregates))
         .with_state(state)
 }
+
+/// Create event-type filters router (for mounting at /bff/event-types/filters)
+/// This provides the same endpoints as filter_options_router but at a different path
+/// to maintain backwards compatibility with frontend expectations.
+pub fn event_type_filters_router(state: FilterOptionsState) -> Router {
+    Router::new()
+        .route("/applications", get(get_event_type_applications))
+        .route("/subdomains", get(get_event_type_subdomains))
+        .route("/aggregates", get(get_event_type_aggregates))
+        .with_state(state)
+}

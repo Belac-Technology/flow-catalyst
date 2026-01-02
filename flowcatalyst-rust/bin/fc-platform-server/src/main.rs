@@ -41,7 +41,7 @@ use fc_platform::api::{
     EventsState, events_router,
     EventTypesState, event_types_router,
     DispatchJobsState, dispatch_jobs_router,
-    FilterOptionsState, filter_options_router,
+    FilterOptionsState, filter_options_router, event_type_filters_router,
     ClientsState, clients_router,
     PrincipalsState, principals_router,
     RolesState, roles_router,
@@ -56,6 +56,7 @@ use fc_platform::api::{
     AuthState, auth_router,
     platform_config_router,
     ServiceAccountsState, service_accounts_router,
+    PlatformApiDoc,
 };
 use fc_platform::repository::{
     EventRepository, EventTypeRepository, DispatchJobRepository, DispatchPoolRepository,
@@ -81,30 +82,6 @@ use fc_platform::service::OidcSyncService;
 use fc_platform::api::{OidcLoginApiState, oidc_login_router};
 use fc_platform::seed::DevDataSeeder;
 
-/// OpenAPI documentation for the Platform API
-#[derive(OpenApi)]
-#[openapi(
-    info(
-        title = "FlowCatalyst Platform API",
-        version = "1.0.0",
-        description = "REST APIs for events, subscriptions, and administration"
-    ),
-    servers(
-        (url = "http://localhost:8080", description = "Local development")
-    ),
-    tags(
-        (name = "events", description = "Event management"),
-        (name = "event-types", description = "Event type definitions"),
-        (name = "dispatch-jobs", description = "Dispatch job tracking"),
-        (name = "subscriptions", description = "Webhook subscriptions"),
-        (name = "clients", description = "Client/tenant management"),
-        (name = "principals", description = "User and service account management"),
-        (name = "roles", description = "Role management"),
-        (name = "applications", description = "Application management"),
-        (name = "monitoring", description = "Health and monitoring")
-    )
-)]
-struct ApiDoc;
 
 fn env_or(key: &str, default: &str) -> String {
     std::env::var(key).unwrap_or_else(|_| default.to_string())
@@ -383,6 +360,7 @@ async fn main() -> Result<()> {
         // BFF APIs (under /bff to match frontend expectations)
         .nest("/bff/events", events_router(events_state))
         .nest("/bff/event-types", event_types_router(event_types_state))
+        .nest("/bff/event-types/filters", event_type_filters_router(filter_options_state.clone()))
         .nest("/bff/dispatch-jobs", dispatch_jobs_router(dispatch_jobs_state))
         .nest("/bff/filter-options", filter_options_router(filter_options_state))
         .nest("/bff/roles", roles_router(roles_state.clone()))
@@ -409,7 +387,7 @@ async fn main() -> Result<()> {
         // Platform config (public)
         .nest("/api/config", platform_config_router())
         // OpenAPI / Swagger UI
-        .merge(SwaggerUi::new("/swagger-ui").url("/q/openapi", ApiDoc::openapi()))
+        .merge(SwaggerUi::new("/swagger-ui").url("/q/openapi", PlatformApiDoc::openapi()))
         // Auth middleware
         .layer(AuthLayer::new(app_state))
         .layer(TraceLayer::new_for_http())
