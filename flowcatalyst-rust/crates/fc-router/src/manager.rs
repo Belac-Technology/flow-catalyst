@@ -350,22 +350,30 @@ impl QueueManager {
         }
 
         // Phase 1: Filter duplicates (takes ownership to avoid cloning payloads)
-        let (unique, duplicates, requeued) = self.filter_duplicates(messages_to_process, &batch_id);
+        let filtered = self.filter_duplicates(messages_to_process);
 
         // Handle duplicates - NACK them (let SQS retry later, original still processing)
-        for (msg, _) in duplicates {
-            debug!(message_id = %msg.message.id, "Duplicate message (redelivery), NACKing");
-            let _ = consumer.nack(&msg.receipt_handle, None).await;
+        for dup in filtered.duplicates {
+            debug!(
+                message_id = %dup.message.message.id,
+                pipeline_key = %dup.existing_pipeline_key,
+                "Duplicate message (redelivery), NACKing"
+            );
+            let _ = consumer.nack(&dup.message.receipt_handle, None).await;
         }
 
         // Handle requeued - these were already completed, ACK them
-        for (msg, _) in requeued {
-            debug!(message_id = %msg.message.id, "Requeued duplicate, ACKing");
-            let _ = consumer.ack(&msg.receipt_handle).await;
+        for req in filtered.requeued {
+            debug!(
+                message_id = %req.message.message.id,
+                pipeline_key = %req.existing_pipeline_key,
+                "Requeued duplicate, ACKing"
+            );
+            let _ = consumer.ack(&req.message.receipt_handle).await;
         }
 
         // Phase 2: Group by pool and route
-        let by_pool = self.group_by_pool(unique);
+        let by_pool = self.group_by_pool(filtered.unique);
 
         for (pool_code, pool_messages) in by_pool {
             let pool = match self.get_or_create_pool(&pool_code, None).await {
@@ -541,35 +549,31 @@ impl QueueManager {
         Ok(())
     }
 
-    /// Filter duplicates from a batch
+    /// Filter duplicates from a batch.
+    ///
     /// Mirrors Java's deduplication logic:
     /// 1. Check broker_message_id first (same SQS message = redelivery due to visibility timeout)
     /// 2. Check app_message_id second (same app ID, different broker ID = external requeue)
     ///
-    /// Takes ownership of the messages Vec to avoid cloning payloads (performance optimization).
-    fn filter_duplicates(
-        &self,
-        messages: Vec<QueuedMessage>,
-        _batch_id: &str,
-    ) -> (Vec<QueuedMessage>, Vec<(QueuedMessage, String)>, Vec<(QueuedMessage, String)>) {
-        let mut unique = Vec::with_capacity(messages.len());
-        let mut duplicates = Vec::new();
-        let mut requeued = Vec::new();
+    /// Takes ownership of the messages Vec to avoid cloning payloads.
+    fn filter_duplicates(&self, messages: Vec<QueuedMessage>) -> FilteredBatch {
+        let mut result = FilteredBatch {
+            unique: Vec::with_capacity(messages.len()),
+            duplicates: Vec::new(),
+            requeued: Vec::new(),
+        };
 
         for msg in messages {
-            let broker_id = &msg.broker_message_id;
-            let app_id = &msg.message.id;
-
             // Check 1: Same broker message ID (physical redelivery from SQS due to visibility timeout)
             // This MUST be checked FIRST because the same broker ID means it's a visibility timeout redelivery,
             // NOT a requeue by an external process
-            if let Some(ref broker_msg_id) = broker_id {
+            if let Some(ref broker_msg_id) = msg.broker_message_id {
                 if let Some(mut entry) = self.in_pipeline.get_mut(broker_msg_id) {
                     // Update receipt handle with the new one from the redelivered message
                     // This ensures when processing completes, ACK uses the valid (latest) receipt handle
                     if entry.receipt_handle != msg.receipt_handle {
                         debug!(
-                            message_id = %app_id,
+                            message_id = %msg.message.id,
                             broker_message_id = %broker_msg_id,
                             "Updating receipt handle for redelivered message (visibility timeout)"
                         );
@@ -579,8 +583,11 @@ impl QueueManager {
                             entry.broker_message_id = Some(broker_msg_id.clone());
                         }
                     }
-                    let key = broker_msg_id.clone();
-                    duplicates.push((msg, key));
+                    let pipeline_key = broker_msg_id.clone();
+                    result.duplicates.push(DuplicateMessage {
+                        message: msg,
+                        existing_pipeline_key: pipeline_key,
+                    });
                     continue;
                 }
             }
@@ -588,20 +595,23 @@ impl QueueManager {
             // Check 2: Same application message ID but DIFFERENT broker message ID (requeued by external process)
             // This happens when a separate process requeues messages that were stuck in QUEUED status for 20+ min
             // The external process creates a NEW SQS message with the same application message ID
-            if let Some(existing_pipeline_key) = self.app_message_to_pipeline_key.get(app_id) {
+            if let Some(existing_pipeline_key) = self.app_message_to_pipeline_key.get(&msg.message.id) {
                 let existing_key = existing_pipeline_key.value().clone();
 
                 // Only treat as requeued duplicate if the broker message IDs are DIFFERENT
                 // If they're the same, it would have been caught by the check above
-                if let Some(ref new_broker_id) = broker_id {
+                if let Some(ref new_broker_id) = msg.broker_message_id {
                     if *new_broker_id != existing_key {
                         info!(
-                            app_message_id = %app_id,
+                            app_message_id = %msg.message.id,
                             existing_broker_id = %existing_key,
                             new_broker_id = %new_broker_id,
                             "Requeued message detected - app ID already in pipeline, will ACK to remove duplicate"
                         );
-                        requeued.push((msg, existing_key));
+                        result.requeued.push(DuplicateMessage {
+                            message: msg,
+                            existing_pipeline_key: existing_key,
+                        });
                         continue;
                     }
                 }
@@ -611,20 +621,23 @@ impl QueueManager {
                     // Update receipt handle for redelivery
                     if entry.receipt_handle != msg.receipt_handle {
                         debug!(
-                            message_id = %app_id,
+                            message_id = %msg.message.id,
                             "Updating receipt handle for redelivered message"
                         );
                         entry.receipt_handle = msg.receipt_handle.clone();
                     }
-                    duplicates.push((msg, existing_key));
+                    result.duplicates.push(DuplicateMessage {
+                        message: msg,
+                        existing_pipeline_key: existing_key,
+                    });
                     continue;
                 }
             }
 
-            unique.push(msg);
+            result.unique.push(msg);
         }
 
-        (unique, duplicates, requeued)
+        result
     }
 
     /// Group messages by pool code
@@ -1134,6 +1147,23 @@ impl QueueManager {
     pub fn in_flight_count(&self) -> usize {
         self.in_pipeline.len()
     }
+}
+
+/// Result of filtering duplicates from a message batch
+struct FilteredBatch {
+    /// Messages that are new and should be processed
+    unique: Vec<QueuedMessage>,
+    /// Messages already in pipeline (redelivery due to visibility timeout) - NACK these
+    duplicates: Vec<DuplicateMessage>,
+    /// Messages requeued externally while original still processing - ACK these
+    requeued: Vec<DuplicateMessage>,
+}
+
+/// A duplicate message with its existing pipeline key
+struct DuplicateMessage {
+    message: QueuedMessage,
+    /// The pipeline key of the original message being processed
+    existing_pipeline_key: String,
 }
 
 /// Information about an in-flight message for API response

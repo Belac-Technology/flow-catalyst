@@ -29,9 +29,9 @@ axum-extra = { version = "0.9", features = ["cookie"] }
 reqwest = { version = "0.12.9", features = ["json", "rustls-tls"] }
 sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "sqlite", "postgres", "mysql", "chrono", "uuid"] }
 mongodb = "3.1"
-bson = { version = "2.9", features = ["chrono-0_4"] }
-aws-sdk-sqs = "1.14"
-aws-config = "1.1"
+bson = { version = "2.15", features = ["chrono-0_4"] }
+aws-sdk-sqs = "1.91"
+aws-config = "1.8"
 async-trait = "0.1"
 anyhow = "1.0"
 thiserror = "1.0"
@@ -47,7 +47,7 @@ dashmap = "5.5"
 indexmap = "2.2"
 governor = "0.6"
 nonzero_ext = "0.3"
-redis = { version = "0.24", features = ["tokio-comp", "connection-manager"] }
+redis = { version = "0.27", features = ["tokio-comp", "connection-manager"] }
 parking_lot = "0.12"
 futures = "0.3"
 bytes = "1.5"
@@ -66,8 +66,8 @@ utoipa-swagger-ui = { version = "6.0", features = ["axum"] }
 utoipa-axum = "0.1"
 
 # Test dependencies
-testcontainers = "0.15"
-testcontainers-modules = { version = "0.3", features = ["localstack", "redis"] }
+testcontainers = "0.26"
+testcontainers-modules = { version = "0.14", features = ["localstack", "redis"] }
 wiremock = "0.5"
 tokio-test = "0.4"
 tempfile = "3.10"

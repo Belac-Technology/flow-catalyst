@@ -120,6 +120,161 @@ impl EventMetadata {
             message_group,
         }
     }
+
+    /// Create a builder for event metadata.
+    pub fn builder() -> EventMetadataBuilder {
+        EventMetadataBuilder::new()
+    }
+}
+
+/// Builder for EventMetadata.
+///
+/// Provides a fluent API for constructing event metadata, with a `.from(ctx)`
+/// method that copies all tracing fields from an ExecutionContext.
+///
+/// # Example
+///
+/// ```ignore
+/// let metadata = EventMetadata::builder()
+///     .from(&ctx)
+///     .event_type("platform:iam:user:created")
+///     .spec_version("1.0")
+///     .source("platform:iam")
+///     .subject(format!("platform.user.{}", user_id))
+///     .message_group(format!("platform:user:{}", user_id))
+///     .build();
+/// ```
+#[derive(Default)]
+pub struct EventMetadataBuilder {
+    event_id: Option<String>,
+    event_type: Option<String>,
+    spec_version: Option<String>,
+    source: Option<String>,
+    subject: Option<String>,
+    message_group: Option<String>,
+    execution_id: Option<String>,
+    correlation_id: Option<String>,
+    causation_id: Option<String>,
+    principal_id: Option<String>,
+}
+
+impl EventMetadataBuilder {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Copy tracing metadata from an ExecutionContext.
+    ///
+    /// This sets:
+    /// - `event_id` to a new TSID
+    /// - `execution_id` from context
+    /// - `correlation_id` from context
+    /// - `causation_id` from context (if present)
+    /// - `principal_id` from context
+    pub fn from(mut self, ctx: &super::ExecutionContext) -> Self {
+        self.event_id = Some(crate::tsid::TsidGenerator::generate());
+        self.execution_id = Some(ctx.execution_id.clone());
+        self.correlation_id = Some(ctx.correlation_id.clone());
+        self.causation_id = ctx.causation_id.clone();
+        self.principal_id = Some(ctx.principal_id.clone());
+        self
+    }
+
+    pub fn event_id(mut self, id: impl Into<String>) -> Self {
+        self.event_id = Some(id.into());
+        self
+    }
+
+    pub fn event_type(mut self, event_type: impl Into<String>) -> Self {
+        self.event_type = Some(event_type.into());
+        self
+    }
+
+    pub fn spec_version(mut self, version: impl Into<String>) -> Self {
+        self.spec_version = Some(version.into());
+        self
+    }
+
+    pub fn source(mut self, source: impl Into<String>) -> Self {
+        self.source = Some(source.into());
+        self
+    }
+
+    pub fn subject(mut self, subject: impl Into<String>) -> Self {
+        self.subject = Some(subject.into());
+        self
+    }
+
+    pub fn message_group(mut self, group: impl Into<String>) -> Self {
+        self.message_group = Some(group.into());
+        self
+    }
+
+    pub fn execution_id(mut self, id: impl Into<String>) -> Self {
+        self.execution_id = Some(id.into());
+        self
+    }
+
+    pub fn correlation_id(mut self, id: impl Into<String>) -> Self {
+        self.correlation_id = Some(id.into());
+        self
+    }
+
+    pub fn causation_id(mut self, id: impl Into<String>) -> Self {
+        self.causation_id = Some(id.into());
+        self
+    }
+
+    pub fn principal_id(mut self, id: impl Into<String>) -> Self {
+        self.principal_id = Some(id.into());
+        self
+    }
+
+    /// Build the EventMetadata.
+    ///
+    /// # Panics
+    ///
+    /// Panics if required fields are not set:
+    /// - event_type
+    /// - spec_version
+    /// - source
+    /// - subject
+    /// - message_group
+    /// - execution_id
+    /// - correlation_id
+    /// - principal_id
+    pub fn build(self) -> EventMetadata {
+        EventMetadata {
+            event_id: self.event_id.unwrap_or_else(|| crate::tsid::TsidGenerator::generate()),
+            event_type: self.event_type.expect("event_type is required"),
+            spec_version: self.spec_version.expect("spec_version is required"),
+            source: self.source.expect("source is required"),
+            subject: self.subject.expect("subject is required"),
+            time: Utc::now(),
+            execution_id: self.execution_id.expect("execution_id is required (use .from(ctx))"),
+            correlation_id: self.correlation_id.expect("correlation_id is required (use .from(ctx))"),
+            causation_id: self.causation_id,
+            principal_id: self.principal_id.expect("principal_id is required (use .from(ctx))"),
+            message_group: self.message_group.expect("message_group is required"),
+        }
+    }
+
+    /// Try to build the EventMetadata, returning an error if fields are missing.
+    pub fn try_build(self) -> Result<EventMetadata, &'static str> {
+        Ok(EventMetadata {
+            event_id: self.event_id.unwrap_or_else(|| crate::tsid::TsidGenerator::generate()),
+            event_type: self.event_type.ok_or("event_type is required")?,
+            spec_version: self.spec_version.ok_or("spec_version is required")?,
+            source: self.source.ok_or("source is required")?,
+            subject: self.subject.ok_or("subject is required")?,
+            time: Utc::now(),
+            execution_id: self.execution_id.ok_or("execution_id is required")?,
+            correlation_id: self.correlation_id.ok_or("correlation_id is required")?,
+            causation_id: self.causation_id,
+            principal_id: self.principal_id.ok_or("principal_id is required")?,
+            message_group: self.message_group.ok_or("message_group is required")?,
+        })
+    }
 }
 
 /// Helper macro for implementing the DomainEvent trait.

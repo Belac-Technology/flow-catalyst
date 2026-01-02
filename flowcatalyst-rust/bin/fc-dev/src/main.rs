@@ -54,6 +54,7 @@ use fc_platform::api::{
     DispatchPoolsState, dispatch_pools_router,
     MonitoringState, monitoring_router, LeaderState, CircuitBreakerRegistry, InFlightTracker,
     DebugState, debug_events_router, debug_dispatch_jobs_router,
+    ServiceAccountsState, service_accounts_router,
 };
 use fc_platform::repository::{
     EventRepository, EventTypeRepository, DispatchJobRepository, DispatchPoolRepository,
@@ -246,6 +247,16 @@ async fn main() -> Result<()> {
     let application_client_config_repo = Arc::new(ApplicationClientConfigRepository::new(&platform_db));
     info!("Platform repositories initialized");
 
+    // Sync code-defined roles to database
+    {
+        let role_sync = fc_platform::service::RoleSyncService::new(
+            RoleRepository::new(&platform_db)
+        );
+        if let Err(e) = role_sync.sync_code_defined_roles().await {
+            tracing::warn!("Role sync failed: {}", e);
+        }
+    }
+
     // 8c. Initialize auth services (auto-generate RSA keys for dev, like Java)
     let (private_key, public_key) = AuthConfig::load_or_generate_rsa_keys(None, None)
         .expect("Failed to initialize JWT keys");
@@ -288,7 +299,7 @@ async fn main() -> Result<()> {
         audit_service: Some(audit_service),
         password_service: None, // TODO: Configure password service for password reset
     };
-    let roles_state = RolesState { role_repo: role_repo.clone() };
+    let roles_state = RolesState { role_repo: role_repo.clone(), application_repo: Some(application_repo.clone()) };
     let subscriptions_state = SubscriptionsState { subscription_repo: subscription_repo.clone() };
     let oauth_clients_state = OAuthClientsState { oauth_client_repo: oauth_client_repo.clone() };
     let auth_config_state = AuthConfigState {
@@ -305,6 +316,7 @@ async fn main() -> Result<()> {
         client_repo: client_repo.clone(),
     };
     let dispatch_pools_state = DispatchPoolsState { dispatch_pool_repo: dispatch_pool_repo.clone() };
+    let service_accounts_state = ServiceAccountsState { repo: service_account_repo.clone() };
     let debug_state = DebugState {
         event_repo: event_repo.clone(),
         dispatch_job_repo: dispatch_job_repo.clone(),
@@ -342,6 +354,7 @@ async fn main() -> Result<()> {
         .nest("/api/admin/platform/audit-logs", audit_logs_router(audit_logs_state))
         .nest("/api/admin/platform/applications", applications_router(applications_state))
         .nest("/api/admin/platform/dispatch-pools", dispatch_pools_router(dispatch_pools_state))
+        .nest("/api/admin/platform/service-accounts", service_accounts_router(service_accounts_state))
         // Monitoring APIs
         .nest("/api/monitoring", monitoring_router(monitoring_state))
         // Add auth middleware

@@ -355,14 +355,15 @@ impl SecretService {
 
     /// Mask a reference for safe logging (hides the secret identifier)
     fn mask_reference(reference: &str) -> String {
-        if reference.len() <= 20 {
-            return "***".to_string();
-        }
         // Show the prefix (provider type) but mask the rest
         if let Some(prefix_end) = reference.find("://") {
             if prefix_end < 15 {
                 return format!("{}***", &reference[..prefix_end + 3]);
             }
+        }
+        // For short strings or unknown formats, just mask entirely
+        if reference.len() <= 20 {
+            return "***".to_string();
         }
         format!("{}...", &reference[..15])
     }

@@ -83,6 +83,23 @@ pub struct GrantClientAccessRequest {
     pub client_id: String,
 }
 
+/// Client access grant response (matches Java ClientAccessGrantDto)
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientAccessGrantResponse {
+    pub id: String,
+    pub client_id: String,
+    pub granted_at: String,
+    pub expires_at: Option<String>,
+}
+
+/// Client access list response
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientAccessListResponse {
+    pub grants: Vec<ClientAccessGrantResponse>,
+}
+
 /// Reset password request
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -98,7 +115,7 @@ pub struct StatusChangeResponse {
     pub message: String,
 }
 
-/// Role assignment response
+/// Role assignment response (for individual role details)
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct RoleAssignmentResponse {
@@ -115,6 +132,23 @@ impl From<&RoleAssignment> for RoleAssignmentResponse {
             assigned_at: r.assigned_at.to_rfc3339(),
         }
     }
+}
+
+/// Role assignment DTO (matches Java RoleAssignmentDto for GET /roles)
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct RoleAssignmentDto {
+    pub id: String,
+    pub role_name: String,
+    pub assignment_source: String,
+    pub assigned_at: String,
+}
+
+/// Roles list response
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct RolesListResponse {
+    pub roles: Vec<RoleAssignmentDto>,
 }
 
 /// User identity response
@@ -142,7 +176,7 @@ impl From<&UserIdentity> for UserIdentityResponse {
     }
 }
 
-/// Principal response DTO
+/// Principal response DTO (matches Java PrincipalDto)
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PrincipalResponse {
@@ -155,7 +189,8 @@ pub struct PrincipalResponse {
     pub application_id: Option<String>,
     pub user_identity: Option<UserIdentityResponse>,
     pub service_account_id: Option<String>,
-    pub roles: Vec<RoleAssignmentResponse>,
+    /// Role names (just strings, matching Java's Set<String>)
+    pub roles: Vec<String>,
     pub assigned_clients: Vec<String>,
     pub created_at: String,
     pub updated_at: String,
@@ -173,7 +208,8 @@ impl From<Principal> for PrincipalResponse {
             application_id: p.application_id,
             user_identity: p.user_identity.as_ref().map(|i| i.into()),
             service_account_id: p.service_account_id,
-            roles: p.roles.iter().map(|r| r.into()).collect(),
+            // Return just the role names as strings (matches Java)
+            roles: p.roles.iter().map(|r| r.role.clone()).collect(),
             assigned_clients: p.assigned_clients,
             created_at: p.created_at.to_rfc3339(),
             updated_at: p.updated_at.to_rfc3339(),
@@ -452,6 +488,51 @@ pub async fn update_principal(
     Ok(Json(principal.into()))
 }
 
+/// Get roles assigned to a principal
+#[utoipa::path(
+    get,
+    path = "/{id}/roles",
+    tag = "principals",
+    params(
+        ("id" = String, Path, description = "Principal ID")
+    ),
+    responses(
+        (status = 200, description = "List of roles", body = RolesListResponse),
+        (status = 404, description = "Principal not found")
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn get_roles(
+    State(state): State<PrincipalsState>,
+    auth: Authenticated,
+    Path(id): Path<String>,
+) -> Result<Json<RolesListResponse>, PlatformError> {
+    let principal = state.principal_repo.find_by_id(&id).await?
+        .ok_or_else(|| PlatformError::not_found("Principal", &id))?;
+
+    // Check access
+    if !auth.0.is_anchor() {
+        if let Some(ref cid) = principal.client_id {
+            if !auth.0.can_access_client(cid) {
+                return Err(PlatformError::forbidden("No access to this principal"));
+            }
+        }
+    }
+
+    // Convert role assignments to DTOs
+    let roles: Vec<RoleAssignmentDto> = principal.roles.iter()
+        .enumerate()
+        .map(|(i, r)| RoleAssignmentDto {
+            id: format!("{}-role-{}", id, i),
+            role_name: r.role.clone(),
+            assignment_source: "ADMIN".to_string(), // Default source
+            assigned_at: r.assigned_at.to_rfc3339(),
+        })
+        .collect();
+
+    Ok(Json(RolesListResponse { roles }))
+}
+
 /// Assign role to principal
 #[utoipa::path(
     post,
@@ -535,17 +616,62 @@ pub async fn remove_role(
     Ok(Json(principal.into()))
 }
 
+/// Get client access grants for a principal
+#[utoipa::path(
+    get,
+    path = "/{id}/client-access",
+    tag = "principals",
+    params(
+        ("id" = String, Path, description = "Principal ID")
+    ),
+    responses(
+        (status = 200, description = "Client access grants", body = ClientAccessListResponse),
+        (status = 404, description = "Principal not found")
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn get_client_access(
+    State(state): State<PrincipalsState>,
+    auth: Authenticated,
+    Path(id): Path<String>,
+) -> Result<Json<ClientAccessListResponse>, PlatformError> {
+    let principal = state.principal_repo.find_by_id(&id).await?
+        .ok_or_else(|| PlatformError::not_found("Principal", &id))?;
+
+    // Check access
+    if !auth.0.is_anchor() {
+        if let Some(ref cid) = principal.client_id {
+            if !auth.0.can_access_client(cid) {
+                return Err(PlatformError::forbidden("No access to this principal"));
+            }
+        }
+    }
+
+    // Convert assigned_clients to grants (synthesized since we don't store grant metadata)
+    let grants: Vec<ClientAccessGrantResponse> = principal.assigned_clients.iter()
+        .enumerate()
+        .map(|(i, client_id)| ClientAccessGrantResponse {
+            id: format!("{}-{}", id, i), // Synthetic ID
+            client_id: client_id.clone(),
+            granted_at: principal.created_at.to_rfc3339(), // Use principal creation as fallback
+            expires_at: None,
+        })
+        .collect();
+
+    Ok(Json(ClientAccessListResponse { grants }))
+}
+
 /// Grant client access to principal
 #[utoipa::path(
     post,
-    path = "/{id}/clients",
+    path = "/{id}/client-access",
     tag = "principals",
     params(
         ("id" = String, Path, description = "Principal ID")
     ),
     request_body = GrantClientAccessRequest,
     responses(
-        (status = 200, description = "Client access granted", body = PrincipalResponse),
+        (status = 201, description = "Client access granted", body = ClientAccessGrantResponse),
         (status = 404, description = "Principal not found")
     ),
     security(("bearer_auth" = []))
@@ -555,13 +681,14 @@ pub async fn grant_client_access(
     auth: Authenticated,
     Path(id): Path<String>,
     Json(req): Json<GrantClientAccessRequest>,
-) -> Result<Json<PrincipalResponse>, PlatformError> {
+) -> Result<Json<ClientAccessGrantResponse>, PlatformError> {
     crate::service::checks::require_anchor(&auth.0)?;
 
     let mut principal = state.principal_repo.find_by_id(&id).await?
         .ok_or_else(|| PlatformError::not_found("Principal", &id))?;
 
     let client_id = req.client_id.clone();
+    let granted_at = chrono::Utc::now();
     principal.grant_client_access(req.client_id);
     state.principal_repo.update(&principal).await?;
 
@@ -570,20 +697,25 @@ pub async fn grant_client_access(
         let _ = audit.log_client_access_granted(&auth.0, &id, &client_id).await;
     }
 
-    Ok(Json(principal.into()))
+    Ok(Json(ClientAccessGrantResponse {
+        id: format!("{}-{}", id, principal.assigned_clients.len() - 1),
+        client_id,
+        granted_at: granted_at.to_rfc3339(),
+        expires_at: None,
+    }))
 }
 
 /// Revoke client access from principal
 #[utoipa::path(
     delete,
-    path = "/{id}/clients/{client_id}",
+    path = "/{id}/client-access/{client_id}",
     tag = "principals",
     params(
         ("id" = String, Path, description = "Principal ID"),
         ("client_id" = String, Path, description = "Client ID to revoke")
     ),
     responses(
-        (status = 200, description = "Client access revoked", body = PrincipalResponse),
+        (status = 204, description = "Client access revoked"),
         (status = 404, description = "Principal not found")
     ),
     security(("bearer_auth" = []))
@@ -812,9 +944,9 @@ pub fn principals_router(state: PrincipalsState) -> Router {
         .route("/:id/activate", post(activate_principal))
         .route("/:id/deactivate", post(deactivate_principal))
         .route("/:id/reset-password", post(reset_password))
-        .route("/:id/roles", post(assign_role))
+        .route("/:id/roles", get(get_roles).post(assign_role))
         .route("/:id/roles/:role", delete(remove_role))
-        .route("/:id/clients", post(grant_client_access))
-        .route("/:id/clients/:client_id", delete(revoke_client_access))
+        .route("/:id/client-access", get(get_client_access).post(grant_client_access))
+        .route("/:id/client-access/:client_id", delete(revoke_client_access))
         .with_state(state)
 }

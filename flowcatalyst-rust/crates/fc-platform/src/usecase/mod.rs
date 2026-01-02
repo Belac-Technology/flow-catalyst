@@ -17,7 +17,7 @@ pub mod unit_of_work;
 
 pub use result::UseCaseResult;
 pub use error::UseCaseError;
-pub use domain_event::DomainEvent;
+pub use domain_event::{DomainEvent, EventMetadata, EventMetadataBuilder};
 pub use execution_context::ExecutionContext;
 pub use tracing_context::TracingContext;
 pub use unit_of_work::{UnitOfWork, MongoUnitOfWork};

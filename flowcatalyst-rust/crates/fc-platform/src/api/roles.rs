@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use crate::domain::{AuthRole, RoleSource};
-use crate::repository::RoleRepository;
+use crate::repository::{RoleRepository, ApplicationRepository};
 use crate::error::PlatformError;
 use crate::api::common::{PaginationParams, CreatedResponse, SuccessResponse};
 use crate::api::middleware::Authenticated;
@@ -65,12 +65,13 @@ pub struct GrantPermissionRequest {
     pub permission: String,
 }
 
-/// Role response DTO
+/// Role response DTO (matches Java BffRoleResponse)
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct RoleResponse {
     pub id: String,
-    pub code: String,
+    pub name: String,
+    pub short_name: String,
     pub display_name: String,
     pub description: Option<String>,
     pub application_code: String,
@@ -83,9 +84,12 @@ pub struct RoleResponse {
 
 impl From<AuthRole> for RoleResponse {
     fn from(r: AuthRole) -> Self {
+        // Extract short name (part after colon, e.g., "platform:admin" -> "admin")
+        let short_name = r.code.split(':').last().unwrap_or(&r.code).to_string();
         Self {
             id: r.id,
-            code: r.code,
+            name: r.code.clone(),
+            short_name,
             display_name: r.display_name,
             description: r.description,
             application_code: r.application_code,
@@ -128,6 +132,43 @@ pub struct RolesQuery {
 #[derive(Clone)]
 pub struct RolesState {
     pub role_repo: Arc<RoleRepository>,
+    pub application_repo: Option<Arc<ApplicationRepository>>,
+}
+
+/// Application option for filter dropdown
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplicationOption {
+    pub id: String,
+    pub code: String,
+    pub name: String,
+}
+
+/// Application options response
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplicationOptionsResponse {
+    pub options: Vec<ApplicationOption>,
+}
+
+/// Permission response
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PermissionResponse {
+    pub permission: String,
+    pub application: String,
+    pub context: String,
+    pub aggregate: String,
+    pub action: String,
+    pub description: String,
+}
+
+/// Permission list response
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PermissionListResponse {
+    pub items: Vec<PermissionResponse>,
+    pub total: usize,
 }
 
 fn parse_source(s: &str) -> Result<RoleSource, PlatformError> {
@@ -422,10 +463,150 @@ pub async fn delete_role(
     Ok(Json(SuccessResponse::ok()))
 }
 
+/// Get applications for role filter dropdown
+#[utoipa::path(
+    get,
+    path = "/filters/applications",
+    tag = "roles",
+    responses(
+        (status = 200, description = "Application options", body = ApplicationOptionsResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn get_filter_applications(
+    State(state): State<RolesState>,
+    _auth: Authenticated,
+) -> Result<Json<ApplicationOptionsResponse>, PlatformError> {
+    let options = if let Some(ref app_repo) = state.application_repo {
+        let apps = app_repo.find_active().await?;
+        apps.into_iter()
+            .map(|a| ApplicationOption {
+                id: a.id,
+                code: a.code,
+                name: a.name,
+            })
+            .collect()
+    } else {
+        vec![]
+    };
+
+    Ok(Json(ApplicationOptionsResponse { options }))
+}
+
+/// List all permissions
+#[utoipa::path(
+    get,
+    path = "/permissions",
+    tag = "roles",
+    responses(
+        (status = 200, description = "List of permissions", body = PermissionListResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn list_permissions(
+    _auth: Authenticated,
+) -> Result<Json<PermissionListResponse>, PlatformError> {
+    // Return built-in platform permissions
+    let permissions = get_builtin_permissions();
+    let total = permissions.len();
+    Ok(Json(PermissionListResponse { items: permissions, total }))
+}
+
+/// Get permission by string
+#[utoipa::path(
+    get,
+    path = "/permissions/{permission}",
+    tag = "roles",
+    params(
+        ("permission" = String, Path, description = "Permission string")
+    ),
+    responses(
+        (status = 200, description = "Permission found", body = PermissionResponse),
+        (status = 404, description = "Permission not found")
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn get_permission(
+    _auth: Authenticated,
+    Path(permission): Path<String>,
+) -> Result<Json<PermissionResponse>, PlatformError> {
+    let permissions = get_builtin_permissions();
+    let found = permissions.into_iter()
+        .find(|p| p.permission == permission)
+        .ok_or_else(|| PlatformError::not_found("Permission", &permission))?;
+
+    Ok(Json(found))
+}
+
+/// Get built-in platform permissions (matches Java PermissionRegistry)
+fn get_builtin_permissions() -> Vec<PermissionResponse> {
+    vec![
+        // IAM Permissions
+        perm("platform", "iam", "user", "view", "View users"),
+        perm("platform", "iam", "user", "create", "Create users"),
+        perm("platform", "iam", "user", "update", "Update users"),
+        perm("platform", "iam", "user", "delete", "Delete users"),
+        perm("platform", "iam", "role", "view", "View roles"),
+        perm("platform", "iam", "role", "create", "Create roles"),
+        perm("platform", "iam", "role", "update", "Update roles"),
+        perm("platform", "iam", "role", "delete", "Delete roles"),
+        perm("platform", "iam", "permission", "view", "View permissions"),
+        perm("platform", "iam", "service-account", "view", "View service accounts"),
+        perm("platform", "iam", "service-account", "create", "Create service accounts"),
+        perm("platform", "iam", "service-account", "update", "Update service accounts"),
+        perm("platform", "iam", "service-account", "delete", "Delete service accounts"),
+        perm("platform", "iam", "idp", "manage", "Manage identity providers"),
+        // Admin Permissions
+        perm("platform", "admin", "client", "view", "View clients"),
+        perm("platform", "admin", "client", "create", "Create clients"),
+        perm("platform", "admin", "client", "update", "Update clients"),
+        perm("platform", "admin", "client", "delete", "Delete clients"),
+        perm("platform", "admin", "application", "view", "View applications"),
+        perm("platform", "admin", "application", "create", "Create applications"),
+        perm("platform", "admin", "application", "update", "Update applications"),
+        perm("platform", "admin", "application", "delete", "Delete applications"),
+        perm("platform", "admin", "config", "view", "View platform config"),
+        perm("platform", "admin", "config", "update", "Update platform config"),
+        // Messaging Permissions
+        perm("platform", "messaging", "event", "view", "View events"),
+        perm("platform", "messaging", "event", "view-raw", "View raw event data"),
+        perm("platform", "messaging", "event-type", "view", "View event types"),
+        perm("platform", "messaging", "event-type", "create", "Create event types"),
+        perm("platform", "messaging", "event-type", "update", "Update event types"),
+        perm("platform", "messaging", "event-type", "delete", "Delete event types"),
+        perm("platform", "messaging", "subscription", "view", "View subscriptions"),
+        perm("platform", "messaging", "subscription", "create", "Create subscriptions"),
+        perm("platform", "messaging", "subscription", "update", "Update subscriptions"),
+        perm("platform", "messaging", "subscription", "delete", "Delete subscriptions"),
+        perm("platform", "messaging", "dispatch-job", "view", "View dispatch jobs"),
+        perm("platform", "messaging", "dispatch-job", "view-raw", "View raw dispatch job data"),
+        perm("platform", "messaging", "dispatch-job", "create", "Create dispatch jobs"),
+        perm("platform", "messaging", "dispatch-job", "retry", "Retry dispatch jobs"),
+        perm("platform", "messaging", "dispatch-pool", "view", "View dispatch pools"),
+        perm("platform", "messaging", "dispatch-pool", "create", "Create dispatch pools"),
+        perm("platform", "messaging", "dispatch-pool", "update", "Update dispatch pools"),
+        perm("platform", "messaging", "dispatch-pool", "delete", "Delete dispatch pools"),
+    ]
+}
+
+fn perm(app: &str, ctx: &str, agg: &str, action: &str, desc: &str) -> PermissionResponse {
+    PermissionResponse {
+        permission: format!("{}:{}:{}:{}", app, ctx, agg, action),
+        application: app.to_string(),
+        context: ctx.to_string(),
+        aggregate: agg.to_string(),
+        action: action.to_string(),
+        description: desc.to_string(),
+    }
+}
+
 /// Create roles router
 pub fn roles_router(state: RolesState) -> Router {
     Router::new()
         .route("/", post(create_role).get(list_roles))
+        .route("/filters/applications", get(get_filter_applications))
+        .route("/permissions", get(list_permissions))
+        .route("/permissions/:permission", get(get_permission))
         .route("/:id", get(get_role).put(update_role).delete(delete_role))
         .route("/by-code/:code", get(get_role_by_code))
         .route("/:id/permissions", post(grant_permission))

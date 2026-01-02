@@ -259,7 +259,7 @@ impl LeaderElection {
         match redis::Script::new(script)
             .key(&self.config.lock_key)
             .arg(&self.config.instance_id)
-            .invoke_async::<_, i32>(&mut conn)
+            .invoke_async::<i32>(&mut conn)
             .await
         {
             Ok(1) => {

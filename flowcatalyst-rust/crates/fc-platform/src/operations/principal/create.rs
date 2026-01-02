@@ -10,6 +10,7 @@ use crate::usecase::{
     ExecutionContext, UnitOfWork, UseCaseError, UseCaseResult,
     unit_of_work::HasId,
 };
+use crate::details;
 use super::events::UserCreated;
 
 /// Email validation pattern
@@ -81,25 +82,28 @@ impl<U: UnitOfWork> CreateUserUseCase<U> {
             ));
         }
         if !email_pattern().is_match(&email) {
-            return UseCaseResult::failure(UseCaseError::validation(
+            return UseCaseResult::failure(UseCaseError::validation_with_details(
                 "INVALID_EMAIL_FORMAT",
                 "Invalid email address format",
+                details! { "email" => &command.email },
             ));
         }
 
         // Validation: CLIENT scope requires client_id
         if command.scope == UserScope::Client && command.client_id.is_none() {
-            return UseCaseResult::failure(UseCaseError::validation(
+            return UseCaseResult::failure(UseCaseError::validation_with_details(
                 "CLIENT_ID_REQUIRED",
                 "Client ID is required for CLIENT scope users",
+                details! { "scope" => "CLIENT" },
             ));
         }
 
         // Business rule: email must be unique
         if let Ok(Some(_)) = self.principal_repo.find_by_email(&email).await {
-            return UseCaseResult::failure(UseCaseError::business_rule(
+            return UseCaseResult::failure(UseCaseError::business_rule_with_details(
                 "EMAIL_EXISTS",
                 format!("A user with email '{}' already exists", email),
+                details! { "email" => &email },
             ));
         }
 
@@ -129,15 +133,16 @@ impl<U: UnitOfWork> CreateUserUseCase<U> {
 
         principal.created_by = Some(ctx.principal_id.clone());
 
-        // Create domain event
-        let event = UserCreated::new(
-            &ctx,
-            &principal.id,
-            &email,
-            &principal.name,
-            command.scope,
-            command.client_id.as_deref(),
-        );
+        // Create domain event using builder pattern
+        let event = UserCreated::builder()
+            .from(&ctx)
+            .principal_id(&principal.id)
+            .email(&email)
+            .name(&principal.name)
+            .scope(command.scope)
+            .client_id(command.client_id.as_deref())
+            .is_anchor_user(false) // TODO: Check anchor domain repository
+            .build();
 
         // Atomic commit
         self.unit_of_work.commit(&principal, event, &command).await

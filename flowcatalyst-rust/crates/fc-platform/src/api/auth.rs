@@ -481,16 +481,17 @@ mod tests {
     #[test]
     fn test_login_response_serialization() {
         let response = LoginResponse {
-            access_token: "token123".to_string(),
-            token_type: "Bearer".to_string(),
-            expires_in: 3600,
-            refresh_token: None,
+            principal_id: "principal-123".to_string(),
+            name: "Test User".to_string(),
+            email: "test@example.com".to_string(),
+            roles: vec!["admin".to_string()],
+            client_id: Some("client-1".to_string()),
         };
 
         let json = serde_json::to_string(&response).unwrap();
-        assert!(json.contains("accessToken"));
-        assert!(json.contains("tokenType"));
-        assert!(json.contains("expiresIn"));
+        assert!(json.contains("principalId"));
+        assert!(json.contains("test@example.com"));
+        assert!(json.contains("admin"));
     }
 
     #[test]

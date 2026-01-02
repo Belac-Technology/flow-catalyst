@@ -11,6 +11,7 @@ pub mod projections;
 pub mod oidc;
 pub mod oidc_sync;
 pub mod password;
+pub mod role_sync;
 
 pub use audit::AuditService;
 pub use auth::{AuthService, AuthConfig, AccessTokenClaims, RsaPublicKeyComponents, extract_bearer_token};
@@ -23,3 +24,4 @@ pub use projections::{EventProjectionWriter, DispatchJobProjectionWriter};
 pub use oidc::{OidcService, OidcProviderConfig, IdTokenClaims, TokenResponse};
 pub use oidc_sync::{OidcSyncService, IDP_SYNC_SOURCE};
 pub use password::{PasswordService, PasswordPolicy, Argon2Config, PasswordResetToken};
+pub use role_sync::RoleSyncService;

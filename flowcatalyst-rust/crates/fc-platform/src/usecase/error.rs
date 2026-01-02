@@ -2,9 +2,53 @@
 //!
 //! Categorized error types for use case failures.
 //! Errors are categorized by type to enable consistent HTTP status mapping.
+//!
+//! # Creating Errors with Details
+//!
+//! Use the `details!` macro for convenient error creation:
+//!
+//! ```ignore
+//! use fc_platform::usecase::{UseCaseError, details};
+//!
+//! // Simple error
+//! UseCaseError::validation("EMAIL_REQUIRED", "Email is required");
+//!
+//! // Error with details
+//! UseCaseError::validation_with_details(
+//!     "EMAIL_EXISTS",
+//!     "Email already exists",
+//!     details!{ "email" => email },
+//! );
+//! ```
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+
+/// Macro for creating error detail maps.
+///
+/// # Example
+///
+/// ```ignore
+/// use fc_platform::usecase::details;
+///
+/// let details = details! {
+///     "email" => "user@example.com",
+///     "clientId" => client_id
+/// };
+/// ```
+#[macro_export]
+macro_rules! details {
+    () => {
+        std::collections::HashMap::new()
+    };
+    ($($key:expr => $value:expr),+ $(,)?) => {{
+        let mut map = std::collections::HashMap::new();
+        $(
+            map.insert($key.to_string(), serde_json::json!($value));
+        )+
+        map
+    }};
+}
 
 /// Categorized error types for use case failures.
 ///
@@ -193,6 +237,7 @@ impl std::error::Error for UseCaseError {}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::details;
 
     #[test]
     fn test_validation_error() {
@@ -223,6 +268,48 @@ mod tests {
             assert!(details.contains_key("email"));
         } else {
             panic!("Expected BusinessRuleViolation");
+        }
+    }
+
+    #[test]
+    fn test_details_macro_empty() {
+        let details: HashMap<String, serde_json::Value> = details!();
+        assert!(details.is_empty());
+    }
+
+    #[test]
+    fn test_details_macro_single() {
+        let email = "user@example.com";
+        let details = details! { "email" => email };
+        assert_eq!(details.get("email"), Some(&serde_json::json!("user@example.com")));
+    }
+
+    #[test]
+    fn test_details_macro_multiple() {
+        let email = "user@example.com";
+        let client_id = "client-123";
+        let details = details! {
+            "email" => email,
+            "clientId" => client_id,
+            "count" => 42,
+        };
+        assert_eq!(details.get("email"), Some(&serde_json::json!("user@example.com")));
+        assert_eq!(details.get("clientId"), Some(&serde_json::json!("client-123")));
+        assert_eq!(details.get("count"), Some(&serde_json::json!(42)));
+    }
+
+    #[test]
+    fn test_details_macro_with_error() {
+        let email = "duplicate@example.com";
+        let err = UseCaseError::business_rule_with_details(
+            "EMAIL_EXISTS",
+            format!("Email '{}' already exists", email),
+            details! { "email" => email },
+        );
+
+        assert_eq!(err.code(), "EMAIL_EXISTS");
+        if let UseCaseError::BusinessRuleViolation { details, .. } = err {
+            assert_eq!(details.get("email"), Some(&serde_json::json!("duplicate@example.com")));
         }
     }
 }

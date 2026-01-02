@@ -55,6 +55,7 @@ use fc_platform::api::{
     DebugState, debug_events_router, debug_dispatch_jobs_router,
     AuthState, auth_router,
     platform_config_router,
+    ServiceAccountsState, service_accounts_router,
 };
 use fc_platform::repository::{
     EventRepository, EventTypeRepository, DispatchJobRepository, DispatchPoolRepository,
@@ -161,6 +162,16 @@ async fn main() -> Result<()> {
     let refresh_token_repo = Arc::new(RefreshTokenRepository::new(&db));
     info!("Repositories initialized");
 
+    // Sync code-defined roles to database (always, not just in dev mode)
+    {
+        let role_sync = fc_platform::service::RoleSyncService::new(
+            fc_platform::repository::RoleRepository::new(&db)
+        );
+        if let Err(e) = role_sync.sync_code_defined_roles().await {
+            tracing::warn!("Role sync failed: {}", e);
+        }
+    }
+
     // Initialize auth (load or generate RSA keys)
     let private_key_path = std::env::var("FC_JWT_PRIVATE_KEY_PATH").ok();
     let public_key_path = std::env::var("FC_JWT_PUBLIC_KEY_PATH").ok();
@@ -217,7 +228,7 @@ async fn main() -> Result<()> {
         audit_service: Some(audit_service),
         password_service: None, // TODO: Configure password service for password reset
     };
-    let roles_state = RolesState { role_repo: role_repo.clone() };
+    let roles_state = RolesState { role_repo: role_repo.clone(), application_repo: Some(application_repo.clone()) };
     let subscriptions_state = SubscriptionsState { subscription_repo };
     let oauth_clients_state = OAuthClientsState { oauth_client_repo };
     let auth_config_state = AuthConfigState {
@@ -247,11 +258,12 @@ async fn main() -> Result<()> {
     let audit_logs_state = AuditLogsState { audit_log_repo };
     let applications_state = ApplicationsState {
         application_repo,
-        service_account_repo,
+        service_account_repo: service_account_repo.clone(),
         role_repo,
         client_config_repo: application_client_config_repo,
         client_repo,
     };
+    let service_accounts_state = ServiceAccountsState { repo: service_account_repo };
     let dispatch_pools_state = DispatchPoolsState { dispatch_pool_repo };
 
     let monitoring_state = MonitoringState {
@@ -285,6 +297,7 @@ async fn main() -> Result<()> {
         .nest("/api/admin/platform/audit-logs", audit_logs_router(audit_logs_state))
         .nest("/api/admin/platform/applications", applications_router(applications_state))
         .nest("/api/admin/platform/dispatch-pools", dispatch_pools_router(dispatch_pools_state))
+        .nest("/api/admin/platform/service-accounts", service_accounts_router(service_accounts_state))
         // Monitoring APIs
         .nest("/api/monitoring", monitoring_router(monitoring_state))
         // Auth APIs (OIDC login, embedded login, check-domain, etc.)
