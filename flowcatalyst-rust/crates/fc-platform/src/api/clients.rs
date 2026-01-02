@@ -85,6 +85,14 @@ impl From<Client> for ClientResponse {
     }
 }
 
+/// Client list response (matches Java ClientListResponse)
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientListResponse {
+    pub clients: Vec<ClientResponse>,
+    pub total: usize,
+}
+
 /// Query parameters for clients list
 #[derive(Debug, Deserialize, Default, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -180,7 +188,7 @@ pub async fn get_client(
         ("status" = Option<String>, Query, description = "Filter by status")
     ),
     responses(
-        (status = 200, description = "List of clients", body = Vec<ClientResponse>)
+        (status = 200, description = "List of clients", body = ClientListResponse)
     ),
     security(("bearer_auth" = []))
 )]
@@ -188,7 +196,7 @@ pub async fn list_clients(
     State(state): State<ClientsState>,
     auth: Authenticated,
     Query(_query): Query<ClientsQuery>,
-) -> Result<Json<Vec<ClientResponse>>, PlatformError> {
+) -> Result<Json<ClientListResponse>, PlatformError> {
     let clients = state.client_repo.find_active().await?;
 
     // Filter by access
@@ -197,7 +205,8 @@ pub async fn list_clients(
         .map(|c| c.into())
         .collect();
 
-    Ok(Json(filtered))
+    let total = filtered.len();
+    Ok(Json(ClientListResponse { clients: filtered, total }))
 }
 
 /// Update client

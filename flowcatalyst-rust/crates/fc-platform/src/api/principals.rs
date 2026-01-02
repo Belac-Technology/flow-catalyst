@@ -181,6 +181,14 @@ impl From<Principal> for PrincipalResponse {
     }
 }
 
+/// Principal list response (matches Java PrincipalListResponse)
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PrincipalListResponse {
+    pub principals: Vec<PrincipalResponse>,
+    pub total: usize,
+}
+
 /// Query parameters for principals list
 #[derive(Debug, Deserialize, Default, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -331,7 +339,7 @@ pub async fn get_principal(
         ("client_id" = Option<String>, Query, description = "Filter by client ID")
     ),
     responses(
-        (status = 200, description = "List of principals", body = Vec<PrincipalResponse>)
+        (status = 200, description = "List of principals", body = PrincipalListResponse)
     ),
     security(("bearer_auth" = []))
 )]
@@ -339,7 +347,7 @@ pub async fn list_principals(
     State(state): State<PrincipalsState>,
     auth: Authenticated,
     Query(query): Query<PrincipalsQuery>,
-) -> Result<Json<Vec<PrincipalResponse>>, PlatformError> {
+) -> Result<Json<PrincipalListResponse>, PlatformError> {
     let principals = if let Some(ref client_id) = query.client_id {
         if !auth.0.can_access_client(client_id) {
             return Err(PlatformError::forbidden(format!("No access to client: {}", client_id)));
@@ -370,7 +378,8 @@ pub async fn list_principals(
         .map(|p| p.into())
         .collect();
 
-    Ok(Json(filtered))
+    let total = filtered.len();
+    Ok(Json(PrincipalListResponse { principals: filtered, total }))
 }
 
 /// Update principal

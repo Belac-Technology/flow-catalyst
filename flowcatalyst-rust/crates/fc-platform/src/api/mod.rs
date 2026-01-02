@@ -32,6 +32,7 @@ pub mod auth;
 pub mod client_selection;
 pub mod application_roles_sdk;
 pub mod debug;
+pub mod platform_config;
 
 pub use common::*;
 pub use middleware::{AppState, Authenticated, OptionalAuth};
@@ -71,3 +72,4 @@ pub use auth::{AuthState, auth_router};
 pub use client_selection::{ClientSelectionState, client_selection_router};
 pub use application_roles_sdk::{ApplicationRolesSdkState, application_roles_sdk_router};
 pub use debug::{DebugState, debug_events_router, debug_dispatch_jobs_router};
+pub use platform_config::platform_config_router;

@@ -1,17 +1,21 @@
 //! API Middleware
 //!
 //! Authentication and authorization middleware for Axum.
+//! Supports both Bearer token (Authorization header) and session cookie authentication.
 
 use axum::{
     async_trait,
     extract::FromRequestParts,
-    http::{header::AUTHORIZATION, request::Parts, StatusCode, HeaderValue},
+    http::{header::AUTHORIZATION, header::COOKIE, request::Parts, StatusCode, HeaderValue},
     response::{IntoResponse, Response},
     Json,
 };
 use std::sync::Arc;
 use crate::service::{AuthService, AuthorizationService, AuthContext};
 use crate::api::common::ApiError;
+
+/// Default session cookie name
+const SESSION_COOKIE_NAME: &str = "fc_session";
 
 /// Application state containing shared services
 #[derive(Clone)]
@@ -49,6 +53,20 @@ impl IntoResponse for AuthError {
     }
 }
 
+/// Extract token from session cookie
+fn extract_session_cookie(parts: &Parts) -> Option<String> {
+    parts.headers
+        .get(COOKIE)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|cookies| {
+            cookies.split(';')
+                .map(|c| c.trim())
+                .find(|c| c.starts_with(SESSION_COOKIE_NAME))
+                .and_then(|c| c.split('=').nth(1))
+                .map(|v| v.to_string())
+        })
+}
+
 #[async_trait]
 impl<S> FromRequestParts<S> for Authenticated
 where
@@ -64,24 +82,20 @@ where
                 message: "Auth service not configured".to_string(),
             })?;
 
-        // Extract authorization header
-        let auth_header = parts.headers
+        // Try to extract token from Authorization header first, then from session cookie
+        let token = parts.headers
             .get(AUTHORIZATION)
             .and_then(|v: &HeaderValue| v.to_str().ok())
+            .and_then(crate::service::extract_bearer_token)
+            .map(String::from)
+            .or_else(|| extract_session_cookie(parts))
             .ok_or_else(|| AuthError {
                 status: StatusCode::UNAUTHORIZED,
-                message: "Missing Authorization header".to_string(),
-            })?;
-
-        // Extract bearer token
-        let token = crate::service::extract_bearer_token(auth_header)
-            .ok_or_else(|| AuthError {
-                status: StatusCode::UNAUTHORIZED,
-                message: "Invalid Authorization header format".to_string(),
+                message: "Missing authentication token".to_string(),
             })?;
 
         // Validate token
-        let claims = app_state.auth_service.validate_token(token)
+        let claims = app_state.auth_service.validate_token(&token)
             .map_err(|e: crate::error::PlatformError| AuthError {
                 status: StatusCode::UNAUTHORIZED,
                 message: e.to_string(),
@@ -123,18 +137,20 @@ where
             return Ok(OptionalAuth(None));
         };
 
-        // Try to get authorization header
-        let Some(auth_header) = parts.headers.get(AUTHORIZATION).and_then(|v| v.to_str().ok()) else {
-            return Ok(OptionalAuth(None));
-        };
+        // Try to extract token from Authorization header first, then from session cookie
+        let token = parts.headers
+            .get(AUTHORIZATION)
+            .and_then(|v| v.to_str().ok())
+            .and_then(crate::service::extract_bearer_token)
+            .map(String::from)
+            .or_else(|| extract_session_cookie(parts));
 
-        // Try to extract bearer token
-        let Some(token) = crate::service::extract_bearer_token(auth_header) else {
+        let Some(token) = token else {
             return Ok(OptionalAuth(None));
         };
 
         // Try to validate token
-        let Ok(claims) = app_state.auth_service.validate_token(token) else {
+        let Ok(claims) = app_state.auth_service.validate_token(&token) else {
             return Ok(OptionalAuth(None));
         };
 

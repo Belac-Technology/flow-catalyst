@@ -98,6 +98,14 @@ impl From<AuthRole> for RoleResponse {
     }
 }
 
+/// Role list response (matches Java BffRoleListResponse - uses 'items' field)
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct RoleListResponse {
+    pub items: Vec<RoleResponse>,
+    pub total: usize,
+}
+
 /// Query parameters for roles list
 #[derive(Debug, Default, Deserialize, IntoParams)]
 #[serde(rename_all = "camelCase")]
@@ -232,7 +240,7 @@ pub async fn get_role_by_code(
     tag = "roles",
     params(RolesQuery),
     responses(
-        (status = 200, description = "List of roles", body = Vec<RoleResponse>)
+        (status = 200, description = "List of roles", body = RoleListResponse)
     ),
     security(("bearer_auth" = []))
 )]
@@ -240,7 +248,7 @@ pub async fn list_roles(
     State(state): State<RolesState>,
     _auth: Authenticated,
     Query(query): Query<RolesQuery>,
-) -> Result<Json<Vec<RoleResponse>>, PlatformError> {
+) -> Result<Json<RoleListResponse>, PlatformError> {
     let roles = if let Some(ref app) = query.application_code {
         state.role_repo.find_by_application(app).await?
     } else if let Some(ref source) = query.source {
@@ -256,7 +264,8 @@ pub async fn list_roles(
         .map(|r| r.into())
         .collect();
 
-    Ok(Json(responses))
+    let total = responses.len();
+    Ok(Json(RoleListResponse { items: responses, total }))
 }
 
 /// Update role

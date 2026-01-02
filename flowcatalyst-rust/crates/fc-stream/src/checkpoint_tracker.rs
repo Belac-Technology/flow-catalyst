@@ -152,6 +152,7 @@ impl CheckpointTracker {
 
 /// Tracks which aggregate IDs are currently in-flight to prevent concurrent processing
 pub struct AggregateTracker {
+    #[allow(dead_code)] // Reserved for future logging/debugging
     stream_name: String,
     state: Mutex<AggregateState>,
 }

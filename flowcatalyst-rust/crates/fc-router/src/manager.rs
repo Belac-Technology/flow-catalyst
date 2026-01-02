@@ -349,8 +349,8 @@ impl QueueManager {
             return Ok(());
         }
 
-        // Phase 1: Filter duplicates
-        let (unique, duplicates, requeued) = self.filter_duplicates(&messages_to_process, &batch_id);
+        // Phase 1: Filter duplicates (takes ownership to avoid cloning payloads)
+        let (unique, duplicates, requeued) = self.filter_duplicates(messages_to_process, &batch_id);
 
         // Handle duplicates - NACK them (let SQS retry later, original still processing)
         for (msg, _) in duplicates {
@@ -545,18 +545,20 @@ impl QueueManager {
     /// Mirrors Java's deduplication logic:
     /// 1. Check broker_message_id first (same SQS message = redelivery due to visibility timeout)
     /// 2. Check app_message_id second (same app ID, different broker ID = external requeue)
+    ///
+    /// Takes ownership of the messages Vec to avoid cloning payloads (performance optimization).
     fn filter_duplicates(
         &self,
-        messages: &[QueuedMessage],
+        messages: Vec<QueuedMessage>,
         _batch_id: &str,
     ) -> (Vec<QueuedMessage>, Vec<(QueuedMessage, String)>, Vec<(QueuedMessage, String)>) {
-        let mut unique = Vec::new();
+        let mut unique = Vec::with_capacity(messages.len());
         let mut duplicates = Vec::new();
         let mut requeued = Vec::new();
 
         for msg in messages {
-            let broker_id = msg.broker_message_id.clone();
-            let app_id = msg.message.id.clone();
+            let broker_id = &msg.broker_message_id;
+            let app_id = &msg.message.id;
 
             // Check 1: Same broker message ID (physical redelivery from SQS due to visibility timeout)
             // This MUST be checked FIRST because the same broker ID means it's a visibility timeout redelivery,
@@ -577,7 +579,8 @@ impl QueueManager {
                             entry.broker_message_id = Some(broker_msg_id.clone());
                         }
                     }
-                    duplicates.push((msg.clone(), broker_msg_id.clone()));
+                    let key = broker_msg_id.clone();
+                    duplicates.push((msg, key));
                     continue;
                 }
             }
@@ -585,7 +588,7 @@ impl QueueManager {
             // Check 2: Same application message ID but DIFFERENT broker message ID (requeued by external process)
             // This happens when a separate process requeues messages that were stuck in QUEUED status for 20+ min
             // The external process creates a NEW SQS message with the same application message ID
-            if let Some(existing_pipeline_key) = self.app_message_to_pipeline_key.get(&app_id) {
+            if let Some(existing_pipeline_key) = self.app_message_to_pipeline_key.get(app_id) {
                 let existing_key = existing_pipeline_key.value().clone();
 
                 // Only treat as requeued duplicate if the broker message IDs are DIFFERENT
@@ -598,7 +601,7 @@ impl QueueManager {
                             new_broker_id = %new_broker_id,
                             "Requeued message detected - app ID already in pipeline, will ACK to remove duplicate"
                         );
-                        requeued.push((msg.clone(), existing_key));
+                        requeued.push((msg, existing_key));
                         continue;
                     }
                 }
@@ -613,12 +616,12 @@ impl QueueManager {
                         );
                         entry.receipt_handle = msg.receipt_handle.clone();
                     }
-                    duplicates.push((msg.clone(), existing_key));
+                    duplicates.push((msg, existing_key));
                     continue;
                 }
             }
 
-            unique.push(msg.clone());
+            unique.push(msg);
         }
 
         (unique, duplicates, requeued)

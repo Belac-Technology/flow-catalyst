@@ -27,14 +27,37 @@ const DEFAULT_GROUP: &str = "__DEFAULT__";
 const QUEUE_CAPACITY_MULTIPLIER: u32 = 2;   // Java: QUEUE_CAPACITY_MULTIPLIER = 2
 const MIN_QUEUE_CAPACITY: u32 = 50;          // Java: MIN_QUEUE_CAPACITY = 50
 
+/// Composite key for batch+group tracking - avoids format!() string allocation
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct BatchGroupKey {
+    pub batch_id: Arc<str>,
+    pub group_id: Arc<str>,
+}
+
+impl BatchGroupKey {
+    #[inline]
+    pub fn new(batch_id: &str, group_id: &str) -> Self {
+        Self {
+            batch_id: Arc::from(batch_id),
+            group_id: Arc::from(group_id),
+        }
+    }
+}
+
+impl std::fmt::Display for BatchGroupKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}:{}", self.batch_id, self.group_id)
+    }
+}
+
 /// Task submitted to a pool worker
 pub struct PoolTask {
     pub message: Message,
     pub receipt_handle: String,
     pub ack_tx: oneshot::Sender<AckNack>,
-    pub batch_id: Option<String>,
-    /// Pre-computed batch+group key for FIFO tracking (format: "batchId|messageGroupId")
-    pub batch_group_key: Option<String>,
+    pub batch_id: Option<Arc<str>>,
+    /// Pre-computed batch+group key for FIFO tracking (uses tuple to avoid string formatting)
+    pub batch_group_key: Option<BatchGroupKey>,
 }
 
 /// Process pool with FIFO ordering and rate limiting
@@ -45,17 +68,17 @@ pub struct ProcessPool {
     /// Pool-level concurrency semaphore
     semaphore: Arc<Semaphore>,
 
-    /// Per-message-group queues for FIFO ordering
-    message_group_queues: DashMap<String, mpsc::Sender<PoolTask>>,
+    /// Per-message-group queues for FIFO ordering (uses Arc<str> to avoid cloning)
+    message_group_queues: DashMap<Arc<str>, mpsc::Sender<PoolTask>>,
 
     /// Track in-flight message groups
-    in_flight_groups: DashSet<String>,
+    in_flight_groups: DashSet<Arc<str>>,
 
-    /// Batch+group failure tracking for cascading NACKs
-    failed_batch_groups: DashSet<String>,
+    /// Batch+group failure tracking for cascading NACKs (uses tuple key to avoid format!())
+    failed_batch_groups: DashSet<BatchGroupKey>,
 
     /// Track remaining messages per batch+group for cleanup (Java: batchGroupMessageCount)
-    batch_group_message_count: Arc<DashMap<String, AtomicU32>>,
+    batch_group_message_count: Arc<DashMap<BatchGroupKey, AtomicU32>>,
 
     /// Rate limiter (optional)
     rate_limiter: Option<Arc<RateLimiter<NotKeyed, InMemoryState, DefaultClock>>>,
@@ -141,23 +164,24 @@ impl ProcessPool {
         // Increment queue size
         self.queue_size.fetch_add(1, Ordering::SeqCst);
 
-        // Get message group
-        let group_id = batch_msg.message.message_group_id
+        // Get message group - use Cow to avoid allocation when group_id exists
+        let group_id: Arc<str> = batch_msg.message.message_group_id
             .as_ref()
             .filter(|s| !s.is_empty())
-            .cloned()
-            .unwrap_or_else(|| DEFAULT_GROUP.to_string());
+            .map(|s| Arc::from(s.as_str()))
+            .unwrap_or_else(|| Arc::from(DEFAULT_GROUP));
 
         // Track batch+group message count for cleanup (Java: batchGroupMessageCount)
+        // Uses BatchGroupKey tuple instead of format!() to avoid string allocation
         let batch_group_key = batch_msg.batch_id.as_ref()
-            .map(|batch_id| format!("{}|{}", batch_id, group_id));
+            .map(|batch_id| BatchGroupKey::new(batch_id, &group_id));
 
         if let Some(ref key) = batch_group_key {
             self.batch_group_message_count
                 .entry(key.clone())
                 .or_insert_with(|| AtomicU32::new(0))
                 .fetch_add(1, Ordering::SeqCst);
-            debug!(batch_group = %key, "Tracking message in batch+group, count incremented");
+            debug!(batch_id = %key.batch_id, group_id = %key.group_id, "Tracking message in batch+group");
         }
 
         // Check if batch+group has failed (early check before queueing)
@@ -165,7 +189,8 @@ impl ProcessPool {
             if self.failed_batch_groups.contains(key) {
                 debug!(
                     message_id = %batch_msg.message.id,
-                    batch_group = %key,
+                    batch_id = %key.batch_id,
+                    group_id = %key.group_id,
                     "Batch+group failed, NACKing for FIFO"
                 );
                 self.queue_size.fetch_sub(1, Ordering::SeqCst);
@@ -186,7 +211,7 @@ impl ProcessPool {
             message: batch_msg.message,
             receipt_handle: batch_msg.receipt_handle,
             ack_tx: batch_msg.ack_tx,
-            batch_id: batch_msg.batch_id,
+            batch_id: batch_msg.batch_id.map(|s| Arc::from(s.as_str())),
             batch_group_key,
         };
 
@@ -203,18 +228,19 @@ impl ProcessPool {
     }
 
     /// Get or create a message group queue and worker
-    fn get_or_create_group_queue(&self, group_id: &str) -> mpsc::Sender<PoolTask> {
+    fn get_or_create_group_queue(&self, group_id: &Arc<str>) -> mpsc::Sender<PoolTask> {
+        // Check if queue exists using the Arc<str> directly
         if let Some(tx) = self.message_group_queues.get(group_id) {
             return tx.clone();
         }
 
         // Create new group queue
         let (tx, rx) = mpsc::channel(100);
-        self.message_group_queues.insert(group_id.to_string(), tx.clone());
+        self.message_group_queues.insert(Arc::clone(group_id), tx.clone());
 
-        // Spawn worker for this group
-        let group_id_clone = group_id.to_string();
-        let pool_code = self.config.code.clone();
+        // Spawn worker for this group - clone Arc<str> instead of allocating new String
+        let group_id_clone = Arc::clone(group_id);
+        let pool_code: Arc<str> = Arc::from(self.config.code.as_str());
         let semaphore = self.semaphore.clone();
         let mediator = self.mediator.clone();
         let queue_size = self.queue_size.clone();
@@ -249,18 +275,18 @@ impl ProcessPool {
 
     /// Worker loop for a message group
     async fn run_group_worker(
-        group_id: String,
-        pool_code: String,
+        group_id: Arc<str>,
+        pool_code: Arc<str>,
         mut rx: mpsc::Receiver<PoolTask>,
         semaphore: Arc<Semaphore>,
         mediator: Arc<dyn Mediator>,
         queue_size: Arc<AtomicU32>,
         active_workers: Arc<AtomicU32>,
-        in_flight_groups: DashSet<String>,
-        failed_batch_groups: DashSet<String>,
-        batch_group_message_count: Arc<DashMap<String, AtomicU32>>,
+        in_flight_groups: DashSet<Arc<str>>,
+        failed_batch_groups: DashSet<BatchGroupKey>,
+        batch_group_message_count: Arc<DashMap<BatchGroupKey, AtomicU32>>,
         rate_limiter: Option<Arc<RateLimiter<NotKeyed, InMemoryState, DefaultClock>>>,
-        message_group_queues: DashMap<String, mpsc::Sender<PoolTask>>,
+        message_group_queues: DashMap<Arc<str>, mpsc::Sender<PoolTask>>,
         metrics_collector: Arc<PoolMetricsCollector>,
     ) {
         debug!(group_id = %group_id, pool_code = %pool_code, "Group worker started");
@@ -450,7 +476,7 @@ impl ProcessPool {
 
     /// Decrement batch+group message count and cleanup tracking maps when count reaches zero.
     /// Instance version for use in submit().
-    fn decrement_and_cleanup_batch_group(&self, batch_group_key: &str) {
+    fn decrement_and_cleanup_batch_group(&self, batch_group_key: &BatchGroupKey) {
         Self::decrement_and_cleanup_batch_group_static(
             batch_group_key,
             &self.batch_group_message_count,
@@ -461,9 +487,9 @@ impl ProcessPool {
     /// Decrement batch+group message count and cleanup tracking maps when count reaches zero.
     /// Static version for use in worker tasks.
     fn decrement_and_cleanup_batch_group_static(
-        batch_group_key: &str,
-        batch_group_message_count: &DashMap<String, AtomicU32>,
-        failed_batch_groups: &DashSet<String>,
+        batch_group_key: &BatchGroupKey,
+        batch_group_message_count: &DashMap<BatchGroupKey, AtomicU32>,
+        failed_batch_groups: &DashSet<BatchGroupKey>,
     ) {
         // Use get() to decrement, then check if we should cleanup
         // IMPORTANT: We must drop the Ref guard before calling remove() to avoid deadlock

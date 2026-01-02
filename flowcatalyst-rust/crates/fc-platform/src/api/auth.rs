@@ -13,6 +13,7 @@ use axum::{
     http::StatusCode,
     response::IntoResponse,
 };
+use axum_extra::extract::cookie::{Cookie, CookieJar, SameSite};
 use utoipa::{ToSchema, IntoParams};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -39,22 +40,21 @@ pub struct LoginRequest {
     pub remember_me: bool,
 }
 
-/// Login response
+/// Login response - matches Java LoginResponse record
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct LoginResponse {
-    /// Access token
-    pub access_token: String,
-
-    /// Token type (always "Bearer")
-    pub token_type: String,
-
-    /// Expiration time in seconds
-    pub expires_in: i64,
-
-    /// Refresh token (if remember_me)
+    /// Principal ID
+    pub principal_id: String,
+    /// Display name
+    pub name: String,
+    /// Email address
+    pub email: String,
+    /// Assigned roles
+    pub roles: Vec<String>,
+    /// Client ID (for CLIENT scope users)
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub refresh_token: Option<String>,
+    pub client_id: Option<String>,
 }
 
 /// Domain check request
@@ -135,12 +135,56 @@ pub struct AuthState {
     pub principal_repo: Arc<PrincipalRepository>,
     pub password_service: Arc<PasswordService>,
     pub refresh_token_repo: Arc<RefreshTokenRepository>,
+    /// Session cookie name (default: "fc_session")
+    pub session_cookie_name: String,
+    /// Whether to set Secure flag on cookie
+    pub session_cookie_secure: bool,
+    /// SameSite policy for cookie
+    pub session_cookie_same_site: String,
+    /// Session token expiry in seconds
+    pub session_token_expiry_secs: i64,
+}
+
+impl AuthState {
+    /// Create with default cookie settings
+    pub fn new(
+        auth_service: Arc<AuthService>,
+        principal_repo: Arc<PrincipalRepository>,
+        password_service: Arc<PasswordService>,
+        refresh_token_repo: Arc<RefreshTokenRepository>,
+    ) -> Self {
+        Self {
+            auth_service,
+            principal_repo,
+            password_service,
+            refresh_token_repo,
+            session_cookie_name: "fc_session".to_string(),
+            session_cookie_secure: false,
+            session_cookie_same_site: "Lax".to_string(),
+            session_token_expiry_secs: 28800, // 8 hours
+        }
+    }
+
+    /// Configure session cookie settings
+    pub fn with_session_cookie_settings(
+        mut self,
+        name: &str,
+        secure: bool,
+        same_site: &str,
+        expiry_secs: i64,
+    ) -> Self {
+        self.session_cookie_name = name.to_string();
+        self.session_cookie_secure = secure;
+        self.session_cookie_same_site = same_site.to_string();
+        self.session_token_expiry_secs = expiry_secs;
+        self
+    }
 }
 
 /// Login with email and password
 ///
 /// Authenticates a user with email and password credentials.
-/// Returns an access token on success.
+/// Returns an access token on success and sets a session cookie.
 #[utoipa::path(
     post,
     path = "/login",
@@ -153,8 +197,9 @@ pub struct AuthState {
 )]
 pub async fn login(
     State(state): State<AuthState>,
+    jar: CookieJar,
     Json(req): Json<LoginRequest>,
-) -> Result<Json<LoginResponse>, PlatformError> {
+) -> Result<impl IntoResponse, PlatformError> {
     // Find principal by email
     let principal = state
         .principal_repo
@@ -188,43 +233,42 @@ pub async fn login(
         });
     }
 
-    // Generate access token
-    let access_token = state.auth_service.generate_access_token(&principal)?;
+    // Generate session token
+    let session_token = state.auth_service.generate_access_token(&principal)?;
 
-    // Generate refresh token if remember_me is set
-    let refresh_token = if req.remember_me {
-        let (raw_token, token_entity) = RefreshToken::generate_token_pair(&principal.id);
-
-        // Determine accessible clients based on scope
-        let accessible_clients = match principal.scope {
-            crate::domain::UserScope::Anchor => vec!["*".to_string()],
-            crate::domain::UserScope::Partner => principal.assigned_clients.clone(),
-            crate::domain::UserScope::Client => principal.client_id.clone().into_iter().collect(),
-        };
-
-        let token_entity = token_entity
-            .with_accessible_clients(accessible_clients);
-
-        // Store the token
-        state.refresh_token_repo.insert(&token_entity).await?;
-
-        Some(raw_token)
-    } else {
-        None
+    // Build session cookie
+    let same_site = match state.session_cookie_same_site.to_lowercase().as_str() {
+        "strict" => SameSite::Strict,
+        "none" => SameSite::None,
+        _ => SameSite::Lax,
     };
 
-    Ok(Json(LoginResponse {
-        access_token,
-        token_type: "Bearer".to_string(),
-        expires_in: 3600, // Would come from config
-        refresh_token,
-    }))
+    let cookie = Cookie::build((state.session_cookie_name.clone(), session_token))
+        .path("/")
+        .http_only(true)
+        .secure(state.session_cookie_secure)
+        .same_site(same_site)
+        .max_age(time::Duration::seconds(state.session_token_expiry_secs))
+        .build();
+
+    let jar = jar.add(cookie);
+
+    // Build response with user info (matches Java LoginResponse)
+    let response = LoginResponse {
+        principal_id: principal.id.clone(),
+        name: principal.name.clone(),
+        email: req.email.clone(),
+        roles: principal.roles.iter().map(|r| r.role.clone()).collect(),
+        client_id: principal.client_id.clone(),
+    };
+
+    // Return both the cookie jar and JSON response
+    Ok((jar, Json(response)))
 }
 
 /// Logout / revoke token
 ///
-/// Invalidates the current session. For stateless JWTs, this is a no-op
-/// on the server side, but clears the client's token.
+/// Invalidates the current session by clearing the session cookie.
 #[utoipa::path(
     post,
     path = "/logout",
@@ -234,15 +278,23 @@ pub async fn login(
     )
 )]
 pub async fn logout(
+    State(state): State<AuthState>,
+    jar: CookieJar,
     auth: Authenticated,
 ) -> impl IntoResponse {
     // Verify token is valid (the Authenticated extractor handles this)
     let _ctx = &auth.0;
 
-    // For stateless JWTs, nothing to do server-side
-    // In production, you might want to add the token to a blocklist
+    // Clear the session cookie by setting it to expire immediately
+    let cookie = Cookie::build((state.session_cookie_name.clone(), ""))
+        .path("/")
+        .http_only(true)
+        .max_age(time::Duration::ZERO)
+        .build();
 
-    StatusCode::NO_CONTENT
+    let jar = jar.add(cookie);
+
+    (jar, StatusCode::NO_CONTENT)
 }
 
 /// Check email domain authentication method
@@ -324,6 +376,20 @@ pub struct RefreshTokenRequest {
     pub refresh_token: String,
 }
 
+/// Token refresh response
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TokenRefreshResponse {
+    /// New access token
+    pub access_token: String,
+    /// Token type (always "Bearer")
+    pub token_type: String,
+    /// Expiration time in seconds
+    pub expires_in: i64,
+    /// New refresh token (rotation)
+    pub refresh_token: String,
+}
+
 /// Refresh access token
 ///
 /// Exchange a refresh token for a new access token.
@@ -334,14 +400,14 @@ pub struct RefreshTokenRequest {
     tag = "auth",
     request_body = RefreshTokenRequest,
     responses(
-        (status = 200, description = "Token refreshed", body = LoginResponse),
+        (status = 200, description = "Token refreshed", body = TokenRefreshResponse),
         (status = 401, description = "Invalid refresh token")
     )
 )]
 pub async fn refresh_token(
     State(state): State<AuthState>,
     Json(req): Json<RefreshTokenRequest>,
-) -> Result<Json<LoginResponse>, PlatformError> {
+) -> Result<Json<TokenRefreshResponse>, PlatformError> {
     // Hash the provided token and look it up
     let token_hash = RefreshToken::hash_token(&req.refresh_token);
 
@@ -380,11 +446,11 @@ pub async fn refresh_token(
 
     state.refresh_token_repo.insert(&token_entity).await?;
 
-    Ok(Json(LoginResponse {
+    Ok(Json(TokenRefreshResponse {
         access_token,
         token_type: "Bearer".to_string(),
         expires_in: 3600,
-        refresh_token: Some(raw_token),
+        refresh_token: raw_token,
     }))
 }
 
