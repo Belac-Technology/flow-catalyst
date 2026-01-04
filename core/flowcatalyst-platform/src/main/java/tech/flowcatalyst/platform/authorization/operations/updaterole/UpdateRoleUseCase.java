@@ -64,8 +64,7 @@ public class UpdateRoleUseCase {
         }
 
         // Create domain event
-        RoleUpdated event = RoleUpdated.builder()
-            .from(context)
+        RoleUpdated event = RoleUpdated.fromContext(context)
             .roleId(role.id)
             .roleName(role.name)
             .displayName(role.displayName)

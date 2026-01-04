@@ -67,8 +67,7 @@ public class AssignRolesUseCase {
         sa.updatedAt = Instant.now();
 
         // Create event
-        RolesAssigned event = RolesAssigned.builder()
-            .from(context)
+        RolesAssigned event = RolesAssigned.fromContext(context)
             .serviceAccountId(sa.id)
             .code(sa.code)
             .roleNames(new ArrayList<>(newRoles))

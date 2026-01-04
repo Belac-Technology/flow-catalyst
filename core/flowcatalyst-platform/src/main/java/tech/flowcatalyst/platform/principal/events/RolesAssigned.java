@@ -5,6 +5,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import lombok.Builder;
 import tech.flowcatalyst.platform.common.DomainEvent;
 import tech.flowcatalyst.platform.common.ExecutionContext;
 import tech.flowcatalyst.platform.shared.TsidGenerator;
@@ -20,6 +21,7 @@ import java.util.List;
  *
  * <p>Event type: {@code platform:iam:user:roles-assigned}
  */
+@Builder
 public record RolesAssigned(
     String eventId,
     Instant time,
@@ -89,40 +91,16 @@ public record RolesAssigned(
         List<String> removed
     ) {}
 
-    public static Builder builder() {
-        return new Builder();
-    }
-
-    public static class Builder {
-        private String eventId;
-        private Instant time;
-        private String executionId;
-        private String correlationId;
-        private String causationId;
-        private String principalId;
-        private String userId;
-        private List<String> roles;
-        private List<String> added;
-        private List<String> removed;
-
-        public Builder from(ExecutionContext ctx) {
-            this.eventId = TsidGenerator.generate();
-            this.time = Instant.now();
-            this.executionId = ctx.executionId();
-            this.correlationId = ctx.correlationId();
-            this.causationId = ctx.causationId();
-            this.principalId = ctx.principalId();
-            return this;
-        }
-
-        public Builder userId(String userId) { this.userId = userId; return this; }
-        public Builder roles(List<String> roles) { this.roles = roles; return this; }
-        public Builder added(List<String> added) { this.added = added; return this; }
-        public Builder removed(List<String> removed) { this.removed = removed; return this; }
-
-        public RolesAssigned build() {
-            return new RolesAssigned(eventId, time, executionId, correlationId, causationId, principalId,
-                userId, roles, added, removed);
-        }
+    /**
+     * Create a pre-configured builder with event metadata from the execution context.
+     */
+    public static RolesAssignedBuilder fromContext(ExecutionContext ctx) {
+        return RolesAssigned.builder()
+            .eventId(TsidGenerator.generate())
+            .time(Instant.now())
+            .executionId(ctx.executionId())
+            .correlationId(ctx.correlationId())
+            .causationId(ctx.causationId())
+            .principalId(ctx.principalId());
     }
 }

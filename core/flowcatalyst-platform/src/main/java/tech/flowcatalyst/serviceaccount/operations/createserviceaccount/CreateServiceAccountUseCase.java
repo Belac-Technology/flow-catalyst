@@ -117,8 +117,7 @@ public class CreateServiceAccountUseCase {
         sa.webhookCredentials = creds;
 
         // Create domain event
-        ServiceAccountCreated event = ServiceAccountCreated.builder()
-            .from(context)
+        ServiceAccountCreated event = ServiceAccountCreated.fromContext(context)
             .serviceAccountId(sa.id)
             .code(sa.code)
             .name(sa.name)

@@ -87,8 +87,7 @@ public class CreateApplicationUseCase {
         app.active = true;
 
         // Create domain event
-        ApplicationCreated event = ApplicationCreated.builder()
-            .from(context)
+        ApplicationCreated event = ApplicationCreated.fromContext(context)
             .applicationId(app.id)
             .code(app.code)
             .name(app.name)

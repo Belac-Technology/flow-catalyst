@@ -142,8 +142,7 @@ public class UpdateSubscriptionUseCase {
         );
 
         // Create domain event
-        SubscriptionUpdated event = SubscriptionUpdated.builder()
-            .from(context)
+        SubscriptionUpdated event = SubscriptionUpdated.fromContext(context)
             .subscriptionId(updated.id())
             .code(updated.code())
             .name(updated.name())

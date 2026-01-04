@@ -60,9 +60,9 @@ lapin = "2.3"
 regex = "1.10"
 rand = "0.8"
 
-# OpenAPI documentation with Axum
-utoipa = { version = "4.2", features = ["axum_extras", "chrono", "uuid"] }
-utoipa-swagger-ui = { version = "6.0", features = ["axum"] }
+# OpenAPI documentation with Axum (using utoipa 5 with axum 0.7 compatible swagger-ui)
+utoipa = { version = "5.3", features = ["axum_extras", "chrono", "uuid"] }
+utoipa-swagger-ui = { version = "8", features = ["axum"] }
 utoipa-axum = "0.1"
 
 # Test dependencies

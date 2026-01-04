@@ -80,8 +80,7 @@ public class CreateRoleUseCase {
         role.clientManaged = command.clientManaged();
 
         // Create domain event
-        RoleCreated event = RoleCreated.builder()
-            .from(context)
+        RoleCreated event = RoleCreated.fromContext(context)
             .roleId(role.id)
             .roleName(role.name)
             .displayName(role.displayName)
@@ -89,7 +88,7 @@ public class CreateRoleUseCase {
             .applicationId(role.applicationId)
             .applicationCode(role.applicationCode)
             .permissions(role.permissions)
-            .source(role.source)
+            .source(role.source.name())
             .clientManaged(role.clientManaged)
             .build();
 

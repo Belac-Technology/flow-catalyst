@@ -53,8 +53,7 @@ public class ActivateApplicationUseCase {
         app.active = true;
 
         // Create domain event
-        ApplicationActivated event = ApplicationActivated.builder()
-            .from(context)
+        ApplicationActivated event = ApplicationActivated.fromContext(context)
             .applicationId(app.id)
             .code(app.code)
             .build();

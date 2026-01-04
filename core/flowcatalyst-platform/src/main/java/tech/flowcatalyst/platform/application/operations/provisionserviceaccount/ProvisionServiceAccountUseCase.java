@@ -201,8 +201,7 @@ public class ProvisionServiceAccountUseCase {
         app.updatedAt = Instant.now();
 
         // Create domain event
-        ServiceAccountProvisioned event = ServiceAccountProvisioned.builder()
-            .from(context)
+        ServiceAccountProvisioned event = ServiceAccountProvisioned.fromContext(context)
             .applicationId(app.id)
             .applicationCode(app.code)
             .applicationName(app.name)

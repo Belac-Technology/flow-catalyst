@@ -77,8 +77,7 @@ public class RegenerateAuthTokenUseCase {
         sa.updatedAt = Instant.now();
 
         // Create event
-        AuthTokenRegenerated event = AuthTokenRegenerated.builder()
-            .from(context)
+        AuthTokenRegenerated event = AuthTokenRegenerated.fromContext(context)
             .serviceAccountId(sa.id)
             .code(sa.code)
             .authType(sa.webhookCredentials.authType)

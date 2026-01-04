@@ -55,8 +55,7 @@ public class DeleteUserUseCase {
         grantRepo.deleteByPrincipalId(principal.id);
 
         // Create domain event
-        UserDeleted event = UserDeleted.builder()
-            .from(context)
+        UserDeleted event = UserDeleted.fromContext(context)
             .userId(principal.id)
             .email(email)
             .build();

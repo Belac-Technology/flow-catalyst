@@ -50,8 +50,7 @@ public class DeleteSubscriptionUseCase {
         Subscription existing = existingOpt.get();
 
         // Create domain event
-        SubscriptionDeleted event = SubscriptionDeleted.builder()
-            .from(context)
+        SubscriptionDeleted event = SubscriptionDeleted.fromContext(context)
             .subscriptionId(existing.id())
             .code(existing.code())
             .clientId(existing.clientId())

@@ -48,8 +48,7 @@ public class DeleteRoleUseCase {
         }
 
         // Create domain event (before deletion)
-        RoleDeleted event = RoleDeleted.builder()
-            .from(context)
+        RoleDeleted event = RoleDeleted.fromContext(context)
             .roleId(role.id)
             .roleName(role.name)
             .build();

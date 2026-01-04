@@ -93,8 +93,7 @@ public class GrantClientAccessUseCase {
         grant.expiresAt = command.expiresAt();
 
         // Create domain event
-        ClientAccessGranted event = ClientAccessGranted.builder()
-            .from(context)
+        ClientAccessGranted event = ClientAccessGranted.fromContext(context)
             .userId(principal.id)
             .clientId(client.id)
             .grantId(grant.id)

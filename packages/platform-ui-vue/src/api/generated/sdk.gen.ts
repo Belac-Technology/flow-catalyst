@@ -5,6 +5,207 @@ import type {
   TDataShape,
   Client,
 } from "@hey-api/client-fetch";
+import type {
+  GetApiAdminPlatformAuditLogsData,
+  GetApiAdminPlatformAuditLogsResponse,
+  GetApiAdminPlatformAuditLogsEntityTypesData,
+  GetApiAdminPlatformAuditLogsEntityTypesResponse,
+  GetApiAdminPlatformAuditLogsEntityByEntityTypeByEntityIdData,
+  GetApiAdminPlatformAuditLogsEntityByEntityTypeByEntityIdResponse,
+  GetApiAdminPlatformAuditLogsOperationsData,
+  GetApiAdminPlatformAuditLogsOperationsResponse,
+  GetApiAdminPlatformAuditLogsPrincipalByPrincipalIdData,
+  GetApiAdminPlatformAuditLogsPrincipalByPrincipalIdResponse,
+  GetApiAdminPlatformAuditLogsRecentData,
+  GetApiAdminPlatformAuditLogsRecentResponse,
+  GetApiAdminPlatformAuditLogsByIdData,
+  GetApiAdminPlatformAuditLogsByIdResponse,
+  GetApiAdminPlatformClientsData,
+  GetApiAdminPlatformClientsResponse,
+  PostApiAdminPlatformClientsData,
+  PostApiAdminPlatformClientsResponse,
+  GetApiAdminPlatformClientsByIdentifierByIdentifierData,
+  GetApiAdminPlatformClientsByIdentifierByIdentifierResponse,
+  GetApiAdminPlatformClientsSearchData,
+  GetApiAdminPlatformClientsSearchResponse,
+  DeleteApiAdminPlatformClientsByIdData,
+  DeleteApiAdminPlatformClientsByIdResponse,
+  GetApiAdminPlatformClientsByIdData,
+  GetApiAdminPlatformClientsByIdResponse,
+  PutApiAdminPlatformClientsByIdData,
+  PutApiAdminPlatformClientsByIdResponse,
+  PostApiAdminPlatformClientsByIdActivateData,
+  PostApiAdminPlatformClientsByIdActivateResponse,
+  GetApiAdminPlatformClientsByIdApplicationsData,
+  GetApiAdminPlatformClientsByIdApplicationsResponse,
+  PutApiAdminPlatformClientsByIdApplicationsData,
+  PutApiAdminPlatformClientsByIdApplicationsResponse,
+  PostApiAdminPlatformClientsByIdApplicationsByApplicationIdDisableData,
+  PostApiAdminPlatformClientsByIdApplicationsByApplicationIdDisableResponse,
+  PostApiAdminPlatformClientsByIdApplicationsByApplicationIdEnableData,
+  PostApiAdminPlatformClientsByIdApplicationsByApplicationIdEnableResponse,
+  PostApiAdminPlatformClientsByIdDeactivateData,
+  PostApiAdminPlatformClientsByIdDeactivateResponse,
+  PostApiAdminPlatformClientsByIdNotesData,
+  PostApiAdminPlatformClientsByIdNotesResponse,
+  PostApiAdminPlatformClientsByIdSuspendData,
+  PostApiAdminPlatformClientsByIdSuspendResponse,
+  GetApiAdminPlatformOauthClientsData,
+  GetApiAdminPlatformOauthClientsResponse,
+  PostApiAdminPlatformOauthClientsData,
+  PostApiAdminPlatformOauthClientsResponse,
+  DeleteApiAdminPlatformOauthClientsByIdData,
+  DeleteApiAdminPlatformOauthClientsByIdResponse,
+  GetApiAdminPlatformOauthClientsByIdData,
+  GetApiAdminPlatformOauthClientsByIdResponse,
+  PutApiAdminPlatformOauthClientsByIdData,
+  PutApiAdminPlatformOauthClientsByIdResponse,
+  GetApiAdminPlatformPrincipalsData,
+  GetApiAdminPlatformPrincipalsResponse,
+  PostApiAdminPlatformPrincipalsData,
+  PostApiAdminPlatformPrincipalsResponse,
+  GetApiAdminPlatformPrincipalsCheckEmailDomainData,
+  GetApiAdminPlatformPrincipalsCheckEmailDomainResponse,
+  DeleteApiAdminPlatformPrincipalsByIdData,
+  DeleteApiAdminPlatformPrincipalsByIdResponse,
+  GetApiAdminPlatformPrincipalsByIdData,
+  GetApiAdminPlatformPrincipalsByIdResponse,
+  PutApiAdminPlatformPrincipalsByIdData,
+  PutApiAdminPlatformPrincipalsByIdResponse,
+  PostApiAdminPlatformPrincipalsByIdActivateData,
+  PostApiAdminPlatformPrincipalsByIdActivateResponse,
+  GetApiAdminPlatformPrincipalsByIdClientAccessData,
+  GetApiAdminPlatformPrincipalsByIdClientAccessResponse,
+  PostApiAdminPlatformPrincipalsByIdClientAccessData,
+  PostApiAdminPlatformPrincipalsByIdClientAccessResponse,
+  DeleteApiAdminPlatformPrincipalsByIdClientAccessByClientIdData,
+  DeleteApiAdminPlatformPrincipalsByIdClientAccessByClientIdResponse,
+  PostApiAdminPlatformPrincipalsByIdDeactivateData,
+  PostApiAdminPlatformPrincipalsByIdDeactivateResponse,
+  PostApiAdminPlatformPrincipalsByIdResetPasswordData,
+  PostApiAdminPlatformPrincipalsByIdResetPasswordResponse,
+  GetApiAdminPlatformPrincipalsByIdRolesData,
+  GetApiAdminPlatformPrincipalsByIdRolesResponse,
+  PostApiAdminPlatformPrincipalsByIdRolesData,
+  PostApiAdminPlatformPrincipalsByIdRolesResponse,
+  PutApiAdminPlatformPrincipalsByIdRolesData,
+  PutApiAdminPlatformPrincipalsByIdRolesResponse,
+  DeleteApiAdminPlatformPrincipalsByIdRolesByRoleData,
+  DeleteApiAdminPlatformPrincipalsByIdRolesByRoleResponse,
+  GetApiAdminPlatformRolesData,
+  GetApiAdminPlatformRolesResponse,
+  PostApiAdminPlatformRolesData,
+  PostApiAdminPlatformRolesResponse,
+  GetApiAdminPlatformRolesByCodeByCodeData,
+  GetApiAdminPlatformRolesByCodeByCodeResponse,
+  GetApiAdminPlatformRolesFiltersApplicationsData,
+  GetApiAdminPlatformRolesFiltersApplicationsResponse,
+  GetApiAdminPlatformRolesPermissionsData,
+  GetApiAdminPlatformRolesPermissionsResponse,
+  GetApiAdminPlatformRolesPermissionsByPermissionData,
+  GetApiAdminPlatformRolesPermissionsByPermissionResponse,
+  DeleteApiAdminPlatformRolesByRoleNameData,
+  DeleteApiAdminPlatformRolesByRoleNameResponse,
+  GetApiAdminPlatformRolesByRoleNameData,
+  GetApiAdminPlatformRolesByRoleNameResponse,
+  PutApiAdminPlatformRolesByRoleNameData,
+  PutApiAdminPlatformRolesByRoleNameResponse,
+  PostApiAdminPlatformRolesByRoleNamePermissionsData,
+  PostApiAdminPlatformRolesByRoleNamePermissionsResponse,
+  DeleteApiAdminPlatformRolesByRoleNamePermissionsByPermissionData,
+  DeleteApiAdminPlatformRolesByRoleNamePermissionsByPermissionResponse,
+  GetApiAdminPlatformSubscriptionsData,
+  GetApiAdminPlatformSubscriptionsResponse,
+  PostApiAdminPlatformSubscriptionsData,
+  PostApiAdminPlatformSubscriptionsResponse,
+  DeleteApiAdminPlatformSubscriptionsByIdData,
+  DeleteApiAdminPlatformSubscriptionsByIdResponse,
+  GetApiAdminPlatformSubscriptionsByIdData,
+  GetApiAdminPlatformSubscriptionsByIdResponse,
+  PutApiAdminPlatformSubscriptionsByIdData,
+  PutApiAdminPlatformSubscriptionsByIdResponse,
+  PostApiAdminPlatformSubscriptionsByIdPauseData,
+  PostApiAdminPlatformSubscriptionsByIdPauseResponse,
+  PostApiAdminPlatformSubscriptionsByIdReactivateData,
+  PostApiAdminPlatformSubscriptionsByIdReactivateResponse,
+  PostApiAdminPlatformSubscriptionsByIdResumeData,
+  PostApiAdminPlatformSubscriptionsByIdResumeResponse,
+  GetApiAdminMonitoringCircuitBreakersData,
+  GetApiAdminMonitoringCircuitBreakersResponse,
+  GetApiAdminMonitoringDashboardData,
+  GetApiAdminMonitoringDashboardResponse,
+  GetApiAdminMonitoringInFlightMessagesData,
+  GetApiAdminMonitoringInFlightMessagesResponse,
+  GetApiAdminMonitoringPoolStatsData,
+  GetApiAdminMonitoringPoolStatsResponse,
+  GetApiAdminMonitoringStandbyStatusData,
+  GetApiAdminMonitoringStandbyStatusResponse,
+  GetAuthCheckDomainData,
+  GetAuthCheckDomainResponse,
+  PostAuthLoginData,
+  PostAuthLoginResponse,
+  PostAuthLogoutData,
+  PostAuthLogoutResponse,
+  GetAuthMeData,
+  GetAuthMeResponse,
+  PostAuthRefreshData,
+  PostAuthRefreshResponse,
+  GetApiBffDispatchJobsData,
+  GetApiBffDispatchJobsResponse,
+  PostApiBffDispatchJobsData,
+  PostApiBffDispatchJobsResponse,
+  PostApiBffDispatchJobsBatchData,
+  PostApiBffDispatchJobsBatchResponse,
+  GetApiBffDispatchJobsByEventByEventIdData,
+  GetApiBffDispatchJobsByEventByEventIdResponse,
+  GetApiBffDispatchJobsByIdData,
+  GetApiBffDispatchJobsByIdResponse,
+  GetApiBffDispatchJobsByIdAttemptsData,
+  GetApiBffDispatchJobsByIdAttemptsResponse,
+  GetApiBffEventTypesData,
+  GetApiBffEventTypesResponse,
+  PostApiBffEventTypesData,
+  PostApiBffEventTypesResponse,
+  GetApiBffEventTypesByCodeByCodeData,
+  GetApiBffEventTypesByCodeByCodeResponse,
+  DeleteApiBffEventTypesByIdData,
+  DeleteApiBffEventTypesByIdResponse,
+  GetApiBffEventTypesByIdData,
+  GetApiBffEventTypesByIdResponse,
+  PutApiBffEventTypesByIdData,
+  PutApiBffEventTypesByIdResponse,
+  PostApiBffEventTypesByIdVersionsData,
+  PostApiBffEventTypesByIdVersionsResponse,
+  GetApiBffEventsData,
+  GetApiBffEventsResponse,
+  PostApiBffEventsData,
+  PostApiBffEventsResponse,
+  PostApiBffEventsBatchData,
+  PostApiBffEventsBatchResponse,
+  GetApiBffEventsByIdData,
+  GetApiBffEventsByIdResponse,
+  GetApiBffFilterOptionsData,
+  GetApiBffFilterOptionsResponse,
+  GetApiBffFilterOptionsClientsData,
+  GetApiBffFilterOptionsClientsResponse,
+  GetApiBffDispatchJobsFilterOptionsData,
+  GetApiBffDispatchJobsFilterOptionsResponse,
+  GetApiBffFilterOptionsDispatchPoolsData,
+  GetApiBffFilterOptionsDispatchPoolsResponse,
+  GetApiBffFilterOptionsEventTypesData,
+  GetApiBffFilterOptionsEventTypesResponse,
+  GetApiBffFilterOptionsEventTypesFiltersAggregatesData,
+  GetApiBffFilterOptionsEventTypesFiltersAggregatesResponse,
+  GetApiBffFilterOptionsEventTypesFiltersApplicationsData,
+  GetApiBffFilterOptionsEventTypesFiltersApplicationsResponse,
+  GetApiBffFilterOptionsEventTypesFiltersSubdomainsData,
+  GetApiBffFilterOptionsEventTypesFiltersSubdomainsResponse,
+  GetApiBffEventsFilterOptionsData,
+  GetApiBffEventsFilterOptionsResponse,
+  GetApiBffFilterOptionsSubscriptionsData,
+  GetApiBffFilterOptionsSubscriptionsResponse,
+} from "./types.gen";
+import { client as _heyApiClient } from "./client.gen";
 
 export type Options<
   TData extends TDataShape = TDataShape,
@@ -21,4 +222,1963 @@ export type Options<
    * used to access values that aren't defined as part of the SDK function.
    */
   meta?: Record<string, unknown>;
+};
+
+/**
+ * List audit logs with filters (matches Java AuditLogAdminResource)
+ */
+export const getApiAdminPlatformAuditLogs = <
+  ThrowOnError extends boolean = false,
+>(
+  options?: Options<GetApiAdminPlatformAuditLogsData, ThrowOnError>,
+) => {
+  return (options?.client ?? _heyApiClient).get<
+    GetApiAdminPlatformAuditLogsResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/audit-logs",
+    ...options,
+  });
+};
+
+/**
+ * Get distinct entity types
+ */
+export const getApiAdminPlatformAuditLogsEntityTypes = <
+  ThrowOnError extends boolean = false,
+>(
+  options?: Options<GetApiAdminPlatformAuditLogsEntityTypesData, ThrowOnError>,
+) => {
+  return (options?.client ?? _heyApiClient).get<
+    GetApiAdminPlatformAuditLogsEntityTypesResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/audit-logs/entity-types",
+    ...options,
+  });
+};
+
+/**
+ * Get audit logs for a specific entity
+ */
+export const getApiAdminPlatformAuditLogsEntityByEntityTypeByEntityId = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<
+    GetApiAdminPlatformAuditLogsEntityByEntityTypeByEntityIdData,
+    ThrowOnError
+  >,
+) => {
+  return (options.client ?? _heyApiClient).get<
+    GetApiAdminPlatformAuditLogsEntityByEntityTypeByEntityIdResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/audit-logs/entity/{entity_type}/{entity_id}",
+    ...options,
+  });
+};
+
+/**
+ * Get distinct operations
+ */
+export const getApiAdminPlatformAuditLogsOperations = <
+  ThrowOnError extends boolean = false,
+>(
+  options?: Options<GetApiAdminPlatformAuditLogsOperationsData, ThrowOnError>,
+) => {
+  return (options?.client ?? _heyApiClient).get<
+    GetApiAdminPlatformAuditLogsOperationsResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/audit-logs/operations",
+    ...options,
+  });
+};
+
+/**
+ * Get audit logs for a principal
+ */
+export const getApiAdminPlatformAuditLogsPrincipalByPrincipalId = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<
+    GetApiAdminPlatformAuditLogsPrincipalByPrincipalIdData,
+    ThrowOnError
+  >,
+) => {
+  return (options.client ?? _heyApiClient).get<
+    GetApiAdminPlatformAuditLogsPrincipalByPrincipalIdResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/audit-logs/principal/{principal_id}",
+    ...options,
+  });
+};
+
+/**
+ * Get recent audit logs
+ */
+export const getApiAdminPlatformAuditLogsRecent = <
+  ThrowOnError extends boolean = false,
+>(
+  options?: Options<GetApiAdminPlatformAuditLogsRecentData, ThrowOnError>,
+) => {
+  return (options?.client ?? _heyApiClient).get<
+    GetApiAdminPlatformAuditLogsRecentResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/audit-logs/recent",
+    ...options,
+  });
+};
+
+/**
+ * Get audit log by ID
+ */
+export const getApiAdminPlatformAuditLogsById = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<GetApiAdminPlatformAuditLogsByIdData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).get<
+    GetApiAdminPlatformAuditLogsByIdResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/audit-logs/{id}",
+    ...options,
+  });
+};
+
+/**
+ * List clients
+ */
+export const getApiAdminPlatformClients = <
+  ThrowOnError extends boolean = false,
+>(
+  options?: Options<GetApiAdminPlatformClientsData, ThrowOnError>,
+) => {
+  return (options?.client ?? _heyApiClient).get<
+    GetApiAdminPlatformClientsResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/clients",
+    ...options,
+  });
+};
+
+/**
+ * Create a new client
+ */
+export const postApiAdminPlatformClients = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<PostApiAdminPlatformClientsData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).post<
+    PostApiAdminPlatformClientsResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/clients",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options?.headers,
+    },
+  });
+};
+
+/**
+ * Get client by identifier
+ */
+export const getApiAdminPlatformClientsByIdentifierByIdentifier = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<
+    GetApiAdminPlatformClientsByIdentifierByIdentifierData,
+    ThrowOnError
+  >,
+) => {
+  return (options.client ?? _heyApiClient).get<
+    GetApiAdminPlatformClientsByIdentifierByIdentifierResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/clients/by-identifier/{identifier}",
+    ...options,
+  });
+};
+
+/**
+ * Search clients
+ */
+export const getApiAdminPlatformClientsSearch = <
+  ThrowOnError extends boolean = false,
+>(
+  options?: Options<GetApiAdminPlatformClientsSearchData, ThrowOnError>,
+) => {
+  return (options?.client ?? _heyApiClient).get<
+    GetApiAdminPlatformClientsSearchResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/clients/search",
+    ...options,
+  });
+};
+
+/**
+ * Delete client (soft delete)
+ */
+export const deleteApiAdminPlatformClientsById = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<DeleteApiAdminPlatformClientsByIdData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).delete<
+    DeleteApiAdminPlatformClientsByIdResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/clients/{id}",
+    ...options,
+  });
+};
+
+/**
+ * Get client by ID
+ */
+export const getApiAdminPlatformClientsById = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<GetApiAdminPlatformClientsByIdData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).get<
+    GetApiAdminPlatformClientsByIdResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/clients/{id}",
+    ...options,
+  });
+};
+
+/**
+ * Update client
+ */
+export const putApiAdminPlatformClientsById = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<PutApiAdminPlatformClientsByIdData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).put<
+    PutApiAdminPlatformClientsByIdResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/clients/{id}",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options?.headers,
+    },
+  });
+};
+
+/**
+ * Activate a client
+ * Transitions a suspended or pending client to active status.
+ */
+export const postApiAdminPlatformClientsByIdActivate = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<PostApiAdminPlatformClientsByIdActivateData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).post<
+    PostApiAdminPlatformClientsByIdActivateResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/clients/{id}/activate",
+    ...options,
+  });
+};
+
+/**
+ * Get client applications
+ */
+export const getApiAdminPlatformClientsByIdApplications = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<
+    GetApiAdminPlatformClientsByIdApplicationsData,
+    ThrowOnError
+  >,
+) => {
+  return (options.client ?? _heyApiClient).get<
+    GetApiAdminPlatformClientsByIdApplicationsResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/clients/{id}/applications",
+    ...options,
+  });
+};
+
+/**
+ * Update client applications (bulk)
+ */
+export const putApiAdminPlatformClientsByIdApplications = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<
+    PutApiAdminPlatformClientsByIdApplicationsData,
+    ThrowOnError
+  >,
+) => {
+  return (options.client ?? _heyApiClient).put<
+    PutApiAdminPlatformClientsByIdApplicationsResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/clients/{id}/applications",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options?.headers,
+    },
+  });
+};
+
+/**
+ * Disable application for client
+ */
+export const postApiAdminPlatformClientsByIdApplicationsByApplicationIdDisable =
+  <ThrowOnError extends boolean = false>(
+    options: Options<
+      PostApiAdminPlatformClientsByIdApplicationsByApplicationIdDisableData,
+      ThrowOnError
+    >,
+  ) => {
+    return (options.client ?? _heyApiClient).post<
+      PostApiAdminPlatformClientsByIdApplicationsByApplicationIdDisableResponse,
+      unknown,
+      ThrowOnError
+    >({
+      url: "/api/admin/platform/clients/{id}/applications/{application_id}/disable",
+      ...options,
+    });
+  };
+
+/**
+ * Enable application for client
+ */
+export const postApiAdminPlatformClientsByIdApplicationsByApplicationIdEnable =
+  <ThrowOnError extends boolean = false>(
+    options: Options<
+      PostApiAdminPlatformClientsByIdApplicationsByApplicationIdEnableData,
+      ThrowOnError
+    >,
+  ) => {
+    return (options.client ?? _heyApiClient).post<
+      PostApiAdminPlatformClientsByIdApplicationsByApplicationIdEnableResponse,
+      unknown,
+      ThrowOnError
+    >({
+      url: "/api/admin/platform/clients/{id}/applications/{application_id}/enable",
+      ...options,
+    });
+  };
+
+/**
+ * Deactivate a client (soft delete)
+ * Deactivates/soft-deletes a client. Requires a reason.
+ */
+export const postApiAdminPlatformClientsByIdDeactivate = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<PostApiAdminPlatformClientsByIdDeactivateData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).post<
+    PostApiAdminPlatformClientsByIdDeactivateResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/clients/{id}/deactivate",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options?.headers,
+    },
+  });
+};
+
+/**
+ * Add note to client
+ */
+export const postApiAdminPlatformClientsByIdNotes = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<PostApiAdminPlatformClientsByIdNotesData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).post<
+    PostApiAdminPlatformClientsByIdNotesResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/clients/{id}/notes",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options?.headers,
+    },
+  });
+};
+
+/**
+ * Suspend a client
+ * Suspends a client (e.g., for billing issues). Requires a reason.
+ */
+export const postApiAdminPlatformClientsByIdSuspend = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<PostApiAdminPlatformClientsByIdSuspendData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).post<
+    PostApiAdminPlatformClientsByIdSuspendResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/clients/{id}/suspend",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options?.headers,
+    },
+  });
+};
+
+/**
+ * List OAuth clients
+ */
+export const getApiAdminPlatformOauthClients = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<GetApiAdminPlatformOauthClientsData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).get<
+    GetApiAdminPlatformOauthClientsResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/oauth-clients",
+    ...options,
+  });
+};
+
+/**
+ * Create a new OAuth client
+ */
+export const postApiAdminPlatformOauthClients = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<PostApiAdminPlatformOauthClientsData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).post<
+    PostApiAdminPlatformOauthClientsResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/oauth-clients",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options?.headers,
+    },
+  });
+};
+
+/**
+ * Delete OAuth client
+ */
+export const deleteApiAdminPlatformOauthClientsById = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<DeleteApiAdminPlatformOauthClientsByIdData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).delete<
+    DeleteApiAdminPlatformOauthClientsByIdResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/oauth-clients/{id}",
+    ...options,
+  });
+};
+
+/**
+ * Get OAuth client by ID
+ */
+export const getApiAdminPlatformOauthClientsById = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<GetApiAdminPlatformOauthClientsByIdData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).get<
+    GetApiAdminPlatformOauthClientsByIdResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/oauth-clients/{id}",
+    ...options,
+  });
+};
+
+/**
+ * Update OAuth client
+ */
+export const putApiAdminPlatformOauthClientsById = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<PutApiAdminPlatformOauthClientsByIdData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).put<
+    PutApiAdminPlatformOauthClientsByIdResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/oauth-clients/{id}",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options?.headers,
+    },
+  });
+};
+
+/**
+ * List principals
+ */
+export const getApiAdminPlatformPrincipals = <
+  ThrowOnError extends boolean = false,
+>(
+  options?: Options<GetApiAdminPlatformPrincipalsData, ThrowOnError>,
+) => {
+  return (options?.client ?? _heyApiClient).get<
+    GetApiAdminPlatformPrincipalsResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/principals",
+    ...options,
+  });
+};
+
+/**
+ * Create a new user principal
+ */
+export const postApiAdminPlatformPrincipals = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<PostApiAdminPlatformPrincipalsData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).post<
+    PostApiAdminPlatformPrincipalsResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/principals",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options?.headers,
+    },
+  });
+};
+
+/**
+ * Check email domain configuration
+ */
+export const getApiAdminPlatformPrincipalsCheckEmailDomain = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<
+    GetApiAdminPlatformPrincipalsCheckEmailDomainData,
+    ThrowOnError
+  >,
+) => {
+  return (options.client ?? _heyApiClient).get<
+    GetApiAdminPlatformPrincipalsCheckEmailDomainResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/principals/check-email-domain",
+    ...options,
+  });
+};
+
+/**
+ * Delete principal (deactivate)
+ */
+export const deleteApiAdminPlatformPrincipalsById = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<DeleteApiAdminPlatformPrincipalsByIdData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).delete<
+    DeleteApiAdminPlatformPrincipalsByIdResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/principals/{id}",
+    ...options,
+  });
+};
+
+/**
+ * Get principal by ID
+ */
+export const getApiAdminPlatformPrincipalsById = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<GetApiAdminPlatformPrincipalsByIdData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).get<
+    GetApiAdminPlatformPrincipalsByIdResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/principals/{id}",
+    ...options,
+  });
+};
+
+/**
+ * Update principal
+ */
+export const putApiAdminPlatformPrincipalsById = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<PutApiAdminPlatformPrincipalsByIdData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).put<
+    PutApiAdminPlatformPrincipalsByIdResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/principals/{id}",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options?.headers,
+    },
+  });
+};
+
+/**
+ * Activate a principal
+ * Reactivates a deactivated principal.
+ */
+export const postApiAdminPlatformPrincipalsByIdActivate = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<
+    PostApiAdminPlatformPrincipalsByIdActivateData,
+    ThrowOnError
+  >,
+) => {
+  return (options.client ?? _heyApiClient).post<
+    PostApiAdminPlatformPrincipalsByIdActivateResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/principals/{id}/activate",
+    ...options,
+  });
+};
+
+/**
+ * Get client access grants for a principal
+ */
+export const getApiAdminPlatformPrincipalsByIdClientAccess = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<
+    GetApiAdminPlatformPrincipalsByIdClientAccessData,
+    ThrowOnError
+  >,
+) => {
+  return (options.client ?? _heyApiClient).get<
+    GetApiAdminPlatformPrincipalsByIdClientAccessResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/principals/{id}/client-access",
+    ...options,
+  });
+};
+
+/**
+ * Grant client access to principal
+ */
+export const postApiAdminPlatformPrincipalsByIdClientAccess = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<
+    PostApiAdminPlatformPrincipalsByIdClientAccessData,
+    ThrowOnError
+  >,
+) => {
+  return (options.client ?? _heyApiClient).post<
+    PostApiAdminPlatformPrincipalsByIdClientAccessResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/principals/{id}/client-access",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options?.headers,
+    },
+  });
+};
+
+/**
+ * Revoke client access from principal
+ */
+export const deleteApiAdminPlatformPrincipalsByIdClientAccessByClientId = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<
+    DeleteApiAdminPlatformPrincipalsByIdClientAccessByClientIdData,
+    ThrowOnError
+  >,
+) => {
+  return (options.client ?? _heyApiClient).delete<
+    DeleteApiAdminPlatformPrincipalsByIdClientAccessByClientIdResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/principals/{id}/client-access/{client_id}",
+    ...options,
+  });
+};
+
+/**
+ * Deactivate a principal
+ * Deactivates an active principal.
+ */
+export const postApiAdminPlatformPrincipalsByIdDeactivate = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<
+    PostApiAdminPlatformPrincipalsByIdDeactivateData,
+    ThrowOnError
+  >,
+) => {
+  return (options.client ?? _heyApiClient).post<
+    PostApiAdminPlatformPrincipalsByIdDeactivateResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/principals/{id}/deactivate",
+    ...options,
+  });
+};
+
+/**
+ * Reset a user's password
+ * Resets the password for an internal auth user. Does not work for OIDC users.
+ */
+export const postApiAdminPlatformPrincipalsByIdResetPassword = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<
+    PostApiAdminPlatformPrincipalsByIdResetPasswordData,
+    ThrowOnError
+  >,
+) => {
+  return (options.client ?? _heyApiClient).post<
+    PostApiAdminPlatformPrincipalsByIdResetPasswordResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/principals/{id}/reset-password",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options?.headers,
+    },
+  });
+};
+
+/**
+ * Get roles assigned to a principal
+ */
+export const getApiAdminPlatformPrincipalsByIdRoles = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<GetApiAdminPlatformPrincipalsByIdRolesData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).get<
+    GetApiAdminPlatformPrincipalsByIdRolesResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/principals/{id}/roles",
+    ...options,
+  });
+};
+
+/**
+ * Assign role to principal
+ */
+export const postApiAdminPlatformPrincipalsByIdRoles = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<PostApiAdminPlatformPrincipalsByIdRolesData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).post<
+    PostApiAdminPlatformPrincipalsByIdRolesResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/principals/{id}/roles",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options?.headers,
+    },
+  });
+};
+
+/**
+ * Batch assign roles to principal (declarative - replaces all roles)
+ */
+export const putApiAdminPlatformPrincipalsByIdRoles = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<PutApiAdminPlatformPrincipalsByIdRolesData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).put<
+    PutApiAdminPlatformPrincipalsByIdRolesResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/principals/{id}/roles",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options?.headers,
+    },
+  });
+};
+
+/**
+ * Remove role from principal
+ */
+export const deleteApiAdminPlatformPrincipalsByIdRolesByRole = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<
+    DeleteApiAdminPlatformPrincipalsByIdRolesByRoleData,
+    ThrowOnError
+  >,
+) => {
+  return (options.client ?? _heyApiClient).delete<
+    DeleteApiAdminPlatformPrincipalsByIdRolesByRoleResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/principals/{id}/roles/{role}",
+    ...options,
+  });
+};
+
+/**
+ * List roles
+ */
+export const getApiAdminPlatformRoles = <ThrowOnError extends boolean = false>(
+  options: Options<GetApiAdminPlatformRolesData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).get<
+    GetApiAdminPlatformRolesResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/roles",
+    ...options,
+  });
+};
+
+/**
+ * Create a new role
+ */
+export const postApiAdminPlatformRoles = <ThrowOnError extends boolean = false>(
+  options: Options<PostApiAdminPlatformRolesData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).post<
+    PostApiAdminPlatformRolesResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/roles",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options?.headers,
+    },
+  });
+};
+
+/**
+ * Get role by code
+ */
+export const getApiAdminPlatformRolesByCodeByCode = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<GetApiAdminPlatformRolesByCodeByCodeData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).get<
+    GetApiAdminPlatformRolesByCodeByCodeResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/roles/by-code/{code}",
+    ...options,
+  });
+};
+
+/**
+ * Get applications for role filter dropdown
+ */
+export const getApiAdminPlatformRolesFiltersApplications = <
+  ThrowOnError extends boolean = false,
+>(
+  options?: Options<
+    GetApiAdminPlatformRolesFiltersApplicationsData,
+    ThrowOnError
+  >,
+) => {
+  return (options?.client ?? _heyApiClient).get<
+    GetApiAdminPlatformRolesFiltersApplicationsResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/roles/filters/applications",
+    ...options,
+  });
+};
+
+/**
+ * List all permissions
+ */
+export const getApiAdminPlatformRolesPermissions = <
+  ThrowOnError extends boolean = false,
+>(
+  options?: Options<GetApiAdminPlatformRolesPermissionsData, ThrowOnError>,
+) => {
+  return (options?.client ?? _heyApiClient).get<
+    GetApiAdminPlatformRolesPermissionsResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/roles/permissions",
+    ...options,
+  });
+};
+
+/**
+ * Get permission by string
+ */
+export const getApiAdminPlatformRolesPermissionsByPermission = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<
+    GetApiAdminPlatformRolesPermissionsByPermissionData,
+    ThrowOnError
+  >,
+) => {
+  return (options.client ?? _heyApiClient).get<
+    GetApiAdminPlatformRolesPermissionsByPermissionResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/roles/permissions/{permission}",
+    ...options,
+  });
+};
+
+/**
+ * Delete role
+ */
+export const deleteApiAdminPlatformRolesByRoleName = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<DeleteApiAdminPlatformRolesByRoleNameData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).delete<
+    DeleteApiAdminPlatformRolesByRoleNameResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/roles/{role_name}",
+    ...options,
+  });
+};
+
+/**
+ * Get role by ID or name (code)
+ * The frontend calls this with the role name (e.g., "platform:super-admin"),
+ * so we try by code first if it contains ":", otherwise by ID.
+ */
+export const getApiAdminPlatformRolesByRoleName = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<GetApiAdminPlatformRolesByRoleNameData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).get<
+    GetApiAdminPlatformRolesByRoleNameResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/roles/{role_name}",
+    ...options,
+  });
+};
+
+/**
+ * Update role
+ */
+export const putApiAdminPlatformRolesByRoleName = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<PutApiAdminPlatformRolesByRoleNameData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).put<
+    PutApiAdminPlatformRolesByRoleNameResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/roles/{role_name}",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options?.headers,
+    },
+  });
+};
+
+/**
+ * Grant permission to role
+ */
+export const postApiAdminPlatformRolesByRoleNamePermissions = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<
+    PostApiAdminPlatformRolesByRoleNamePermissionsData,
+    ThrowOnError
+  >,
+) => {
+  return (options.client ?? _heyApiClient).post<
+    PostApiAdminPlatformRolesByRoleNamePermissionsResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/roles/{role_name}/permissions",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options?.headers,
+    },
+  });
+};
+
+/**
+ * Revoke permission from role
+ */
+export const deleteApiAdminPlatformRolesByRoleNamePermissionsByPermission = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<
+    DeleteApiAdminPlatformRolesByRoleNamePermissionsByPermissionData,
+    ThrowOnError
+  >,
+) => {
+  return (options.client ?? _heyApiClient).delete<
+    DeleteApiAdminPlatformRolesByRoleNamePermissionsByPermissionResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/roles/{role_name}/permissions/{permission}",
+    ...options,
+  });
+};
+
+/**
+ * List subscriptions
+ */
+export const getApiAdminPlatformSubscriptions = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<GetApiAdminPlatformSubscriptionsData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).get<
+    GetApiAdminPlatformSubscriptionsResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/subscriptions",
+    ...options,
+  });
+};
+
+/**
+ * Create a new subscription
+ */
+export const postApiAdminPlatformSubscriptions = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<PostApiAdminPlatformSubscriptionsData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).post<
+    PostApiAdminPlatformSubscriptionsResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/subscriptions",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options?.headers,
+    },
+  });
+};
+
+/**
+ * Delete subscription (archive)
+ */
+export const deleteApiAdminPlatformSubscriptionsById = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<DeleteApiAdminPlatformSubscriptionsByIdData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).delete<
+    DeleteApiAdminPlatformSubscriptionsByIdResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/subscriptions/{id}",
+    ...options,
+  });
+};
+
+/**
+ * Get subscription by ID
+ */
+export const getApiAdminPlatformSubscriptionsById = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<GetApiAdminPlatformSubscriptionsByIdData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).get<
+    GetApiAdminPlatformSubscriptionsByIdResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/subscriptions/{id}",
+    ...options,
+  });
+};
+
+/**
+ * Update subscription
+ */
+export const putApiAdminPlatformSubscriptionsById = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<PutApiAdminPlatformSubscriptionsByIdData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).put<
+    PutApiAdminPlatformSubscriptionsByIdResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/subscriptions/{id}",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options?.headers,
+    },
+  });
+};
+
+/**
+ * Pause subscription
+ */
+export const postApiAdminPlatformSubscriptionsByIdPause = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<
+    PostApiAdminPlatformSubscriptionsByIdPauseData,
+    ThrowOnError
+  >,
+) => {
+  return (options.client ?? _heyApiClient).post<
+    PostApiAdminPlatformSubscriptionsByIdPauseResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/subscriptions/{id}/pause",
+    ...options,
+  });
+};
+
+/**
+ * Reactivate an archived subscription
+ * Reactivates a previously archived subscription, setting it back to active status.
+ */
+export const postApiAdminPlatformSubscriptionsByIdReactivate = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<
+    PostApiAdminPlatformSubscriptionsByIdReactivateData,
+    ThrowOnError
+  >,
+) => {
+  return (options.client ?? _heyApiClient).post<
+    PostApiAdminPlatformSubscriptionsByIdReactivateResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/subscriptions/{id}/reactivate",
+    ...options,
+  });
+};
+
+/**
+ * Resume subscription
+ */
+export const postApiAdminPlatformSubscriptionsByIdResume = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<
+    PostApiAdminPlatformSubscriptionsByIdResumeData,
+    ThrowOnError
+  >,
+) => {
+  return (options.client ?? _heyApiClient).post<
+    PostApiAdminPlatformSubscriptionsByIdResumeResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/subscriptions/{id}/resume",
+    ...options,
+  });
+};
+
+/**
+ * Get circuit breaker states
+ */
+export const getApiAdminMonitoringCircuitBreakers = <
+  ThrowOnError extends boolean = false,
+>(
+  options?: Options<GetApiAdminMonitoringCircuitBreakersData, ThrowOnError>,
+) => {
+  return (options?.client ?? _heyApiClient).get<
+    GetApiAdminMonitoringCircuitBreakersResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/monitoring/circuit-breakers",
+    ...options,
+  });
+};
+
+/**
+ * Get dashboard metrics
+ */
+export const getApiAdminMonitoringDashboard = <
+  ThrowOnError extends boolean = false,
+>(
+  options?: Options<GetApiAdminMonitoringDashboardData, ThrowOnError>,
+) => {
+  return (options?.client ?? _heyApiClient).get<
+    GetApiAdminMonitoringDashboardResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/monitoring/dashboard",
+    ...options,
+  });
+};
+
+/**
+ * Get in-flight messages
+ */
+export const getApiAdminMonitoringInFlightMessages = <
+  ThrowOnError extends boolean = false,
+>(
+  options?: Options<GetApiAdminMonitoringInFlightMessagesData, ThrowOnError>,
+) => {
+  return (options?.client ?? _heyApiClient).get<
+    GetApiAdminMonitoringInFlightMessagesResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/monitoring/in-flight-messages",
+    ...options,
+  });
+};
+
+/**
+ * Get pool statistics with enhanced metrics
+ */
+export const getApiAdminMonitoringPoolStats = <
+  ThrowOnError extends boolean = false,
+>(
+  options?: Options<GetApiAdminMonitoringPoolStatsData, ThrowOnError>,
+) => {
+  return (options?.client ?? _heyApiClient).get<
+    GetApiAdminMonitoringPoolStatsResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/monitoring/pool-stats",
+    ...options,
+  });
+};
+
+/**
+ * Get standby status
+ */
+export const getApiAdminMonitoringStandbyStatus = <
+  ThrowOnError extends boolean = false,
+>(
+  options?: Options<GetApiAdminMonitoringStandbyStatusData, ThrowOnError>,
+) => {
+  return (options?.client ?? _heyApiClient).get<
+    GetApiAdminMonitoringStandbyStatusResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/monitoring/standby-status",
+    ...options,
+  });
+};
+
+/**
+ * Check email domain authentication method
+ * Determines how a user with the given email should authenticate:
+ * - Internal: username/password
+ * - OIDC: external identity provider
+ *
+ * This is called before showing the login form to determine
+ * if the user should be redirected to an external IDP.
+ */
+export const getAuthCheckDomain = <ThrowOnError extends boolean = false>(
+  options: Options<GetAuthCheckDomainData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).get<
+    GetAuthCheckDomainResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/auth/check-domain",
+    ...options,
+  });
+};
+
+/**
+ * Login with email and password
+ * Authenticates a user with email and password credentials.
+ * Returns an access token on success and sets a session cookie.
+ */
+export const postAuthLogin = <ThrowOnError extends boolean = false>(
+  options: Options<PostAuthLoginData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).post<
+    PostAuthLoginResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/auth/login",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options?.headers,
+    },
+  });
+};
+
+/**
+ * Logout / revoke token
+ * Invalidates the current session by clearing the session cookie.
+ */
+export const postAuthLogout = <ThrowOnError extends boolean = false>(
+  options?: Options<PostAuthLogoutData, ThrowOnError>,
+) => {
+  return (options?.client ?? _heyApiClient).post<
+    PostAuthLogoutResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/auth/logout",
+    ...options,
+  });
+};
+
+/**
+ * Get current user info
+ * Returns information about the currently authenticated user.
+ */
+export const getAuthMe = <ThrowOnError extends boolean = false>(
+  options?: Options<GetAuthMeData, ThrowOnError>,
+) => {
+  return (options?.client ?? _heyApiClient).get<
+    GetAuthMeResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/auth/me",
+    ...options,
+  });
+};
+
+/**
+ * Refresh access token
+ * Exchange a refresh token for a new access token.
+ * The refresh token is rotated (old one invalidated, new one issued).
+ */
+export const postAuthRefresh = <ThrowOnError extends boolean = false>(
+  options: Options<PostAuthRefreshData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).post<
+    PostAuthRefreshResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/auth/refresh",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options?.headers,
+    },
+  });
+};
+
+/**
+ * List dispatch jobs
+ */
+export const getApiBffDispatchJobs = <ThrowOnError extends boolean = false>(
+  options: Options<GetApiBffDispatchJobsData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).get<
+    GetApiBffDispatchJobsResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/bff/dispatch-jobs",
+    ...options,
+  });
+};
+
+/**
+ * Create a new dispatch job
+ * Creates and queues a new dispatch job for webhook delivery.
+ */
+export const postApiBffDispatchJobs = <ThrowOnError extends boolean = false>(
+  options: Options<PostApiBffDispatchJobsData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).post<
+    PostApiBffDispatchJobsResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/bff/dispatch-jobs",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options?.headers,
+    },
+  });
+};
+
+/**
+ * Create multiple dispatch jobs in batch
+ * Creates multiple dispatch jobs in a single operation. Maximum batch size is 100 jobs.
+ */
+export const postApiBffDispatchJobsBatch = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<PostApiBffDispatchJobsBatchData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).post<
+    PostApiBffDispatchJobsBatchResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/bff/dispatch-jobs/batch",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options?.headers,
+    },
+  });
+};
+
+/**
+ * Get dispatch jobs for an event
+ */
+export const getApiBffDispatchJobsByEventByEventId = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<GetApiBffDispatchJobsByEventByEventIdData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).get<
+    GetApiBffDispatchJobsByEventByEventIdResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/bff/dispatch-jobs/by-event/{event_id}",
+    ...options,
+  });
+};
+
+/**
+ * Get dispatch job by ID
+ */
+export const getApiBffDispatchJobsById = <ThrowOnError extends boolean = false>(
+  options: Options<GetApiBffDispatchJobsByIdData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).get<
+    GetApiBffDispatchJobsByIdResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/bff/dispatch-jobs/{id}",
+    ...options,
+  });
+};
+
+/**
+ * Get all attempts for a dispatch job
+ * Retrieves the full history of webhook delivery attempts for a job.
+ */
+export const getApiBffDispatchJobsByIdAttempts = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<GetApiBffDispatchJobsByIdAttemptsData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).get<
+    GetApiBffDispatchJobsByIdAttemptsResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/bff/dispatch-jobs/{id}/attempts",
+    ...options,
+  });
+};
+
+/**
+ * List event types
+ */
+export const getApiBffEventTypes = <ThrowOnError extends boolean = false>(
+  options: Options<GetApiBffEventTypesData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).get<
+    GetApiBffEventTypesResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/bff/event-types",
+    ...options,
+  });
+};
+
+/**
+ * Create a new event type
+ */
+export const postApiBffEventTypes = <ThrowOnError extends boolean = false>(
+  options: Options<PostApiBffEventTypesData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).post<
+    PostApiBffEventTypesResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/bff/event-types",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options?.headers,
+    },
+  });
+};
+
+/**
+ * Get event type by code
+ */
+export const getApiBffEventTypesByCodeByCode = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<GetApiBffEventTypesByCodeByCodeData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).get<
+    GetApiBffEventTypesByCodeByCodeResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/bff/event-types/by-code/{code}",
+    ...options,
+  });
+};
+
+/**
+ * Delete event type (archive)
+ */
+export const deleteApiBffEventTypesById = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<DeleteApiBffEventTypesByIdData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).delete<
+    DeleteApiBffEventTypesByIdResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/bff/event-types/{id}",
+    ...options,
+  });
+};
+
+/**
+ * Get event type by ID
+ */
+export const getApiBffEventTypesById = <ThrowOnError extends boolean = false>(
+  options: Options<GetApiBffEventTypesByIdData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).get<
+    GetApiBffEventTypesByIdResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/bff/event-types/{id}",
+    ...options,
+  });
+};
+
+/**
+ * Update event type
+ */
+export const putApiBffEventTypesById = <ThrowOnError extends boolean = false>(
+  options: Options<PutApiBffEventTypesByIdData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).put<
+    PutApiBffEventTypesByIdResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/bff/event-types/{id}",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options?.headers,
+    },
+  });
+};
+
+/**
+ * Add schema version to event type
+ */
+export const postApiBffEventTypesByIdVersions = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<PostApiBffEventTypesByIdVersionsData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).post<
+    PostApiBffEventTypesByIdVersionsResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/bff/event-types/{id}/versions",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options?.headers,
+    },
+  });
+};
+
+/**
+ * List events
+ */
+export const getApiBffEvents = <ThrowOnError extends boolean = false>(
+  options: Options<GetApiBffEventsData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).get<
+    GetApiBffEventsResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/bff/events",
+    ...options,
+  });
+};
+
+/**
+ * Create a new event
+ * Creates a new event in the event store. If a deduplicationId is provided and
+ * an event with that ID already exists, the existing event is returned (idempotent operation).
+ * Dispatch jobs are automatically created for matching subscriptions.
+ */
+export const postApiBffEvents = <ThrowOnError extends boolean = false>(
+  options: Options<PostApiBffEventsData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).post<
+    PostApiBffEventsResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/bff/events",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options?.headers,
+    },
+  });
+};
+
+/**
+ * Batch create events
+ * Creates multiple events in a single operation. Maximum batch size is 100 events.
+ * Dispatch jobs are automatically created for matching subscriptions.
+ * Events with duplicate deduplicationIds are returned from the existing store.
+ */
+export const postApiBffEventsBatch = <ThrowOnError extends boolean = false>(
+  options: Options<PostApiBffEventsBatchData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).post<
+    PostApiBffEventsBatchResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/bff/events/batch",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options?.headers,
+    },
+  });
+};
+
+/**
+ * Get event by ID
+ */
+export const getApiBffEventsById = <ThrowOnError extends boolean = false>(
+  options: Options<GetApiBffEventsByIdData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).get<
+    GetApiBffEventsByIdResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/bff/events/{id}",
+    ...options,
+  });
+};
+
+/**
+ * Get all filter options at once
+ */
+export const getApiBffFilterOptions = <ThrowOnError extends boolean = false>(
+  options?: Options<GetApiBffFilterOptionsData, ThrowOnError>,
+) => {
+  return (options?.client ?? _heyApiClient).get<
+    GetApiBffFilterOptionsResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/bff/filter-options",
+    ...options,
+  });
+};
+
+/**
+ * Get client filter options
+ */
+export const getApiBffFilterOptionsClients = <
+  ThrowOnError extends boolean = false,
+>(
+  options?: Options<GetApiBffFilterOptionsClientsData, ThrowOnError>,
+) => {
+  return (options?.client ?? _heyApiClient).get<
+    GetApiBffFilterOptionsClientsResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/bff/filter-options/clients",
+    ...options,
+  });
+};
+
+/**
+ * Get dispatch jobs filter options
+ */
+export const getApiBffDispatchJobsFilterOptions = <
+  ThrowOnError extends boolean = false,
+>(
+  options?: Options<GetApiBffDispatchJobsFilterOptionsData, ThrowOnError>,
+) => {
+  return (options?.client ?? _heyApiClient).get<
+    GetApiBffDispatchJobsFilterOptionsResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/bff/filter-options/dispatch-jobs",
+    ...options,
+  });
+};
+
+/**
+ * Get dispatch pool filter options
+ */
+export const getApiBffFilterOptionsDispatchPools = <
+  ThrowOnError extends boolean = false,
+>(
+  options?: Options<GetApiBffFilterOptionsDispatchPoolsData, ThrowOnError>,
+) => {
+  return (options?.client ?? _heyApiClient).get<
+    GetApiBffFilterOptionsDispatchPoolsResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/bff/filter-options/dispatch-pools",
+    ...options,
+  });
+};
+
+/**
+ * Get event type filter options
+ */
+export const getApiBffFilterOptionsEventTypes = <
+  ThrowOnError extends boolean = false,
+>(
+  options?: Options<GetApiBffFilterOptionsEventTypesData, ThrowOnError>,
+) => {
+  return (options?.client ?? _heyApiClient).get<
+    GetApiBffFilterOptionsEventTypesResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/bff/filter-options/event-types",
+    ...options,
+  });
+};
+
+/**
+ * Get aggregates for event type cascading filter (filtered by application and subdomain)
+ */
+export const getApiBffFilterOptionsEventTypesFiltersAggregates = <
+  ThrowOnError extends boolean = false,
+>(
+  options?: Options<
+    GetApiBffFilterOptionsEventTypesFiltersAggregatesData,
+    ThrowOnError
+  >,
+) => {
+  return (options?.client ?? _heyApiClient).get<
+    GetApiBffFilterOptionsEventTypesFiltersAggregatesResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/bff/filter-options/event-types/filters/aggregates",
+    ...options,
+  });
+};
+
+/**
+ * Get applications for event type cascading filter
+ */
+export const getApiBffFilterOptionsEventTypesFiltersApplications = <
+  ThrowOnError extends boolean = false,
+>(
+  options?: Options<
+    GetApiBffFilterOptionsEventTypesFiltersApplicationsData,
+    ThrowOnError
+  >,
+) => {
+  return (options?.client ?? _heyApiClient).get<
+    GetApiBffFilterOptionsEventTypesFiltersApplicationsResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/bff/filter-options/event-types/filters/applications",
+    ...options,
+  });
+};
+
+/**
+ * Get subdomains for event type cascading filter (filtered by application)
+ */
+export const getApiBffFilterOptionsEventTypesFiltersSubdomains = <
+  ThrowOnError extends boolean = false,
+>(
+  options?: Options<
+    GetApiBffFilterOptionsEventTypesFiltersSubdomainsData,
+    ThrowOnError
+  >,
+) => {
+  return (options?.client ?? _heyApiClient).get<
+    GetApiBffFilterOptionsEventTypesFiltersSubdomainsResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/bff/filter-options/event-types/filters/subdomains",
+    ...options,
+  });
+};
+
+/**
+ * Get events filter options (cascading)
+ */
+export const getApiBffEventsFilterOptions = <
+  ThrowOnError extends boolean = false,
+>(
+  options?: Options<GetApiBffEventsFilterOptionsData, ThrowOnError>,
+) => {
+  return (options?.client ?? _heyApiClient).get<
+    GetApiBffEventsFilterOptionsResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/bff/filter-options/events",
+    ...options,
+  });
+};
+
+/**
+ * Get subscription filter options
+ */
+export const getApiBffFilterOptionsSubscriptions = <
+  ThrowOnError extends boolean = false,
+>(
+  options?: Options<GetApiBffFilterOptionsSubscriptionsData, ThrowOnError>,
+) => {
+  return (options?.client ?? _heyApiClient).get<
+    GetApiBffFilterOptionsSubscriptionsResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/bff/filter-options/subscriptions",
+    ...options,
+  });
 };

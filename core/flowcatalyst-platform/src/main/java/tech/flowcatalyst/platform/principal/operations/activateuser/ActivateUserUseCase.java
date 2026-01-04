@@ -59,8 +59,7 @@ public class ActivateUserUseCase {
         principal.updatedAt = Instant.now();
 
         // Create domain event
-        UserActivated event = UserActivated.builder()
-            .from(context)
+        UserActivated event = UserActivated.fromContext(context)
             .userId(principal.id)
             .email(principal.userIdentity != null ? principal.userIdentity.email : null)
             .build();

@@ -1,21 +1,30 @@
 package tech.flowcatalyst.schema;
 
 import io.quarkus.mongodb.panache.common.MongoEntity;
+import lombok.Builder;
+import lombok.With;
 import org.bson.codecs.pojo.annotations.BsonId;
 import tech.flowcatalyst.eventtype.SchemaType;
+import tech.flowcatalyst.platform.shared.TsidGenerator;
 
 import java.time.Instant;
 
 /**
  * A reusable schema definition.
  *
- * Schemas define the structure of event payloads and can be:
- * - Referenced by EventType SpecVersions (eventTypeId + version set)
- * - Standalone for direct use with DispatchJobs (eventTypeId is null)
+ * <p>Schemas define the structure of event payloads and can be:
+ * <ul>
+ *   <li>Referenced by EventType SpecVersions (eventTypeId + version set)</li>
+ *   <li>Standalone for direct use with DispatchJobs (eventTypeId is null)</li>
+ * </ul>
  *
- * Content is stored as a string (JSON Schema, Proto, or XSD).
+ * <p>Content is stored as a string (JSON Schema, Proto, or XSD).
+ *
+ * <p>Use {@link #create(SchemaType, String)} for safe construction with defaults.
  */
 @MongoEntity(collection = "schemas")
+@Builder(toBuilder = true)
+@With
 public record Schema(
     @BsonId
     String id,
@@ -56,5 +65,27 @@ public record Schema(
      */
     public boolean isLinkedToEventType() {
         return eventTypeId != null;
+    }
+
+    // ========================================================================
+    // Factory Methods
+    // ========================================================================
+
+    /**
+     * Create a new schema with required fields and sensible defaults.
+     *
+     * @param schemaType Type of schema (JSON_SCHEMA, PROTO, XSD)
+     * @param content    The schema definition content
+     * @return A pre-configured builder with defaults set
+     */
+    public static SchemaBuilder create(SchemaType schemaType, String content) {
+        var now = Instant.now();
+        return Schema.builder()
+            .id(TsidGenerator.generate())
+            .schemaType(schemaType)
+            .content(content)
+            .mimeType("application/json")
+            .createdAt(now)
+            .updatedAt(now);
     }
 }

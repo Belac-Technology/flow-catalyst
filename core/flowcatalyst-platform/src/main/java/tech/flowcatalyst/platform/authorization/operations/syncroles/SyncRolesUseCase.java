@@ -105,8 +105,7 @@ public class SyncRolesUseCase {
         }
 
         // Create domain event
-        RolesSynced event = RolesSynced.builder()
-            .from(context)
+        RolesSynced event = RolesSynced.fromContext(context)
             .applicationId(app.id)
             .applicationCode(app.code)
             .rolesCreated(rolesCreated)

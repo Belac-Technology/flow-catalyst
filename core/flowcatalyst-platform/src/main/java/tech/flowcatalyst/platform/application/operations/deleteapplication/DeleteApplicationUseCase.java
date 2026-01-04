@@ -91,8 +91,7 @@ public class DeleteApplicationUseCase {
         }
 
         // Create domain event (before deletion so we have access to the entity)
-        ApplicationDeleted event = ApplicationDeleted.builder()
-            .from(context)
+        ApplicationDeleted event = ApplicationDeleted.fromContext(context)
             .applicationId(app.id)
             .code(app.code)
             .build();

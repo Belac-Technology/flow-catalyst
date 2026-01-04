@@ -134,8 +134,7 @@ public class CreateUserUseCase {
         principal.userIdentity = userIdentity;
 
         // Create domain event
-        UserCreated event = UserCreated.builder()
-            .from(context)
+        UserCreated event = UserCreated.fromContext(context)
             .userId(principal.id)
             .email(principal.userIdentity.email)
             .emailDomain(emailDomain)

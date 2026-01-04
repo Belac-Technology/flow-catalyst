@@ -194,8 +194,7 @@ public class CreateSubscriptionUseCase {
         );
 
         // Create domain event
-        SubscriptionCreated event = SubscriptionCreated.builder()
-            .from(context)
+        SubscriptionCreated event = SubscriptionCreated.fromContext(context)
             .subscriptionId(subscription.id())
             .code(subscription.code())
             .name(subscription.name())

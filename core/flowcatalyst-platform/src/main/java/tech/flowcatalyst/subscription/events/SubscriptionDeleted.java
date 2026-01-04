@@ -5,6 +5,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import lombok.Builder;
 import tech.flowcatalyst.platform.common.DomainEvent;
 import tech.flowcatalyst.platform.common.ExecutionContext;
 import tech.flowcatalyst.platform.shared.TsidGenerator;
@@ -19,6 +20,7 @@ import java.util.List;
  *
  * <p>Event type: {@code platform:control-plane:subscription:deleted}
  */
+@Builder
 public record SubscriptionDeleted(
     // Event metadata
     String eventId,
@@ -95,63 +97,16 @@ public record SubscriptionDeleted(
         List<EventTypeBinding> eventTypes
     ) {}
 
-    public static Builder builder() {
-        return new Builder();
-    }
-
-    public static class Builder {
-        private String eventId;
-        private Instant time;
-        private String executionId;
-        private String correlationId;
-        private String causationId;
-        private String principalId;
-        private String subscriptionId;
-        private String code;
-        private String clientId;
-        private String clientIdentifier;
-        private List<EventTypeBinding> eventTypes;
-
-        public Builder from(ExecutionContext ctx) {
-            this.eventId = TsidGenerator.generate();
-            this.time = Instant.now();
-            this.executionId = ctx.executionId();
-            this.correlationId = ctx.correlationId();
-            this.causationId = ctx.causationId();
-            this.principalId = ctx.principalId();
-            return this;
-        }
-
-        public Builder subscriptionId(String subscriptionId) {
-            this.subscriptionId = subscriptionId;
-            return this;
-        }
-
-        public Builder code(String code) {
-            this.code = code;
-            return this;
-        }
-
-        public Builder clientId(String clientId) {
-            this.clientId = clientId;
-            return this;
-        }
-
-        public Builder clientIdentifier(String clientIdentifier) {
-            this.clientIdentifier = clientIdentifier;
-            return this;
-        }
-
-        public Builder eventTypes(List<EventTypeBinding> eventTypes) {
-            this.eventTypes = eventTypes;
-            return this;
-        }
-
-        public SubscriptionDeleted build() {
-            return new SubscriptionDeleted(
-                eventId, time, executionId, correlationId, causationId, principalId,
-                subscriptionId, code, clientId, clientIdentifier, eventTypes
-            );
-        }
+    /**
+     * Create a pre-configured builder with event metadata from the execution context.
+     */
+    public static SubscriptionDeletedBuilder fromContext(ExecutionContext ctx) {
+        return SubscriptionDeleted.builder()
+            .eventId(TsidGenerator.generate())
+            .time(Instant.now())
+            .executionId(ctx.executionId())
+            .correlationId(ctx.correlationId())
+            .causationId(ctx.causationId())
+            .principalId(ctx.principalId());
     }
 }

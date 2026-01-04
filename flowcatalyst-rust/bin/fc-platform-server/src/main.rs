@@ -26,13 +26,13 @@ use axum::{
     response::Json,
     Router,
 };
+use utoipa_axum::router::OpenApiRouter;
 use tower_http::cors::{CorsLayer, Any};
 use tower_http::trace::TraceLayer;
 use anyhow::Result;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 use tokio::{signal, net::TcpListener};
-use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
 use fc_platform::service::{AuthService, AuthConfig, AuthorizationService, AuditService};
@@ -56,7 +56,6 @@ use fc_platform::api::{
     AuthState, auth_router,
     platform_config_router,
     ServiceAccountsState, service_accounts_router,
-    PlatformApiDoc,
 };
 use fc_platform::repository::{
     EventRepository, EventTypeRepository, DispatchJobRepository, DispatchPoolRepository,
@@ -355,39 +354,61 @@ async fn main() -> Result<()> {
         start_time: std::time::Instant::now(),
     };
 
-    // Build platform API router
-    let app = Router::new()
+    // Build platform API router using OpenApiRouter for auto-collected OpenAPI paths
+    let (router, mut openapi) = OpenApiRouter::new()
         // BFF APIs (under /bff to match frontend expectations)
         .nest("/bff/events", events_router(events_state))
         .nest("/bff/event-types", event_types_router(event_types_state))
-        .nest("/bff/event-types/filters", event_type_filters_router(filter_options_state.clone()))
         .nest("/bff/dispatch-jobs", dispatch_jobs_router(dispatch_jobs_state))
-        .nest("/bff/filter-options", filter_options_router(filter_options_state))
-        .nest("/bff/roles", roles_router(roles_state.clone()))
-        // Debug BFF APIs (raw data access)
-        .nest("/bff/debug/events", debug_events_router(debug_state.clone()))
-        .nest("/bff/debug/dispatch-jobs", debug_dispatch_jobs_router(debug_state))
+        .nest("/bff/filter-options", filter_options_router(filter_options_state.clone()))
         // Admin APIs (under /api/admin/platform to match Java paths)
         .nest("/api/admin/platform/clients", clients_router(clients_state))
         .nest("/api/admin/platform/principals", principals_router(principals_state))
         .nest("/api/admin/platform/roles", roles_router(roles_state))
         .nest("/api/admin/platform/subscriptions", subscriptions_router(subscriptions_state))
         .nest("/api/admin/platform/oauth-clients", oauth_clients_router(oauth_clients_state))
+        .nest("/api/admin/platform/audit-logs", audit_logs_router(audit_logs_state))
+        // Monitoring APIs
+        .nest("/api/monitoring", monitoring_router(monitoring_state))
+        // Auth APIs
+        .nest("/auth", auth_router(embedded_auth_state))
+        .split_for_parts();
+
+    // Add missing schemas that are referenced but not auto-collected (e.g., from #[serde(flatten)])
+    use utoipa::openapi::{ObjectBuilder, schema::Type};
+    if let Some(components) = openapi.components.as_mut() {
+        // PaginationParams is used in query params with #[serde(flatten)]
+        components.schemas.insert(
+            "PaginationParams".to_string(),
+            ObjectBuilder::new()
+                .property("page", ObjectBuilder::new().schema_type(Type::Integer))
+                .property("limit", ObjectBuilder::new().schema_type(Type::Integer))
+                .into(),
+        );
+    }
+
+    // Update OpenAPI info
+    openapi.info.title = "FlowCatalyst Platform API".to_string();
+    openapi.info.version = "1.0.0".to_string();
+    openapi.info.description = Some("REST APIs for events, subscriptions, and administration".to_string());
+
+    // Add routes that don't use OpenApiRouter (generic routers, legacy routers)
+    let app = Router::new()
+        .merge(router)
+        // Routes that return regular Router (not collected in OpenAPI)
+        .nest("/bff/event-types/filters", event_type_filters_router(filter_options_state))
+        .nest("/bff/debug/events", debug_events_router(debug_state.clone()))
+        .nest("/bff/debug/dispatch-jobs", debug_dispatch_jobs_router(debug_state))
         .nest("/api/admin/platform/anchor-domains", anchor_domains_router(auth_config_state.clone()))
         .nest("/api/admin/platform/auth-configs", client_auth_configs_router(auth_config_state.clone()))
         .nest("/api/admin/platform/idp-role-mappings", idp_role_mappings_router(auth_config_state))
-        .nest("/api/admin/platform/audit-logs", audit_logs_router(audit_logs_state))
         .nest("/api/admin/platform/applications", applications_router(applications_state))
         .nest("/api/admin/platform/dispatch-pools", dispatch_pools_router(dispatch_pools_state))
         .nest("/api/admin/platform/service-accounts", service_accounts_router(service_accounts_state))
-        // Monitoring APIs
-        .nest("/api/monitoring", monitoring_router(monitoring_state))
-        // Auth APIs (OIDC login, embedded login, check-domain, etc.)
-        .nest("/auth", oidc_login_router(oidc_login_state).merge(auth_router(embedded_auth_state)))
-        // Platform config (public)
+        .nest("/auth", oidc_login_router(oidc_login_state))
         .nest("/api/config", platform_config_router())
-        // OpenAPI / Swagger UI
-        .merge(SwaggerUi::new("/swagger-ui").url("/q/openapi", PlatformApiDoc::openapi()))
+        // OpenAPI / Swagger UI with auto-collected paths
+        .merge(SwaggerUi::new("/swagger-ui").url("/q/openapi", openapi))
         // Auth middleware
         .layer(AuthLayer::new(app_state))
         .layer(TraceLayer::new_for_http())

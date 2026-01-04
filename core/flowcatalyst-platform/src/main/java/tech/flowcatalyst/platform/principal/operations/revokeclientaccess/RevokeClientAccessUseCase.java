@@ -65,8 +65,7 @@ public class RevokeClientAccessUseCase {
         ClientAccessGrant grant = grantOpt.get();
 
         // Create domain event
-        ClientAccessRevoked event = ClientAccessRevoked.builder()
-            .from(context)
+        ClientAccessRevoked event = ClientAccessRevoked.fromContext(context)
             .userId(principal.id)
             .clientId(command.clientId())
             .build();

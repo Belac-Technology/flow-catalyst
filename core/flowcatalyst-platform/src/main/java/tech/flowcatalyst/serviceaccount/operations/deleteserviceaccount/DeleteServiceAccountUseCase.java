@@ -35,8 +35,7 @@ public class DeleteServiceAccountUseCase {
         }
 
         // Create event before deletion
-        ServiceAccountDeleted event = ServiceAccountDeleted.builder()
-            .from(context)
+        ServiceAccountDeleted event = ServiceAccountDeleted.fromContext(context)
             .serviceAccountId(sa.id)
             .code(sa.code)
             .name(sa.name)

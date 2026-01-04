@@ -1,21 +1,29 @@
 package tech.flowcatalyst.subscription;
 
 import io.quarkus.mongodb.panache.common.MongoEntity;
+import lombok.Builder;
+import lombok.With;
 import org.bson.codecs.pojo.annotations.BsonId;
 import tech.flowcatalyst.dispatch.DispatchMode;
+import tech.flowcatalyst.platform.shared.TsidGenerator;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
  * A subscription defines how events are dispatched to a target endpoint.
  *
- * Subscriptions bind event types to a target URL and configure dispatch behavior
+ * <p>Subscriptions bind event types to a target URL and configure dispatch behavior
  * including rate limiting (via dispatch pool), ordering guarantees, and timeouts.
  *
- * Code uniqueness is enforced per clientId (null = anchor-level).
+ * <p>Code uniqueness is enforced per clientId (null = anchor-level).
+ *
+ * <p>Use {@link #create(String, String, String)} for safe construction with defaults.
  */
 @MongoEntity(collection = "subscriptions")
+@Builder(toBuilder = true)
+@With
 public record Subscription(
     @BsonId
     String id,
@@ -155,5 +163,39 @@ public record Subscription(
      */
     public boolean blocksOnError() {
         return mode == DispatchMode.BLOCK_ON_ERROR;
+    }
+
+    // ========================================================================
+    // Factory Methods
+    // ========================================================================
+
+    /**
+     * Create a new subscription with required fields and sensible defaults.
+     *
+     * @param code   Unique code within client scope
+     * @param name   Display name
+     * @param target Target URL for dispatching
+     * @return A pre-configured builder with defaults set
+     */
+    public static SubscriptionBuilder create(String code, String name, String target) {
+        var now = Instant.now();
+        return Subscription.builder()
+            .id(TsidGenerator.generate())
+            .code(code.toLowerCase())
+            .name(name)
+            .target(target)
+            .eventTypes(new ArrayList<>())
+            .customConfig(new ArrayList<>())
+            .source(SubscriptionSource.API)
+            .status(SubscriptionStatus.ACTIVE)
+            .maxAgeSeconds(DEFAULT_MAX_AGE_SECONDS)
+            .delaySeconds(DEFAULT_DELAY_SECONDS)
+            .sequence(DEFAULT_SEQUENCE)
+            .mode(DispatchMode.IMMEDIATE)
+            .timeoutSeconds(DEFAULT_TIMEOUT_SECONDS)
+            .maxRetries(DEFAULT_MAX_RETRIES)
+            .dataOnly(DEFAULT_DATA_ONLY)
+            .createdAt(now)
+            .updatedAt(now);
     }
 }

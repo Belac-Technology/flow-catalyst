@@ -115,8 +115,7 @@ public class AssignRolesUseCase {
         principal.updatedAt = now;
 
         // Create domain event
-        RolesAssigned event = RolesAssigned.builder()
-            .from(context)
+        RolesAssigned event = RolesAssigned.fromContext(context)
             .userId(principal.id)
             .roles(new ArrayList<>(requestedRoles))
             .added(added)

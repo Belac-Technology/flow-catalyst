@@ -53,8 +53,7 @@ public class DeactivateApplicationUseCase {
         app.active = false;
 
         // Create domain event
-        ApplicationDeactivated event = ApplicationDeactivated.builder()
-            .from(context)
+        ApplicationDeactivated event = ApplicationDeactivated.fromContext(context)
             .applicationId(app.id)
             .code(app.code)
             .build();

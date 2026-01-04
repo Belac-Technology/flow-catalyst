@@ -5,6 +5,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import lombok.Builder;
 import tech.flowcatalyst.platform.common.DomainEvent;
 import tech.flowcatalyst.platform.common.ExecutionContext;
 import tech.flowcatalyst.platform.shared.TsidGenerator;
@@ -17,6 +18,7 @@ import java.util.Set;
  *
  * <p>Event type: {@code platform:control-plane:role:updated}
  */
+@Builder
 public record RoleUpdated(
     String eventId,
     Instant time,
@@ -90,44 +92,16 @@ public record RoleUpdated(
         boolean clientManaged
     ) {}
 
-    public static Builder builder() {
-        return new Builder();
-    }
-
-    public static class Builder {
-        private String eventId;
-        private Instant time;
-        private String executionId;
-        private String correlationId;
-        private String causationId;
-        private String principalId;
-        private String roleId;
-        private String roleName;
-        private String displayName;
-        private String description;
-        private Set<String> permissions;
-        private boolean clientManaged;
-
-        public Builder from(ExecutionContext ctx) {
-            this.eventId = TsidGenerator.generate();
-            this.time = Instant.now();
-            this.executionId = ctx.executionId();
-            this.correlationId = ctx.correlationId();
-            this.causationId = ctx.causationId();
-            this.principalId = ctx.principalId();
-            return this;
-        }
-
-        public Builder roleId(String roleId) { this.roleId = roleId; return this; }
-        public Builder roleName(String roleName) { this.roleName = roleName; return this; }
-        public Builder displayName(String displayName) { this.displayName = displayName; return this; }
-        public Builder description(String description) { this.description = description; return this; }
-        public Builder permissions(Set<String> permissions) { this.permissions = permissions; return this; }
-        public Builder clientManaged(boolean clientManaged) { this.clientManaged = clientManaged; return this; }
-
-        public RoleUpdated build() {
-            return new RoleUpdated(eventId, time, executionId, correlationId, causationId, principalId,
-                roleId, roleName, displayName, description, permissions, clientManaged);
-        }
+    /**
+     * Create a pre-configured builder with event metadata from the execution context.
+     */
+    public static RoleUpdatedBuilder fromContext(ExecutionContext ctx) {
+        return RoleUpdated.builder()
+            .eventId(TsidGenerator.generate())
+            .time(Instant.now())
+            .executionId(ctx.executionId())
+            .correlationId(ctx.correlationId())
+            .causationId(ctx.causationId())
+            .principalId(ctx.principalId());
     }
 }

@@ -5,6 +5,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import lombok.Builder;
 import tech.flowcatalyst.platform.common.DomainEvent;
 import tech.flowcatalyst.platform.common.ExecutionContext;
 import tech.flowcatalyst.platform.shared.TsidGenerator;
@@ -17,6 +18,7 @@ import java.util.List;
  *
  * <p>Event type: {@code platform:control-plane:role:synced}
  */
+@Builder
 public record RolesSynced(
     String eventId,
     Instant time,
@@ -90,44 +92,16 @@ public record RolesSynced(
         List<String> syncedRoleNames
     ) {}
 
-    public static Builder builder() {
-        return new Builder();
-    }
-
-    public static class Builder {
-        private String eventId;
-        private Instant time;
-        private String executionId;
-        private String correlationId;
-        private String causationId;
-        private String principalId;
-        private String applicationId;
-        private String applicationCode;
-        private int rolesCreated;
-        private int rolesUpdated;
-        private int rolesDeleted;
-        private List<String> syncedRoleNames;
-
-        public Builder from(ExecutionContext ctx) {
-            this.eventId = TsidGenerator.generate();
-            this.time = Instant.now();
-            this.executionId = ctx.executionId();
-            this.correlationId = ctx.correlationId();
-            this.causationId = ctx.causationId();
-            this.principalId = ctx.principalId();
-            return this;
-        }
-
-        public Builder applicationId(String applicationId) { this.applicationId = applicationId; return this; }
-        public Builder applicationCode(String applicationCode) { this.applicationCode = applicationCode; return this; }
-        public Builder rolesCreated(int rolesCreated) { this.rolesCreated = rolesCreated; return this; }
-        public Builder rolesUpdated(int rolesUpdated) { this.rolesUpdated = rolesUpdated; return this; }
-        public Builder rolesDeleted(int rolesDeleted) { this.rolesDeleted = rolesDeleted; return this; }
-        public Builder syncedRoleNames(List<String> syncedRoleNames) { this.syncedRoleNames = syncedRoleNames; return this; }
-
-        public RolesSynced build() {
-            return new RolesSynced(eventId, time, executionId, correlationId, causationId, principalId,
-                applicationId, applicationCode, rolesCreated, rolesUpdated, rolesDeleted, syncedRoleNames);
-        }
+    /**
+     * Create a pre-configured builder with event metadata from the execution context.
+     */
+    public static RolesSyncedBuilder fromContext(ExecutionContext ctx) {
+        return RolesSynced.builder()
+            .eventId(TsidGenerator.generate())
+            .time(Instant.now())
+            .executionId(ctx.executionId())
+            .correlationId(ctx.correlationId())
+            .causationId(ctx.causationId())
+            .principalId(ctx.principalId());
     }
 }

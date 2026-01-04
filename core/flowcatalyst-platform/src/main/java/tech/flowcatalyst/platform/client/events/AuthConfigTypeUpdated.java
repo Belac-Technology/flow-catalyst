@@ -5,6 +5,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import lombok.Builder;
 import tech.flowcatalyst.platform.client.AuthConfigType;
 import tech.flowcatalyst.platform.common.DomainEvent;
 import tech.flowcatalyst.platform.common.ExecutionContext;
@@ -17,6 +18,7 @@ import java.time.Instant;
  *
  * <p>Event type: {@code platform:iam:auth-config:type-updated}
  */
+@Builder
 public record AuthConfigTypeUpdated(
     String eventId,
     Instant time,
@@ -93,47 +95,16 @@ public record AuthConfigTypeUpdated(
         String newPrimaryClientId
     ) {}
 
-    public static Builder builder() {
-        return new Builder();
-    }
-
-    public static class Builder {
-        private String eventId;
-        private Instant time;
-        private String executionId;
-        private String correlationId;
-        private String causationId;
-        private String principalId;
-        private String authConfigId;
-        private String emailDomain;
-        private AuthConfigType previousType;
-        private AuthConfigType newType;
-        private String previousPrimaryClientId;
-        private String newPrimaryClientId;
-
-        public Builder from(ExecutionContext ctx) {
-            this.eventId = TsidGenerator.generate();
-            this.time = Instant.now();
-            this.executionId = ctx.executionId();
-            this.correlationId = ctx.correlationId();
-            this.causationId = ctx.causationId();
-            this.principalId = ctx.principalId();
-            return this;
-        }
-
-        public Builder authConfigId(String authConfigId) { this.authConfigId = authConfigId; return this; }
-        public Builder emailDomain(String emailDomain) { this.emailDomain = emailDomain; return this; }
-        public Builder previousType(AuthConfigType previousType) { this.previousType = previousType; return this; }
-        public Builder newType(AuthConfigType newType) { this.newType = newType; return this; }
-        public Builder previousPrimaryClientId(String previousPrimaryClientId) { this.previousPrimaryClientId = previousPrimaryClientId; return this; }
-        public Builder newPrimaryClientId(String newPrimaryClientId) { this.newPrimaryClientId = newPrimaryClientId; return this; }
-
-        public AuthConfigTypeUpdated build() {
-            return new AuthConfigTypeUpdated(
-                eventId, time, executionId, correlationId, causationId, principalId,
-                authConfigId, emailDomain, previousType, newType,
-                previousPrimaryClientId, newPrimaryClientId
-            );
-        }
+    /**
+     * Create a pre-configured builder with event metadata from the execution context.
+     */
+    public static AuthConfigTypeUpdatedBuilder fromContext(ExecutionContext ctx) {
+        return AuthConfigTypeUpdated.builder()
+            .eventId(TsidGenerator.generate())
+            .time(Instant.now())
+            .executionId(ctx.executionId())
+            .correlationId(ctx.correlationId())
+            .causationId(ctx.causationId())
+            .principalId(ctx.principalId());
     }
 }

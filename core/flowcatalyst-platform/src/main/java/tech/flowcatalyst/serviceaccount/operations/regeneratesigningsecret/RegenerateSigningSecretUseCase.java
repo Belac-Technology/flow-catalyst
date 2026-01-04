@@ -68,8 +68,7 @@ public class RegenerateSigningSecretUseCase {
         sa.updatedAt = Instant.now();
 
         // Create event
-        SigningSecretRegenerated event = SigningSecretRegenerated.builder()
-            .from(context)
+        SigningSecretRegenerated event = SigningSecretRegenerated.fromContext(context)
             .serviceAccountId(sa.id)
             .code(sa.code)
             .build();

@@ -5,6 +5,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import lombok.Builder;
 import tech.flowcatalyst.dispatch.DispatchMode;
 import tech.flowcatalyst.platform.common.DomainEvent;
 import tech.flowcatalyst.platform.common.ExecutionContext;
@@ -19,6 +20,7 @@ import java.util.List;
  *
  * <p>Event type: {@code platform:control-plane:subscription:created}
  */
+@Builder
 public record SubscriptionCreated(
     // Event metadata
     String eventId,
@@ -134,169 +136,16 @@ public record SubscriptionCreated(
         boolean dataOnly
     ) {}
 
-    public static Builder builder() {
-        return new Builder();
-    }
-
-    public static class Builder {
-        private String eventId;
-        private Instant time;
-        private String executionId;
-        private String correlationId;
-        private String causationId;
-        private String principalId;
-        private String subscriptionId;
-        private String code;
-        private String name;
-        private String description;
-        private String clientId;
-        private String clientIdentifier;
-        private List<EventTypeBinding> eventTypes;
-        private String target;
-        private String queue;
-        private List<ConfigEntry> customConfig;
-        private SubscriptionSource subscriptionSource;
-        private SubscriptionStatus status;
-        private int maxAgeSeconds;
-        private String dispatchPoolId;
-        private String dispatchPoolCode;
-        private int delaySeconds;
-        private int sequence;
-        private DispatchMode mode;
-        private int timeoutSeconds;
-        private int maxRetries;
-        private String serviceAccountId;
-        private boolean dataOnly;
-
-        public Builder from(ExecutionContext ctx) {
-            this.eventId = TsidGenerator.generate();
-            this.time = Instant.now();
-            this.executionId = ctx.executionId();
-            this.correlationId = ctx.correlationId();
-            this.causationId = ctx.causationId();
-            this.principalId = ctx.principalId();
-            return this;
-        }
-
-        public Builder subscriptionId(String subscriptionId) {
-            this.subscriptionId = subscriptionId;
-            return this;
-        }
-
-        public Builder code(String code) {
-            this.code = code;
-            return this;
-        }
-
-        public Builder name(String name) {
-            this.name = name;
-            return this;
-        }
-
-        public Builder description(String description) {
-            this.description = description;
-            return this;
-        }
-
-        public Builder clientId(String clientId) {
-            this.clientId = clientId;
-            return this;
-        }
-
-        public Builder clientIdentifier(String clientIdentifier) {
-            this.clientIdentifier = clientIdentifier;
-            return this;
-        }
-
-        public Builder eventTypes(List<EventTypeBinding> eventTypes) {
-            this.eventTypes = eventTypes;
-            return this;
-        }
-
-        public Builder target(String target) {
-            this.target = target;
-            return this;
-        }
-
-        public Builder queue(String queue) {
-            this.queue = queue;
-            return this;
-        }
-
-        public Builder customConfig(List<ConfigEntry> customConfig) {
-            this.customConfig = customConfig;
-            return this;
-        }
-
-        public Builder subscriptionSource(SubscriptionSource subscriptionSource) {
-            this.subscriptionSource = subscriptionSource;
-            return this;
-        }
-
-        public Builder status(SubscriptionStatus status) {
-            this.status = status;
-            return this;
-        }
-
-        public Builder maxAgeSeconds(int maxAgeSeconds) {
-            this.maxAgeSeconds = maxAgeSeconds;
-            return this;
-        }
-
-        public Builder dispatchPoolId(String dispatchPoolId) {
-            this.dispatchPoolId = dispatchPoolId;
-            return this;
-        }
-
-        public Builder dispatchPoolCode(String dispatchPoolCode) {
-            this.dispatchPoolCode = dispatchPoolCode;
-            return this;
-        }
-
-        public Builder delaySeconds(int delaySeconds) {
-            this.delaySeconds = delaySeconds;
-            return this;
-        }
-
-        public Builder sequence(int sequence) {
-            this.sequence = sequence;
-            return this;
-        }
-
-        public Builder mode(DispatchMode mode) {
-            this.mode = mode;
-            return this;
-        }
-
-        public Builder timeoutSeconds(int timeoutSeconds) {
-            this.timeoutSeconds = timeoutSeconds;
-            return this;
-        }
-
-        public Builder maxRetries(int maxRetries) {
-            this.maxRetries = maxRetries;
-            return this;
-        }
-
-        public Builder serviceAccountId(String serviceAccountId) {
-            this.serviceAccountId = serviceAccountId;
-            return this;
-        }
-
-        public Builder dataOnly(boolean dataOnly) {
-            this.dataOnly = dataOnly;
-            return this;
-        }
-
-        public SubscriptionCreated build() {
-            return new SubscriptionCreated(
-                eventId, time, executionId, correlationId, causationId, principalId,
-                subscriptionId, code, name, description, clientId, clientIdentifier,
-                eventTypes, target, queue, customConfig, subscriptionSource, status,
-                maxAgeSeconds, dispatchPoolId, dispatchPoolCode,
-                delaySeconds, sequence, mode, timeoutSeconds, maxRetries,
-                serviceAccountId, dataOnly
-            );
-        }
+    /**
+     * Create a pre-configured builder with event metadata from the execution context.
+     */
+    public static SubscriptionCreatedBuilder fromContext(ExecutionContext ctx) {
+        return SubscriptionCreated.builder()
+            .eventId(TsidGenerator.generate())
+            .time(Instant.now())
+            .executionId(ctx.executionId())
+            .correlationId(ctx.correlationId())
+            .causationId(ctx.causationId())
+            .principalId(ctx.principalId());
     }
 }

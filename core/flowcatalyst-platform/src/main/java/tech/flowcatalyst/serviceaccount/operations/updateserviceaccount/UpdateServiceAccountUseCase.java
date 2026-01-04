@@ -65,8 +65,7 @@ public class UpdateServiceAccountUseCase {
         sa.updatedAt = Instant.now();
 
         // Create event
-        ServiceAccountUpdated event = ServiceAccountUpdated.builder()
-            .from(context)
+        ServiceAccountUpdated event = ServiceAccountUpdated.fromContext(context)
             .serviceAccountId(sa.id)
             .code(sa.code)
             .name(sa.name)

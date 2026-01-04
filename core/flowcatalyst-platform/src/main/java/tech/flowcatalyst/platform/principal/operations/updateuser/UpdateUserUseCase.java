@@ -63,8 +63,7 @@ public class UpdateUserUseCase {
         principal.updatedAt = Instant.now();
 
         // Create domain event
-        UserUpdated event = UserUpdated.builder()
-            .from(context)
+        UserUpdated event = UserUpdated.fromContext(context)
             .userId(principal.id)
             .name(principal.name)
             .clientId(principal.clientId)

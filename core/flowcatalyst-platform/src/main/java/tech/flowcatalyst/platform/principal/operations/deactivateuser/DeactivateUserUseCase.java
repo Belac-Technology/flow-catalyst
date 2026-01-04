@@ -59,8 +59,7 @@ public class DeactivateUserUseCase {
         principal.updatedAt = Instant.now();
 
         // Create domain event
-        UserDeactivated event = UserDeactivated.builder()
-            .from(context)
+        UserDeactivated event = UserDeactivated.fromContext(context)
             .userId(principal.id)
             .email(principal.userIdentity != null ? principal.userIdentity.email : null)
             .reason(command.reason())

@@ -5,6 +5,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import lombok.Builder;
 import tech.flowcatalyst.platform.authentication.IdpType;
 import tech.flowcatalyst.platform.common.DomainEvent;
 import tech.flowcatalyst.platform.common.ExecutionContext;
@@ -17,6 +18,7 @@ import java.time.Instant;
  *
  * <p>Event type: {@code platform:iam:user:created}
  */
+@Builder
 public record UserCreated(
     String eventId,
     Instant time,
@@ -92,46 +94,16 @@ public record UserCreated(
         boolean isAnchorUser
     ) {}
 
-    public static Builder builder() {
-        return new Builder();
-    }
-
-    public static class Builder {
-        private String eventId;
-        private Instant time;
-        private String executionId;
-        private String correlationId;
-        private String causationId;
-        private String principalId;
-        private String userId;
-        private String email;
-        private String emailDomain;
-        private String name;
-        private String clientId;
-        private IdpType idpType;
-        private boolean isAnchorUser;
-
-        public Builder from(ExecutionContext ctx) {
-            this.eventId = TsidGenerator.generate();
-            this.time = Instant.now();
-            this.executionId = ctx.executionId();
-            this.correlationId = ctx.correlationId();
-            this.causationId = ctx.causationId();
-            this.principalId = ctx.principalId();
-            return this;
-        }
-
-        public Builder userId(String userId) { this.userId = userId; return this; }
-        public Builder email(String email) { this.email = email; return this; }
-        public Builder emailDomain(String emailDomain) { this.emailDomain = emailDomain; return this; }
-        public Builder name(String name) { this.name = name; return this; }
-        public Builder clientId(String clientId) { this.clientId = clientId; return this; }
-        public Builder idpType(IdpType idpType) { this.idpType = idpType; return this; }
-        public Builder isAnchorUser(boolean isAnchorUser) { this.isAnchorUser = isAnchorUser; return this; }
-
-        public UserCreated build() {
-            return new UserCreated(eventId, time, executionId, correlationId, causationId, principalId,
-                userId, email, emailDomain, name, clientId, idpType, isAnchorUser);
-        }
+    /**
+     * Create a pre-configured builder with event metadata from the execution context.
+     */
+    public static UserCreatedBuilder fromContext(ExecutionContext ctx) {
+        return UserCreated.builder()
+            .eventId(TsidGenerator.generate())
+            .time(Instant.now())
+            .executionId(ctx.executionId())
+            .correlationId(ctx.correlationId())
+            .causationId(ctx.causationId())
+            .principalId(ctx.principalId());
     }
 }

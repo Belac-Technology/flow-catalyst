@@ -5,6 +5,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import lombok.Builder;
 import tech.flowcatalyst.platform.common.DomainEvent;
 import tech.flowcatalyst.platform.common.ExecutionContext;
 import tech.flowcatalyst.platform.shared.TsidGenerator;
@@ -16,6 +17,7 @@ import java.time.Instant;
  *
  * <p>Event type: {@code platform:control-plane:application:updated}
  */
+@Builder
 public record ApplicationUpdated(
     // Event metadata
     String eventId,
@@ -95,69 +97,16 @@ public record ApplicationUpdated(
         String iconUrl
     ) {}
 
-    public static Builder builder() {
-        return new Builder();
-    }
-
-    public static class Builder {
-        private String eventId;
-        private Instant time;
-        private String executionId;
-        private String correlationId;
-        private String causationId;
-        private String principalId;
-        private String applicationId;
-        private String code;
-        private String name;
-        private String description;
-        private String defaultBaseUrl;
-        private String iconUrl;
-
-        public Builder from(ExecutionContext ctx) {
-            this.eventId = TsidGenerator.generate();
-            this.time = Instant.now();
-            this.executionId = ctx.executionId();
-            this.correlationId = ctx.correlationId();
-            this.causationId = ctx.causationId();
-            this.principalId = ctx.principalId();
-            return this;
-        }
-
-        public Builder applicationId(String applicationId) {
-            this.applicationId = applicationId;
-            return this;
-        }
-
-        public Builder code(String code) {
-            this.code = code;
-            return this;
-        }
-
-        public Builder name(String name) {
-            this.name = name;
-            return this;
-        }
-
-        public Builder description(String description) {
-            this.description = description;
-            return this;
-        }
-
-        public Builder defaultBaseUrl(String defaultBaseUrl) {
-            this.defaultBaseUrl = defaultBaseUrl;
-            return this;
-        }
-
-        public Builder iconUrl(String iconUrl) {
-            this.iconUrl = iconUrl;
-            return this;
-        }
-
-        public ApplicationUpdated build() {
-            return new ApplicationUpdated(
-                eventId, time, executionId, correlationId, causationId, principalId,
-                applicationId, code, name, description, defaultBaseUrl, iconUrl
-            );
-        }
+    /**
+     * Create a pre-configured builder with event metadata from the execution context.
+     */
+    public static ApplicationUpdatedBuilder fromContext(ExecutionContext ctx) {
+        return ApplicationUpdated.builder()
+            .eventId(TsidGenerator.generate())
+            .time(Instant.now())
+            .executionId(ctx.executionId())
+            .correlationId(ctx.correlationId())
+            .causationId(ctx.causationId())
+            .principalId(ctx.principalId());
     }
 }

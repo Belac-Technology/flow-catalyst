@@ -79,8 +79,7 @@ public class UpdateApplicationUseCase {
         }
 
         // Create domain event
-        ApplicationUpdated event = ApplicationUpdated.builder()
-            .from(context)
+        ApplicationUpdated event = ApplicationUpdated.fromContext(context)
             .applicationId(app.id)
             .code(app.code)
             .name(app.name)
