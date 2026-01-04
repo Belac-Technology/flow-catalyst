@@ -9,8 +9,8 @@ pub mod keycloak;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
-use crate::domain::UserScope;
-use crate::service::oidc::IdTokenClaims;
+use crate::UserScope;
+use crate::auth::oidc_service::IdTokenClaims;
 
 /// Role mapping from IDP to FlowCatalyst
 #[derive(Debug, Clone, Serialize, Deserialize)]

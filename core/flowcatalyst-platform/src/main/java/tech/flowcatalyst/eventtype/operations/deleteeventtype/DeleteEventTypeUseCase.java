@@ -59,8 +59,7 @@ public class DeleteEventTypeUseCase {
         }
 
         // Create domain event (before deletion so we have access to the entity)
-        EventTypeDeleted event = EventTypeDeleted.builder()
-            .from(context)
+        EventTypeDeleted event = EventTypeDeleted.fromContext(context)
             .eventTypeId(eventType.id())
             .code(eventType.code())
             .build();

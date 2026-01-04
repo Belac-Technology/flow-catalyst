@@ -4,7 +4,7 @@
 //! for the current request or background job.
 
 use std::cell::RefCell;
-use crate::tsid::TsidGenerator;
+use crate::shared::tsid::TsidGenerator;
 
 thread_local! {
     /// Thread-local storage for tracing context.

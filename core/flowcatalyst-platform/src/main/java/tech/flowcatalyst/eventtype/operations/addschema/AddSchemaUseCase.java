@@ -109,8 +109,7 @@ public class AddSchemaUseCase {
         EventType updated = eventType.addSpecVersion(specVersion);
 
         // Create domain event
-        SchemaAdded event = SchemaAdded.builder()
-            .from(context)
+        SchemaAdded event = SchemaAdded.fromContext(context)
             .eventTypeId(updated.id())
             .version(command.version())
             .mimeType(command.mimeType())

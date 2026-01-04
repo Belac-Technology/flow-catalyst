@@ -5,6 +5,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import lombok.Builder;
 import tech.flowcatalyst.dispatchpool.DispatchPoolStatus;
 import tech.flowcatalyst.platform.common.DomainEvent;
 import tech.flowcatalyst.platform.common.ExecutionContext;
@@ -16,7 +17,10 @@ import java.time.Instant;
  * Event emitted when a dispatch pool is created.
  *
  * <p>Event type: {@code platform:control-plane:dispatch-pool:created}
+ *
+ * <p>Use {@link #fromContext(ExecutionContext)} to create a pre-configured builder.
  */
+@Builder
 public record DispatchPoolCreated(
     // Event metadata
     String eventId,
@@ -103,88 +107,19 @@ public record DispatchPoolCreated(
         DispatchPoolStatus status
     ) {}
 
-    public static Builder builder() {
-        return new Builder();
-    }
-
-    public static class Builder {
-        private String eventId;
-        private Instant time;
-        private String executionId;
-        private String correlationId;
-        private String causationId;
-        private String principalId;
-        private String poolId;
-        private String code;
-        private String name;
-        private String description;
-        private int rateLimit;
-        private int concurrency;
-        private String clientId;
-        private String clientIdentifier;
-        private DispatchPoolStatus status;
-
-        public Builder from(ExecutionContext ctx) {
-            this.eventId = TsidGenerator.generate();
-            this.time = Instant.now();
-            this.executionId = ctx.executionId();
-            this.correlationId = ctx.correlationId();
-            this.causationId = ctx.causationId();
-            this.principalId = ctx.principalId();
-            return this;
-        }
-
-        public Builder poolId(String poolId) {
-            this.poolId = poolId;
-            return this;
-        }
-
-        public Builder code(String code) {
-            this.code = code;
-            return this;
-        }
-
-        public Builder name(String name) {
-            this.name = name;
-            return this;
-        }
-
-        public Builder description(String description) {
-            this.description = description;
-            return this;
-        }
-
-        public Builder rateLimit(int rateLimit) {
-            this.rateLimit = rateLimit;
-            return this;
-        }
-
-        public Builder concurrency(int concurrency) {
-            this.concurrency = concurrency;
-            return this;
-        }
-
-        public Builder clientId(String clientId) {
-            this.clientId = clientId;
-            return this;
-        }
-
-        public Builder clientIdentifier(String clientIdentifier) {
-            this.clientIdentifier = clientIdentifier;
-            return this;
-        }
-
-        public Builder status(DispatchPoolStatus status) {
-            this.status = status;
-            return this;
-        }
-
-        public DispatchPoolCreated build() {
-            return new DispatchPoolCreated(
-                eventId, time, executionId, correlationId, causationId, principalId,
-                poolId, code, name, description, rateLimit, concurrency,
-                clientId, clientIdentifier, status
-            );
-        }
+    /**
+     * Create a pre-configured builder with event metadata from the execution context.
+     *
+     * @param ctx The execution context containing correlation/causation IDs
+     * @return A builder with metadata fields pre-populated
+     */
+    public static DispatchPoolCreatedBuilder fromContext(ExecutionContext ctx) {
+        return DispatchPoolCreated.builder()
+            .eventId(TsidGenerator.generate())
+            .time(Instant.now())
+            .executionId(ctx.executionId())
+            .correlationId(ctx.correlationId())
+            .causationId(ctx.causationId())
+            .principalId(ctx.principalId());
     }
 }

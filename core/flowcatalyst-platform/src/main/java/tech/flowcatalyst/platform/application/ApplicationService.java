@@ -83,8 +83,7 @@ public class ApplicationService {
             config.configJson = cmd.configJson();
         }
 
-        ApplicationEnabledForClient event = ApplicationEnabledForClient.builder()
-            .from(ctx)
+        ApplicationEnabledForClient event = ApplicationEnabledForClient.fromContext(ctx)
             .configId(config.id)
             .applicationId(app.id)
             .applicationCode(app.code)
@@ -125,8 +124,7 @@ public class ApplicationService {
                 return newConfig;
             });
 
-            ApplicationDisabledForClient event = ApplicationDisabledForClient.builder()
-                .from(ctx)
+            ApplicationDisabledForClient event = ApplicationDisabledForClient.fromContext(ctx)
                 .configId(config.id)
                 .applicationId(app.id)
                 .applicationCode(app.code)
@@ -142,8 +140,7 @@ public class ApplicationService {
         ApplicationClientConfig config = existingConfig.get();
         config.enabled = false;
 
-        ApplicationDisabledForClient event = ApplicationDisabledForClient.builder()
-            .from(ctx)
+        ApplicationDisabledForClient event = ApplicationDisabledForClient.fromContext(ctx)
             .configId(config.id)
             .applicationId(app.id)
             .applicationCode(app.code)

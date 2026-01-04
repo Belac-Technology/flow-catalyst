@@ -63,6 +63,18 @@ use fc_platform::repository::{
     AnchorDomainRepository, ClientAuthConfigRepository, ClientAccessGrantRepository, IdpRoleMappingRepository,
     AuditLogRepository, ApplicationClientConfigRepository,
 };
+use fc_platform::usecase::MongoUnitOfWork;
+use fc_platform::operations::{
+    // Application use cases
+    CreateApplicationUseCase, UpdateApplicationUseCase,
+    ActivateApplicationUseCase, DeactivateApplicationUseCase,
+    // Service Account use cases
+    CreateServiceAccountUseCase, UpdateServiceAccountUseCase, DeleteServiceAccountUseCase,
+    AssignRolesUseCase, RegenerateAuthTokenUseCase, RegenerateSigningSecretUseCase,
+    // Dispatch Pool use cases
+    CreateDispatchPoolUseCase, UpdateDispatchPoolUseCase,
+    ArchiveDispatchPoolUseCase, DeleteDispatchPoolUseCase,
+};
 
 use sqlx::sqlite::SqlitePoolOptions;
 use sqlx::postgres::PgPoolOptions;
@@ -247,6 +259,28 @@ async fn main() -> Result<()> {
     let application_client_config_repo = Arc::new(ApplicationClientConfigRepository::new(&platform_db));
     info!("Platform repositories initialized");
 
+    // 8b2. Create UnitOfWork for atomic commits
+    let unit_of_work = Arc::new(MongoUnitOfWork::new(mongo_client.clone(), platform_db.clone()));
+
+    // 8b3. Create use cases
+    let create_application_use_case = Arc::new(CreateApplicationUseCase::new(application_repo.clone(), unit_of_work.clone()));
+    let update_application_use_case = Arc::new(UpdateApplicationUseCase::new(application_repo.clone(), unit_of_work.clone()));
+    let activate_application_use_case = Arc::new(ActivateApplicationUseCase::new(application_repo.clone(), unit_of_work.clone()));
+    let deactivate_application_use_case = Arc::new(DeactivateApplicationUseCase::new(application_repo.clone(), unit_of_work.clone()));
+
+    let create_service_account_use_case = Arc::new(CreateServiceAccountUseCase::new(service_account_repo.clone(), unit_of_work.clone()));
+    let update_service_account_use_case = Arc::new(UpdateServiceAccountUseCase::new(service_account_repo.clone(), unit_of_work.clone()));
+    let delete_service_account_use_case = Arc::new(DeleteServiceAccountUseCase::new(service_account_repo.clone(), unit_of_work.clone()));
+    let assign_roles_use_case = Arc::new(AssignRolesUseCase::new(service_account_repo.clone(), unit_of_work.clone()));
+    let regenerate_token_use_case = Arc::new(RegenerateAuthTokenUseCase::new(service_account_repo.clone(), unit_of_work.clone()));
+    let regenerate_secret_use_case = Arc::new(RegenerateSigningSecretUseCase::new(service_account_repo.clone(), unit_of_work.clone()));
+
+    let create_dispatch_pool_use_case = Arc::new(CreateDispatchPoolUseCase::new(dispatch_pool_repo.clone(), unit_of_work.clone()));
+    let update_dispatch_pool_use_case = Arc::new(UpdateDispatchPoolUseCase::new(dispatch_pool_repo.clone(), unit_of_work.clone()));
+    let archive_dispatch_pool_use_case = Arc::new(ArchiveDispatchPoolUseCase::new(dispatch_pool_repo.clone(), unit_of_work.clone()));
+    let delete_dispatch_pool_use_case = Arc::new(DeleteDispatchPoolUseCase::new(dispatch_pool_repo.clone(), unit_of_work.clone()));
+    info!("Use cases initialized");
+
     // Sync code-defined roles to database
     {
         let role_sync = fc_platform::service::RoleSyncService::new(
@@ -321,9 +355,27 @@ async fn main() -> Result<()> {
         role_repo: role_repo.clone(),
         client_config_repo: application_client_config_repo.clone(),
         client_repo: client_repo.clone(),
+        create_use_case: create_application_use_case,
+        update_use_case: update_application_use_case,
+        activate_use_case: activate_application_use_case,
+        deactivate_use_case: deactivate_application_use_case,
     };
-    let dispatch_pools_state = DispatchPoolsState { dispatch_pool_repo: dispatch_pool_repo.clone() };
-    let service_accounts_state = ServiceAccountsState { repo: service_account_repo.clone() };
+    let dispatch_pools_state = DispatchPoolsState {
+        dispatch_pool_repo: dispatch_pool_repo.clone(),
+        create_use_case: create_dispatch_pool_use_case,
+        update_use_case: update_dispatch_pool_use_case,
+        archive_use_case: archive_dispatch_pool_use_case,
+        delete_use_case: delete_dispatch_pool_use_case,
+    };
+    let service_accounts_state = ServiceAccountsState {
+        repo: service_account_repo.clone(),
+        create_use_case: create_service_account_use_case,
+        update_use_case: update_service_account_use_case,
+        delete_use_case: delete_service_account_use_case,
+        assign_roles_use_case,
+        regenerate_token_use_case,
+        regenerate_secret_use_case,
+    };
     let debug_state = DebugState {
         event_repo: event_repo.clone(),
         dispatch_job_repo: dispatch_job_repo.clone(),
@@ -341,29 +393,29 @@ async fn main() -> Result<()> {
     // 8f. Build platform API router with all endpoints
     let platform_router = Router::new()
         // BFF APIs (under /bff to match frontend expectations)
-        .nest("/bff/events", events_router(events_state))
-        .nest("/bff/event-types", event_types_router(event_types_state))
-        .nest("/bff/dispatch-jobs", dispatch_jobs_router(dispatch_jobs_state))
-        .nest("/bff/filter-options", filter_options_router(filter_options_state))
-        .nest("/bff/roles", roles_router(roles_state.clone()))
+        .nest("/bff/events", events_router(events_state).into())
+        .nest("/bff/event-types", event_types_router(event_types_state).into())
+        .nest("/bff/dispatch-jobs", dispatch_jobs_router(dispatch_jobs_state).into())
+        .nest("/bff/filter-options", filter_options_router(filter_options_state).into())
+        .nest("/bff/roles", roles_router(roles_state.clone()).into())
         // Debug BFF APIs (raw data access)
-        .nest("/bff/debug/events", debug_events_router(debug_state.clone()))
-        .nest("/bff/debug/dispatch-jobs", debug_dispatch_jobs_router(debug_state))
+        .nest("/bff/debug/events", debug_events_router(debug_state.clone()).into())
+        .nest("/bff/debug/dispatch-jobs", debug_dispatch_jobs_router(debug_state).into())
         // Admin APIs (under /api/admin/platform to match Java paths)
-        .nest("/api/admin/platform/clients", clients_router(clients_state))
-        .nest("/api/admin/platform/principals", principals_router(principals_state))
-        .nest("/api/admin/platform/roles", roles_router(roles_state))
-        .nest("/api/admin/platform/subscriptions", subscriptions_router(subscriptions_state))
-        .nest("/api/admin/platform/oauth-clients", oauth_clients_router(oauth_clients_state))
-        .nest("/api/admin/platform/anchor-domains", anchor_domains_router(auth_config_state.clone()))
-        .nest("/api/admin/platform/auth-configs", client_auth_configs_router(auth_config_state.clone()))
-        .nest("/api/admin/platform/idp-role-mappings", idp_role_mappings_router(auth_config_state))
-        .nest("/api/admin/platform/audit-logs", audit_logs_router(audit_logs_state))
-        .nest("/api/admin/platform/applications", applications_router(applications_state))
-        .nest("/api/admin/platform/dispatch-pools", dispatch_pools_router(dispatch_pools_state))
-        .nest("/api/admin/platform/service-accounts", service_accounts_router(service_accounts_state))
+        .nest("/api/admin/platform/clients", clients_router(clients_state).into())
+        .nest("/api/admin/platform/principals", principals_router(principals_state).into())
+        .nest("/api/admin/platform/roles", roles_router(roles_state).into())
+        .nest("/api/admin/platform/subscriptions", subscriptions_router(subscriptions_state).into())
+        .nest("/api/admin/platform/oauth-clients", oauth_clients_router(oauth_clients_state).into())
+        .nest("/api/admin/platform/anchor-domains", anchor_domains_router(auth_config_state.clone()).into())
+        .nest("/api/admin/platform/auth-configs", client_auth_configs_router(auth_config_state.clone()).into())
+        .nest("/api/admin/platform/idp-role-mappings", idp_role_mappings_router(auth_config_state).into())
+        .nest("/api/admin/platform/audit-logs", audit_logs_router(audit_logs_state).into())
+        .nest("/api/admin/platform/applications", applications_router(applications_state).into())
+        .nest("/api/admin/platform/dispatch-pools", dispatch_pools_router(dispatch_pools_state).into())
+        .nest("/api/admin/platform/service-accounts", service_accounts_router(service_accounts_state).into())
         // Monitoring APIs
-        .nest("/api/monitoring", monitoring_router(monitoring_state))
+        .nest("/api/monitoring", monitoring_router(monitoring_state).into())
         // Add auth middleware
         .layer(AuthLayer::new(app_state));
 

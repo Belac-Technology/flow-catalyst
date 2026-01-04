@@ -4,7 +4,7 @@
 //! information through the execution of a use case.
 
 use chrono::{DateTime, Utc};
-use crate::tsid::TsidGenerator;
+use crate::shared::tsid::TsidGenerator;
 use super::tracing_context::TracingContext;
 use super::domain_event::DomainEvent;
 

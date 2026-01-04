@@ -4,7 +4,6 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import tech.flowcatalyst.dispatchpool.DispatchPool;
 import tech.flowcatalyst.dispatchpool.DispatchPoolRepository;
-import tech.flowcatalyst.dispatchpool.DispatchPoolStatus;
 import tech.flowcatalyst.dispatchpool.events.DispatchPoolCreated;
 import tech.flowcatalyst.platform.client.Client;
 import tech.flowcatalyst.platform.client.ClientRepository;
@@ -12,9 +11,7 @@ import tech.flowcatalyst.platform.common.ExecutionContext;
 import tech.flowcatalyst.platform.common.Result;
 import tech.flowcatalyst.platform.common.UnitOfWork;
 import tech.flowcatalyst.platform.common.errors.UseCaseError;
-import tech.flowcatalyst.platform.shared.TsidGenerator;
 
-import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
 
@@ -102,25 +99,17 @@ public class CreateDispatchPoolUseCase {
             ));
         }
 
-        // Create pool
-        Instant now = Instant.now();
-        DispatchPool pool = new DispatchPool(
-            TsidGenerator.generate(),
-            command.code().toLowerCase(),
-            command.name(),
-            command.description(),
-            command.rateLimit(),
-            command.concurrency(),
-            command.clientId(),
-            clientIdentifier,
-            DispatchPoolStatus.ACTIVE,
-            now,
-            now
-        );
+        // Create pool using safe builder pattern
+        DispatchPool pool = DispatchPool.create(command.code(), command.name())
+            .description(command.description())
+            .rateLimit(command.rateLimit())
+            .concurrency(command.concurrency())
+            .clientId(command.clientId())
+            .clientIdentifier(clientIdentifier)
+            .build();
 
         // Create domain event
-        DispatchPoolCreated event = DispatchPoolCreated.builder()
-            .from(context)
+        DispatchPoolCreated event = DispatchPoolCreated.fromContext(context)
             .poolId(pool.id())
             .code(pool.code())
             .name(pool.name())

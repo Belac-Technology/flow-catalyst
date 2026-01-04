@@ -99,8 +99,7 @@ public class UpdateDispatchPoolUseCase {
         );
 
         // Create domain event
-        DispatchPoolUpdated event = DispatchPoolUpdated.builder()
-            .from(context)
+        DispatchPoolUpdated event = DispatchPoolUpdated.fromContext(context)
             .poolId(updated.id())
             .code(updated.code())
             .name(updated.name())

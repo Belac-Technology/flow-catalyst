@@ -1,21 +1,31 @@
 package tech.flowcatalyst.dispatchpool;
 
 import io.quarkus.mongodb.panache.common.MongoEntity;
+import lombok.Builder;
+import lombok.With;
 import org.bson.codecs.pojo.annotations.BsonId;
+import tech.flowcatalyst.platform.shared.TsidGenerator;
 
 import java.time.Instant;
 
 /**
  * A dispatch pool controls the rate at which dispatch jobs can be processed.
  *
- * Pools define rate limits (per minute) and concurrency limits for message dispatching.
+ * <p>Pools define rate limits (per minute) and concurrency limits for message dispatching.
  * Pools can optionally be scoped to a client:
- * - Client-specific pools: clientId is set, pool is scoped to that client
- * - Anchor-level pools: clientId is null, pool is for non-client-scoped dispatch jobs
+ * <ul>
+ *   <li>Client-specific pools: clientId is set, pool is scoped to that client</li>
+ *   <li>Anchor-level pools: clientId is null, pool is for non-client-scoped dispatch jobs</li>
+ * </ul>
  *
- * Code uniqueness is enforced per clientId combination.
+ * <p>Code uniqueness is enforced per clientId combination.
+ *
+ * <p>Use {@link #builder()} for safe construction with named parameters.
+ * Use {@link #toBuilder()} to create a modified copy of an existing instance.
  */
 @MongoEntity(collection = "dispatch_pools")
+@Builder(toBuilder = true)
+@With
 public record DispatchPool(
     @BsonId
     String id,
@@ -42,32 +52,28 @@ public record DispatchPool(
     Instant updatedAt
 ) {
     // ========================================================================
-    // Wither methods for immutable updates
+    // Factory Methods
     // ========================================================================
 
-    public DispatchPool withName(String name) {
-        return new DispatchPool(id, code, name, description, rateLimit, concurrency,
-            clientId, clientIdentifier, status, createdAt, Instant.now());
-    }
-
-    public DispatchPool withDescription(String description) {
-        return new DispatchPool(id, code, name, description, rateLimit, concurrency,
-            clientId, clientIdentifier, status, createdAt, Instant.now());
-    }
-
-    public DispatchPool withRateLimit(int rateLimit) {
-        return new DispatchPool(id, code, name, description, rateLimit, concurrency,
-            clientId, clientIdentifier, status, createdAt, Instant.now());
-    }
-
-    public DispatchPool withConcurrency(int concurrency) {
-        return new DispatchPool(id, code, name, description, rateLimit, concurrency,
-            clientId, clientIdentifier, status, createdAt, Instant.now());
-    }
-
-    public DispatchPool withStatus(DispatchPoolStatus status) {
-        return new DispatchPool(id, code, name, description, rateLimit, concurrency,
-            clientId, clientIdentifier, status, createdAt, Instant.now());
+    /**
+     * Create a new dispatch pool with required fields and sensible defaults.
+     * Use this instead of the raw builder for new entity creation.
+     *
+     * @param code Unique code for the pool (will be lowercased)
+     * @param name Human-readable name
+     * @return A pre-configured builder with defaults set
+     */
+    public static DispatchPoolBuilder create(String code, String name) {
+        var now = Instant.now();
+        return DispatchPool.builder()
+            .id(TsidGenerator.generate())
+            .code(code.toLowerCase())
+            .name(name)
+            .rateLimit(100)      // default
+            .concurrency(10)     // default
+            .status(DispatchPoolStatus.ACTIVE)
+            .createdAt(now)
+            .updatedAt(now);
     }
 
     // ========================================================================

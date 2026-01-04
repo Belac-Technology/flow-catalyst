@@ -1,21 +1,30 @@
 package tech.flowcatalyst.eventtype;
 
 import io.quarkus.mongodb.panache.common.MongoEntity;
+import lombok.Builder;
+import lombok.With;
 import org.bson.codecs.pojo.annotations.BsonId;
+import tech.flowcatalyst.platform.shared.TsidGenerator;
+
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
  * Represents an event type in the FlowCatalyst platform.
  *
- * Event types define the structure and schema for events in the system.
+ * <p>Event types define the structure and schema for events in the system.
  * Each event type has a globally unique code and can have multiple
  * schema versions for backwards compatibility.
  *
- * Code format: {APPLICATION}:{SUBDOMAIN}:{AGGREGATE}:{EVENT}
+ * <p>Code format: {APPLICATION}:{SUBDOMAIN}:{AGGREGATE}:{EVENT}
  * Example: operant:execution:trip:started
+ *
+ * <p>Use {@link #create(String, String)} for safe construction with defaults.
  */
 @MongoEntity(collection = "event_types")
+@Builder(toBuilder = true)
+@With
 public record EventType(
     @BsonId
     String id,
@@ -92,32 +101,40 @@ public record EventType(
     }
 
     // ========================================================================
-    // Wither methods for immutable updates
+    // Factory Methods
     // ========================================================================
 
-    public EventType withName(String name) {
-        return new EventType(id, code, name, description, specVersions, status, createdAt, Instant.now());
+    /**
+     * Create a new event type with required fields and sensible defaults.
+     *
+     * @param code Unique event type code
+     * @param name Human-readable name
+     * @return A pre-configured builder with defaults set
+     */
+    public static EventTypeBuilder create(String code, String name) {
+        var now = Instant.now();
+        return EventType.builder()
+            .id(TsidGenerator.generate())
+            .code(code)
+            .name(name)
+            .specVersions(new ArrayList<>())
+            .status(EventTypeStatus.CURRENT)
+            .createdAt(now)
+            .updatedAt(now);
     }
 
-    public EventType withDescription(String description) {
-        return new EventType(id, code, name, description, specVersions, status, createdAt, Instant.now());
-    }
-
-    public EventType withNameAndDescription(String name, String description) {
-        return new EventType(id, code, name, description, specVersions, status, createdAt, Instant.now());
-    }
-
-    public EventType withSpecVersions(List<SpecVersion> specVersions) {
-        return new EventType(id, code, name, description, specVersions, status, createdAt, Instant.now());
-    }
-
-    public EventType withStatus(EventTypeStatus status) {
-        return new EventType(id, code, name, description, specVersions, status, createdAt, Instant.now());
-    }
-
+    /**
+     * Add a spec version to this event type.
+     *
+     * @param specVersion The spec version to add
+     * @return A new EventType with the spec version added
+     */
     public EventType addSpecVersion(SpecVersion specVersion) {
-        var newVersions = new java.util.ArrayList<>(specVersions != null ? specVersions : List.of());
+        var newVersions = new ArrayList<>(specVersions != null ? specVersions : List.of());
         newVersions.add(specVersion);
-        return new EventType(id, code, name, description, newVersions, status, createdAt, Instant.now());
+        return this.toBuilder()
+            .specVersions(newVersions)
+            .updatedAt(Instant.now())
+            .build();
     }
 }

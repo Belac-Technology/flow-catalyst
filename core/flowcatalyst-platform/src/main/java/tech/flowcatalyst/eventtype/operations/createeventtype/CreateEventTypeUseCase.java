@@ -119,8 +119,7 @@ public class CreateEventTypeUseCase {
         );
 
         // Create domain event
-        EventTypeCreated event = EventTypeCreated.builder()
-            .from(context)
+        EventTypeCreated event = EventTypeCreated.fromContext(context)
             .eventTypeId(eventType.id())
             .code(eventType.code())
             .name(eventType.name())

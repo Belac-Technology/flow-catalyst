@@ -5,6 +5,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import lombok.Builder;
 import tech.flowcatalyst.platform.common.DomainEvent;
 import tech.flowcatalyst.platform.common.ExecutionContext;
 import tech.flowcatalyst.platform.shared.TsidGenerator;
@@ -19,6 +20,7 @@ import java.time.Instant;
  * <p>This event contains the updated name and/or description.
  * Only fields that were actually changed are included.
  */
+@Builder
 public record EventTypeUpdated(
     // Event metadata
     String eventId,
@@ -89,51 +91,16 @@ public record EventTypeUpdated(
         String description
     ) {}
 
-    public static Builder builder() {
-        return new Builder();
-    }
-
-    public static class Builder {
-        private String eventId;
-        private Instant time;
-        private String executionId;
-        private String correlationId;
-        private String causationId;
-        private String principalId;
-        private String eventTypeId;
-        private String name;
-        private String description;
-
-        public Builder from(ExecutionContext ctx) {
-            this.eventId = TsidGenerator.generate();
-            this.time = Instant.now();
-            this.executionId = ctx.executionId();
-            this.correlationId = ctx.correlationId();
-            this.causationId = ctx.causationId();
-            this.principalId = ctx.principalId();
-            return this;
-        }
-
-        public Builder eventTypeId(String eventTypeId) {
-            this.eventTypeId = eventTypeId;
-            return this;
-        }
-
-        public Builder name(String name) {
-            this.name = name;
-            return this;
-        }
-
-        public Builder description(String description) {
-            this.description = description;
-            return this;
-        }
-
-        public EventTypeUpdated build() {
-            return new EventTypeUpdated(
-                eventId, time, executionId, correlationId, causationId, principalId,
-                eventTypeId, name, description
-            );
-        }
+    /**
+     * Create a pre-configured builder with event metadata from the execution context.
+     */
+    public static EventTypeUpdatedBuilder fromContext(ExecutionContext ctx) {
+        return EventTypeUpdated.builder()
+            .eventId(TsidGenerator.generate())
+            .time(Instant.now())
+            .executionId(ctx.executionId())
+            .correlationId(ctx.correlationId())
+            .causationId(ctx.causationId())
+            .principalId(ctx.principalId());
     }
 }

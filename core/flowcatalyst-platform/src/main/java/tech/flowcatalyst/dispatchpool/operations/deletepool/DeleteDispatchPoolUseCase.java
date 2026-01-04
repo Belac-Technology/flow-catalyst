@@ -74,8 +74,7 @@ public class DeleteDispatchPoolUseCase {
         );
 
         // Create domain event
-        DispatchPoolDeleted event = DispatchPoolDeleted.builder()
-            .from(context)
+        DispatchPoolDeleted event = DispatchPoolDeleted.fromContext(context)
             .poolId(archived.id())
             .code(archived.code())
             .clientId(archived.clientId())

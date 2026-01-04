@@ -12,8 +12,8 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tracing::debug;
 
-use crate::domain::UserScope;
-use crate::service::oidc::IdTokenClaims;
+use crate::UserScope;
+use crate::auth::oidc_service::IdTokenClaims;
 
 use super::{IdpAdapter, IdpRoleMappingConfig, IdpUserInfo, apply_role_mappings};
 

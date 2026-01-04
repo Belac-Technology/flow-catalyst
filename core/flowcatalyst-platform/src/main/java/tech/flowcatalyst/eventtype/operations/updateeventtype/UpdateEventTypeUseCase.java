@@ -79,14 +79,17 @@ public class UpdateEventTypeUseCase {
             ));
         }
 
-        // Apply changes immutably
+        // Apply changes immutably using toBuilder()
         String newName = command.name() != null ? command.name() : eventType.name();
         String newDescription = command.description() != null ? command.description() : eventType.description();
-        EventType updated = eventType.withNameAndDescription(newName, newDescription);
+        EventType updated = eventType.toBuilder()
+            .name(newName)
+            .description(newDescription)
+            .updatedAt(java.time.Instant.now())
+            .build();
 
         // Create domain event
-        EventTypeUpdated event = EventTypeUpdated.builder()
-            .from(context)
+        EventTypeUpdated event = EventTypeUpdated.fromContext(context)
             .eventTypeId(updated.id())
             .name(updated.name())
             .description(updated.description())

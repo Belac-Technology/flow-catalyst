@@ -11,16 +11,16 @@
 use mongodb::Database;
 use tracing::info;
 
-use crate::domain::{
+use crate::{
     AnchorDomain, Application, Client, ClientAuthConfig, ClientStatus,
     ClientAccessGrant, EventType, Principal, UserScope, AuthProvider,
 };
-use crate::repository::{
+use crate::{
     AnchorDomainRepository, ApplicationRepository, ClientRepository,
     ClientAuthConfigRepository, ClientAccessGrantRepository, EventTypeRepository,
     PrincipalRepository,
 };
-use crate::service::password::{PasswordService, Argon2Config, PasswordPolicy};
+use crate::auth::password_service::{PasswordService, Argon2Config, PasswordPolicy};
 
 const DEV_PASSWORD: &str = "DevPassword123!";
 

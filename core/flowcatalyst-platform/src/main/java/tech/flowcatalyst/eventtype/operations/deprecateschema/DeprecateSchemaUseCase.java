@@ -82,8 +82,7 @@ public class DeprecateSchemaUseCase {
         EventType updated = eventType.withSpecVersions(updatedVersions);
 
         // Create domain event
-        SchemaDeprecated event = SchemaDeprecated.builder()
-            .from(context)
+        SchemaDeprecated event = SchemaDeprecated.fromContext(context)
             .eventTypeId(updated.id())
             .version(command.version())
             .build();

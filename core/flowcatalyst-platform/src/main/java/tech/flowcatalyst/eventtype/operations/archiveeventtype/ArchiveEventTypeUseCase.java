@@ -61,8 +61,7 @@ public class ArchiveEventTypeUseCase {
         EventType updated = eventType.withStatus(EventTypeStatus.ARCHIVE);
 
         // Create domain event
-        EventTypeArchived event = EventTypeArchived.builder()
-            .from(context)
+        EventTypeArchived event = EventTypeArchived.fromContext(context)
             .eventTypeId(updated.id())
             .code(updated.code())
             .build();

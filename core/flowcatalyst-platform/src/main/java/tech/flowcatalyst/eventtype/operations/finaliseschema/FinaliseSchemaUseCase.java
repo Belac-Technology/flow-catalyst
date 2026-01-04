@@ -82,8 +82,7 @@ public class FinaliseSchemaUseCase {
         EventType updated = eventType.withSpecVersions(updatedVersions);
 
         // Create domain event
-        SchemaFinalised event = SchemaFinalised.builder()
-            .from(context)
+        SchemaFinalised event = SchemaFinalised.fromContext(context)
             .eventTypeId(updated.id())
             .version(command.version())
             .deprecatedVersion(deprecatedVersion)

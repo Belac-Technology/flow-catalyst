@@ -15,7 +15,7 @@ use tracing::{debug, error};
 use super::domain_event::DomainEvent;
 use super::error::UseCaseError;
 use super::result::UseCaseResult;
-use crate::domain::{Event, ContextData, AuditLog, AuditAction};
+use crate::{Event, ContextData, AuditLog, AuditAction};
 
 /// Unit of Work for atomic control plane operations.
 ///

@@ -5,6 +5,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import lombok.Builder;
 import tech.flowcatalyst.eventtype.SchemaType;
 import tech.flowcatalyst.platform.common.DomainEvent;
 import tech.flowcatalyst.platform.common.ExecutionContext;
@@ -20,6 +21,7 @@ import java.time.Instant;
  * <p>The new schema is added in FINALISING status and must be finalised
  * before it can be used for event validation.
  */
+@Builder
 public record SchemaAdded(
     // Event metadata
     String eventId,
@@ -94,63 +96,16 @@ public record SchemaAdded(
         SchemaType schemaType
     ) {}
 
-    public static Builder builder() {
-        return new Builder();
-    }
-
-    public static class Builder {
-        private String eventId;
-        private Instant time;
-        private String executionId;
-        private String correlationId;
-        private String causationId;
-        private String principalId;
-        private String eventTypeId;
-        private String version;
-        private String mimeType;
-        private String schema;
-        private SchemaType schemaType;
-
-        public Builder from(ExecutionContext ctx) {
-            this.eventId = TsidGenerator.generate();
-            this.time = Instant.now();
-            this.executionId = ctx.executionId();
-            this.correlationId = ctx.correlationId();
-            this.causationId = ctx.causationId();
-            this.principalId = ctx.principalId();
-            return this;
-        }
-
-        public Builder eventTypeId(String eventTypeId) {
-            this.eventTypeId = eventTypeId;
-            return this;
-        }
-
-        public Builder version(String version) {
-            this.version = version;
-            return this;
-        }
-
-        public Builder mimeType(String mimeType) {
-            this.mimeType = mimeType;
-            return this;
-        }
-
-        public Builder schema(String schema) {
-            this.schema = schema;
-            return this;
-        }
-
-        public Builder schemaType(SchemaType schemaType) {
-            this.schemaType = schemaType;
-            return this;
-        }
-
-        public SchemaAdded build() {
-            return new SchemaAdded(
-                eventId, time, executionId, correlationId, causationId, principalId,
-                eventTypeId, version, mimeType, schema, schemaType
-            );
-        }
+    /**
+     * Create a pre-configured builder with event metadata from the execution context.
+     */
+    public static SchemaAddedBuilder fromContext(ExecutionContext ctx) {
+        return SchemaAdded.builder()
+            .eventId(TsidGenerator.generate())
+            .time(Instant.now())
+            .executionId(ctx.executionId())
+            .correlationId(ctx.correlationId())
+            .causationId(ctx.causationId())
+            .principalId(ctx.principalId());
     }
 }
