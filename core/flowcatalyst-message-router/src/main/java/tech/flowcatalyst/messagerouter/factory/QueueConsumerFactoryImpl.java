@@ -1,5 +1,6 @@
 package tech.flowcatalyst.messagerouter.factory;
 
+import io.nats.client.Connection;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.jms.ConnectionFactory;
@@ -10,6 +11,7 @@ import tech.flowcatalyst.messagerouter.config.QueueConfig;
 import tech.flowcatalyst.messagerouter.config.QueueType;
 import io.agroal.api.AgroalDataSource;
 import tech.flowcatalyst.messagerouter.consumer.ActiveMqQueueConsumer;
+import tech.flowcatalyst.messagerouter.consumer.NatsQueueConsumer;
 import tech.flowcatalyst.messagerouter.consumer.QueueConsumer;
 import tech.flowcatalyst.messagerouter.consumer.SqsQueueConsumer;
 import tech.flowcatalyst.messagerouter.embedded.EmbeddedQueueConsumer;
@@ -43,6 +45,19 @@ public class QueueConsumerFactoryImpl implements QueueConsumerFactory {
     @ConfigProperty(name = "message-router.embedded.receive-timeout-ms", defaultValue = "1000")
     int embeddedReceiveTimeoutMs;
 
+    // NATS configuration
+    @ConfigProperty(name = "message-router.nats.stream-name", defaultValue = "FLOWCATALYST")
+    String natsStreamName;
+
+    @ConfigProperty(name = "message-router.nats.consumer-name", defaultValue = "flowcatalyst-router")
+    String natsConsumerName;
+
+    @ConfigProperty(name = "message-router.nats.max-messages-per-poll", defaultValue = "10")
+    int natsMaxMessagesPerPoll;
+
+    @ConfigProperty(name = "message-router.nats.poll-timeout-seconds", defaultValue = "20")
+    int natsPollTimeoutSeconds;
+
     @Inject
     QueueManager queueManager;
 
@@ -57,6 +72,9 @@ public class QueueConsumerFactoryImpl implements QueueConsumerFactory {
 
     @Inject
     ConnectionFactory connectionFactory;
+
+    @Inject
+    Connection natsConnection;
 
     @Inject
     @io.quarkus.agroal.DataSource("embedded-queue")
@@ -93,6 +111,23 @@ public class QueueConsumerFactoryImpl implements QueueConsumerFactory {
                     queueMetrics,
                     warningService,
                     activemqReceiveTimeoutMs,
+                    metricsPollIntervalSeconds
+                );
+            }
+            case NATS -> {
+                String subject = queueConfig.queueUri();  // Use queueUri as subject filter
+                LOG.infof("Using NATS JetStream consumer for stream [%s], subject [%s]", natsStreamName, subject);
+                yield new NatsQueueConsumer(
+                    natsConnection,
+                    natsStreamName,
+                    natsConsumerName,
+                    subject,
+                    connections,
+                    queueManager,
+                    queueMetrics,
+                    warningService,
+                    natsMaxMessagesPerPoll,
+                    natsPollTimeoutSeconds,
                     metricsPollIntervalSeconds
                 );
             }

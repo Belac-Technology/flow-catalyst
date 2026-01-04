@@ -63,6 +63,7 @@ public class QueueValidationService {
                 boolean accessible = switch (queueType) {
                     case SQS -> validateSqsQueue(config);
                     case ACTIVEMQ -> validateActiveMqQueue(config);
+                    case NATS -> true; // NATS streams are created automatically by NatsConnectionProducer
                     case EMBEDDED -> true; // Embedded queues are always accessible (SQLite file-based)
                 };
 

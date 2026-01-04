@@ -1,9 +1,9 @@
 package tech.flowcatalyst.platform.security;
 
-import io.quarkus.test.TestTransaction;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import tech.flowcatalyst.platform.authentication.IdpRoleMapping;
 import tech.flowcatalyst.platform.authentication.IdpRoleMappingRepository;
@@ -14,6 +14,8 @@ import tech.flowcatalyst.platform.principal.Principal;
 import tech.flowcatalyst.platform.shared.TsidGenerator;
 
 import java.util.List;
+
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.*;
 
@@ -42,8 +44,8 @@ import static org.assertj.core.api.Assertions.*;
  * - test:admin, test:editor, test:viewer
  * - platform:test-tenant-admin
  */
+@Tag("integration")
 @QuarkusTest
-@TestTransaction
 class IdpRoleAuthorizationSecurityTest {
 
     @Inject
@@ -69,12 +71,14 @@ class IdpRoleAuthorizationSecurityTest {
 
         // ARRANGE: No IDP role mappings exist
         // (super-admin role is NOT in the whitelist)
+        String email = uniqueEmail("attacker");
+        String subject = uniqueSubject("compromised-idp");
 
         // ACT: Attacker logs in via compromised IDP
         Principal attacker = oidcSyncService.syncOidcLogin(
-            "attacker@partner.com",
+            email,
             "Malicious Actor",
-            "compromised-idp-subject-123",
+            subject,
             null,
             List.of("super-admin", "platform-owner", "god-mode", "root")
         );
@@ -86,7 +90,7 @@ class IdpRoleAuthorizationSecurityTest {
         // VERIFY: User created but powerless
         assertThat(attacker).isNotNull();
         assertThat(attacker.active).isTrue();
-        assertThat(attacker.userIdentity.email).isEqualTo("attacker@partner.com");
+        assertThat(attacker.userIdentity.email).isEqualTo(email);
 
         // Security layer prevented privilege escalation
         // Logs should contain warnings about unauthorized roles (not tested here)
@@ -100,16 +104,20 @@ class IdpRoleAuthorizationSecurityTest {
         // alongside legitimate roles to avoid detection.
 
         // ARRANGE: Only authorize one legitimate role (maps to code-defined test:viewer)
-        createIdpMapping("partner-viewer", "test:viewer");
+        String idpRole = uniqueIdpRole("partner-viewer");
+        createIdpMapping(idpRole, "test:viewer");
+
+        String email = uniqueEmail("attacker");
+        String subject = uniqueSubject("idp");
 
         // ACT: Attacker logs in with mix of legitimate and malicious roles
         Principal attacker = oidcSyncService.syncOidcLogin(
-            "attacker@partner.com",
+            email,
             "Attacker",
-            "idp-123",
+            subject,
             null,
             List.of(
-                "partner-viewer",    // Legitimate (whitelisted)
+                idpRole,             // Legitimate (whitelisted)
                 "super-admin",       // MALICIOUS
                 "platform-admin",    // MALICIOUS
                 "root"               // MALICIOUS
@@ -136,12 +144,14 @@ class IdpRoleAuthorizationSecurityTest {
         // instead of IDP role names. This could be accidental or intentional.
 
         // ARRANGE: Internal roles exist in code (TestRoles), but no IDP mappings for internal names
+        String email = uniqueEmail("user");
+        String subject = uniqueSubject("idp");
 
         // ACT: Misconfigured IDP sends internal role names
         Principal user = oidcSyncService.syncOidcLogin(
-            "user@partner.com",
+            email,
             "User",
-            "idp-123",
+            subject,
             null,
             List.of("test:admin", "platform:test-tenant-admin")  // Internal names!
         );
@@ -158,13 +168,17 @@ class IdpRoleAuthorizationSecurityTest {
         // Attacker tries role names similar to internal roles, hoping for weak matching.
 
         // ARRANGE: Create IDP mapping for specific IDP role name (maps to test:admin)
-        createIdpMapping("keycloak-admin", "test:admin");
+        String idpRole = uniqueIdpRole("keycloak-admin");
+        createIdpMapping(idpRole, "test:admin");
 
-        // ACT: Attacker tries variations of the role name
+        String email = uniqueEmail("attacker");
+        String subject = uniqueSubject("idp");
+
+        // ACT: Attacker tries variations of the role name (none match the unique idpRole)
         Principal attacker = oidcSyncService.syncOidcLogin(
-            "attacker@partner.com",
+            email,
             "Attacker",
-            "idp-123",
+            subject,
             null,
             List.of(
                 "admin",           // No mapping
@@ -192,20 +206,21 @@ class IdpRoleAuthorizationSecurityTest {
         // Multiple partner IDPs are compromised.
         // Attackers coordinate to grant themselves maximum privileges.
 
-        // ARRANGE: Only one legitimate mapping exists
-        createIdpMapping("partner-editor", "test:editor");
+        // ARRANGE: Only one legitimate mapping exists (with unique name so it doesn't conflict)
+        String idpRole = uniqueIdpRole("partner-editor");
+        createIdpMapping(idpRole, "test:editor");
 
         // ACT: Three different attackers from different compromised IDPs
         Principal attacker1 = oidcSyncService.syncOidcLogin(
-            "attacker1@partner-a.com", "Attacker 1", "idp-a-123", null,
+            uniqueEmail("attacker1"), "Attacker 1", uniqueSubject("idp-a"), null,
             List.of("super-admin", "platform-owner"));
 
         Principal attacker2 = oidcSyncService.syncOidcLogin(
-            "attacker2@partner-b.com", "Attacker 2", "idp-b-456", null,
+            uniqueEmail("attacker2"), "Attacker 2", uniqueSubject("idp-b"), null,
             List.of("root", "god-mode"));
 
         Principal attacker3 = oidcSyncService.syncOidcLogin(
-            "attacker3@partner-c.com", "Attacker 3", "idp-c-789", null,
+            uniqueEmail("attacker3"), "Attacker 3", uniqueSubject("idp-c"), null,
             List.of("admin", "superuser"));
 
         // ASSERT: All attacks blocked - no roles granted
@@ -227,12 +242,16 @@ class IdpRoleAuthorizationSecurityTest {
         // Users who already have the role should lose it on next login.
 
         // ARRANGE: Create IDP mapping to test:admin role
-        IdpRoleMapping mapping = createIdpMapping("partner-sensitive", "test:admin");
+        String idpRole = uniqueIdpRole("partner-sensitive");
+        IdpRoleMapping mapping = createIdpMapping(idpRole, "test:admin");
+
+        String email = uniqueEmail("user");
+        String subject = uniqueSubject("idp");
 
         // User logs in and gets role
         Principal user = oidcSyncService.syncOidcLogin(
-            "user@partner.com", "User", "idp-123", null,
-            List.of("partner-sensitive"));
+            email, "User", subject, null,
+            List.of(idpRole));
 
         assertThat(roleService.findAssignmentsByPrincipal(user.id)).hasSize(1);
 
@@ -240,7 +259,7 @@ class IdpRoleAuthorizationSecurityTest {
         idpRoleMappingRepo.delete(mapping);
 
         // User logs in again with same IDP role
-        oidcSyncService.syncIdpRoles(user, List.of("partner-sensitive"));
+        oidcSyncService.syncIdpRoles(user, List.of(idpRole));
 
         // ASSERT: Role immediately revoked
         assertThat(roleService.findAssignmentsByPrincipal(user.id)).isEmpty();
@@ -253,8 +272,9 @@ class IdpRoleAuthorizationSecurityTest {
         // Attacker with platform admin access tries to create duplicate mapping
         // to bypass security controls.
 
-        // ARRANGE: Create legitimate mapping
-        createIdpMapping("partner-admin", "test:admin");
+        // ARRANGE: Create legitimate mapping with unique IDP role name
+        String idpRole = uniqueIdpRole("partner-admin");
+        createIdpMapping(idpRole, "test:admin");
 
         // ACT & ASSERT: Attempting to create duplicate should be prevented
         // (This would be tested in IdpRoleMappingRepository tests,
@@ -262,7 +282,7 @@ class IdpRoleAuthorizationSecurityTest {
 
         // The database unique constraint should prevent this
         assertThatCode(() -> {
-            createIdpMapping("partner-admin", "test:admin");
+            createIdpMapping(idpRole, "test:admin");
         }).isInstanceOf(Exception.class);
     }
 
@@ -278,11 +298,15 @@ class IdpRoleAuthorizationSecurityTest {
         // System should remove all IDP-granted roles on next login.
 
         // ARRANGE: User has IDP roles
-        createIdpMapping("partner-editor", "test:editor");
+        String idpRole = uniqueIdpRole("partner-editor");
+        createIdpMapping(idpRole, "test:editor");
+
+        String email = uniqueEmail("user");
+        String subject = uniqueSubject("idp");
 
         Principal user = oidcSyncService.syncOidcLogin(
-            "user@partner.com", "User", "idp-123", null,
-            List.of("partner-editor"));
+            email, "User", subject, null,
+            List.of(idpRole));
 
         assertThat(roleService.findAssignmentsByPrincipal(user.id)).hasSize(1);
 
@@ -301,16 +325,19 @@ class IdpRoleAuthorizationSecurityTest {
         // IDP role sync should NOT remove manually assigned roles.
 
         // ARRANGE: User with manual role
+        String email = uniqueEmail("user");
+        String subject = uniqueSubject("idp");
         Principal user = oidcSyncService.syncOidcLogin(
-            "user@partner.com", "User", "idp-123", null, List.of());
+            email, "User", subject, null, List.of());
 
         roleService.assignRole(user.id, "test:admin", "MANUAL");
 
         // Create IDP mapping and grant IDP role
-        createIdpMapping("partner-viewer", "test:viewer");
+        String idpRole = uniqueIdpRole("partner-viewer");
+        createIdpMapping(idpRole, "test:viewer");
 
         // ACT: Sync IDP roles
-        oidcSyncService.syncIdpRoles(user, List.of("partner-viewer"));
+        oidcSyncService.syncIdpRoles(user, List.of(idpRole));
 
         // ASSERT: Both manual and IDP roles present
         assertThat(roleService.findAssignmentsByPrincipal(user.id))
@@ -326,28 +353,34 @@ class IdpRoleAuthorizationSecurityTest {
         // System should reflect current IDP state.
 
         // ARRANGE: Create 3 IDP role mappings to code-defined roles
-        createIdpMapping("idp-role-1", "test:viewer");
-        createIdpMapping("idp-role-2", "test:editor");
-        createIdpMapping("idp-role-3", "test:admin");
+        String idpRole1 = uniqueIdpRole("idp-role-1");
+        String idpRole2 = uniqueIdpRole("idp-role-2");
+        String idpRole3 = uniqueIdpRole("idp-role-3");
+        createIdpMapping(idpRole1, "test:viewer");
+        createIdpMapping(idpRole2, "test:editor");
+        createIdpMapping(idpRole3, "test:admin");
+
+        String email = uniqueEmail("user");
+        String subject = uniqueSubject("idp");
 
         // Login 1: User has test:viewer role
         Principal user = oidcSyncService.syncOidcLogin(
-            "user@partner.com", "User", "idp-123", null,
-            List.of("idp-role-1"));
+            email, "User", subject, null,
+            List.of(idpRole1));
 
         assertThat(roleService.findAssignmentsByPrincipal(user.id))
             .extracting(a -> a.roleName)
             .containsExactly("test:viewer");
 
         // Login 2: User promoted to viewer + editor
-        oidcSyncService.syncIdpRoles(user, List.of("idp-role-1", "idp-role-2"));
+        oidcSyncService.syncIdpRoles(user, List.of(idpRole1, idpRole2));
 
         assertThat(roleService.findAssignmentsByPrincipal(user.id))
             .extracting(a -> a.roleName)
             .containsExactlyInAnyOrder("test:viewer", "test:editor");
 
         // Login 3: User changed to admin only
-        oidcSyncService.syncIdpRoles(user, List.of("idp-role-3"));
+        oidcSyncService.syncIdpRoles(user, List.of(idpRole3));
 
         assertThat(roleService.findAssignmentsByPrincipal(user.id))
             .extracting(a -> a.roleName)
@@ -366,13 +399,17 @@ class IdpRoleAuthorizationSecurityTest {
         // These should be filtered unless explicitly whitelisted.
 
         // ARRANGE: Create legitimate mapping
-        createIdpMapping("partner-viewer", "test:viewer");
+        String idpRole = uniqueIdpRole("partner-viewer");
+        createIdpMapping(idpRole, "test:viewer");
+
+        String email = uniqueEmail("user");
+        String subject = uniqueSubject("keycloak");
 
         // ACT: Login with Keycloak defaults + legitimate role
         Principal user = oidcSyncService.syncOidcLogin(
-            "user@partner.com", "User", "keycloak-123", null,
+            email, "User", subject, null,
             List.of(
-                "partner-viewer",           // Legitimate
+                idpRole,                    // Legitimate
                 "offline_access",           // Keycloak default
                 "uma_authorization",        // Keycloak default
                 "default-roles-keycloak"    // Keycloak default
@@ -389,6 +426,18 @@ class IdpRoleAuthorizationSecurityTest {
     // ========================================
     // HELPER METHODS
     // ========================================
+
+    private String uniqueEmail(String prefix) {
+        return prefix + "-" + UUID.randomUUID().toString().substring(0, 8) + "@test.com";
+    }
+
+    private String uniqueIdpRole(String prefix) {
+        return prefix + "-" + UUID.randomUUID().toString().substring(0, 8);
+    }
+
+    private String uniqueSubject(String prefix) {
+        return prefix + "-" + UUID.randomUUID().toString().substring(0, 8);
+    }
 
     private IdpRoleMapping createIdpMapping(String idpRoleName, String internalRoleName) {
         IdpRoleMapping mapping = new IdpRoleMapping();

@@ -51,6 +51,7 @@ dependencies {
     implementation("com.github.jnr:jnr-unixsocket:0.38.22") // Required by aws-crt for native builds
     implementation("software.amazon.awssdk:url-connection-client")
     implementation("org.apache.activemq:activemq-client:6.1.7")
+    implementation("io.nats:jnats:2.20.5")
 
     // Embedded Queue (for developer builds) - Pure Java SQLite for native image support
     implementation("io.quarkiverse.jdbc:quarkus-jdbc-sqlite4j:0.0.8")
@@ -90,6 +91,7 @@ dependencies {
     testImplementation("org.awaitility:awaitility:4.2.0")
     testImplementation("org.testcontainers:testcontainers:1.19.7")
     testImplementation("org.testcontainers:localstack:1.19.7")
+    // NATS uses GenericContainer with nats:2.10-alpine image (no dedicated module)
     testImplementation("io.quarkus:quarkus-test-common")
     testImplementation("org.wiremock:wiremock:3.3.1")
 }

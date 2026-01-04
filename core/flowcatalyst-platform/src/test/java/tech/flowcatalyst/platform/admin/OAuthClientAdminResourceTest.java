@@ -7,6 +7,7 @@ import io.restassured.response.Response;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import tech.flowcatalyst.platform.authentication.JwtKeyService;
 import tech.flowcatalyst.platform.authentication.oauth.OAuthClient;
@@ -26,6 +27,7 @@ import static org.hamcrest.Matchers.*;
 /**
  * Integration tests for OAuthClientAdminResource.
  */
+@Tag("integration")
 @QuarkusTest
 class OAuthClientAdminResourceTest {
 

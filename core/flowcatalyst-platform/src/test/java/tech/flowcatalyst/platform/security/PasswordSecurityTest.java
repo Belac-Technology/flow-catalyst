@@ -1,14 +1,16 @@
 package tech.flowcatalyst.platform.security;
 
-import io.quarkus.test.TestTransaction;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import tech.flowcatalyst.platform.principal.Principal;
 import tech.flowcatalyst.platform.principal.PasswordService;
 import tech.flowcatalyst.platform.principal.UserService;
 import tech.flowcatalyst.platform.principal.UserScope;
+
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.*;
 
@@ -26,13 +28,23 @@ import static org.assertj.core.api.Assertions.*;
  *
  * SECURITY CONTROLS:
  * - Password complexity requirements (12+ chars, upper, lower, digit, special)
- * - BCrypt with random salt (prevents rainbow tables)
+ * - Argon2id with random salt (prevents rainbow tables, GPU/ASIC-resistant)
  * - Old password required for password change
  * - OIDC users cannot have passwords
  */
+@Tag("integration")
 @QuarkusTest
-@TestTransaction
 class PasswordSecurityTest {
+
+    /** Generate a unique email for each test to avoid conflicts (MongoDB doesn't support JTA rollback) */
+    private String uniqueEmail() {
+        return "user-" + UUID.randomUUID().toString().substring(0, 8) + "@example.com";
+    }
+
+    /** Generate a unique email with a specific prefix */
+    private String uniqueEmail(String prefix) {
+        return prefix + "-" + UUID.randomUUID().toString().substring(0, 8) + "@example.com";
+    }
 
     @Inject
     UserService userService;
@@ -64,7 +76,7 @@ class PasswordSecurityTest {
             // Act & Assert: Each weak password is rejected
             assertThatThrownBy(() ->
                 userService.createInternalUser(
-                    "user@example.com",
+                    uniqueEmail(),
                     weakPassword,
                     "User",
                     null,
@@ -89,21 +101,17 @@ class PasswordSecurityTest {
             "P@ssW0rd!23456789"       // Extra long
         };
 
-        int userCount = 1;
         for (String strongPassword : strongPasswords) {
-            final int finalUserCount = userCount; // Make effectively final for lambda
             // Act: Should not throw exception
             assertThatCode(() ->
                 userService.createInternalUser(
-                    "user" + finalUserCount + "@example.com",
+                    uniqueEmail(),
                     strongPassword,
-                    "User " + finalUserCount,
+                    "User",
                     null,
                     UserScope.ANCHOR
                 )
             ).doesNotThrowAnyException();
-
-            userCount++;
         }
     }
 
@@ -133,14 +141,14 @@ class PasswordSecurityTest {
 
         // Arrange: Create 2 users with same password
         Principal user1 = userService.createInternalUser(
-            "user1@example.com",
+            uniqueEmail("user1"),
             "SamePass123!",
             "User 1",
             null, UserScope.ANCHOR
         );
 
         Principal user2 = userService.createInternalUser(
-            "user2@example.com",
+            uniqueEmail("user2"),
             "SamePass123!",
             "User 2",
             null, UserScope.ANCHOR
@@ -163,20 +171,22 @@ class PasswordSecurityTest {
     }
 
     @Test
-    @DisplayName("SECURITY: Password hashes are using BCrypt format")
-    void shouldUseBCryptFormat_whenHashingPasswords() {
+    @DisplayName("SECURITY: Password hashes are using Argon2id format")
+    void shouldUseArgon2idFormat_whenHashingPasswords() {
         // THREAT: Weak hashing algorithm (MD5, SHA1, etc.)
 
         // Act
         String hash = passwordService.hashPassword("SecurePass123!");
 
-        // Assert: BCrypt format ($2a$ or $2b$ prefix, 60 chars total)
-        assertThat(hash).startsWith("$2");
-        assertThat(hash).hasSize(60);
+        // Assert: Argon2id format ($argon2id$ prefix)
+        assertThat(hash).startsWith("$argon2id$");
+        assertThat(hash).contains("m=65536"); // Memory cost
+        assertThat(hash).contains("t=3");     // Time cost
+        assertThat(hash).contains("p=4");     // Parallelism
 
-        // BCrypt format: $2a$[cost]$[22-char salt][31-char hash]
+        // Argon2id format: $argon2id$v=19$m=65536,t=3,p=4$[salt]$[hash]
         String[] parts = hash.split("\\$");
-        assertThat(parts).hasSizeGreaterThanOrEqualTo(4);
+        assertThat(parts).hasSizeGreaterThanOrEqualTo(5);
     }
 
     @Test
@@ -213,7 +223,7 @@ class PasswordSecurityTest {
 
         // Arrange: Create user
         Principal user = userService.createInternalUser(
-            "user@example.com",
+            uniqueEmail(),
             "CurrentPass123!",
             "User",
             null, UserScope.ANCHOR
@@ -242,7 +252,7 @@ class PasswordSecurityTest {
         String newPassword = "NewPass456!x";
 
         Principal user = userService.createInternalUser(
-            "user@example.com",
+            uniqueEmail(),
             oldPassword,
             "User",
             null, UserScope.ANCHOR
@@ -274,7 +284,7 @@ class PasswordSecurityTest {
 
         // Arrange
         Principal user = userService.createInternalUser(
-            "user@example.com",
+            uniqueEmail(),
             "StrongOldPass123!",
             "User",
             null, UserScope.ANCHOR
@@ -298,7 +308,7 @@ class PasswordSecurityTest {
 
         // Arrange
         Principal user = userService.createInternalUser(
-            "user@example.com",
+            uniqueEmail(),
             "OldPass123!x",
             "User",
             null, UserScope.ANCHOR
@@ -328,7 +338,7 @@ class PasswordSecurityTest {
 
         // Arrange
         Principal user = userService.createInternalUser(
-            "user@example.com",
+            uniqueEmail(),
             "OldPass123!x",
             "User",
             null, UserScope.ANCHOR
@@ -417,7 +427,7 @@ class PasswordSecurityTest {
         // Arrange
         String password = "SecurePass123!";
         Principal user = userService.createInternalUser(
-            "user@example.com",
+            uniqueEmail(),
             password,
             "User",
             null, UserScope.ANCHOR
@@ -470,19 +480,19 @@ class PasswordSecurityTest {
     void shouldHandleLongPasswords_safely() {
         // THREAT: Buffer overflow via very long passwords
 
-        // Note: BCrypt has a 72-byte limit, but should handle gracefully
+        // Note: Argon2id handles long passwords better than BCrypt (no 72-byte limit)
         String veryLongPassword = "A".repeat(100) + "b1!";
 
         // Should not crash
         assertThatCode(() -> {
             Principal user = userService.createInternalUser(
-                "user@example.com",
+                uniqueEmail(),
                 veryLongPassword,
                 "User",
                 null, UserScope.ANCHOR
             );
 
-            // Should verify correctly (up to BCrypt's limit)
+            // Should verify correctly
             assertThat(passwordService.verifyPassword(
                 veryLongPassword,
                 user.userIdentity.passwordHash
@@ -503,14 +513,12 @@ class PasswordSecurityTest {
             "パスワードPass123!"   // Japanese (15 chars)
         };
 
-        int userCount = 1;
         for (String unicodePassword : unicodePasswords) {
-            final int finalUserCount = userCount; // Make effectively final for lambda
             assertThatCode(() -> {
                 Principal user = userService.createInternalUser(
-                    "user" + finalUserCount + "@example.com",
+                    uniqueEmail(),
                     unicodePassword,
-                    "User " + finalUserCount,
+                    "User",
                     null, UserScope.ANCHOR
                 );
 
@@ -519,8 +527,6 @@ class PasswordSecurityTest {
                     user.userIdentity.passwordHash
                 )).isTrue();
             }).doesNotThrowAnyException();
-
-            userCount++;
         }
     }
 
@@ -532,7 +538,7 @@ class PasswordSecurityTest {
         String passwordWithSpaces = "My Secure Pass 123!";
 
         Principal user = userService.createInternalUser(
-            "user@example.com",
+            uniqueEmail(),
             passwordWithSpaces,
             "User",
             null, UserScope.ANCHOR

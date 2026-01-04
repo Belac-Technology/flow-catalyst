@@ -52,14 +52,16 @@ class PasswordServiceTest {
     }
 
     @Test
-    @DisplayName("hashPassword should produce BCrypt hash format")
-    void hashPassword_shouldProduceBCryptHashFormat_whenPasswordValid() {
+    @DisplayName("hashPassword should produce Argon2id hash format")
+    void hashPassword_shouldProduceArgon2idHashFormat_whenPasswordValid() {
         // Act
         String hash = service.hashPassword("ValidPass123!");
 
-        // Assert: BCrypt hash starts with $2a$ or $2b$
-        assertThat(hash).startsWith("$2");
-        assertThat(hash).hasSize(60); // BCrypt hashes are 60 characters
+        // Assert: Argon2id hash starts with $argon2id$
+        assertThat(hash).startsWith("$argon2id$");
+        assertThat(hash).contains("m=65536"); // Memory cost
+        assertThat(hash).contains("t=3");     // Time cost (iterations)
+        assertThat(hash).contains("p=4");     // Parallelism
     }
 
     // ========================================
@@ -250,7 +252,7 @@ class PasswordServiceTest {
 
         // Assert
         assertThat(hash).isNotNull();
-        assertThat(hash).startsWith("$2");
+        assertThat(hash).startsWith("$argon2id$");
         assertThat(service.verifyPassword("ValidPass123!", hash)).isTrue();
     }
 

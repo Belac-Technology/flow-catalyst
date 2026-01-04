@@ -1,9 +1,9 @@
 package tech.flowcatalyst.platform.integration;
 
-import io.quarkus.test.TestTransaction;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import tech.flowcatalyst.platform.authentication.IdpRoleMapping;
 import tech.flowcatalyst.platform.authentication.IdpRoleMappingRepository;
@@ -14,6 +14,8 @@ import tech.flowcatalyst.platform.principal.Principal;
 import tech.flowcatalyst.platform.shared.TsidGenerator;
 
 import java.util.List;
+
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.*;
 
@@ -30,8 +32,8 @@ import static org.assertj.core.api.Assertions.*;
  * - test:viewer (view only)
  * - platform:test-tenant-admin (platform permissions)
  */
+@Tag("integration")
 @QuarkusTest
-@TestTransaction
 class IdpRoleSyncIntegrationTest {
 
     @Inject
@@ -44,6 +46,22 @@ class IdpRoleSyncIntegrationTest {
     IdpRoleMappingRepository idpRoleMappingRepo;
 
     // ========================================
+    // HELPER METHODS
+    // ========================================
+
+    private String uniqueEmail(String prefix) {
+        return prefix + "-" + UUID.randomUUID().toString().substring(0, 8) + "@test.com";
+    }
+
+    private String uniqueIdpRole(String prefix) {
+        return prefix + "-" + UUID.randomUUID().toString().substring(0, 8);
+    }
+
+    private String uniqueSubject(String prefix) {
+        return prefix + "-" + UUID.randomUUID().toString().substring(0, 8);
+    }
+
+    // ========================================
     // AUTHORIZED ROLE MAPPING TESTS
     // ========================================
 
@@ -51,19 +69,20 @@ class IdpRoleSyncIntegrationTest {
     @DisplayName("IDP role sync should assign authorized roles when mapping exists")
     void idpRoleSync_shouldAssignAuthorizedRoles_whenMappingExists() {
         // Arrange: Create IDP role mapping to test:admin role (defined in TestRoles)
+        String idpRole = uniqueIdpRole("keycloak-admin");
         IdpRoleMapping mapping = new IdpRoleMapping();
         mapping.id = TsidGenerator.generate();
-        mapping.idpRoleName = "keycloak-admin";
+        mapping.idpRoleName = idpRole;
         mapping.internalRoleName = "test:admin";  // Maps to code-defined role
         idpRoleMappingRepo.persist(mapping);
 
         // Act: Sync OIDC login with whitelisted IDP role
         Principal principal = oidcSyncService.syncOidcLogin(
-            "user@customer.com",
+            uniqueEmail("user"),
             "Test User",
-            "google-oauth2|123",
+            uniqueSubject("google-oauth2"),
             null,
-            List.of("keycloak-admin")
+            List.of(idpRole)
         );
 
         // Assert: User has test:admin role
@@ -82,9 +101,9 @@ class IdpRoleSyncIntegrationTest {
 
         // Act: Sync login with unauthorized roles (attacker scenario)
         Principal principal = oidcSyncService.syncOidcLogin(
-            "attacker@malicious.com",
+            uniqueEmail("attacker"),
             "Attacker",
-            "evil-subject-123",
+            uniqueSubject("evil"),
             null,
             List.of("super-admin", "platform-owner", "root", "god-mode")
         );
@@ -98,16 +117,18 @@ class IdpRoleSyncIntegrationTest {
     @DisplayName("IDP role sync should update roles when user logs in again with different roles")
     void idpRoleSync_shouldUpdateRoles_whenUserLoginsAgainWithDifferentRoles() {
         // Arrange: Create 2 IDP role mappings to code-defined roles
-        createIdpMapping("idp-role-1", "test:viewer");
-        createIdpMapping("idp-role-2", "test:editor");
+        String idpRole1 = uniqueIdpRole("idp-role-1");
+        String idpRole2 = uniqueIdpRole("idp-role-2");
+        createIdpMapping(idpRole1, "test:viewer");
+        createIdpMapping(idpRole2, "test:editor");
 
         // First login: User gets test:viewer role
         Principal principal = oidcSyncService.syncOidcLogin(
-            "user@customer.com",
+            uniqueEmail("user"),
             "User",
-            "google-oauth2|123",
+            uniqueSubject("google-oauth2"),
             null,
-            List.of("idp-role-1")
+            List.of(idpRole1)
         );
 
         assertThat(roleService.findAssignmentsByPrincipal(principal.id))
@@ -115,7 +136,7 @@ class IdpRoleSyncIntegrationTest {
             .containsExactly("test:viewer");
 
         // Act: Second login with different role
-        oidcSyncService.syncIdpRoles(principal, List.of("idp-role-2"));
+        oidcSyncService.syncIdpRoles(principal, List.of(idpRole2));
 
         // Assert: Old role removed, new role added
         assertThat(roleService.findAssignmentsByPrincipal(principal.id))
@@ -128,9 +149,9 @@ class IdpRoleSyncIntegrationTest {
     void idpRoleSync_shouldPreserveManualRoles_whenSyncingIdpRoles() {
         // Arrange: User logs in with no IDP roles initially
         Principal principal = oidcSyncService.syncOidcLogin(
-            "user@customer.com",
+            uniqueEmail("user"),
             "User",
-            "google-oauth2|123",
+            uniqueSubject("google-oauth2"),
             null,
             List.of()
         );
@@ -139,10 +160,11 @@ class IdpRoleSyncIntegrationTest {
         roleService.assignRole(principal.id, "test:admin", "MANUAL");
 
         // Create IDP role mapping
-        createIdpMapping("keycloak-viewer", "test:viewer");
+        String idpRole = uniqueIdpRole("keycloak-viewer");
+        createIdpMapping(idpRole, "test:viewer");
 
         // Act: Sync IDP roles (user's IDP now grants them a role)
-        oidcSyncService.syncIdpRoles(principal, List.of("keycloak-viewer"));
+        oidcSyncService.syncIdpRoles(principal, List.of(idpRole));
 
         // Assert: User has BOTH manual and IDP roles
         List<PrincipalRole> assignments = roleService.findAssignmentsByPrincipal(principal.id);
@@ -165,17 +187,20 @@ class IdpRoleSyncIntegrationTest {
     @DisplayName("IDP role sync should handle multiple authorized roles from same IDP")
     void idpRoleSync_shouldHandleMultipleRoles_whenIdpProvidesManyRoles() {
         // Arrange: Create 3 IDP role mappings to code-defined roles
-        createIdpMapping("keycloak-viewer", "test:viewer");
-        createIdpMapping("keycloak-editor", "test:editor");
-        createIdpMapping("keycloak-admin", "test:admin");
+        String idpViewer = uniqueIdpRole("keycloak-viewer");
+        String idpEditor = uniqueIdpRole("keycloak-editor");
+        String idpAdmin = uniqueIdpRole("keycloak-admin");
+        createIdpMapping(idpViewer, "test:viewer");
+        createIdpMapping(idpEditor, "test:editor");
+        createIdpMapping(idpAdmin, "test:admin");
 
         // Act: IDP grants all 3 roles
         Principal principal = oidcSyncService.syncOidcLogin(
-            "user@customer.com",
+            uniqueEmail("user"),
             "User",
-            "google-oauth2|123",
+            uniqueSubject("google-oauth2"),
             null,
-            List.of("keycloak-viewer", "keycloak-editor", "keycloak-admin")
+            List.of(idpViewer, idpEditor, idpAdmin)
         );
 
         // Assert: User has all 3 roles
@@ -188,19 +213,21 @@ class IdpRoleSyncIntegrationTest {
     @DisplayName("SECURITY: IDP role sync should filter out unauthorized roles from mixed list")
     void idpRoleSync_shouldFilterUnauthorized_whenMixedWithAuthorized() {
         // Arrange: Only authorize 2 out of 5 roles
-        createIdpMapping("keycloak-viewer", "test:viewer");
-        createIdpMapping("keycloak-editor", "test:editor");
+        String idpViewer = uniqueIdpRole("keycloak-viewer");
+        String idpEditor = uniqueIdpRole("keycloak-editor");
+        createIdpMapping(idpViewer, "test:viewer");
+        createIdpMapping(idpEditor, "test:editor");
 
         // Act: IDP sends mix of authorized and unauthorized roles
         Principal principal = oidcSyncService.syncOidcLogin(
-            "user@customer.com",
+            uniqueEmail("user"),
             "User",
-            "google-oauth2|123",
+            uniqueSubject("google-oauth2"),
             null,
             List.of(
-                "keycloak-viewer",         // Authorized
+                idpViewer,                 // Authorized
                 "hacker-admin",            // UNAUTHORIZED
-                "keycloak-editor",         // Authorized
+                idpEditor,                 // Authorized
                 "default-roles-keycloak",  // UNAUTHORIZED (Keycloak default)
                 "offline_access"           // UNAUTHORIZED (Keycloak default)
             )
@@ -222,15 +249,16 @@ class IdpRoleSyncIntegrationTest {
         // Scenario: Platform admin realizes an IDP role was mistakenly authorized
 
         // Arrange: Create IDP role mapping
-        IdpRoleMapping mapping = createIdpMapping("keycloak-admin", "test:admin");
+        String idpRole = uniqueIdpRole("keycloak-admin");
+        IdpRoleMapping mapping = createIdpMapping(idpRole, "test:admin");
 
         // User logs in and gets role
         Principal principal = oidcSyncService.syncOidcLogin(
-            "user@customer.com",
+            uniqueEmail("user"),
             "User",
-            "google-oauth2|123",
+            uniqueSubject("google-oauth2"),
             null,
-            List.of("keycloak-admin")
+            List.of(idpRole)
         );
 
         assertThat(roleService.findAssignmentsByPrincipal(principal.id)).hasSize(1);
@@ -239,7 +267,7 @@ class IdpRoleSyncIntegrationTest {
         idpRoleMappingRepo.delete(mapping);
 
         // User logs in again with same IDP role
-        oidcSyncService.syncIdpRoles(principal, List.of("keycloak-admin"));
+        oidcSyncService.syncIdpRoles(principal, List.of(idpRole));
 
         // Assert: Role removed (no longer whitelisted)
         assertThat(roleService.findAssignmentsByPrincipal(principal.id)).isEmpty();
@@ -249,22 +277,23 @@ class IdpRoleSyncIntegrationTest {
     @DisplayName("Adding new IDP role mapping should grant access on next login")
     void shouldGrantAccess_whenNewIdpRoleMappingAdded() {
         // Arrange: User logs in before mapping exists
+        String idpRole = uniqueIdpRole("keycloak-viewer");
         Principal principal = oidcSyncService.syncOidcLogin(
-            "user@customer.com",
+            uniqueEmail("user"),
             "User",
-            "google-oauth2|123",
+            uniqueSubject("google-oauth2"),
             null,
-            List.of("keycloak-viewer")
+            List.of(idpRole)
         );
 
         // No roles assigned (mapping doesn't exist yet)
         assertThat(roleService.findAssignmentsByPrincipal(principal.id)).isEmpty();
 
         // Act: Platform admin creates mapping
-        createIdpMapping("keycloak-viewer", "test:viewer");
+        createIdpMapping(idpRole, "test:viewer");
 
         // User logs in again
-        oidcSyncService.syncIdpRoles(principal, List.of("keycloak-viewer"));
+        oidcSyncService.syncIdpRoles(principal, List.of(idpRole));
 
         // Assert: Role now granted
         assertThat(roleService.findAssignmentsByPrincipal(principal.id))
@@ -280,15 +309,16 @@ class IdpRoleSyncIntegrationTest {
     @DisplayName("IDP role sync should handle empty roles list from IDP")
     void idpRoleSync_shouldHandleEmpty_whenIdpSendsNoRoles() {
         // Arrange: Create mapping
-        createIdpMapping("keycloak-admin", "test:admin");
+        String idpRole = uniqueIdpRole("keycloak-admin");
+        createIdpMapping(idpRole, "test:admin");
 
         // User first login with role
         Principal principal = oidcSyncService.syncOidcLogin(
-            "user@customer.com",
+            uniqueEmail("user"),
             "User",
-            "google-oauth2|123",
+            uniqueSubject("google-oauth2"),
             null,
-            List.of("keycloak-admin")
+            List.of(idpRole)
         );
 
         assertThat(roleService.findAssignmentsByPrincipal(principal.id)).hasSize(1);
@@ -304,14 +334,15 @@ class IdpRoleSyncIntegrationTest {
     @DisplayName("IDP role sync should handle null roles list from IDP")
     void idpRoleSync_shouldHandleNull_whenIdpSendsNullRoles() {
         // Arrange
-        createIdpMapping("keycloak-admin", "test:admin");
+        String idpRole = uniqueIdpRole("keycloak-admin");
+        createIdpMapping(idpRole, "test:admin");
 
         Principal principal = oidcSyncService.syncOidcLogin(
-            "user@customer.com",
+            uniqueEmail("user"),
             "User",
-            "google-oauth2|123",
+            uniqueSubject("google-oauth2"),
             null,
-            List.of("keycloak-admin")
+            List.of(idpRole)
         );
 
         assertThat(roleService.findAssignmentsByPrincipal(principal.id)).hasSize(1);
@@ -328,16 +359,18 @@ class IdpRoleSyncIntegrationTest {
     void idpRoleSync_shouldDeduplicate_whenMultipleIdpRolesMapToSameInternal() {
         // Arrange: 2 IDP roles map to same internal role
         // (e.g., "admin" and "administrator" both map to internal "test:admin" role)
-        createIdpMapping("keycloak-admin", "test:admin");
-        createIdpMapping("keycloak-administrator", "test:admin");
+        String idpAdmin = uniqueIdpRole("keycloak-admin");
+        String idpAdministrator = uniqueIdpRole("keycloak-administrator");
+        createIdpMapping(idpAdmin, "test:admin");
+        createIdpMapping(idpAdministrator, "test:admin");
 
         // Act: IDP sends both role names
         Principal principal = oidcSyncService.syncOidcLogin(
-            "user@customer.com",
+            uniqueEmail("user"),
             "User",
-            "google-oauth2|123",
+            uniqueSubject("google-oauth2"),
             null,
-            List.of("keycloak-admin", "keycloak-administrator")
+            List.of(idpAdmin, idpAdministrator)
         );
 
         // Assert: Only 1 internal role assigned (deduplicated)
@@ -361,11 +394,11 @@ class IdpRoleSyncIntegrationTest {
 
         // Act: Multiple users login via compromised IDP
         Principal user1 = oidcSyncService.syncOidcLogin(
-            "user1@partner.com", "User 1", "idp-1", null,
+            uniqueEmail("user1"), "User 1", uniqueSubject("idp-1"), null,
             List.of("super-admin", "platform-owner", "root"));
 
         Principal user2 = oidcSyncService.syncOidcLogin(
-            "user2@partner.com", "User 2", "idp-2", null,
+            uniqueEmail("user2"), "User 2", uniqueSubject("idp-2"), null,
             List.of("super-admin"));
 
         // Assert: ALL malicious roles rejected, no privilege escalation
@@ -384,9 +417,9 @@ class IdpRoleSyncIntegrationTest {
 
         // Act: IDP misconfigured to send internal role name directly
         Principal principal = oidcSyncService.syncOidcLogin(
-            "user@misconfigured-idp.com",
+            uniqueEmail("user"),
             "User",
-            "idp-123",
+            uniqueSubject("idp"),
             null,
             List.of("test:admin", "platform:test-tenant-admin")  // Internal names!
         );
@@ -401,15 +434,16 @@ class IdpRoleSyncIntegrationTest {
         // SECURITY: Even if IDP mapping exists, role must be defined in code
 
         // Arrange: Create mapping to non-existent role
-        createIdpMapping("keycloak-fake", "nonexistent:role");
+        String idpRole = uniqueIdpRole("keycloak-fake");
+        createIdpMapping(idpRole, "nonexistent:role");
 
         // Act: Sync with mapped IDP role
         Principal principal = oidcSyncService.syncOidcLogin(
-            "user@customer.com",
+            uniqueEmail("user"),
             "User",
-            "google-oauth2|123",
+            uniqueSubject("google-oauth2"),
             null,
-            List.of("keycloak-fake")
+            List.of(idpRole)
         );
 
         // Assert: No role assigned (role doesn't exist in PermissionRegistry)
@@ -417,7 +451,7 @@ class IdpRoleSyncIntegrationTest {
     }
 
     // ========================================
-    // HELPER METHODS
+    // PERSISTENCE HELPER METHODS
     // ========================================
 
     private IdpRoleMapping createIdpMapping(String idpRoleName, String internalRoleName) {

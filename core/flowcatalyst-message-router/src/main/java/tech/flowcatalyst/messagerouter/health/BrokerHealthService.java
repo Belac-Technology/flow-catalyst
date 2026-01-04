@@ -5,7 +5,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import jakarta.jms.Connection;
+import io.nats.client.Connection.Status;
 import jakarta.jms.ConnectionFactory;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
@@ -38,6 +38,9 @@ public class BrokerHealthService {
 
     @Inject
     ConnectionFactory connectionFactory;
+
+    @Inject
+    io.nats.client.Connection natsConnection;
 
     @Inject
     MeterRegistry meterRegistry;
@@ -91,6 +94,7 @@ public class BrokerHealthService {
             boolean connected = switch (queueType) {
                 case SQS -> checkSqsConnectivity();
                 case ACTIVEMQ -> checkActiveMqConnectivity();
+                case NATS -> checkNatsConnectivity();
                 case EMBEDDED -> true; // Embedded queue is always available (SQLite)
             };
 
@@ -170,7 +174,7 @@ public class BrokerHealthService {
      * @return true if ActiveMQ is accessible, false otherwise
      */
     private boolean checkActiveMqConnectivity() {
-        Connection testConnection = null;
+        jakarta.jms.Connection testConnection = null;
         try {
             testConnection = connectionFactory.createConnection();
             testConnection.start();
@@ -186,6 +190,22 @@ public class BrokerHealthService {
                     LOG.warn("Error closing test connection", e);
                 }
             }
+        }
+    }
+
+    /**
+     * Check NATS JetStream connectivity.
+     * This validates NATS broker availability using the connection status.
+     *
+     * @return true if NATS is accessible, false otherwise
+     */
+    private boolean checkNatsConnectivity() {
+        try {
+            Status status = natsConnection.getStatus();
+            return status == Status.CONNECTED;
+        } catch (Exception e) {
+            LOG.errorf(e, "NATS connectivity check failed");
+            return false;
         }
     }
 

@@ -6,6 +6,7 @@ import io.restassured.http.ContentType;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import tech.flowcatalyst.platform.application.Application;
 import tech.flowcatalyst.platform.application.ApplicationRepository;
@@ -29,6 +30,7 @@ import static org.hamcrest.Matchers.*;
 /**
  * Integration tests for ApplicationAdminResource.
  */
+@Tag("integration")
 @QuarkusTest
 class ApplicationAdminResourceTest {
 

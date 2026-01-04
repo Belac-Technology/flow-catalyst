@@ -1,9 +1,9 @@
 package tech.flowcatalyst.platform.security;
 
-import io.quarkus.test.TestTransaction;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import tech.flowcatalyst.platform.principal.Principal;
 import tech.flowcatalyst.platform.client.Client;
@@ -12,6 +12,7 @@ import tech.flowcatalyst.platform.principal.UserService;
 import tech.flowcatalyst.platform.principal.UserScope;
 
 import java.util.Set;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.*;
 
@@ -30,8 +31,8 @@ import static org.assertj.core.api.Assertions.*;
  * 3. Client access grants not properly revoked
  * 4. Suspended/deactivated clients still accessible
  */
+@Tag("integration")
 @QuarkusTest
-@TestTransaction
 class ClientIsolationSecurityTest {
 
     @Inject
@@ -39,6 +40,16 @@ class ClientIsolationSecurityTest {
 
     @Inject
     UserService userService;
+
+    /** Generate unique code for test to avoid conflicts (MongoDB doesn't support JTA rollback) */
+    private String uniqueCode(String prefix) {
+        return prefix + "-" + UUID.randomUUID().toString().substring(0, 8);
+    }
+
+    /** Generate a unique email for test */
+    private String uniqueEmail(String prefix) {
+        return prefix + "-" + UUID.randomUUID().toString().substring(0, 8) + "@test.com";
+    }
 
     // ========================================
     // BASIC CLIENT ISOLATION TESTS
@@ -50,12 +61,12 @@ class ClientIsolationSecurityTest {
         // THREAT: User attempts to access data from another customer's client
 
         // Arrange: Create 2 separate customer clients
-        Client clientA = clientService.createClient("Company A", "company-a");
-        Client clientB = clientService.createClient("Company B", "company-b");
+        Client clientA = clientService.createClient("Company A", uniqueCode("company-a"));
+        Client clientB = clientService.createClient("Company B", uniqueCode("company-b"));
 
         // Create user in Client A
         Principal userA = userService.createInternalUser(
-            "alice@company-a.com",
+            uniqueEmail("alice"),
             "SecurePass123!",
             "Alice from Company A",
             clientA.id,
@@ -77,17 +88,17 @@ class ClientIsolationSecurityTest {
         // THREAT: Cross-contamination between customer clients
 
         // Arrange: Create 3 customer clients
-        Client client1 = clientService.createClient("Customer 1", "customer-1");
-        Client client2 = clientService.createClient("Customer 2", "customer-2");
-        Client client3 = clientService.createClient("Customer 3", "customer-3");
+        Client client1 = clientService.createClient("Customer 1", uniqueCode("customer-1"));
+        Client client2 = clientService.createClient("Customer 2", uniqueCode("customer-2"));
+        Client client3 = clientService.createClient("Customer 3", uniqueCode("customer-3"));
 
         // Create user in each client
         Principal user1 = userService.createInternalUser(
-            "user@customer1.com", "Pass123!Pass", "User 1", client1.id, UserScope.CLIENT);
+            uniqueEmail("user1"), "Pass123!Pass", "User 1", client1.id, UserScope.CLIENT);
         Principal user2 = userService.createInternalUser(
-            "user@customer2.com", "Pass123!Pass", "User 2", client2.id, UserScope.CLIENT);
+            uniqueEmail("user2"), "Pass123!Pass", "User 2", client2.id, UserScope.CLIENT);
         Principal user3 = userService.createInternalUser(
-            "user@customer3.com", "Pass123!Pass", "User 3", client3.id, UserScope.CLIENT);
+            uniqueEmail("user3"), "Pass123!Pass", "User 3", client3.id, UserScope.CLIENT);
 
         // Act & Assert: Each user sees only their own client
         assertThat(clientService.getAccessibleClients(user1.id))
@@ -112,9 +123,9 @@ class ClientIsolationSecurityTest {
         // THREAT: Revoked partner still has access to customer data
 
         // Arrange: Create client and partner
-        Client customerClient = clientService.createClient("Customer", "customer");
+        Client customerClient = clientService.createClient("Customer", uniqueCode("customer"));
         Principal partner = userService.createInternalUser(
-            "partner@logistics.com",
+            uniqueEmail("partner"),
             "SecurePass123!",
             "Logistics Partner",
             null, UserScope.ANCHOR
@@ -142,9 +153,9 @@ class ClientIsolationSecurityTest {
         // THREAT: Duplicate grants could bypass security controls
 
         // Arrange
-        Client client = clientService.createClient("Customer", "customer");
+        Client client = clientService.createClient("Customer", uniqueCode("customer"));
         Principal partner = userService.createInternalUser(
-            "partner@logistics.com",
+            uniqueEmail("partner"),
             "SecurePass123!",
             "Partner",
             null, UserScope.ANCHOR
@@ -166,9 +177,9 @@ class ClientIsolationSecurityTest {
         // THREAT: Redundant grants could confuse access control logic
 
         // Arrange
-        Client client = clientService.createClient("Customer", "customer");
+        Client client = clientService.createClient("Customer", uniqueCode("customer"));
         Principal user = userService.createInternalUser(
-            "user@customer.com",
+            uniqueEmail("user"),
             "SecurePass123!",
             "User",
             client.id,
@@ -192,9 +203,9 @@ class ClientIsolationSecurityTest {
         // THREAT: Deactivated customer client still accessible (e.g., non-payment)
 
         // Arrange: Create client and user
-        Client client = clientService.createClient("Customer", "customer");
+        Client client = clientService.createClient("Customer", uniqueCode("customer"));
         Principal user = userService.createInternalUser(
-            "user@customer.com",
+            uniqueEmail("user"),
             "SecurePass123!",
             "User",
             client.id, UserScope.CLIENT
@@ -218,9 +229,9 @@ class ClientIsolationSecurityTest {
         // THREAT: Suspended client still accessible during suspension period
 
         // Arrange
-        Client client = clientService.createClient("Customer", "customer");
+        Client client = clientService.createClient("Customer", uniqueCode("customer"));
         Principal user = userService.createInternalUser(
-            "user@customer.com",
+            uniqueEmail("user"),
             "SecurePass123!",
             "User",
             client.id, UserScope.CLIENT
@@ -244,9 +255,9 @@ class ClientIsolationSecurityTest {
         // SCENARIO: Client pays overdue invoice and is reactivated
 
         // Arrange: Create and suspend client
-        Client client = clientService.createClient("Customer", "customer");
+        Client client = clientService.createClient("Customer", uniqueCode("customer"));
         Principal user = userService.createInternalUser(
-            "user@customer.com",
+            uniqueEmail("user"),
             "SecurePass123!",
             "User",
             client.id, UserScope.CLIENT
@@ -276,15 +287,15 @@ class ClientIsolationSecurityTest {
         // THREAT: Partner abuses access to view clients not granted to them
 
         // Arrange: Create 5 customer clients
-        Client c1 = clientService.createClient("Customer 1", "customer-1");
-        Client c2 = clientService.createClient("Customer 2", "customer-2");
-        Client c3 = clientService.createClient("Customer 3", "customer-3");
-        Client c4 = clientService.createClient("Customer 4", "customer-4");
-        Client c5 = clientService.createClient("Customer 5", "customer-5");
+        Client c1 = clientService.createClient("Customer 1", uniqueCode("customer-1"));
+        Client c2 = clientService.createClient("Customer 2", uniqueCode("customer-2"));
+        Client c3 = clientService.createClient("Customer 3", uniqueCode("customer-3"));
+        Client c4 = clientService.createClient("Customer 4", uniqueCode("customer-4"));
+        Client c5 = clientService.createClient("Customer 5", uniqueCode("customer-5"));
 
         // Create partner with access to ONLY c1, c2, and c3
         Principal partner = userService.createInternalUser(
-            "partner@logistics.com",
+            uniqueEmail("partner"),
             "SecurePass123!",
             "Logistics Partner",
             null, UserScope.ANCHOR
@@ -309,12 +320,12 @@ class ClientIsolationSecurityTest {
         // SCENARIO: New partner registered but not yet granted access
 
         // Arrange: Create clients
-        Client c1 = clientService.createClient("Customer 1", "customer-1");
-        Client c2 = clientService.createClient("Customer 2", "customer-2");
+        Client c1 = clientService.createClient("Customer 1", uniqueCode("customer-1"));
+        Client c2 = clientService.createClient("Customer 2", uniqueCode("customer-2"));
 
         // Create partner with NO grants
         Principal partner = userService.createInternalUser(
-            "newpartner@logistics.com",
+            uniqueEmail("newpartner"),
             "SecurePass123!",
             "New Partner",
             null,
@@ -334,12 +345,12 @@ class ClientIsolationSecurityTest {
         // THREAT: Revoking one grant accidentally revokes all grants
 
         // Arrange: Partner with access to 3 clients
-        Client c1 = clientService.createClient("Customer 1", "customer-1");
-        Client c2 = clientService.createClient("Customer 2", "customer-2");
-        Client c3 = clientService.createClient("Customer 3", "customer-3");
+        Client c1 = clientService.createClient("Customer 1", uniqueCode("customer-1"));
+        Client c2 = clientService.createClient("Customer 2", uniqueCode("customer-2"));
+        Client c3 = clientService.createClient("Customer 3", uniqueCode("customer-3"));
 
         Principal partner = userService.createInternalUser(
-            "partner@logistics.com",
+            uniqueEmail("partner"),
             "SecurePass123!",
             "Partner",
             null, UserScope.ANCHOR
@@ -372,16 +383,16 @@ class ClientIsolationSecurityTest {
         // THREAT: Client isolation bypass via user enumeration
 
         // Arrange: Create 2 clients with users
-        Client clientA = clientService.createClient("Company A", "company-a");
-        Client clientB = clientService.createClient("Company B", "company-b");
+        Client clientA = clientService.createClient("Company A", uniqueCode("company-a"));
+        Client clientB = clientService.createClient("Company B", uniqueCode("company-b"));
 
         Principal userA1 = userService.createInternalUser(
-            "alice@company-a.com", "Pass123!Pass", "Alice", clientA.id, UserScope.CLIENT);
+            uniqueEmail("alice"), "Pass123!Pass", "Alice", clientA.id, UserScope.CLIENT);
         Principal userA2 = userService.createInternalUser(
-            "bob@company-a.com", "Pass123!Pass", "Bob", clientA.id, UserScope.CLIENT);
+            uniqueEmail("bob"), "Pass123!Pass", "Bob", clientA.id, UserScope.CLIENT);
 
         Principal userB1 = userService.createInternalUser(
-            "charlie@company-b.com", "Pass123!Pass", "Charlie", clientB.id, UserScope.CLIENT);
+            uniqueEmail("charlie"), "Pass123!Pass", "Charlie", clientB.id, UserScope.CLIENT);
 
         // Act: Get users for each client
         var clientAUsers = userService.findByClient(clientA.id);
@@ -409,9 +420,9 @@ class ClientIsolationSecurityTest {
         // SCENARIO: Client goes through multiple status changes
 
         // Arrange
-        Client client = clientService.createClient("Customer", "customer");
+        Client client = clientService.createClient("Customer", uniqueCode("customer"));
         Principal user = userService.createInternalUser(
-            "user@customer.com", "Pass123!Pass", "User", client.id, UserScope.CLIENT);
+            uniqueEmail("user"), "Pass123!Pass", "User", client.id, UserScope.CLIENT);
 
         // Cycle 1: Active → Suspended → Active
         assertThat(clientService.getAccessibleClients(user.id)).contains(client.id);
@@ -436,11 +447,11 @@ class ClientIsolationSecurityTest {
         // SCENARIO: User's home client is deactivated (e.g., company went out of business)
 
         // Arrange: User has home client + grant to another client
-        Client homeClient = clientService.createClient("Home", "home");
-        Client grantedClient = clientService.createClient("Granted", "granted");
+        Client homeClient = clientService.createClient("Home", uniqueCode("home"));
+        Client grantedClient = clientService.createClient("Granted", uniqueCode("granted"));
 
         Principal user = userService.createInternalUser(
-            "user@home.com",
+            uniqueEmail("user"),
             "Pass123!Pass",
             "User",
             homeClient.id, UserScope.CLIENT

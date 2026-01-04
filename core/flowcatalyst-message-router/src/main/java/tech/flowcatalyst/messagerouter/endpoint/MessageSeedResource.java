@@ -125,6 +125,9 @@ public class MessageSeedResource {
                     case ACTIVEMQ -> {
                         LOG.warnf("ActiveMQ message seeding not yet implemented");
                     }
+                    case NATS -> {
+                        LOG.warnf("NATS JetStream message seeding not yet implemented");
+                    }
                 }
 
                 successCount++;

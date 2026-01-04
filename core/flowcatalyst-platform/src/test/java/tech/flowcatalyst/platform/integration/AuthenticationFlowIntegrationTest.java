@@ -1,9 +1,9 @@
 package tech.flowcatalyst.platform.integration;
 
-import io.quarkus.test.TestTransaction;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import tech.flowcatalyst.platform.authorization.AuthorizationService;
 import tech.flowcatalyst.platform.authorization.RoleService;
@@ -12,14 +12,16 @@ import tech.flowcatalyst.platform.principal.Principal;
 import tech.flowcatalyst.platform.principal.UserService;
 import tech.flowcatalyst.platform.principal.UserScope;
 
+import java.util.UUID;
+
 import static org.assertj.core.api.Assertions.*;
 
 /**
  * Integration tests for end-to-end authentication flows.
  * Tests complete workflows with real database interactions.
  */
+@Tag("integration")
 @QuarkusTest
-@TestTransaction
 class AuthenticationFlowIntegrationTest {
 
     @Inject
@@ -35,6 +37,18 @@ class AuthenticationFlowIntegrationTest {
     RoleService roleService;
 
     // ========================================
+    // HELPER METHODS
+    // ========================================
+
+    private String uniqueEmail(String prefix) {
+        return prefix + "-" + UUID.randomUUID().toString().substring(0, 8) + "@test.com";
+    }
+
+    private String uniqueSubject(String prefix) {
+        return prefix + "-" + UUID.randomUUID().toString().substring(0, 8);
+    }
+
+    // ========================================
     // INTERNAL USER AUTHENTICATION TESTS
     // ========================================
 
@@ -42,7 +56,7 @@ class AuthenticationFlowIntegrationTest {
     @DisplayName("Internal user authentication flow should work end-to-end")
     void internalAuth_shouldAuthenticateUser_whenCredentialsCorrect() {
         // Arrange: Create user with password
-        String email = "john@acme.com";
+        String email = uniqueEmail("john");
         String password = "SecurePass123!";
 
         Principal user = userService.createInternalUser(
@@ -69,7 +83,7 @@ class AuthenticationFlowIntegrationTest {
     void internalAuth_shouldRejectUser_whenPasswordWrong() {
         // Arrange
         Principal user = userService.createInternalUser(
-            "john@acme.com",
+            uniqueEmail("john"),
             "CorrectPass123!",
             "John Doe",
             null, UserScope.ANCHOR
@@ -90,7 +104,7 @@ class AuthenticationFlowIntegrationTest {
     void internalAuth_shouldRejectUser_whenDeactivated() {
         // Arrange: Create and deactivate user
         Principal user = userService.createInternalUser(
-            "john@acme.com",
+            uniqueEmail("john"),
             "SecurePass123!",
             "John Doe",
             null, UserScope.ANCHOR
@@ -122,7 +136,7 @@ class AuthenticationFlowIntegrationTest {
     void roleBasedAccess_shouldGrantPermissions_whenRoleAssigned() {
         // Arrange: Create user
         Principal user = userService.createInternalUser(
-            "operator@acme.com",
+            uniqueEmail("operator"),
             "SecurePass123!",
             "Operator User",
             null, UserScope.ANCHOR
@@ -143,7 +157,7 @@ class AuthenticationFlowIntegrationTest {
     void roleBasedAccess_shouldAccumulatePermissions_whenMultipleRoles() {
         // Arrange: Create user
         Principal user = userService.createInternalUser(
-            "poweruser@acme.com",
+            uniqueEmail("poweruser"),
             "SecurePass123!",
             "Power User",
             null, UserScope.ANCHOR
@@ -166,7 +180,7 @@ class AuthenticationFlowIntegrationTest {
     void roleBasedAccess_shouldRevokePermissions_whenRoleRemoved() {
         // Arrange: Create user and assign role
         Principal user = userService.createInternalUser(
-            "operator@acme.com",
+            uniqueEmail("operator"),
             "SecurePass123!",
             "Operator",
             null, UserScope.ANCHOR
@@ -196,7 +210,7 @@ class AuthenticationFlowIntegrationTest {
         String newPassword = "NewSecurePass456!";
 
         Principal user = userService.createInternalUser(
-            "john@acme.com",
+            uniqueEmail("john"),
             oldPassword,
             "John Doe",
             null, UserScope.ANCHOR
@@ -220,7 +234,7 @@ class AuthenticationFlowIntegrationTest {
     void passwordManagement_shouldRejectChange_whenOldPasswordWrong() {
         // Arrange: Create user
         Principal user = userService.createInternalUser(
-            "john@acme.com",
+            uniqueEmail("john"),
             "CorrectPass123!",
             "John Doe",
             null, UserScope.ANCHOR
@@ -238,7 +252,7 @@ class AuthenticationFlowIntegrationTest {
     void passwordManagement_shouldResetPassword_whenAdminResets() {
         // Arrange: Create user
         Principal user = userService.createInternalUser(
-            "john@acme.com",
+            uniqueEmail("john"),
             "OldPass123!x",
             "John Doe",
             null, UserScope.ANCHOR
@@ -264,17 +278,19 @@ class AuthenticationFlowIntegrationTest {
     @DisplayName("OIDC user should be created without password")
     void oidcAuth_shouldCreateUser_whenUserLogsInViaOidc() {
         // Act: Simulate OIDC login
+        String email = uniqueEmail("alice");
+        String subject = uniqueSubject("google-oauth2");
         Principal oidcUser = userService.createOrUpdateOidcUser(
-            "alice@customer.com",
+            email,
             "Alice Smith",
-            "google-oauth2|123456",
+            subject,
             null,
             null
         );
 
         // Assert: User created without password
         assertThat(oidcUser.userIdentity.passwordHash).isNull();
-        assertThat(oidcUser.userIdentity.externalIdpId).isEqualTo("google-oauth2|123456");
+        assertThat(oidcUser.userIdentity.externalIdpId).isEqualTo(subject);
         assertThat(oidcUser.active).isTrue();
     }
 
@@ -282,19 +298,23 @@ class AuthenticationFlowIntegrationTest {
     @DisplayName("OIDC user should be updated on subsequent logins")
     void oidcAuth_shouldUpdateUser_whenUserLogsInAgain() {
         // Arrange: First login
+        String email = uniqueEmail("alice");
+        String subject1 = uniqueSubject("google-oauth2");
+        String subject2 = uniqueSubject("google-oauth2");
+
         Principal firstLogin = userService.createOrUpdateOidcUser(
-            "alice@customer.com",
+            email,
             "Alice Smith",
-            "google-oauth2|123456",
+            subject1,
             null,
             null
         );
 
         // Act: Second login with updated name and external ID
         Principal secondLogin = userService.createOrUpdateOidcUser(
-            "alice@customer.com",
+            email,
             "Alice Johnson",  // Name changed (married)
-            "google-oauth2|789012",  // External ID changed
+            subject2,  // External ID changed
             null,
             null
         );
@@ -302,7 +322,7 @@ class AuthenticationFlowIntegrationTest {
         // Assert: Same user, updated info
         assertThat(secondLogin.id).isEqualTo(firstLogin.id);
         assertThat(secondLogin.name).isEqualTo("Alice Johnson");
-        assertThat(secondLogin.userIdentity.externalIdpId).isEqualTo("google-oauth2|789012");
+        assertThat(secondLogin.userIdentity.externalIdpId).isEqualTo(subject2);
     }
 
     @Test
@@ -310,9 +330,9 @@ class AuthenticationFlowIntegrationTest {
     void oidcAuth_shouldRejectPasswordOps_whenUserIsOidc() {
         // Arrange: Create OIDC user
         Principal oidcUser = userService.createOrUpdateOidcUser(
-            "alice@customer.com",
+            uniqueEmail("alice"),
             "Alice Smith",
-            "google-oauth2|123456",
+            uniqueSubject("google-oauth2"),
             null,
             null
         );
@@ -339,7 +359,7 @@ class AuthenticationFlowIntegrationTest {
     void completeFlow_shouldWork_endToEnd() {
         // Step 1: Create user (registration)
         Principal user = userService.createInternalUser(
-            "newuser@acme.com",
+            uniqueEmail("newuser"),
             "SecurePass123!",
             "New User",
             null, UserScope.ANCHOR
@@ -369,7 +389,7 @@ class AuthenticationFlowIntegrationTest {
     void completeFlow_shouldWork_whenUserPromotedToAdmin() {
         // Arrange: Create user with viewer role (limited permissions)
         Principal user = userService.createInternalUser(
-            "john@acme.com",
+            uniqueEmail("john"),
             "SecurePass123!",
             "John Doe",
             null, UserScope.ANCHOR

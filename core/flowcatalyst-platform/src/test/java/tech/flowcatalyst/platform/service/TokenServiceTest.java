@@ -6,6 +6,7 @@ import io.smallrye.jwt.auth.principal.ParseException;
 import jakarta.inject.Inject;
 import org.eclipse.microprofile.jwt.JsonWebToken;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import tech.flowcatalyst.platform.authentication.JwtKeyService;
 import tech.flowcatalyst.platform.authentication.TokenService;
@@ -24,6 +25,7 @@ import static org.assertj.core.api.Assertions.*;
  * Uses @QuarkusTest because the service relies on Quarkus JWT configuration
  * and SmallRye JWT implementation.
  */
+@Tag("integration")
 @QuarkusTest
 class TokenServiceTest {
 
