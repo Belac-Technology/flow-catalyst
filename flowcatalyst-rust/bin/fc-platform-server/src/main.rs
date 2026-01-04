@@ -230,6 +230,7 @@ async fn main() -> Result<()> {
         anchor_domain_repo: anchor_domain_repo.clone(),
         client_auth_config_repo: client_auth_config_repo.clone(),
         idp_role_mapping_repo: idp_role_mapping_repo.clone(),
+        principal_repo: Some(principal_repo.clone()),
     };
     let external_base_url = std::env::var("FC_EXTERNAL_BASE_URL").ok();
     let oidc_login_state = OidcLoginApiState::new(

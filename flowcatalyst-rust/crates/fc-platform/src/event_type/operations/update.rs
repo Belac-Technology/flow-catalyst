@@ -79,7 +79,7 @@ impl<U: UnitOfWork> UpdateEventTypeUseCase<U> {
         };
 
         // Business rule: can only update active event types
-        if event_type.status == EventTypeStatus::Archived {
+        if event_type.status == EventTypeStatus::Archive {
             return UseCaseResult::failure(UseCaseError::business_rule(
                 "CANNOT_UPDATE_ARCHIVED",
                 "Cannot update an archived event type",

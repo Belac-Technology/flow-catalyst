@@ -7,21 +7,20 @@ use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
 use bson::serde_helpers::chrono_datetime_as_bson_datetime;
 
-/// Event type status
+/// Event type status (matches Java EventTypeStatus)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum EventTypeStatus {
-    /// Event type is active and can be used
-    Active,
-    /// Event type is in draft (not yet published)
-    Draft,
-    /// Event type is archived and should not be used
-    Archived,
+    /// Event type is active and can have new events created
+    #[serde(rename = "CURRENT")]
+    Current,
+    /// Event type is archived - no new events can be created
+    #[serde(rename = "ARCHIVE")]
+    Archive,
 }
 
 impl Default for EventTypeStatus {
     fn default() -> Self {
-        Self::Active
+        Self::Current
     }
 }
 
@@ -175,7 +174,7 @@ impl EventType {
             aggregate: parts[2].to_string(),
             event_name: parts[3].to_string(),
             spec_versions: vec![],
-            status: EventTypeStatus::Active,
+            status: EventTypeStatus::Current,
             client_id: None,
             created_at: now,
             updated_at: now,
@@ -242,7 +241,7 @@ impl EventType {
 
     /// Archive this event type
     pub fn archive(&mut self) {
-        self.status = EventTypeStatus::Archived;
+        self.status = EventTypeStatus::Archive;
         self.updated_at = Utc::now();
     }
 

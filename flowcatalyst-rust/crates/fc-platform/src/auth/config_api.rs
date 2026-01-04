@@ -35,14 +35,15 @@ pub struct CreateAnchorDomainRequest {
     pub domain: String,
 }
 
-/// Anchor domain response DTO
+/// Anchor domain response DTO (matches Java AnchorDomainDto)
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AnchorDomainResponse {
     pub id: String,
     pub domain: String,
+    /// Number of users with this email domain
+    pub user_count: i64,
     pub created_at: String,
-    pub created_by: Option<String>,
 }
 
 /// Anchor domain list response (wrapped)
@@ -53,13 +54,14 @@ pub struct AnchorDomainListResponse {
     pub total: usize,
 }
 
-impl From<AnchorDomain> for AnchorDomainResponse {
-    fn from(d: AnchorDomain) -> Self {
+impl AnchorDomainResponse {
+    /// Create response with user count (matches Java toDto method)
+    pub fn from_domain(d: AnchorDomain, user_count: i64) -> Self {
         Self {
             id: d.id,
             domain: d.domain,
+            user_count,
             created_at: d.created_at.to_rfc3339(),
-            created_by: d.created_by,
         }
     }
 }
@@ -314,6 +316,8 @@ pub struct AuthConfigState {
     pub anchor_domain_repo: Arc<AnchorDomainRepository>,
     pub client_auth_config_repo: Arc<ClientAuthConfigRepository>,
     pub idp_role_mapping_repo: Arc<IdpRoleMappingRepository>,
+    /// Optional - needed for counting users by email domain
+    pub principal_repo: Option<Arc<crate::PrincipalRepository>>,
 }
 
 fn parse_config_type(s: &str) -> AuthConfigType {
@@ -386,12 +390,20 @@ pub async fn list_anchor_domains(
 ) -> Result<Json<AnchorDomainListResponse>, PlatformError> {
     crate::checks::require_anchor(&auth.0)?;
 
-    let domains = state.anchor_domain_repo.find_all().await?;
-    let domains: Vec<AnchorDomainResponse> = domains.into_iter()
-        .map(|d| d.into())
-        .collect();
-    let total = domains.len();
+    let anchor_domains = state.anchor_domain_repo.find_all().await?;
 
+    // Convert to response DTOs with user counts (matches Java toDto)
+    let mut domains = Vec::with_capacity(anchor_domains.len());
+    for d in anchor_domains {
+        let user_count = if let Some(ref principal_repo) = state.principal_repo {
+            principal_repo.count_by_email_domain(&d.domain).await.unwrap_or(0)
+        } else {
+            0
+        };
+        domains.push(AnchorDomainResponse::from_domain(d, user_count));
+    }
+
+    let total = domains.len();
     Ok(Json(AnchorDomainListResponse { domains, total }))
 }
 
@@ -419,7 +431,14 @@ pub async fn get_anchor_domain(
     let domain = state.anchor_domain_repo.find_by_id(&id).await?
         .ok_or_else(|| PlatformError::not_found("AnchorDomain", &id))?;
 
-    Ok(Json(domain.into()))
+    // Count users from this domain (matches Java toDto)
+    let user_count = if let Some(ref principal_repo) = state.principal_repo {
+        principal_repo.count_by_email_domain(&domain.domain).await.unwrap_or(0)
+    } else {
+        0
+    };
+
+    Ok(Json(AnchorDomainResponse::from_domain(domain, user_count)))
 }
 
 /// Check anchor domain response

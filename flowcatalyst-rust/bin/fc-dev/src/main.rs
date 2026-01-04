@@ -347,6 +347,7 @@ async fn main() -> Result<()> {
         anchor_domain_repo: anchor_domain_repo.clone(),
         client_auth_config_repo: client_auth_config_repo.clone(),
         idp_role_mapping_repo: idp_role_mapping_repo.clone(),
+        principal_repo: Some(principal_repo.clone()),
     };
     let audit_logs_state = AuditLogsState { audit_log_repo: audit_log_repo.clone() };
     let applications_state = ApplicationsState {

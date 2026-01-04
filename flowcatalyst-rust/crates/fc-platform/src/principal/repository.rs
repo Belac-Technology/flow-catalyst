@@ -116,4 +116,15 @@ impl PrincipalRepository {
         let result = self.collection.delete_one(doc! { "_id": id }).await?;
         Ok(result.deleted_count > 0)
     }
+
+    /// Count principals with email ending in the given domain (matches Java countByEmailDomain)
+    pub async fn count_by_email_domain(&self, domain: &str) -> Result<i64> {
+        // Match emails ending with @domain (case-insensitive)
+        let pattern = format!("@{}$", regex::escape(&domain.to_lowercase()));
+        let count = self.collection.count_documents(doc! {
+            "type": "USER",
+            "userIdentity.email": { "$regex": &pattern, "$options": "i" }
+        }).await?;
+        Ok(count as i64)
+    }
 }
