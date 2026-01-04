@@ -52,7 +52,7 @@ impl ServiceAccountRepository {
 
     pub async fn find_with_role(&self, role: &str) -> Result<Vec<ServiceAccount>> {
         let cursor = self.collection
-            .find(doc! { "roles.role": role })
+            .find(doc! { "roles.roleName": role })
             .await?;
         Ok(cursor.try_collect().await?)
     }

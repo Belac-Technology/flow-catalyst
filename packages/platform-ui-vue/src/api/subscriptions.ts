@@ -101,41 +101,41 @@ export const subscriptionsApi = {
     if (filters.anchorLevel !== undefined) params.set('anchorLevel', String(filters.anchorLevel));
 
     const query = params.toString();
-    return apiFetch(`/admin/platform/subscriptions${query ? `?${query}` : ''}`);
+    return apiFetch(`/admin/subscriptions${query ? `?${query}` : ''}`);
   },
 
   get(id: string): Promise<Subscription> {
-    return apiFetch(`/admin/platform/subscriptions/${id}`);
+    return apiFetch(`/admin/subscriptions/${id}`);
   },
 
   create(data: CreateSubscriptionRequest): Promise<Subscription> {
-    return apiFetch('/admin/platform/subscriptions', {
+    return apiFetch('/admin/subscriptions', {
       method: 'POST',
       body: JSON.stringify(data),
     });
   },
 
   update(id: string, data: UpdateSubscriptionRequest): Promise<Subscription> {
-    return apiFetch(`/admin/platform/subscriptions/${id}`, {
+    return apiFetch(`/admin/subscriptions/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),
     });
   },
 
   delete(id: string): Promise<StatusResponse> {
-    return apiFetch(`/admin/platform/subscriptions/${id}`, {
+    return apiFetch(`/admin/subscriptions/${id}`, {
       method: 'DELETE',
     });
   },
 
   pause(id: string): Promise<StatusResponse> {
-    return apiFetch(`/admin/platform/subscriptions/${id}/pause`, {
+    return apiFetch(`/admin/subscriptions/${id}/pause`, {
       method: 'POST',
     });
   },
 
   resume(id: string): Promise<StatusResponse> {
-    return apiFetch(`/admin/platform/subscriptions/${id}/resume`, {
+    return apiFetch(`/admin/subscriptions/${id}/resume`, {
       method: 'POST',
     });
   },

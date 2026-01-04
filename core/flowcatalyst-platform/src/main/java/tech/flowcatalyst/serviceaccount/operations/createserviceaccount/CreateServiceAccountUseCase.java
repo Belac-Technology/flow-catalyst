@@ -109,7 +109,7 @@ public class CreateServiceAccountUseCase {
 
         // Create webhook credentials
         WebhookCredentials creds = new WebhookCredentials();
-        creds.authType = WebhookAuthType.BEARER;
+        creds.authType = WebhookAuthType.BEARER_TOKEN;
         creds.authTokenRef = secretService.prepareForStorage("encrypt:" + authToken);
         creds.signingSecretRef = secretService.prepareForStorage("encrypt:" + signingSecret);
         creds.signingAlgorithm = SignatureAlgorithm.HMAC_SHA256;

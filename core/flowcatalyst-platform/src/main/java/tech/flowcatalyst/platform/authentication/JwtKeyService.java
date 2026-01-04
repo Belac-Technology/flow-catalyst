@@ -191,13 +191,18 @@ public class JwtKeyService {
         // Extract application codes from roles
         Set<String> applications = PermissionRegistry.extractApplicationCodes(roles);
 
+        // Filter out any null values from collections (JWT builder doesn't handle nulls)
+        Set<String> safeRoles = roles != null ? roles.stream().filter(java.util.Objects::nonNull).collect(java.util.stream.Collectors.toSet()) : Set.of();
+        Set<String> safeApplications = applications != null ? applications.stream().filter(java.util.Objects::nonNull).collect(java.util.stream.Collectors.toSet()) : Set.of();
+        List<String> safeClients = clients != null ? clients.stream().filter(java.util.Objects::nonNull).toList() : List.of();
+
         return Jwt.issuer(issuer)
                 .subject(String.valueOf(principalId))
                 .claim("email", email)
                 .claim("type", "USER")
-                .claim("clients", clients)
-                .claim("applications", applications)
-                .claim("roles", roles)
+                .claim("clients", safeClients)
+                .claim("applications", safeApplications)
+                .claim("roles", safeRoles)
                 .issuedAt(Instant.now())
                 .expiresAt(Instant.now().plus(sessionTokenExpiry))
                 .jws()

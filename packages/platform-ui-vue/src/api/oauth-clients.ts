@@ -62,46 +62,46 @@ export const oauthClientsApi = {
     if (params?.applicationId) searchParams.set('applicationId', params.applicationId);
     if (params?.active !== undefined) searchParams.set('active', String(params.active));
     const query = searchParams.toString();
-    return apiFetch(`/admin/platform/oauth-clients${query ? '?' + query : ''}`);
+    return apiFetch(`/admin/oauth-clients${query ? '?' + query : ''}`);
   },
 
   get(id: string): Promise<OAuthClient> {
-    return apiFetch(`/admin/platform/oauth-clients/${id}`);
+    return apiFetch(`/admin/oauth-clients/${id}`);
   },
 
   getByClientId(clientId: string): Promise<OAuthClient> {
-    return apiFetch(`/admin/platform/oauth-clients/by-client-id/${clientId}`);
+    return apiFetch(`/admin/oauth-clients/by-client-id/${clientId}`);
   },
 
   create(data: CreateOAuthClientRequest): Promise<CreateOAuthClientResponse> {
-    return apiFetch('/admin/platform/oauth-clients', {
+    return apiFetch('/admin/oauth-clients', {
       method: 'POST',
       body: JSON.stringify(data),
     });
   },
 
   update(id: string, data: UpdateOAuthClientRequest): Promise<OAuthClient> {
-    return apiFetch(`/admin/platform/oauth-clients/${id}`, {
+    return apiFetch(`/admin/oauth-clients/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),
     });
   },
 
   rotateSecret(id: string): Promise<RotateSecretResponse> {
-    return apiFetch(`/admin/platform/oauth-clients/${id}/rotate-secret`, {
+    return apiFetch(`/admin/oauth-clients/${id}/rotate-secret`, {
       method: 'POST',
     });
   },
 
   activate(id: string): Promise<{ message: string }> {
-    return apiFetch(`/admin/platform/oauth-clients/${id}/activate`, { method: 'POST' });
+    return apiFetch(`/admin/oauth-clients/${id}/activate`, { method: 'POST' });
   },
 
   deactivate(id: string): Promise<{ message: string }> {
-    return apiFetch(`/admin/platform/oauth-clients/${id}/deactivate`, { method: 'POST' });
+    return apiFetch(`/admin/oauth-clients/${id}/deactivate`, { method: 'POST' });
   },
 
   delete(id: string): Promise<void> {
-    return apiFetch(`/admin/platform/oauth-clients/${id}`, { method: 'DELETE' });
+    return apiFetch(`/admin/oauth-clients/${id}`, { method: 'DELETE' });
   },
 };

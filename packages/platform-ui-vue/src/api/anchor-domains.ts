@@ -30,26 +30,26 @@ export interface DeleteAnchorDomainResponse {
 
 export const anchorDomainsApi = {
   list(): Promise<AnchorDomainListResponse> {
-    return apiFetch('/admin/platform/anchor-domains');
+    return apiFetch('/admin/anchor-domains');
   },
 
   get(id: string): Promise<AnchorDomain> {
-    return apiFetch(`/admin/platform/anchor-domains/${id}`);
+    return apiFetch(`/admin/anchor-domains/${id}`);
   },
 
   check(domain: string): Promise<DomainCheckResponse> {
-    return apiFetch(`/admin/platform/anchor-domains/check/${encodeURIComponent(domain)}`);
+    return apiFetch(`/admin/anchor-domains/check/${encodeURIComponent(domain)}`);
   },
 
   create(data: CreateAnchorDomainRequest): Promise<AnchorDomain> {
-    return apiFetch('/admin/platform/anchor-domains', {
+    return apiFetch('/admin/anchor-domains', {
       method: 'POST',
       body: JSON.stringify(data),
     });
   },
 
   delete(id: string): Promise<DeleteAnchorDomainResponse> {
-    return apiFetch(`/admin/platform/anchor-domains/${id}`, {
+    return apiFetch(`/admin/anchor-domains/${id}`, {
       method: 'DELETE',
     });
   },

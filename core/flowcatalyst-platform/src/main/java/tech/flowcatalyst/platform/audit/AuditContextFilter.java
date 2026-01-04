@@ -7,6 +7,7 @@ import jakarta.ws.rs.container.ContainerRequestContext;
 import jakarta.ws.rs.container.ContainerRequestFilter;
 import jakarta.ws.rs.core.Cookie;
 import jakarta.ws.rs.ext.Provider;
+import tech.flowcatalyst.platform.authentication.AuthConfig;
 import tech.flowcatalyst.platform.authentication.JwtKeyService;
 
 /**
@@ -19,7 +20,6 @@ import tech.flowcatalyst.platform.authentication.JwtKeyService;
 @Priority(Priorities.AUTHENTICATION + 10)
 public class AuditContextFilter implements ContainerRequestFilter {
 
-    private static final String SESSION_COOKIE = "fc_session";
     private static final org.jboss.logging.Logger LOG = org.jboss.logging.Logger.getLogger(AuditContextFilter.class);
 
     @Inject
@@ -28,19 +28,28 @@ public class AuditContextFilter implements ContainerRequestFilter {
     @Inject
     JwtKeyService jwtKeyService;
 
+    @Inject
+    AuthConfig authConfig;
+
     @Override
     public void filter(ContainerRequestContext ctx) {
+        String path = ctx.getUriInfo().getPath();
+
+        // Skip logging for health/metrics endpoints
+        boolean isHealthPath = path.startsWith("q/") || path.startsWith("health") || path.startsWith("metrics");
+
         String principalId = null;
 
-        // Try session cookie first
-        Cookie sessionCookie = ctx.getCookies().get(SESSION_COOKIE);
+        // Try session cookie first - use configured cookie name
+        String cookieName = authConfig.session().cookieName();
+        Cookie sessionCookie = ctx.getCookies().get(cookieName);
         if (sessionCookie != null && sessionCookie.getValue() != null) {
             principalId = jwtKeyService.validateAndGetPrincipalId(sessionCookie.getValue());
-            if (principalId == null) {
-                LOG.debugf("Session cookie present but invalid for path: %s", ctx.getUriInfo().getPath());
+            if (principalId == null && !isHealthPath) {
+                LOG.warnf("Session cookie '%s' present but INVALID for path: %s", cookieName, path);
             }
-        } else {
-            LOG.debugf("No session cookie for path: %s, cookies: %s", ctx.getUriInfo().getPath(), ctx.getCookies().keySet());
+        } else if (!isHealthPath) {
+            LOG.warnf("No session cookie '%s' for path: %s, cookies present: %s", cookieName, path, ctx.getCookies().keySet());
         }
 
         // Fall back to Bearer token
@@ -54,7 +63,7 @@ public class AuditContextFilter implements ContainerRequestFilter {
 
         if (principalId != null) {
             auditContext.setPrincipalId(principalId);
-            LOG.debugf("Audit context set for principal: %d on path: %s", principalId, ctx.getUriInfo().getPath());
+            LOG.debugf("Audit context set for principal: %s on path: %s", principalId, path);
         }
     }
 }

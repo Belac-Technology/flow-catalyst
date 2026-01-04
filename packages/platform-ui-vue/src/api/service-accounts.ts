@@ -83,21 +83,21 @@ export const serviceAccountsApi = {
     if (filters?.active !== undefined) params.append('active', String(filters.active));
 
     const query = params.toString();
-    return apiFetch(`/admin/platform/service-accounts${query ? `?${query}` : ''}`);
+    return apiFetch(`/admin/service-accounts${query ? `?${query}` : ''}`);
   },
 
   /**
    * Get a service account by ID.
    */
   get(id: string): Promise<ServiceAccount> {
-    return apiFetch(`/admin/platform/service-accounts/${id}`);
+    return apiFetch(`/admin/service-accounts/${id}`);
   },
 
   /**
    * Get a service account by code.
    */
   getByCode(code: string): Promise<ServiceAccount> {
-    return apiFetch(`/admin/platform/service-accounts/code/${code}`);
+    return apiFetch(`/admin/service-accounts/code/${code}`);
   },
 
   /**
@@ -105,7 +105,7 @@ export const serviceAccountsApi = {
    * Returns the created service account along with credentials (shown only once).
    */
   create(data: CreateServiceAccountRequest): Promise<CreateServiceAccountResponse> {
-    return apiFetch('/admin/platform/service-accounts', {
+    return apiFetch('/admin/service-accounts', {
       method: 'POST',
       body: JSON.stringify(data),
     });
@@ -115,7 +115,7 @@ export const serviceAccountsApi = {
    * Update a service account's metadata.
    */
   update(id: string, data: UpdateServiceAccountRequest): Promise<ServiceAccount> {
-    return apiFetch(`/admin/platform/service-accounts/${id}`, {
+    return apiFetch(`/admin/service-accounts/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),
     });
@@ -125,7 +125,7 @@ export const serviceAccountsApi = {
    * Delete a service account.
    */
   delete(id: string): Promise<void> {
-    return apiFetch(`/admin/platform/service-accounts/${id}`, {
+    return apiFetch(`/admin/service-accounts/${id}`, {
       method: 'DELETE',
     });
   },
@@ -136,7 +136,7 @@ export const serviceAccountsApi = {
    * Update the auth token with a custom value.
    */
   updateAuthToken(id: string, authToken: string): Promise<ServiceAccount> {
-    return apiFetch(`/admin/platform/service-accounts/${id}/auth-token`, {
+    return apiFetch(`/admin/service-accounts/${id}/auth-token`, {
       method: 'PUT',
       body: JSON.stringify({ authToken }),
     });
@@ -146,7 +146,7 @@ export const serviceAccountsApi = {
    * Regenerate the auth token (returns new token, shown only once).
    */
   regenerateToken(id: string): Promise<RegenerateTokenResponse> {
-    return apiFetch(`/admin/platform/service-accounts/${id}/regenerate-token`, {
+    return apiFetch(`/admin/service-accounts/${id}/regenerate-token`, {
       method: 'POST',
     });
   },
@@ -155,7 +155,7 @@ export const serviceAccountsApi = {
    * Regenerate the signing secret (returns new secret, shown only once).
    */
   regenerateSecret(id: string): Promise<RegenerateSecretResponse> {
-    return apiFetch(`/admin/platform/service-accounts/${id}/regenerate-secret`, {
+    return apiFetch(`/admin/service-accounts/${id}/regenerate-secret`, {
       method: 'POST',
     });
   },
@@ -166,14 +166,14 @@ export const serviceAccountsApi = {
    * Get assigned roles for a service account.
    */
   getRoles(id: string): Promise<RolesResponse> {
-    return apiFetch(`/admin/platform/service-accounts/${id}/roles`);
+    return apiFetch(`/admin/service-accounts/${id}/roles`);
   },
 
   /**
    * Assign roles to a service account (declarative - replaces all existing roles).
    */
   assignRoles(id: string, roles: string[]): Promise<RolesAssignedResponse> {
-    return apiFetch(`/admin/platform/service-accounts/${id}/roles`, {
+    return apiFetch(`/admin/service-accounts/${id}/roles`, {
       method: 'PUT',
       body: JSON.stringify({ roles }),
     });

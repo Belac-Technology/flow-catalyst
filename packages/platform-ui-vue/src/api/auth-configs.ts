@@ -86,74 +86,74 @@ export interface SecretValidationResponse {
 export const authConfigsApi = {
   list(clientId?: string): Promise<AuthConfigListResponse> {
     const params = clientId ? `?clientId=${clientId}` : '';
-    return apiFetch(`/admin/platform/auth-configs${params}`);
+    return apiFetch(`/admin/auth-configs${params}`);
   },
 
   get(id: string): Promise<AuthConfig> {
-    return apiFetch(`/admin/platform/auth-configs/${id}`);
+    return apiFetch(`/admin/auth-configs/${id}`);
   },
 
   getByDomain(domain: string): Promise<AuthConfig> {
-    return apiFetch(`/admin/platform/auth-configs/by-domain/${encodeURIComponent(domain)}`);
+    return apiFetch(`/admin/auth-configs/by-domain/${encodeURIComponent(domain)}`);
   },
 
   createInternal(data: CreateInternalConfigRequest): Promise<AuthConfig> {
-    return apiFetch('/admin/platform/auth-configs/internal', {
+    return apiFetch('/admin/auth-configs/internal', {
       method: 'POST',
       body: JSON.stringify(data),
     });
   },
 
   createOidc(data: CreateOidcConfigRequest): Promise<AuthConfig> {
-    return apiFetch('/admin/platform/auth-configs/oidc', {
+    return apiFetch('/admin/auth-configs/oidc', {
       method: 'POST',
       body: JSON.stringify(data),
     });
   },
 
   updateOidc(id: string, data: UpdateOidcConfigRequest): Promise<AuthConfig> {
-    return apiFetch(`/admin/platform/auth-configs/${id}/oidc`, {
+    return apiFetch(`/admin/auth-configs/${id}/oidc`, {
       method: 'PUT',
       body: JSON.stringify(data),
     });
   },
 
   updateClientBinding(id: string, clientId: string | null): Promise<AuthConfig> {
-    return apiFetch(`/admin/platform/auth-configs/${id}/client-binding`, {
+    return apiFetch(`/admin/auth-configs/${id}/client-binding`, {
       method: 'PUT',
       body: JSON.stringify({ clientId }),
     });
   },
 
   updateConfigType(id: string, data: UpdateConfigTypeRequest): Promise<AuthConfig> {
-    return apiFetch(`/admin/platform/auth-configs/${id}/config-type`, {
+    return apiFetch(`/admin/auth-configs/${id}/config-type`, {
       method: 'PUT',
       body: JSON.stringify(data),
     });
   },
 
   updateAdditionalClients(id: string, additionalClientIds: string[]): Promise<AuthConfig> {
-    return apiFetch(`/admin/platform/auth-configs/${id}/additional-clients`, {
+    return apiFetch(`/admin/auth-configs/${id}/additional-clients`, {
       method: 'PUT',
       body: JSON.stringify({ additionalClientIds }),
     });
   },
 
   updateGrantedClients(id: string, grantedClientIds: string[]): Promise<AuthConfig> {
-    return apiFetch(`/admin/platform/auth-configs/${id}/granted-clients`, {
+    return apiFetch(`/admin/auth-configs/${id}/granted-clients`, {
       method: 'PUT',
       body: JSON.stringify({ grantedClientIds }),
     });
   },
 
   delete(id: string): Promise<void> {
-    return apiFetch(`/admin/platform/auth-configs/${id}`, {
+    return apiFetch(`/admin/auth-configs/${id}`, {
       method: 'DELETE',
     });
   },
 
   validateSecret(secretRef: string): Promise<SecretValidationResponse> {
-    return apiFetch('/admin/platform/auth-configs/validate-secret', {
+    return apiFetch('/admin/auth-configs/validate-secret', {
       method: 'POST',
       body: JSON.stringify({ secretRef }),
     });

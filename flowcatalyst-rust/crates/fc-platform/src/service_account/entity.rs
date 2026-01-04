@@ -127,6 +127,7 @@ impl Default for WebhookCredentials {
 #[serde(rename_all = "camelCase")]
 pub struct RoleAssignment {
     /// Role name/code
+    #[serde(rename = "roleName")]
     pub role: String,
 
     /// Client ID this role applies to (null = all clients)

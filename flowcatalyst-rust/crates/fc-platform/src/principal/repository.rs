@@ -100,7 +100,7 @@ impl PrincipalRepository {
 
     pub async fn find_with_role(&self, role: &str) -> Result<Vec<Principal>> {
         let cursor = self.collection
-            .find(doc! { "roles.role": role, "active": true })
+            .find(doc! { "roles.roleName": role, "active": true })
             .await?;
         Ok(cursor.try_collect().await?)
     }

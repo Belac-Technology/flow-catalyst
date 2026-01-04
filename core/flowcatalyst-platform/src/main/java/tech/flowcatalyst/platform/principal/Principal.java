@@ -79,6 +79,7 @@ public class Principal {
     public Set<String> getRoleNames() {
         return roles.stream()
             .map(r -> r.roleName)
+            .filter(java.util.Objects::nonNull)
             .collect(Collectors.toSet());
     }
 

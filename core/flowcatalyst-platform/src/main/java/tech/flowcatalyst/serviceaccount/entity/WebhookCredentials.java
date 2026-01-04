@@ -25,9 +25,9 @@ import java.time.Instant;
 public class WebhookCredentials {
 
     /**
-     * Authentication type (BEARER or BASIC).
+     * Authentication type (NONE, BEARER_TOKEN, BASIC_AUTH, API_KEY, HMAC_SIGNATURE).
      */
-    public WebhookAuthType authType = WebhookAuthType.BEARER;
+    public WebhookAuthType authType = WebhookAuthType.BEARER_TOKEN;
 
     /**
      * The auth token used in Authorization header.

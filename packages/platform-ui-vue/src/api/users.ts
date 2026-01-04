@@ -80,41 +80,41 @@ export const usersApi = {
     if (filters?.active !== undefined) params.append('active', String(filters.active));
 
     const query = params.toString();
-    return apiFetch(`/admin/platform/principals${query ? `?${query}` : ''}`);
+    return apiFetch(`/admin/principals${query ? `?${query}` : ''}`);
   },
 
   get(id: string): Promise<User> {
-    return apiFetch(`/admin/platform/principals/${id}`);
+    return apiFetch(`/admin/principals/${id}`);
   },
 
   create(data: CreateUserRequest): Promise<User> {
-    return apiFetch('/admin/platform/principals/users', {
+    return apiFetch('/admin/principals/users', {
       method: 'POST',
       body: JSON.stringify(data),
     });
   },
 
   update(id: string, data: UpdateUserRequest): Promise<User> {
-    return apiFetch(`/admin/platform/principals/${id}`, {
+    return apiFetch(`/admin/principals/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),
     });
   },
 
   activate(id: string): Promise<{ message: string }> {
-    return apiFetch(`/admin/platform/principals/${id}/activate`, {
+    return apiFetch(`/admin/principals/${id}/activate`, {
       method: 'POST',
     });
   },
 
   deactivate(id: string): Promise<{ message: string }> {
-    return apiFetch(`/admin/platform/principals/${id}/deactivate`, {
+    return apiFetch(`/admin/principals/${id}/deactivate`, {
       method: 'POST',
     });
   },
 
   resetPassword(id: string, newPassword: string): Promise<{ message: string }> {
-    return apiFetch(`/admin/platform/principals/${id}/reset-password`, {
+    return apiFetch(`/admin/principals/${id}/reset-password`, {
       method: 'POST',
       body: JSON.stringify({newPassword}),
     });
@@ -122,40 +122,40 @@ export const usersApi = {
 
   // Client access grants
   getClientAccess(id: string): Promise<{ grants: ClientAccessGrant[] }> {
-    return apiFetch(`/admin/platform/principals/${id}/client-access`);
+    return apiFetch(`/admin/principals/${id}/client-access`);
   },
 
   grantClientAccess(id: string, clientId: string): Promise<ClientAccessGrant> {
-    return apiFetch(`/admin/platform/principals/${id}/client-access`, {
+    return apiFetch(`/admin/principals/${id}/client-access`, {
       method: 'POST',
       body: JSON.stringify({clientId}),
     });
   },
 
   revokeClientAccess(id: string, clientId: string): Promise<void> {
-    return apiFetch(`/admin/platform/principals/${id}/client-access/${clientId}`, {
+    return apiFetch(`/admin/principals/${id}/client-access/${clientId}`, {
       method: 'DELETE',
     });
   },
 
   checkEmailDomain(email: string): Promise<EmailDomainCheckResponse> {
-    return apiFetch(`/admin/platform/principals/check-email-domain?email=${encodeURIComponent(email)}`);
+    return apiFetch(`/admin/principals/check-email-domain?email=${encodeURIComponent(email)}`);
   },
 
   // Role management
   getRoles(id: string): Promise<{ roles: RoleAssignment[] }> {
-    return apiFetch(`/admin/platform/principals/${id}/roles`);
+    return apiFetch(`/admin/principals/${id}/roles`);
   },
 
   assignRole(id: string, roleName: string): Promise<RoleAssignment> {
-    return apiFetch(`/admin/platform/principals/${id}/roles`, {
+    return apiFetch(`/admin/principals/${id}/roles`, {
       method: 'POST',
       body: JSON.stringify({ roleName }),
     });
   },
 
   removeRole(id: string, roleName: string): Promise<void> {
-    return apiFetch(`/admin/platform/principals/${id}/roles/${encodeURIComponent(roleName)}`, {
+    return apiFetch(`/admin/principals/${id}/roles/${encodeURIComponent(roleName)}`, {
       method: 'DELETE',
     });
   },
@@ -166,7 +166,7 @@ export const usersApi = {
    * Roles not in the list will be removed, new roles will be added.
    */
   assignRoles(id: string, roles: string[]): Promise<RolesAssignedResponse> {
-    return apiFetch(`/admin/platform/principals/${id}/roles`, {
+    return apiFetch(`/admin/principals/${id}/roles`, {
       method: 'PUT',
       body: JSON.stringify({ roles }),
     });
