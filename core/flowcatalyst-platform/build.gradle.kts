@@ -29,7 +29,7 @@ dependencies {
     // Core Quarkus
     // ==========================================================================
     implementation("io.quarkus:quarkus-arc")
-    implementation("io.quarkus:quarkus-mongodb-panache")
+    implementation("io.quarkus:quarkus-mongodb-client")
     implementation("io.quarkus:quarkus-rest")
     implementation("io.quarkus:quarkus-rest-jackson")
 
@@ -125,6 +125,7 @@ dependencies {
     // ==========================================================================
     testImplementation("io.quarkus:quarkus-junit5")
     testImplementation("io.quarkus:quarkus-junit5-mockito")
+    testImplementation("io.quarkus:quarkus-narayana-jta") // For QuarkusTransaction in tests
     testImplementation("io.rest-assured:rest-assured")
     testImplementation("org.awaitility:awaitility:4.2.0")
     testImplementation("org.testcontainers:testcontainers:1.19.7")

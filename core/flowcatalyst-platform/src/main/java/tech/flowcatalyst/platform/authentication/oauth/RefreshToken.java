@@ -1,7 +1,7 @@
 package tech.flowcatalyst.platform.authentication.oauth;
 
-import io.quarkus.mongodb.panache.common.MongoEntity;
-import io.quarkus.mongodb.panache.PanacheMongoEntityBase;
+
+
 import org.bson.codecs.pojo.annotations.BsonId;
 import java.time.Instant;
 
@@ -15,8 +15,8 @@ import java.time.Instant;
  *
  * Security: Only the token hash is stored, not the actual token.
  */
-@MongoEntity(collection = "refresh_tokens")
-public class RefreshToken extends PanacheMongoEntityBase {
+
+public class RefreshToken {
 
     /**
      * SHA-256 hash of the refresh token.

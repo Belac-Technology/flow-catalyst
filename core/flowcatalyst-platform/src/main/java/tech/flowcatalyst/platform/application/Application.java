@@ -1,7 +1,5 @@
 package tech.flowcatalyst.platform.application;
 
-import io.quarkus.mongodb.panache.common.MongoEntity;
-import io.quarkus.mongodb.panache.PanacheMongoEntityBase;
 import org.bson.codecs.pojo.annotations.BsonId;
 import org.bson.codecs.pojo.annotations.BsonIgnore;
 
@@ -30,8 +28,7 @@ import java.time.Instant;
  *
  * @see ApplicationType
  */
-@MongoEntity(collection = "applications")
-public class Application extends PanacheMongoEntityBase {
+public class Application {
 
     @BsonId
     public String id;

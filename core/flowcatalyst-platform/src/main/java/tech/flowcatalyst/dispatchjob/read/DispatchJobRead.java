@@ -1,7 +1,7 @@
 package tech.flowcatalyst.dispatchjob.read;
 
-import io.quarkus.mongodb.panache.PanacheMongoEntityBase;
-import io.quarkus.mongodb.panache.common.MongoEntity;
+
+
 import org.bson.codecs.pojo.annotations.BsonId;
 
 import java.time.Instant;
@@ -18,8 +18,8 @@ import java.time.Instant;
  * - attempts (list that grows over time)
  * - metadata (variable size list)
  */
-@MongoEntity(collection = "dispatch_jobs_read")
-public class DispatchJobRead extends PanacheMongoEntityBase {
+
+public class DispatchJobRead {
 
     @BsonId
     public String id;

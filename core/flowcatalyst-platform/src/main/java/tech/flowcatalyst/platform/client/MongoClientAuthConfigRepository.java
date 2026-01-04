@@ -1,13 +1,17 @@
 package tech.flowcatalyst.platform.client;
 
-import io.quarkus.mongodb.panache.PanacheMongoRepositoryBase;
+import com.mongodb.client.MongoClient;
+import com.mongodb.client.MongoCollection;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Typed;
-import tech.flowcatalyst.platform.authentication.AuthProvider;
-import tech.flowcatalyst.platform.shared.Instrumented;
+import jakarta.inject.Inject;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+
+import static com.mongodb.client.model.Filters.*;
 
 /**
  * MongoDB implementation of ClientAuthConfigRepository.
@@ -15,72 +19,63 @@ import java.util.Optional;
  */
 @ApplicationScoped
 @Typed(ClientAuthConfigRepository.class)
-@Instrumented(collection = "client_auth_configs")
-class MongoClientAuthConfigRepository implements PanacheMongoRepositoryBase<ClientAuthConfig, String>, ClientAuthConfigRepository {
+class MongoClientAuthConfigRepository implements ClientAuthConfigRepository {
 
-    @Override
-    public Optional<ClientAuthConfig> findByEmailDomain(String emailDomain) {
-        return find("emailDomain", emailDomain).firstResultOptional();
-    }
+    @Inject
+    MongoClient mongoClient;
 
-    @Override
-    public boolean existsByEmailDomain(String emailDomain) {
-        return find("emailDomain", emailDomain).count() > 0;
-    }
+    @ConfigProperty(name = "quarkus.mongodb.database")
+    String database;
 
-    @Override
-    public List<ClientAuthConfig> findByAuthProvider(AuthProvider provider) {
-        return find("authProvider", provider).list();
-    }
-
-    @Override
-    public List<ClientAuthConfig> findByClientId(String clientId) {
-        return find("primaryClientId = ?1 or clientId = ?1", clientId).list();
-    }
-
-    @Override
-    public List<ClientAuthConfig> findByConfigType(AuthConfigType configType) {
-        return find("configType", configType).list();
-    }
-
-    // Delegate to Panache methods via interface
-    @Override
-    public ClientAuthConfig findById(String id) {
-        return PanacheMongoRepositoryBase.super.findById(id);
+    private MongoCollection<ClientAuthConfig> collection() {
+        return mongoClient.getDatabase(database).getCollection("auth_configs", ClientAuthConfig.class);
     }
 
     @Override
     public Optional<ClientAuthConfig> findByIdOptional(String id) {
-        return PanacheMongoRepositoryBase.super.findByIdOptional(id);
+        return Optional.ofNullable(collection().find(eq("_id", id)).first());
+    }
+
+    @Override
+    public Optional<ClientAuthConfig> findByEmailDomain(String emailDomain) {
+        return Optional.ofNullable(collection().find(eq("emailDomain", emailDomain)).first());
+    }
+
+    @Override
+    public List<ClientAuthConfig> findByClientId(String clientId) {
+        return collection().find(or(
+            eq("primaryClientId", clientId),
+            eq("clientId", clientId)
+        )).into(new ArrayList<>());
+    }
+
+    @Override
+    public List<ClientAuthConfig> findByConfigType(AuthConfigType configType) {
+        return collection().find(eq("configType", configType.name())).into(new ArrayList<>());
     }
 
     @Override
     public List<ClientAuthConfig> listAll() {
-        return PanacheMongoRepositoryBase.super.listAll();
+        return collection().find().into(new ArrayList<>());
     }
 
     @Override
-    public long count() {
-        return PanacheMongoRepositoryBase.super.count();
+    public boolean existsByEmailDomain(String emailDomain) {
+        return collection().countDocuments(eq("emailDomain", emailDomain)) > 0;
     }
 
     @Override
     public void persist(ClientAuthConfig config) {
-        PanacheMongoRepositoryBase.super.persist(config);
+        collection().insertOne(config);
     }
 
     @Override
     public void update(ClientAuthConfig config) {
-        PanacheMongoRepositoryBase.super.update(config);
+        collection().replaceOne(eq("_id", config.id), config);
     }
 
     @Override
     public void delete(ClientAuthConfig config) {
-        PanacheMongoRepositoryBase.super.delete(config);
-    }
-
-    @Override
-    public boolean deleteById(String id) {
-        return PanacheMongoRepositoryBase.super.deleteById(id);
+        collection().deleteOne(eq("_id", config.id));
     }
 }

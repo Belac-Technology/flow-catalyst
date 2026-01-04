@@ -1,18 +1,22 @@
 package tech.flowcatalyst.event.read;
 
+import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
-import io.quarkus.mongodb.panache.PanacheMongoRepositoryBase;
-import io.quarkus.panache.common.Sort;
+import com.mongodb.client.model.Sorts;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Typed;
+import jakarta.inject.Inject;
 import org.bson.Document;
-import tech.flowcatalyst.platform.shared.Instrumented;
+import org.bson.conversions.Bson;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+
+import static com.mongodb.client.model.Filters.*;
 
 /**
  * MongoDB implementation of EventReadRepository.
@@ -22,146 +26,127 @@ import java.util.Optional;
  */
 @ApplicationScoped
 @Typed(EventReadRepository.class)
-@Instrumented(collection = "events_read")
-class MongoEventReadRepository implements PanacheMongoRepositoryBase<EventRead, String>, EventReadRepository {
+class MongoEventReadRepository implements EventReadRepository {
+
+    @Inject
+    MongoClient mongoClient;
+
+    @ConfigProperty(name = "quarkus.mongodb.database")
+    String database;
+
+    private MongoCollection<EventRead> collection() {
+        return mongoClient.getDatabase(database).getCollection("events_read", EventRead.class);
+    }
+
+    private MongoCollection<Document> documentCollection() {
+        return mongoClient.getDatabase(database).getCollection("events_read");
+    }
+
+    @Override
+    public EventRead findById(String id) {
+        return collection().find(eq("_id", id)).first();
+    }
 
     @Override
     public Optional<EventRead> findByIdOptional(String id) {
-        return Optional.ofNullable(findById(id));
+        return Optional.ofNullable(collection().find(eq("_id", id)).first());
     }
 
     @Override
     public List<EventRead> findWithFilter(EventFilter filter) {
-        StringBuilder query = new StringBuilder();
-        Map<String, Object> params = new HashMap<>();
-        buildQuery(filter, query, params);
+        Bson query = buildFilter(filter);
 
-        String queryStr = query.isEmpty() ? "{}" : query.toString();
-        Sort sort = Sort.by("time").descending();
-
-        return find(queryStr, sort, params)
-            .page(filter.page(), filter.size())
-            .list();
+        return collection().find(query)
+            .sort(Sorts.descending("time"))
+            .skip(filter.page() * filter.size())
+            .limit(filter.size())
+            .into(new ArrayList<>());
     }
 
     @Override
     public long countWithFilter(EventFilter filter) {
-        StringBuilder query = new StringBuilder();
-        Map<String, Object> params = new HashMap<>();
-        buildQuery(filter, query, params);
-
-        String queryStr = query.isEmpty() ? "{}" : query.toString();
-        return count(queryStr, params);
+        Bson query = buildFilter(filter);
+        return collection().countDocuments(query);
     }
 
-    private void buildQuery(EventFilter filter, StringBuilder query, Map<String, Object> params) {
-        boolean first = true;
+    private Bson buildFilter(EventFilter filter) {
+        List<Bson> conditions = new ArrayList<>();
 
         if (filter.clientIds() != null && !filter.clientIds().isEmpty()) {
-            first = appendClientIdFilter(filter.clientIds(), query, params, first);
+            conditions.add(buildClientIdFilter(filter.clientIds()));
         }
 
         if (filter.applications() != null && !filter.applications().isEmpty()) {
-            if (!first) query.append(" and ");
-            query.append("application in :applications");
-            params.put("applications", filter.applications());
-            first = false;
+            conditions.add(in("application", filter.applications()));
         }
 
         if (filter.subdomains() != null && !filter.subdomains().isEmpty()) {
-            if (!first) query.append(" and ");
-            query.append("subdomain in :subdomains");
-            params.put("subdomains", filter.subdomains());
-            first = false;
+            conditions.add(in("subdomain", filter.subdomains()));
         }
 
         if (filter.aggregates() != null && !filter.aggregates().isEmpty()) {
-            if (!first) query.append(" and ");
-            query.append("aggregate in :aggregates");
-            params.put("aggregates", filter.aggregates());
-            first = false;
+            conditions.add(in("aggregate", filter.aggregates()));
         }
 
         if (filter.types() != null && !filter.types().isEmpty()) {
-            if (!first) query.append(" and ");
-            query.append("type in :types");
-            params.put("types", filter.types());
-            first = false;
+            conditions.add(in("type", filter.types()));
         }
 
         if (filter.source() != null && !filter.source().isBlank()) {
-            if (!first) query.append(" and ");
-            query.append("source = :source");
-            params.put("source", filter.source());
-            first = false;
+            conditions.add(eq("source", filter.source()));
         }
 
         if (filter.subject() != null && !filter.subject().isBlank()) {
-            if (!first) query.append(" and ");
-            query.append("subject = :subject");
-            params.put("subject", filter.subject());
-            first = false;
+            conditions.add(eq("subject", filter.subject()));
         }
 
         if (filter.correlationId() != null && !filter.correlationId().isBlank()) {
-            if (!first) query.append(" and ");
-            query.append("correlationId = :correlationId");
-            params.put("correlationId", filter.correlationId());
-            first = false;
+            conditions.add(eq("correlationId", filter.correlationId()));
         }
 
         if (filter.messageGroup() != null && !filter.messageGroup().isBlank()) {
-            if (!first) query.append(" and ");
-            query.append("messageGroup = :messageGroup");
-            params.put("messageGroup", filter.messageGroup());
-            first = false;
+            conditions.add(eq("messageGroup", filter.messageGroup()));
         }
 
         if (filter.timeAfter() != null) {
-            if (!first) query.append(" and ");
-            query.append("time >= :timeAfter");
-            params.put("timeAfter", filter.timeAfter());
-            first = false;
+            conditions.add(gte("time", filter.timeAfter()));
         }
 
         if (filter.timeBefore() != null) {
-            if (!first) query.append(" and ");
-            query.append("time <= :timeBefore");
-            params.put("timeBefore", filter.timeBefore());
+            conditions.add(lte("time", filter.timeBefore()));
         }
+
+        if (conditions.isEmpty()) {
+            return new Document();
+        }
+
+        return and(conditions);
     }
 
-    private boolean appendClientIdFilter(List<String> clientIds, StringBuilder query, Map<String, Object> params, boolean first) {
+    private Bson buildClientIdFilter(List<String> clientIds) {
         boolean hasNull = clientIds.stream().anyMatch(id -> "null".equalsIgnoreCase(id));
         List<String> nonNullIds = clientIds.stream()
             .filter(id -> !"null".equalsIgnoreCase(id))
             .toList();
 
-        if (!first) query.append(" and ");
-
         if (hasNull && nonNullIds.isEmpty()) {
-            query.append("clientId = null");
+            return eq("clientId", null);
         } else if (hasNull) {
-            query.append("(clientId = null or clientId in :clientIds)");
-            params.put("clientIds", nonNullIds);
+            return or(eq("clientId", null), in("clientId", nonNullIds));
         } else {
-            query.append("clientId in :clientIds");
-            params.put("clientIds", nonNullIds);
+            return in("clientId", nonNullIds);
         }
-
-        return false;
     }
 
     @Override
     public FilterOptions getFilterOptions(FilterOptionsRequest request) {
-        @SuppressWarnings("unchecked")
-        MongoCollection<Document> collection = (MongoCollection<Document>) mongoCollection().withDocumentClass(Document.class);
+        MongoCollection<Document> collection = documentCollection();
 
         List<String> clients = getDistinctClientIds(collection);
 
         Document clientMatch = new Document();
         if (request.clientIds() != null && !request.clientIds().isEmpty()) {
-            clientMatch = buildClientIdMatch(request.clientIds());
+            clientMatch = buildClientIdMatchDocument(request.clientIds());
         }
 
         List<String> applications = getCombinedSegmentValues(collection, clientMatch, "application", 0);
@@ -195,7 +180,7 @@ class MongoEventReadRepository implements PanacheMongoRepositoryBase<EventRead, 
 
     private List<String> getCombinedSegmentValues(MongoCollection<Document> collection, Document match,
                                                    String fieldName, int segmentIndex) {
-        java.util.Set<String> values = new java.util.HashSet<>();
+        Set<String> values = new HashSet<>();
 
         collection.distinct(fieldName, match, String.class).into(values);
 
@@ -220,7 +205,7 @@ class MongoEventReadRepository implements PanacheMongoRepositoryBase<EventRead, 
             .toList();
     }
 
-    private Document buildClientIdMatch(List<String> clientIds) {
+    private Document buildClientIdMatchDocument(List<String> clientIds) {
         boolean hasNull = clientIds.stream().anyMatch(id -> "null".equalsIgnoreCase(id));
         List<String> nonNullIds = clientIds.stream()
             .filter(id -> !"null".equalsIgnoreCase(id))
@@ -270,39 +255,33 @@ class MongoEventReadRepository implements PanacheMongoRepositoryBase<EventRead, 
         return values;
     }
 
-    // Delegate to Panache methods via interface
-    @Override
-    public EventRead findById(String id) {
-        return PanacheMongoRepositoryBase.super.findById(id);
-    }
-
     @Override
     public List<EventRead> listAll() {
-        return PanacheMongoRepositoryBase.super.listAll();
+        return collection().find().into(new ArrayList<>());
     }
 
     @Override
     public long count() {
-        return PanacheMongoRepositoryBase.super.count();
+        return collection().countDocuments();
     }
 
     @Override
     public void persist(EventRead event) {
-        PanacheMongoRepositoryBase.super.persist(event);
+        collection().insertOne(event);
     }
 
     @Override
     public void update(EventRead event) {
-        PanacheMongoRepositoryBase.super.update(event);
+        collection().replaceOne(eq("_id", event.id), event);
     }
 
     @Override
     public void delete(EventRead event) {
-        PanacheMongoRepositoryBase.super.delete(event);
+        collection().deleteOne(eq("_id", event.id));
     }
 
     @Override
     public boolean deleteById(String id) {
-        return PanacheMongoRepositoryBase.super.deleteById(id);
+        return collection().deleteOne(eq("_id", id)).getDeletedCount() > 0;
     }
 }

@@ -1,12 +1,15 @@
 package tech.flowcatalyst.platform.authentication;
 
-import io.quarkus.mongodb.panache.PanacheMongoRepositoryBase;
+import com.mongodb.client.MongoClient;
+import com.mongodb.client.MongoCollection;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Typed;
-import tech.flowcatalyst.platform.shared.Instrumented;
+import jakarta.inject.Inject;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 
-import java.util.List;
 import java.util.Optional;
+
+import static com.mongodb.client.model.Filters.*;
 
 /**
  * MongoDB implementation of IdpRoleMappingRepository.
@@ -15,52 +18,30 @@ import java.util.Optional;
  */
 @ApplicationScoped
 @Typed(IdpRoleMappingRepository.class)
-@Instrumented(collection = "idp_role_mappings")
-class MongoIdpRoleMappingRepository implements PanacheMongoRepositoryBase<IdpRoleMapping, String>, IdpRoleMappingRepository {
+class MongoIdpRoleMappingRepository implements IdpRoleMappingRepository {
+
+    @Inject
+    MongoClient mongoClient;
+
+    @ConfigProperty(name = "quarkus.mongodb.database")
+    String database;
+
+    private MongoCollection<IdpRoleMapping> collection() {
+        return mongoClient.getDatabase(database).getCollection("idp_role_mappings", IdpRoleMapping.class);
+    }
 
     @Override
     public Optional<IdpRoleMapping> findByIdpRoleName(String idpRoleName) {
-        return find("idpRoleName", idpRoleName).firstResultOptional();
-    }
-
-    // Delegate to Panache methods via interface
-    @Override
-    public IdpRoleMapping findById(String id) {
-        return PanacheMongoRepositoryBase.super.findById(id);
-    }
-
-    @Override
-    public Optional<IdpRoleMapping> findByIdOptional(String id) {
-        return PanacheMongoRepositoryBase.super.findByIdOptional(id);
-    }
-
-    @Override
-    public List<IdpRoleMapping> listAll() {
-        return PanacheMongoRepositoryBase.super.listAll();
-    }
-
-    @Override
-    public long count() {
-        return PanacheMongoRepositoryBase.super.count();
+        return Optional.ofNullable(collection().find(eq("idpRoleName", idpRoleName)).first());
     }
 
     @Override
     public void persist(IdpRoleMapping mapping) {
-        PanacheMongoRepositoryBase.super.persist(mapping);
-    }
-
-    @Override
-    public void update(IdpRoleMapping mapping) {
-        PanacheMongoRepositoryBase.super.update(mapping);
+        collection().insertOne(mapping);
     }
 
     @Override
     public void delete(IdpRoleMapping mapping) {
-        PanacheMongoRepositoryBase.super.delete(mapping);
-    }
-
-    @Override
-    public boolean deleteById(String id) {
-        return PanacheMongoRepositoryBase.super.deleteById(id);
+        collection().deleteOne(eq("_id", mapping.id));
     }
 }

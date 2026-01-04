@@ -264,19 +264,10 @@ public class MongoTransactionalUnitOfWork implements UnitOfWork {
     /**
      * Get the MongoDB collection name for an aggregate class.
      *
-     * <p>Follows Quarkus Panache convention: looks for @MongoEntity annotation,
-     * falls back to snake_case plural of class name.
+     * <p>Uses snake_case plural of class name as convention.
      */
     private String getCollectionName(Class<?> aggregateClass) {
-        // Check for @MongoEntity annotation
-        var mongoEntity = aggregateClass.getAnnotation(
-            io.quarkus.mongodb.panache.common.MongoEntity.class
-        );
-        if (mongoEntity != null && !mongoEntity.collection().isEmpty()) {
-            return mongoEntity.collection();
-        }
-
-        // Fall back to convention: EventType -> event_types
+        // Use convention: EventType -> event_types
         String name = aggregateClass.getSimpleName();
         return toSnakeCase(name) + "s";
     }

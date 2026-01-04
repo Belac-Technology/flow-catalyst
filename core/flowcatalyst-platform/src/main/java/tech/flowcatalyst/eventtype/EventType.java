@@ -1,6 +1,6 @@
 package tech.flowcatalyst.eventtype;
 
-import io.quarkus.mongodb.panache.common.MongoEntity;
+
 import lombok.Builder;
 import lombok.With;
 import org.bson.codecs.pojo.annotations.BsonId;
@@ -22,7 +22,7 @@ import java.util.List;
  *
  * <p>Use {@link #create(String, String)} for safe construction with defaults.
  */
-@MongoEntity(collection = "event_types")
+
 @Builder(toBuilder = true)
 @With
 public record EventType(

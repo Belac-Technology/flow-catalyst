@@ -6,7 +6,6 @@ import java.util.Set;
 
 /**
  * Repository interface for Client entities.
- * Exposes only approved data access methods - Panache internals are hidden.
  */
 public interface ClientRepository {
 
@@ -17,11 +16,9 @@ public interface ClientRepository {
     List<Client> findAllActive();
     List<Client> findByIds(Set<String> ids);
     List<Client> listAll();
-    long count();
 
     // Write operations
     void persist(Client client);
     void update(Client client);
     void delete(Client client);
-    boolean deleteById(String id);
 }

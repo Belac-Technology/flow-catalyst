@@ -1,7 +1,7 @@
 package tech.flowcatalyst.platform.authentication;
 
-import io.quarkus.mongodb.panache.common.MongoEntity;
-import io.quarkus.mongodb.panache.PanacheMongoEntityBase;
+
+
 import org.bson.codecs.pojo.annotations.BsonId;
 import java.time.Instant;
 
@@ -13,8 +13,8 @@ import java.time.Instant;
  * Maps external IDP role names to internal string-based role names.
  * Internal roles must be defined in PermissionRegistry.
  */
-@MongoEntity(collection = "idp_role_mappings")
-public class IdpRoleMapping extends PanacheMongoEntityBase {
+
+public class IdpRoleMapping {
 
     @BsonId
     public String id;

@@ -1,14 +1,19 @@
 package tech.flowcatalyst.dispatchpool;
 
-import io.quarkus.mongodb.panache.PanacheMongoRepositoryBase;
-import io.quarkus.panache.common.Sort;
+import com.mongodb.client.MongoClient;
+import com.mongodb.client.MongoCollection;
+import com.mongodb.client.model.Sorts;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Typed;
-import tech.flowcatalyst.platform.shared.Instrumented;
+import jakarta.inject.Inject;
+import org.bson.conversions.Bson;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+
+import static com.mongodb.client.model.Filters.*;
 
 /**
  * MongoDB implementation of DispatchPoolRepository.
@@ -16,38 +21,63 @@ import java.util.Optional;
  */
 @ApplicationScoped
 @Typed(DispatchPoolRepository.class)
-@Instrumented(collection = "dispatch_pools")
-class MongoDispatchPoolRepository implements PanacheMongoRepositoryBase<DispatchPool, String>, DispatchPoolRepository {
+class MongoDispatchPoolRepository implements DispatchPoolRepository {
+
+    @Inject
+    MongoClient mongoClient;
+
+    @ConfigProperty(name = "quarkus.mongodb.database")
+    String database;
+
+    private MongoCollection<DispatchPool> collection() {
+        return mongoClient.getDatabase(database).getCollection("dispatch_pools", DispatchPool.class);
+    }
+
+    @Override
+    public DispatchPool findById(String id) {
+        return collection().find(eq("_id", id)).first();
+    }
+
+    @Override
+    public Optional<DispatchPool> findByIdOptional(String id) {
+        return Optional.ofNullable(collection().find(eq("_id", id)).first());
+    }
 
     @Override
     public Optional<DispatchPool> findByCodeAndClientId(String code, String clientId) {
-        if (clientId == null) {
-            return find("code = ?1 and clientId = null", code).firstResultOptional();
-        }
-        return find("code = ?1 and clientId = ?2", code, clientId).firstResultOptional();
+        Bson filter = clientId == null
+            ? and(eq("code", code), eq("clientId", null))
+            : and(eq("code", code), eq("clientId", clientId));
+        return Optional.ofNullable(collection().find(filter).first());
     }
 
     @Override
     public boolean existsByCodeAndClientId(String code, String clientId) {
-        if (clientId == null) {
-            return count("code = ?1 and clientId = null", code) > 0;
-        }
-        return count("code = ?1 and clientId = ?2", code, clientId) > 0;
+        Bson filter = clientId == null
+            ? and(eq("code", code), eq("clientId", null))
+            : and(eq("code", code), eq("clientId", clientId));
+        return collection().countDocuments(filter) > 0;
     }
 
     @Override
     public List<DispatchPool> findByClientId(String clientId) {
-        return list("clientId", Sort.by("code"), clientId);
+        return collection().find(eq("clientId", clientId))
+            .sort(Sorts.ascending("code"))
+            .into(new ArrayList<>());
     }
 
     @Override
     public List<DispatchPool> findAnchorLevel() {
-        return list("clientId = null", Sort.by("code"));
+        return collection().find(eq("clientId", null))
+            .sort(Sorts.ascending("code"))
+            .into(new ArrayList<>());
     }
 
     @Override
     public List<DispatchPool> findByStatus(DispatchPoolStatus status) {
-        return list("status", Sort.by("code"), status);
+        return collection().find(eq("status", status))
+            .sort(Sorts.ascending("code"))
+            .into(new ArrayList<>());
     }
 
     @Override
@@ -57,75 +87,61 @@ class MongoDispatchPoolRepository implements PanacheMongoRepositoryBase<Dispatch
 
     @Override
     public List<DispatchPool> findAllNonArchived() {
-        return list("status != ?1", Sort.by("code"), DispatchPoolStatus.ARCHIVED);
+        return collection().find(ne("status", DispatchPoolStatus.ARCHIVED))
+            .sort(Sorts.ascending("code"))
+            .into(new ArrayList<>());
     }
 
     @Override
     public List<DispatchPool> findWithFilters(String clientId, DispatchPoolStatus status, boolean includeArchived) {
-        StringBuilder query = new StringBuilder();
-        List<Object> params = new ArrayList<>();
-        int paramIndex = 1;
+        List<Bson> conditions = new ArrayList<>();
 
         if (clientId != null) {
-            query.append("clientId = ?").append(paramIndex++);
-            params.add(clientId);
+            conditions.add(eq("clientId", clientId));
         }
 
         if (status != null) {
-            if (!query.isEmpty()) query.append(" and ");
-            query.append("status = ?").append(paramIndex++);
-            params.add(status);
+            conditions.add(eq("status", status));
         } else if (!includeArchived) {
-            if (!query.isEmpty()) query.append(" and ");
-            query.append("status != ?").append(paramIndex++);
-            params.add(DispatchPoolStatus.ARCHIVED);
+            conditions.add(ne("status", DispatchPoolStatus.ARCHIVED));
         }
 
-        if (query.isEmpty()) {
-            return listAll(Sort.by("code"));
-        }
+        Bson filter = conditions.isEmpty() ? new org.bson.Document() : and(conditions);
 
-        return list(query.toString(), Sort.by("code"), params.toArray());
-    }
-
-    // Delegate to Panache methods via interface
-    @Override
-    public DispatchPool findById(String id) {
-        return PanacheMongoRepositoryBase.super.findById(id);
-    }
-
-    @Override
-    public Optional<DispatchPool> findByIdOptional(String id) {
-        return PanacheMongoRepositoryBase.super.findByIdOptional(id);
+        return collection().find(filter)
+            .sort(Sorts.ascending("code"))
+            .into(new ArrayList<>());
     }
 
     @Override
     public List<DispatchPool> listAll() {
-        return PanacheMongoRepositoryBase.super.listAll();
+        return collection().find()
+            .sort(Sorts.ascending("code"))
+            .into(new ArrayList<>());
     }
 
     @Override
     public long count() {
-        return PanacheMongoRepositoryBase.super.count();
+        return collection().countDocuments();
     }
 
     @Override
     public void persist(DispatchPool pool) {
-        PanacheMongoRepositoryBase.super.persist(pool);
+        collection().insertOne(pool);
     }
 
     @Override
     public void update(DispatchPool pool) {
-        PanacheMongoRepositoryBase.super.update(pool);
+        collection().replaceOne(eq("_id", pool.id()), pool);
     }
 
     @Override
     public void delete(DispatchPool pool) {
-        PanacheMongoRepositoryBase.super.delete(pool);
+        collection().deleteOne(eq("_id", pool.id()));
     }
 
     @Override
     public boolean deleteById(String id) {
-        return PanacheMongoRepositoryBase.super.deleteById(id);
+        return collection().deleteOne(eq("_id", id)).getDeletedCount() > 0;
     }
 }

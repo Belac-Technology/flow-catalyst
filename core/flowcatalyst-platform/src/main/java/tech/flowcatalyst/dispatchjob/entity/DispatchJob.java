@@ -1,7 +1,7 @@
 package tech.flowcatalyst.dispatchjob.entity;
 
-import io.quarkus.mongodb.panache.common.MongoEntity;
-import io.quarkus.mongodb.panache.PanacheMongoEntityBase;
+
+
 import org.bson.codecs.pojo.annotations.BsonId;
 import tech.flowcatalyst.dispatch.DispatchMode;
 import tech.flowcatalyst.dispatchjob.model.DispatchKind;
@@ -58,8 +58,8 @@ import java.util.*;
  *
  * @see DispatchKind
  */
-@MongoEntity(collection = "dispatch_jobs")
-public class DispatchJob extends PanacheMongoEntityBase {
+
+public class DispatchJob {
 
     @BsonId
     public String id;

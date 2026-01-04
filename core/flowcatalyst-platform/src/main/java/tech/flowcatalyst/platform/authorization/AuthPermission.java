@@ -1,7 +1,5 @@
 package tech.flowcatalyst.platform.authorization;
 
-import io.quarkus.mongodb.panache.common.MongoEntity;
-import io.quarkus.mongodb.panache.PanacheMongoEntityBase;
 import org.bson.codecs.pojo.annotations.BsonId;
 import java.time.Instant;
 
@@ -15,8 +13,7 @@ import java.time.Instant;
  * Permission format: {app}:{context}:{aggregate}:{action}
  * Example: "myapp:orders:order:create"
  */
-@MongoEntity(collection = "permissions")
-public class AuthPermission extends PanacheMongoEntityBase {
+public class AuthPermission {
 
     @BsonId
     public String id;

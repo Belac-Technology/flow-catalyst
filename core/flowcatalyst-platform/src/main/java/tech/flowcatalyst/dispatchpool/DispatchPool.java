@@ -1,6 +1,5 @@
 package tech.flowcatalyst.dispatchpool;
 
-import io.quarkus.mongodb.panache.common.MongoEntity;
 import lombok.Builder;
 import lombok.With;
 import org.bson.codecs.pojo.annotations.BsonId;
@@ -23,7 +22,6 @@ import java.time.Instant;
  * <p>Use {@link #builder()} for safe construction with named parameters.
  * Use {@link #toBuilder()} to create a modified copy of an existing instance.
  */
-@MongoEntity(collection = "dispatch_pools")
 @Builder(toBuilder = true)
 @With
 public record DispatchPool(

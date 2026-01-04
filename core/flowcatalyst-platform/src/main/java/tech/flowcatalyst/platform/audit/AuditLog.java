@@ -1,7 +1,7 @@
 package tech.flowcatalyst.platform.audit;
 
-import io.quarkus.mongodb.panache.common.MongoEntity;
-import io.quarkus.mongodb.panache.PanacheMongoEntityBase;
+
+
 import org.bson.codecs.pojo.annotations.BsonId;
 import java.time.Instant;
 
@@ -11,8 +11,8 @@ import java.time.Instant;
  * Generic audit log that can track any entity type and operation.
  * Stores the full operation payload as JSON for complete audit trail.
  */
-@MongoEntity(collection = "audit_logs")
-public class AuditLog extends PanacheMongoEntityBase {
+
+public class AuditLog {
 
     @BsonId
     public String id;

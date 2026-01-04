@@ -1,7 +1,5 @@
 package tech.flowcatalyst.platform.client;
 
-import io.quarkus.mongodb.panache.common.MongoEntity;
-import io.quarkus.mongodb.panache.PanacheMongoEntityBase;
 import org.bson.codecs.pojo.annotations.BsonId;
 import org.bson.codecs.pojo.annotations.BsonIgnore;
 import tech.flowcatalyst.platform.authentication.AuthProvider;
@@ -32,8 +30,7 @@ import java.util.List;
  * <p>IMPORTANT: The oidcClientSecretRef field stores a reference to the secret,
  * not the secret itself. Use ClientAuthConfigService to resolve the actual secret.
  */
-@MongoEntity(collection = "auth_configs")
-public class ClientAuthConfig extends PanacheMongoEntityBase {
+public class ClientAuthConfig {
 
     @BsonId
     public String id; // TSID (Crockford Base32)

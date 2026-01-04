@@ -1,7 +1,7 @@
 package tech.flowcatalyst.platform.authentication.oidc;
 
-import io.quarkus.mongodb.panache.PanacheMongoEntityBase;
-import io.quarkus.mongodb.panache.common.MongoEntity;
+
+
 import org.bson.codecs.pojo.annotations.BsonId;
 
 import java.time.Instant;
@@ -11,8 +11,8 @@ import java.time.Instant;
  * Used to correlate the callback with the original login request
  * and prevent CSRF attacks.
  */
-@MongoEntity(collection = "oidc_login_states")
-public class OidcLoginState extends PanacheMongoEntityBase {
+
+public class OidcLoginState {
 
     @BsonId
     public String state; // Random state parameter (also used as ID)

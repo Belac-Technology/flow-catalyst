@@ -1,7 +1,7 @@
 package tech.flowcatalyst.platform.authentication.oauth;
 
-import io.quarkus.mongodb.panache.common.MongoEntity;
-import io.quarkus.mongodb.panache.PanacheMongoEntityBase;
+
+
 import org.bson.codecs.pojo.annotations.BsonId;
 import org.bson.codecs.pojo.annotations.BsonIgnore;
 
@@ -29,8 +29,8 @@ import java.util.List;
  *
  * @see tech.flowcatalyst.platform.application.Application
  */
-@MongoEntity(collection = "oauth_clients")
-public class OAuthClient extends PanacheMongoEntityBase {
+
+public class OAuthClient {
 
     @BsonId
     public String id;

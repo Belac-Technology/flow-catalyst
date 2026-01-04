@@ -2,20 +2,20 @@ package tech.flowcatalyst.eventtype;
 
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
-import io.quarkus.mongodb.panache.PanacheMongoRepositoryBase;
-import io.quarkus.panache.common.Sort;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Typed;
 import jakarta.inject.Inject;
 import org.bson.Document;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
-import tech.flowcatalyst.platform.shared.Instrumented;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+
+import static com.mongodb.client.model.Filters.*;
+import static com.mongodb.client.model.Sorts.*;
 
 /**
  * MongoDB implementation of EventTypeRepository.
@@ -25,8 +25,7 @@ import java.util.stream.Collectors;
  */
 @ApplicationScoped
 @Typed(EventTypeRepository.class)
-@Instrumented(collection = "event_types")
-class MongoEventTypeRepository implements PanacheMongoRepositoryBase<EventType, String>, EventTypeRepository {
+class MongoEventTypeRepository implements EventTypeRepository {
 
     @Inject
     MongoClient mongoClient;
@@ -34,43 +33,72 @@ class MongoEventTypeRepository implements PanacheMongoRepositoryBase<EventType, 
     @ConfigProperty(name = "quarkus.mongodb.database")
     String databaseName;
 
+    private MongoCollection<EventType> collection() {
+        return mongoClient.getDatabase(databaseName).getCollection("event_types", EventType.class);
+    }
+
     private MongoCollection<Document> getDocumentCollection() {
         return mongoClient.getDatabase(databaseName).getCollection("event_types");
     }
 
     @Override
+    public EventType findById(String id) {
+        return collection().find(eq("_id", id)).first();
+    }
+
+    @Override
+    public Optional<EventType> findByIdOptional(String id) {
+        return Optional.ofNullable(collection().find(eq("_id", id)).first());
+    }
+
+    @Override
     public Optional<EventType> findByCode(String code) {
-        return find("code", code).firstResultOptional();
+        return Optional.ofNullable(collection().find(eq("code", code)).first());
     }
 
     @Override
     public boolean existsByCode(String code) {
-        return count("code", code) > 0;
+        return collection().countDocuments(eq("code", code)) > 0;
     }
 
     @Override
     public List<EventType> findAllOrdered() {
-        return listAll(Sort.by("code"));
+        return collection().find().sort(ascending("code")).into(new ArrayList<>());
     }
 
     @Override
     public List<EventType> findCurrent() {
-        return list("status", Sort.by("code"), EventTypeStatus.CURRENT);
+        return collection().find(eq("status", EventTypeStatus.CURRENT.name()))
+            .sort(ascending("code"))
+            .into(new ArrayList<>());
     }
 
     @Override
     public List<EventType> findArchived() {
-        return list("status", Sort.by("code"), EventTypeStatus.ARCHIVE);
+        return collection().find(eq("status", EventTypeStatus.ARCHIVE.name()))
+            .sort(ascending("code"))
+            .into(new ArrayList<>());
     }
 
     @Override
     public List<EventType> findByCodePrefix(String prefix) {
-        return list("code like ?1", prefix + "%");
+        return collection().find(regex("code", "^" + Pattern.quote(prefix)))
+            .into(new ArrayList<>());
+    }
+
+    @Override
+    public List<EventType> listAll() {
+        return collection().find().into(new ArrayList<>());
+    }
+
+    @Override
+    public long count() {
+        return collection().countDocuments();
     }
 
     @Override
     public List<String> findDistinctApplications() {
-        MongoCollection<Document> collection = getDocumentCollection();
+        MongoCollection<Document> coll = getDocumentCollection();
 
         List<Document> pipeline = List.of(
             new Document("$project", new Document("application",
@@ -81,7 +109,7 @@ class MongoEventTypeRepository implements PanacheMongoRepositoryBase<EventType, 
         );
 
         List<String> results = new ArrayList<>();
-        for (Document doc : collection.aggregate(pipeline)) {
+        for (Document doc : coll.aggregate(pipeline)) {
             String app = doc.getString("_id");
             if (app != null && !app.isEmpty()) {
                 results.add(app);
@@ -92,7 +120,7 @@ class MongoEventTypeRepository implements PanacheMongoRepositoryBase<EventType, 
 
     @Override
     public List<String> findDistinctSubdomains(String application) {
-        MongoCollection<Document> collection = getDocumentCollection();
+        MongoCollection<Document> coll = getDocumentCollection();
         String prefix = application + ":";
 
         List<Document> pipeline = List.of(
@@ -106,7 +134,7 @@ class MongoEventTypeRepository implements PanacheMongoRepositoryBase<EventType, 
         );
 
         List<String> results = new ArrayList<>();
-        for (Document doc : collection.aggregate(pipeline)) {
+        for (Document doc : coll.aggregate(pipeline)) {
             String subdomain = doc.getString("_id");
             if (subdomain != null && !subdomain.isEmpty()) {
                 results.add(subdomain);
@@ -117,7 +145,7 @@ class MongoEventTypeRepository implements PanacheMongoRepositoryBase<EventType, 
 
     @Override
     public List<String> findAllDistinctSubdomains() {
-        MongoCollection<Document> collection = getDocumentCollection();
+        MongoCollection<Document> coll = getDocumentCollection();
 
         List<Document> pipeline = List.of(
             new Document("$project", new Document("subdomain",
@@ -128,7 +156,7 @@ class MongoEventTypeRepository implements PanacheMongoRepositoryBase<EventType, 
         );
 
         List<String> results = new ArrayList<>();
-        for (Document doc : collection.aggregate(pipeline)) {
+        for (Document doc : coll.aggregate(pipeline)) {
             String subdomain = doc.getString("_id");
             if (subdomain != null && !subdomain.isEmpty()) {
                 results.add(subdomain);
@@ -146,7 +174,7 @@ class MongoEventTypeRepository implements PanacheMongoRepositoryBase<EventType, 
             return findDistinctSubdomains(applications.get(0));
         }
 
-        MongoCollection<Document> collection = getDocumentCollection();
+        MongoCollection<Document> coll = getDocumentCollection();
 
         String pattern = applications.stream()
             .map(Pattern::quote)
@@ -162,7 +190,7 @@ class MongoEventTypeRepository implements PanacheMongoRepositoryBase<EventType, 
         );
 
         List<String> results = new ArrayList<>();
-        for (Document doc : collection.aggregate(pipeline)) {
+        for (Document doc : coll.aggregate(pipeline)) {
             String subdomain = doc.getString("_id");
             if (subdomain != null && !subdomain.isEmpty()) {
                 results.add(subdomain);
@@ -173,7 +201,7 @@ class MongoEventTypeRepository implements PanacheMongoRepositoryBase<EventType, 
 
     @Override
     public List<String> findDistinctAggregates(String application, String subdomain) {
-        MongoCollection<Document> collection = getDocumentCollection();
+        MongoCollection<Document> coll = getDocumentCollection();
         String prefix = application + ":" + subdomain + ":";
 
         List<Document> pipeline = List.of(
@@ -187,7 +215,7 @@ class MongoEventTypeRepository implements PanacheMongoRepositoryBase<EventType, 
         );
 
         List<String> results = new ArrayList<>();
-        for (Document doc : collection.aggregate(pipeline)) {
+        for (Document doc : coll.aggregate(pipeline)) {
             String aggregate = doc.getString("_id");
             if (aggregate != null && !aggregate.isEmpty()) {
                 results.add(aggregate);
@@ -198,7 +226,7 @@ class MongoEventTypeRepository implements PanacheMongoRepositoryBase<EventType, 
 
     @Override
     public List<String> findAllDistinctAggregates() {
-        MongoCollection<Document> collection = getDocumentCollection();
+        MongoCollection<Document> coll = getDocumentCollection();
 
         List<Document> pipeline = List.of(
             new Document("$project", new Document("aggregate",
@@ -209,7 +237,7 @@ class MongoEventTypeRepository implements PanacheMongoRepositoryBase<EventType, 
         );
 
         List<String> results = new ArrayList<>();
-        for (Document doc : collection.aggregate(pipeline)) {
+        for (Document doc : coll.aggregate(pipeline)) {
             String aggregate = doc.getString("_id");
             if (aggregate != null && !aggregate.isEmpty()) {
                 results.add(aggregate);
@@ -225,7 +253,7 @@ class MongoEventTypeRepository implements PanacheMongoRepositoryBase<EventType, 
             return findAllDistinctAggregates();
         }
 
-        MongoCollection<Document> collection = getDocumentCollection();
+        MongoCollection<Document> coll = getDocumentCollection();
         List<Document> pipeline = new ArrayList<>();
 
         List<Document> matchConditions = new ArrayList<>();
@@ -259,7 +287,7 @@ class MongoEventTypeRepository implements PanacheMongoRepositoryBase<EventType, 
         pipeline.add(new Document("$sort", new Document("_id", 1)));
 
         List<String> results = new ArrayList<>();
-        for (Document doc : collection.aggregate(pipeline)) {
+        for (Document doc : coll.aggregate(pipeline)) {
             String aggregate = doc.getString("_id");
             if (aggregate != null && !aggregate.isEmpty()) {
                 results.add(aggregate);
@@ -282,7 +310,7 @@ class MongoEventTypeRepository implements PanacheMongoRepositoryBase<EventType, 
             return findAllOrdered();
         }
 
-        MongoCollection<Document> collection = getDocumentCollection();
+        MongoCollection<Document> coll = getDocumentCollection();
         List<Document> matchConditions = new ArrayList<>();
 
         if (status != null) {
@@ -320,7 +348,7 @@ class MongoEventTypeRepository implements PanacheMongoRepositoryBase<EventType, 
         );
 
         List<EventType> results = new ArrayList<>();
-        for (Document doc : collection.aggregate(pipeline)) {
+        for (Document doc : coll.aggregate(pipeline)) {
             String id = doc.getString("_id");
             if (id != null) {
                 EventType eventType = findById(id);
@@ -332,44 +360,23 @@ class MongoEventTypeRepository implements PanacheMongoRepositoryBase<EventType, 
         return results;
     }
 
-    // Delegate to Panache methods via interface
-    @Override
-    public EventType findById(String id) {
-        return PanacheMongoRepositoryBase.super.findById(id);
-    }
-
-    @Override
-    public Optional<EventType> findByIdOptional(String id) {
-        return PanacheMongoRepositoryBase.super.findByIdOptional(id);
-    }
-
-    @Override
-    public List<EventType> listAll() {
-        return PanacheMongoRepositoryBase.super.listAll();
-    }
-
-    @Override
-    public long count() {
-        return PanacheMongoRepositoryBase.super.count();
-    }
-
     @Override
     public void persist(EventType eventType) {
-        PanacheMongoRepositoryBase.super.persist(eventType);
+        collection().insertOne(eventType);
     }
 
     @Override
     public void update(EventType eventType) {
-        PanacheMongoRepositoryBase.super.update(eventType);
+        collection().replaceOne(eq("_id", eventType.id()), eventType);
     }
 
     @Override
     public void delete(EventType eventType) {
-        PanacheMongoRepositoryBase.super.delete(eventType);
+        collection().deleteOne(eq("_id", eventType.id()));
     }
 
     @Override
     public boolean deleteById(String id) {
-        return PanacheMongoRepositoryBase.super.deleteById(id);
+        return collection().deleteOne(eq("_id", id)).getDeletedCount() > 0;
     }
 }

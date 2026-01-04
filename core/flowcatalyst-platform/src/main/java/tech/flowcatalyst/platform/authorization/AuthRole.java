@@ -1,7 +1,5 @@
 package tech.flowcatalyst.platform.authorization;
 
-import io.quarkus.mongodb.panache.common.MongoEntity;
-import io.quarkus.mongodb.panache.PanacheMongoEntityBase;
 import org.bson.codecs.pojo.annotations.BsonId;
 import java.time.Instant;
 import java.util.HashSet;
@@ -18,8 +16,7 @@ import java.util.Set;
  * The role name is prefixed with the application code (e.g., "platform:tenant-admin").
  * SDK roles are auto-prefixed when registered.
  */
-@MongoEntity(collection = "roles")
-public class AuthRole extends PanacheMongoEntityBase {
+public class AuthRole {
 
     @BsonId
     public String id;

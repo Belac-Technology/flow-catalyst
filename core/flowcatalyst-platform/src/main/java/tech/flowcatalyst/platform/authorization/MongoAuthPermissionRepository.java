@@ -1,12 +1,17 @@
 package tech.flowcatalyst.platform.authorization;
 
-import io.quarkus.mongodb.panache.PanacheMongoRepositoryBase;
+import com.mongodb.client.MongoClient;
+import com.mongodb.client.MongoCollection;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Typed;
-import tech.flowcatalyst.platform.shared.Instrumented;
+import jakarta.inject.Inject;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+
+import static com.mongodb.client.model.Filters.*;
 
 /**
  * MongoDB implementation of AuthPermissionRepository.
@@ -14,77 +19,55 @@ import java.util.Optional;
  */
 @ApplicationScoped
 @Typed(AuthPermissionRepository.class)
-@Instrumented(collection = "auth_permissions")
-class MongoAuthPermissionRepository implements PanacheMongoRepositoryBase<AuthPermission, String>, AuthPermissionRepository {
+class MongoAuthPermissionRepository implements AuthPermissionRepository {
+
+    @Inject
+    MongoClient mongoClient;
+
+    @ConfigProperty(name = "quarkus.mongodb.database")
+    String database;
+
+    private MongoCollection<AuthPermission> collection() {
+        return mongoClient.getDatabase(database).getCollection("permissions", AuthPermission.class);
+    }
 
     @Override
     public Optional<AuthPermission> findByName(String name) {
-        return find("name", name).firstResultOptional();
+        return Optional.ofNullable(collection().find(eq("name", name)).first());
     }
 
     @Override
     public List<AuthPermission> findByApplicationId(String applicationId) {
-        return find("applicationId", applicationId).list();
-    }
-
-    @Override
-    public List<AuthPermission> findByApplicationCode(String applicationCode) {
-        return find("applicationCode", applicationCode).list();
-    }
-
-    @Override
-    public boolean existsByName(String name) {
-        return count("name", name) > 0;
-    }
-
-    @Override
-    public long deleteByName(String name) {
-        return delete("name", name);
-    }
-
-    @Override
-    public long deleteByApplicationId(String applicationId) {
-        return delete("applicationId", applicationId);
-    }
-
-    // Delegate to Panache methods via interface
-    @Override
-    public AuthPermission findById(String id) {
-        return PanacheMongoRepositoryBase.super.findById(id);
-    }
-
-    @Override
-    public Optional<AuthPermission> findByIdOptional(String id) {
-        return PanacheMongoRepositoryBase.super.findByIdOptional(id);
+        return collection().find(eq("applicationId", applicationId)).into(new ArrayList<>());
     }
 
     @Override
     public List<AuthPermission> listAll() {
-        return PanacheMongoRepositoryBase.super.listAll();
+        return collection().find().into(new ArrayList<>());
     }
 
     @Override
-    public long count() {
-        return PanacheMongoRepositoryBase.super.count();
+    public boolean existsByName(String name) {
+        return collection().countDocuments(eq("name", name)) > 0;
     }
 
     @Override
     public void persist(AuthPermission permission) {
-        PanacheMongoRepositoryBase.super.persist(permission);
+        collection().insertOne(permission);
     }
 
     @Override
     public void update(AuthPermission permission) {
-        PanacheMongoRepositoryBase.super.update(permission);
+        collection().replaceOne(eq("_id", permission.id), permission);
     }
 
     @Override
     public void delete(AuthPermission permission) {
-        PanacheMongoRepositoryBase.super.delete(permission);
+        collection().deleteOne(eq("_id", permission.id));
     }
 
     @Override
-    public boolean deleteById(String id) {
-        return PanacheMongoRepositoryBase.super.deleteById(id);
+    public long deleteByApplicationId(String applicationId) {
+        return collection().deleteMany(eq("applicationId", applicationId)).getDeletedCount();
     }
 }

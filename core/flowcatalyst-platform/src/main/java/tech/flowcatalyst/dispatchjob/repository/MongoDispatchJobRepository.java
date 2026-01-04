@@ -1,9 +1,14 @@
 package tech.flowcatalyst.dispatchjob.repository;
 
-import io.quarkus.mongodb.panache.PanacheMongoRepositoryBase;
-import io.quarkus.panache.common.Sort;
+import com.mongodb.client.MongoClient;
+import com.mongodb.client.MongoCollection;
+import com.mongodb.client.model.Sorts;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Typed;
+import jakarta.inject.Inject;
+import org.bson.Document;
+import org.bson.conversions.Bson;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import tech.flowcatalyst.dispatch.DispatchMode;
 import tech.flowcatalyst.dispatchjob.dto.CreateDispatchJobRequest;
 import tech.flowcatalyst.dispatchjob.dto.DispatchJobFilter;
@@ -12,11 +17,13 @@ import tech.flowcatalyst.dispatchjob.entity.DispatchJob;
 import tech.flowcatalyst.dispatchjob.entity.DispatchJobMetadata;
 import tech.flowcatalyst.dispatchjob.model.DispatchKind;
 import tech.flowcatalyst.dispatchjob.model.DispatchStatus;
-import tech.flowcatalyst.platform.shared.Instrumented;
 import tech.flowcatalyst.platform.shared.TsidGenerator;
 
 import java.time.Instant;
 import java.util.*;
+
+import static com.mongodb.client.model.Filters.*;
+import static com.mongodb.client.model.Updates.*;
 
 /**
  * MongoDB implementation of DispatchJobRepository.
@@ -26,8 +33,21 @@ import java.util.*;
  */
 @ApplicationScoped
 @Typed(DispatchJobRepository.class)
-@Instrumented(collection = "dispatch_jobs")
-class MongoDispatchJobRepository implements PanacheMongoRepositoryBase<DispatchJob, String>, DispatchJobRepository {
+class MongoDispatchJobRepository implements DispatchJobRepository {
+
+    @Inject
+    MongoClient mongoClient;
+
+    @ConfigProperty(name = "quarkus.mongodb.database")
+    String database;
+
+    private MongoCollection<DispatchJob> collection() {
+        return mongoClient.getDatabase(database).getCollection("dispatch_jobs", DispatchJob.class);
+    }
+
+    private MongoCollection<Document> documentCollection() {
+        return mongoClient.getDatabase(database).getCollection("dispatch_jobs");
+    }
 
     @Override
     public DispatchJob create(CreateDispatchJobRequest request) {
@@ -78,7 +98,7 @@ class MongoDispatchJobRepository implements PanacheMongoRepositoryBase<DispatchJ
                 .toList();
         }
 
-        persist(job);
+        collection().insertOne(job);
         return job;
     }
 
@@ -87,156 +107,98 @@ class MongoDispatchJobRepository implements PanacheMongoRepositoryBase<DispatchJ
         attempt.id = TsidGenerator.generate();
         attempt.createdAt = Instant.now();
 
-        DispatchJob job = findById(jobId);
-        if (job != null) {
-            job.attempts.add(attempt);
-            job.attemptCount++;
-            job.lastAttemptAt = attempt.attemptedAt;
-            job.updatedAt = Instant.now();
-            update(job);
-        }
+        collection().updateOne(
+            eq("_id", jobId),
+            combine(
+                push("attempts", attempt),
+                inc("attemptCount", 1),
+                set("lastAttemptAt", attempt.attemptedAt),
+                set("updatedAt", Instant.now())
+            )
+        );
     }
 
     @Override
     public void updateStatus(String jobId, DispatchStatus status,
                              Instant completedAt, Long durationMillis, String lastError) {
-        DispatchJob job = findById(jobId);
-        if (job != null) {
-            job.status = status;
-            job.updatedAt = Instant.now();
+        List<Bson> updates = new ArrayList<>();
+        updates.add(set("status", status));
+        updates.add(set("updatedAt", Instant.now()));
 
-            if (completedAt != null) {
-                job.completedAt = completedAt;
-            }
-            if (durationMillis != null) {
-                job.durationMillis = durationMillis;
-            }
-            if (lastError != null) {
-                job.lastError = lastError;
-            }
-
-            update(job);
+        if (completedAt != null) {
+            updates.add(set("completedAt", completedAt));
         }
+        if (durationMillis != null) {
+            updates.add(set("durationMillis", durationMillis));
+        }
+        if (lastError != null) {
+            updates.add(set("lastError", lastError));
+        }
+
+        collection().updateOne(eq("_id", jobId), combine(updates));
     }
 
     @Override
     public List<DispatchJob> findWithFilter(DispatchJobFilter filter) {
-        StringBuilder query = new StringBuilder();
-        Map<String, Object> params = new HashMap<>();
-        List<String> conditions = new ArrayList<>();
+        Bson query = buildFilter(filter);
 
-        if (filter.status() != null) {
-            conditions.add("status = :status");
-            params.put("status", filter.status());
-        }
-        if (filter.source() != null) {
-            conditions.add("source = :source");
-            params.put("source", filter.source());
-        }
-        if (filter.kind() != null) {
-            conditions.add("kind = :kind");
-            params.put("kind", filter.kind());
-        }
-        if (filter.code() != null) {
-            conditions.add("code = :code");
-            params.put("code", filter.code());
-        }
-        if (filter.clientId() != null) {
-            conditions.add("clientId = :clientId");
-            params.put("clientId", filter.clientId());
-        }
-        if (filter.subscriptionId() != null) {
-            conditions.add("subscriptionId = :subscriptionId");
-            params.put("subscriptionId", filter.subscriptionId());
-        }
-        if (filter.dispatchPoolId() != null) {
-            conditions.add("dispatchPoolId = :dispatchPoolId");
-            params.put("dispatchPoolId", filter.dispatchPoolId());
-        }
-        if (filter.messageGroup() != null) {
-            conditions.add("messageGroup = :messageGroup");
-            params.put("messageGroup", filter.messageGroup());
-        }
-        if (filter.createdAfter() != null) {
-            conditions.add("createdAt >= :createdAfter");
-            params.put("createdAfter", filter.createdAfter());
-        }
-        if (filter.createdBefore() != null) {
-            conditions.add("createdAt <= :createdBefore");
-            params.put("createdBefore", filter.createdBefore());
-        }
-
-        if (conditions.isEmpty()) {
-            return findAll().page(filter.page(), filter.size()).list();
-        }
-
-        query.append(String.join(" and ", conditions));
-
-        return find(query.toString(), params)
-            .page(filter.page(), filter.size())
-            .list();
+        return collection().find(query)
+            .skip(filter.page() * filter.size())
+            .limit(filter.size())
+            .into(new ArrayList<>());
     }
 
     @Override
     public long countWithFilter(DispatchJobFilter filter) {
-        StringBuilder query = new StringBuilder();
-        Map<String, Object> params = new HashMap<>();
-        List<String> conditions = new ArrayList<>();
+        Bson query = buildFilter(filter);
+        return collection().countDocuments(query);
+    }
+
+    private Bson buildFilter(DispatchJobFilter filter) {
+        List<Bson> conditions = new ArrayList<>();
 
         if (filter.status() != null) {
-            conditions.add("status = :status");
-            params.put("status", filter.status());
+            conditions.add(eq("status", filter.status()));
         }
         if (filter.source() != null) {
-            conditions.add("source = :source");
-            params.put("source", filter.source());
+            conditions.add(eq("source", filter.source()));
         }
         if (filter.kind() != null) {
-            conditions.add("kind = :kind");
-            params.put("kind", filter.kind());
+            conditions.add(eq("kind", filter.kind()));
         }
         if (filter.code() != null) {
-            conditions.add("code = :code");
-            params.put("code", filter.code());
+            conditions.add(eq("code", filter.code()));
         }
         if (filter.clientId() != null) {
-            conditions.add("clientId = :clientId");
-            params.put("clientId", filter.clientId());
+            conditions.add(eq("clientId", filter.clientId()));
         }
         if (filter.subscriptionId() != null) {
-            conditions.add("subscriptionId = :subscriptionId");
-            params.put("subscriptionId", filter.subscriptionId());
+            conditions.add(eq("subscriptionId", filter.subscriptionId()));
         }
         if (filter.dispatchPoolId() != null) {
-            conditions.add("dispatchPoolId = :dispatchPoolId");
-            params.put("dispatchPoolId", filter.dispatchPoolId());
+            conditions.add(eq("dispatchPoolId", filter.dispatchPoolId()));
         }
         if (filter.messageGroup() != null) {
-            conditions.add("messageGroup = :messageGroup");
-            params.put("messageGroup", filter.messageGroup());
+            conditions.add(eq("messageGroup", filter.messageGroup()));
         }
         if (filter.createdAfter() != null) {
-            conditions.add("createdAt >= :createdAfter");
-            params.put("createdAfter", filter.createdAfter());
+            conditions.add(gte("createdAt", filter.createdAfter()));
         }
         if (filter.createdBefore() != null) {
-            conditions.add("createdAt <= :createdBefore");
-            params.put("createdBefore", filter.createdBefore());
+            conditions.add(lte("createdAt", filter.createdBefore()));
         }
 
         if (conditions.isEmpty()) {
-            return count();
+            return new Document();
         }
 
-        query.append(String.join(" and ", conditions));
-
-        return count(query.toString(), params);
+        return and(conditions);
     }
 
     @Override
     public List<DispatchJob> findByMetadata(String key, String value) {
-        return list("metadata",
-            org.bson.Document.parse("{'$elemMatch': {'key': '" + key + "', 'value': '" + value + "'}}"));
+        Bson filter = elemMatch("metadata", and(eq("key", key), eq("value", value)));
+        return collection().find(filter).into(new ArrayList<>());
     }
 
     @Override
@@ -245,35 +207,38 @@ class MongoDispatchJobRepository implements PanacheMongoRepositoryBase<DispatchJ
             return List.of();
         }
 
-        List<org.bson.Document> conditions = new ArrayList<>();
+        List<Bson> conditions = new ArrayList<>();
         for (Map.Entry<String, String> entry : metadataFilters.entrySet()) {
-            conditions.add(new org.bson.Document("metadata",
-                new org.bson.Document("$elemMatch",
-                    new org.bson.Document("key", entry.getKey())
-                        .append("value", entry.getValue()))));
+            conditions.add(elemMatch("metadata", and(eq("key", entry.getKey()), eq("value", entry.getValue()))));
         }
 
-        org.bson.Document query = new org.bson.Document("$and", conditions);
-        return mongoCollection().find(query).into(new ArrayList<>());
+        return collection().find(and(conditions)).into(new ArrayList<>());
     }
 
     @Override
     public List<DispatchJob> findRecentPaged(int page, int size) {
-        return findAll(Sort.by("createdAt").descending())
-            .page(page, size)
-            .list();
+        return collection().find()
+            .sort(Sorts.descending("createdAt"))
+            .skip(page * size)
+            .limit(size)
+            .into(new ArrayList<>());
     }
 
     @Override
     public List<DispatchJob> findPendingJobs(int limit) {
-        return find("status", Sort.by("messageGroup").and("sequence").and("createdAt"), DispatchStatus.PENDING)
-            .page(0, limit)
-            .list();
+        return collection().find(eq("status", DispatchStatus.PENDING))
+            .sort(Sorts.orderBy(
+                Sorts.ascending("messageGroup"),
+                Sorts.ascending("sequence"),
+                Sorts.ascending("createdAt")
+            ))
+            .limit(limit)
+            .into(new ArrayList<>());
     }
 
     @Override
     public long countByMessageGroupAndStatus(String messageGroup, DispatchStatus status) {
-        return count("messageGroup = ?1 and status = ?2", messageGroup, status);
+        return collection().countDocuments(and(eq("messageGroup", messageGroup), eq("status", status)));
     }
 
     @Override
@@ -282,12 +247,10 @@ class MongoDispatchJobRepository implements PanacheMongoRepositoryBase<DispatchJ
             return Set.of();
         }
 
-        org.bson.Document query = new org.bson.Document()
-            .append("status", DispatchStatus.ERROR.name())
-            .append("messageGroup", new org.bson.Document("$in", new ArrayList<>(messageGroups)));
-
-        List<String> errorGroups = mongoCollection()
-            .distinct("messageGroup", query, String.class)
+        List<String> errorGroups = documentCollection()
+            .distinct("messageGroup",
+                and(eq("status", DispatchStatus.ERROR.name()), in("messageGroup", messageGroups)),
+                String.class)
             .into(new ArrayList<>());
 
         return new HashSet<>(errorGroups);
@@ -299,69 +262,71 @@ class MongoDispatchJobRepository implements PanacheMongoRepositoryBase<DispatchJ
             return;
         }
 
-        update("status = ?1, updatedAt = ?2", status, Instant.now())
-            .where("id in ?1", ids);
+        collection().updateMany(
+            in("_id", ids),
+            combine(set("status", status), set("updatedAt", Instant.now()))
+        );
     }
 
     @Override
     public List<DispatchJob> findStaleQueued(Instant threshold) {
-        return list("status = ?1 and createdAt < ?2",
-            Sort.by("createdAt"),
-            DispatchStatus.QUEUED, threshold);
+        return collection().find(and(eq("status", DispatchStatus.QUEUED), lt("createdAt", threshold)))
+            .sort(Sorts.ascending("createdAt"))
+            .into(new ArrayList<>());
     }
 
     @Override
     public List<DispatchJob> findStaleQueued(Instant threshold, int limit) {
-        return find("status = ?1 and createdAt < ?2",
-            Sort.by("createdAt"),
-            DispatchStatus.QUEUED, threshold)
-            .page(0, limit)
-            .list();
+        return collection().find(and(eq("status", DispatchStatus.QUEUED), lt("createdAt", threshold)))
+            .sort(Sorts.ascending("createdAt"))
+            .limit(limit)
+            .into(new ArrayList<>());
     }
 
-    // Delegate to Panache methods via interface
     @Override
     public DispatchJob findById(String id) {
-        return PanacheMongoRepositoryBase.super.findById(id);
+        return collection().find(eq("_id", id)).first();
     }
 
     @Override
     public Optional<DispatchJob> findByIdOptional(String id) {
-        return PanacheMongoRepositoryBase.super.findByIdOptional(id);
+        return Optional.ofNullable(collection().find(eq("_id", id)).first());
     }
 
     @Override
     public List<DispatchJob> listAll() {
-        return PanacheMongoRepositoryBase.super.listAll();
+        return collection().find().into(new ArrayList<>());
     }
 
     @Override
     public long count() {
-        return PanacheMongoRepositoryBase.super.count();
+        return collection().countDocuments();
     }
 
     @Override
     public void persist(DispatchJob job) {
-        PanacheMongoRepositoryBase.super.persist(job);
+        collection().insertOne(job);
     }
 
     @Override
     public void persistAll(List<DispatchJob> jobs) {
-        PanacheMongoRepositoryBase.super.persist(jobs);
+        if (jobs != null && !jobs.isEmpty()) {
+            collection().insertMany(jobs);
+        }
     }
 
     @Override
     public void update(DispatchJob job) {
-        PanacheMongoRepositoryBase.super.update(job);
+        collection().replaceOne(eq("_id", job.id), job);
     }
 
     @Override
     public void delete(DispatchJob job) {
-        PanacheMongoRepositoryBase.super.delete(job);
+        collection().deleteOne(eq("_id", job.id));
     }
 
     @Override
     public boolean deleteById(String id) {
-        return PanacheMongoRepositoryBase.super.deleteById(id);
+        return collection().deleteOne(eq("_id", id)).getDeletedCount() > 0;
     }
 }

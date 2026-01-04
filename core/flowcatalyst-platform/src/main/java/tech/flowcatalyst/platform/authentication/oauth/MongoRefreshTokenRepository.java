@@ -1,13 +1,19 @@
 package tech.flowcatalyst.platform.authentication.oauth;
 
-import io.quarkus.mongodb.panache.PanacheMongoRepositoryBase;
+import com.mongodb.client.MongoClient;
+import com.mongodb.client.MongoCollection;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Typed;
-import tech.flowcatalyst.platform.shared.Instrumented;
+import jakarta.inject.Inject;
+import org.bson.Document;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+
+import static com.mongodb.client.model.Filters.*;
 
 /**
  * MongoDB implementation of RefreshTokenRepository.
@@ -15,18 +21,40 @@ import java.util.Optional;
  */
 @ApplicationScoped
 @Typed(RefreshTokenRepository.class)
-@Instrumented(collection = "refresh_tokens")
-class MongoRefreshTokenRepository implements PanacheMongoRepositoryBase<RefreshToken, String>, RefreshTokenRepository {
+class MongoRefreshTokenRepository implements RefreshTokenRepository {
+
+    @Inject
+    MongoClient mongoClient;
+
+    @ConfigProperty(name = "quarkus.mongodb.database")
+    String database;
+
+    private MongoCollection<RefreshToken> collection() {
+        return mongoClient.getDatabase(database).getCollection("refresh_tokens", RefreshToken.class);
+    }
 
     @Override
     public Optional<RefreshToken> findValidToken(String tokenHash) {
-        return find("tokenHash = ?1 and revoked = false and expiresAt > ?2",
-            tokenHash, Instant.now()).firstResultOptional();
+        return Optional.ofNullable(collection().find(and(
+            eq("tokenHash", tokenHash),
+            eq("revoked", false),
+            gt("expiresAt", Instant.now())
+        )).first());
     }
 
     @Override
     public Optional<RefreshToken> findByTokenHash(String tokenHash) {
-        return find("tokenHash", tokenHash).firstResultOptional();
+        return Optional.ofNullable(collection().find(eq("tokenHash", tokenHash)).first());
+    }
+
+    @Override
+    public void persist(RefreshToken token) {
+        collection().insertOne(token);
+    }
+
+    @Override
+    public void update(RefreshToken token) {
+        collection().replaceOne(eq("tokenHash", token.tokenHash), token);
     }
 
     @Override
@@ -42,91 +70,16 @@ class MongoRefreshTokenRepository implements PanacheMongoRepositoryBase<RefreshT
 
     @Override
     public void revokeTokenFamily(String tokenFamily) {
-        List<RefreshToken> tokens = list("tokenFamily = ?1 and revoked = false", tokenFamily);
+        List<RefreshToken> tokens = collection().find(and(
+            eq("tokenFamily", tokenFamily),
+            eq("revoked", false)
+        )).into(new ArrayList<>());
+
         Instant now = Instant.now();
         for (RefreshToken token : tokens) {
             token.revoked = true;
             token.revokedAt = now;
             update(token);
         }
-    }
-
-    @Override
-    public void revokeAllForPrincipal(String principalId) {
-        List<RefreshToken> tokens = list("principalId = ?1 and revoked = false", principalId);
-        Instant now = Instant.now();
-        for (RefreshToken token : tokens) {
-            token.revoked = true;
-            token.revokedAt = now;
-            update(token);
-        }
-    }
-
-    @Override
-    public void revokeAllForPrincipalAndClient(String principalId, String clientId) {
-        List<RefreshToken> tokens = list("principalId = ?1 and clientId = ?2 and revoked = false", principalId, clientId);
-        Instant now = Instant.now();
-        for (RefreshToken token : tokens) {
-            token.revoked = true;
-            token.revokedAt = now;
-            update(token);
-        }
-    }
-
-    @Override
-    public List<RefreshToken> findActiveByPrincipalId(String principalId) {
-        return find("principalId = ?1 and revoked = false and expiresAt > ?2",
-            principalId, Instant.now()).list();
-    }
-
-    @Override
-    public long deleteExpired() {
-        return delete("expiresAt < ?1", Instant.now());
-    }
-
-    @Override
-    public long deleteRevokedOlderThan(Instant cutoff) {
-        return delete("revoked = true and revokedAt < ?1", cutoff);
-    }
-
-    // Delegate to Panache methods via interface
-    @Override
-    public RefreshToken findById(String id) {
-        return PanacheMongoRepositoryBase.super.findById(id);
-    }
-
-    @Override
-    public Optional<RefreshToken> findByIdOptional(String id) {
-        return PanacheMongoRepositoryBase.super.findByIdOptional(id);
-    }
-
-    @Override
-    public List<RefreshToken> listAll() {
-        return PanacheMongoRepositoryBase.super.listAll();
-    }
-
-    @Override
-    public long count() {
-        return PanacheMongoRepositoryBase.super.count();
-    }
-
-    @Override
-    public void persist(RefreshToken token) {
-        PanacheMongoRepositoryBase.super.persist(token);
-    }
-
-    @Override
-    public void update(RefreshToken token) {
-        PanacheMongoRepositoryBase.super.update(token);
-    }
-
-    @Override
-    public void delete(RefreshToken token) {
-        PanacheMongoRepositoryBase.super.delete(token);
-    }
-
-    @Override
-    public boolean deleteById(String id) {
-        return PanacheMongoRepositoryBase.super.deleteById(id);
     }
 }

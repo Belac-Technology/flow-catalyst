@@ -1,13 +1,18 @@
 package tech.flowcatalyst.platform.application;
 
-import io.quarkus.mongodb.panache.PanacheMongoRepositoryBase;
+import com.mongodb.client.MongoClient;
+import com.mongodb.client.MongoCollection;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Typed;
-import tech.flowcatalyst.platform.shared.Instrumented;
+import jakarta.inject.Inject;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+
+import static com.mongodb.client.model.Filters.*;
 
 /**
  * MongoDB implementation of ApplicationRepository.
@@ -15,35 +20,42 @@ import java.util.Optional;
  */
 @ApplicationScoped
 @Typed(ApplicationRepository.class)
-@Instrumented(collection = "applications")
-class MongoApplicationRepository implements PanacheMongoRepositoryBase<Application, String>, ApplicationRepository {
+class MongoApplicationRepository implements ApplicationRepository {
+
+    @Inject
+    MongoClient mongoClient;
+
+    @ConfigProperty(name = "quarkus.mongodb.database")
+    String database;
+
+    private MongoCollection<Application> collection() {
+        return mongoClient.getDatabase(database).getCollection("applications", Application.class);
+    }
+
+    @Override
+    public Optional<Application> findByIdOptional(String id) {
+        return Optional.ofNullable(collection().find(eq("_id", id)).first());
+    }
 
     @Override
     public Optional<Application> findByCode(String code) {
-        return find("code", code).firstResultOptional();
+        return Optional.ofNullable(collection().find(eq("code", code)).first());
     }
 
     @Override
     public List<Application> findAllActive() {
-        return list("active", true);
-    }
-
-    @Override
-    public List<Application> findAllActiveApplications() {
-        return list("active = ?1 and type = ?2", true, Application.ApplicationType.APPLICATION);
-    }
-
-    @Override
-    public List<Application> findAllActiveIntegrations() {
-        return list("active = ?1 and type = ?2", true, Application.ApplicationType.INTEGRATION);
+        return collection().find(eq("active", true)).into(new ArrayList<>());
     }
 
     @Override
     public List<Application> findByType(Application.ApplicationType type, boolean activeOnly) {
         if (activeOnly) {
-            return list("type = ?1 and active = ?2", type, true);
+            return collection().find(and(
+                eq("type", type.name()),
+                eq("active", true)
+            )).into(new ArrayList<>());
         }
-        return list("type", type);
+        return collection().find(eq("type", type.name())).into(new ArrayList<>());
     }
 
     @Override
@@ -51,7 +63,10 @@ class MongoApplicationRepository implements PanacheMongoRepositoryBase<Applicati
         if (codes == null || codes.isEmpty()) {
             return List.of();
         }
-        return list("code in ?1 and active", codes, true);
+        return collection().find(and(
+            in("code", codes),
+            eq("active", true)
+        )).into(new ArrayList<>());
     }
 
     @Override
@@ -59,52 +74,31 @@ class MongoApplicationRepository implements PanacheMongoRepositoryBase<Applicati
         if (ids == null || ids.isEmpty()) {
             return List.of();
         }
-        return list("_id in ?1", ids);
-    }
-
-    @Override
-    public boolean existsByCode(String code) {
-        return count("code", code) > 0;
-    }
-
-    // Delegate to Panache methods via interface
-    @Override
-    public Application findById(String id) {
-        return PanacheMongoRepositoryBase.super.findById(id);
-    }
-
-    @Override
-    public Optional<Application> findByIdOptional(String id) {
-        return PanacheMongoRepositoryBase.super.findByIdOptional(id);
+        return collection().find(in("_id", ids)).into(new ArrayList<>());
     }
 
     @Override
     public List<Application> listAll() {
-        return PanacheMongoRepositoryBase.super.listAll();
+        return collection().find().into(new ArrayList<>());
     }
 
     @Override
-    public long count() {
-        return PanacheMongoRepositoryBase.super.count();
+    public boolean existsByCode(String code) {
+        return collection().countDocuments(eq("code", code)) > 0;
     }
 
     @Override
     public void persist(Application application) {
-        PanacheMongoRepositoryBase.super.persist(application);
+        collection().insertOne(application);
     }
 
     @Override
     public void update(Application application) {
-        PanacheMongoRepositoryBase.super.update(application);
+        collection().replaceOne(eq("_id", application.id), application);
     }
 
     @Override
     public void delete(Application application) {
-        PanacheMongoRepositoryBase.super.delete(application);
-    }
-
-    @Override
-    public boolean deleteById(String id) {
-        return PanacheMongoRepositoryBase.super.deleteById(id);
+        collection().deleteOne(eq("_id", application.id));
     }
 }

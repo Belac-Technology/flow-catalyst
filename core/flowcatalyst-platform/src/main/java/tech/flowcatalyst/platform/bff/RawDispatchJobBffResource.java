@@ -1,6 +1,5 @@
 package tech.flowcatalyst.platform.bff;
 
-import io.quarkus.panache.common.Sort;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.*;

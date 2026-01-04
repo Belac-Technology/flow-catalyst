@@ -1,14 +1,19 @@
 package tech.flowcatalyst.subscription;
 
-import io.quarkus.mongodb.panache.PanacheMongoRepositoryBase;
-import io.quarkus.panache.common.Sort;
+import com.mongodb.client.MongoClient;
+import com.mongodb.client.MongoCollection;
+import com.mongodb.client.model.Sorts;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Typed;
-import tech.flowcatalyst.platform.shared.Instrumented;
+import jakarta.inject.Inject;
+import org.bson.conversions.Bson;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+
+import static com.mongodb.client.model.Filters.*;
 
 /**
  * MongoDB implementation of SubscriptionRepository.
@@ -16,53 +21,82 @@ import java.util.Optional;
  */
 @ApplicationScoped
 @Typed(SubscriptionRepository.class)
-@Instrumented(collection = "subscriptions")
-class MongoSubscriptionRepository implements PanacheMongoRepositoryBase<Subscription, String>, SubscriptionRepository {
+class MongoSubscriptionRepository implements SubscriptionRepository {
+
+    @Inject
+    MongoClient mongoClient;
+
+    @ConfigProperty(name = "quarkus.mongodb.database")
+    String database;
+
+    private MongoCollection<Subscription> collection() {
+        return mongoClient.getDatabase(database).getCollection("subscriptions", Subscription.class);
+    }
+
+    @Override
+    public Subscription findById(String id) {
+        return collection().find(eq("_id", id)).first();
+    }
+
+    @Override
+    public Optional<Subscription> findByIdOptional(String id) {
+        return Optional.ofNullable(collection().find(eq("_id", id)).first());
+    }
 
     @Override
     public Optional<Subscription> findByCodeAndClient(String code, String clientId) {
-        if (clientId == null) {
-            return find("code = ?1 and clientId = null", code).firstResultOptional();
-        }
-        return find("code = ?1 and clientId = ?2", code, clientId).firstResultOptional();
+        Bson filter = clientId == null
+            ? and(eq("code", code), eq("clientId", null))
+            : and(eq("code", code), eq("clientId", clientId));
+        return Optional.ofNullable(collection().find(filter).first());
     }
 
     @Override
     public boolean existsByCodeAndClient(String code, String clientId) {
-        if (clientId == null) {
-            return count("code = ?1 and clientId = null", code) > 0;
-        }
-        return count("code = ?1 and clientId = ?2", code, clientId) > 0;
+        Bson filter = clientId == null
+            ? and(eq("code", code), eq("clientId", null))
+            : and(eq("code", code), eq("clientId", clientId));
+        return collection().countDocuments(filter) > 0;
     }
 
     @Override
     public List<Subscription> findByClientId(String clientId) {
-        return list("clientId", Sort.by("code"), clientId);
+        return collection().find(eq("clientId", clientId))
+            .sort(Sorts.ascending("code"))
+            .into(new ArrayList<>());
     }
 
     @Override
     public List<Subscription> findAnchorLevel() {
-        return list("clientId = null", Sort.by("code"));
+        return collection().find(eq("clientId", null))
+            .sort(Sorts.ascending("code"))
+            .into(new ArrayList<>());
     }
 
     @Override
     public List<Subscription> findByDispatchPoolId(String dispatchPoolId) {
-        return list("dispatchPoolId", Sort.by("code"), dispatchPoolId);
+        return collection().find(eq("dispatchPoolId", dispatchPoolId))
+            .sort(Sorts.ascending("code"))
+            .into(new ArrayList<>());
     }
 
     @Override
     public boolean existsByDispatchPoolId(String dispatchPoolId) {
-        return count("dispatchPoolId", dispatchPoolId) > 0;
+        return collection().countDocuments(eq("dispatchPoolId", dispatchPoolId)) > 0;
     }
 
     @Override
     public List<Subscription> findByEventTypeId(String eventTypeId) {
-        return list("eventTypes.eventTypeId", Sort.by("code"), eventTypeId);
+        return collection().find(eq("eventTypes.eventTypeId", eventTypeId))
+            .sort(Sorts.ascending("code"))
+            .into(new ArrayList<>());
     }
 
     @Override
     public List<Subscription> findByStatus(SubscriptionStatus status) {
-        return list("status", Sort.by("code"), status);
+        return collection().find(eq("status", status))
+            .sort(Sorts.ascending("code"))
+            .into(new ArrayList<>());
     }
 
     @Override
@@ -73,102 +107,98 @@ class MongoSubscriptionRepository implements PanacheMongoRepositoryBase<Subscrip
     @Override
     public List<Subscription> findWithFilters(String clientId, SubscriptionStatus status,
                                                SubscriptionSource source, String dispatchPoolId) {
-        StringBuilder query = new StringBuilder();
-        List<Object> params = new ArrayList<>();
-        int paramIndex = 1;
+        List<Bson> conditions = new ArrayList<>();
 
         if (clientId != null) {
-            query.append("clientId = ?").append(paramIndex++);
-            params.add(clientId);
+            conditions.add(eq("clientId", clientId));
         }
 
         if (status != null) {
-            if (!query.isEmpty()) query.append(" and ");
-            query.append("status = ?").append(paramIndex++);
-            params.add(status);
+            conditions.add(eq("status", status));
         }
 
         if (source != null) {
-            if (!query.isEmpty()) query.append(" and ");
-            query.append("source = ?").append(paramIndex++);
-            params.add(source);
+            conditions.add(eq("source", source));
         }
 
         if (dispatchPoolId != null) {
-            if (!query.isEmpty()) query.append(" and ");
-            query.append("dispatchPoolId = ?").append(paramIndex++);
-            params.add(dispatchPoolId);
+            conditions.add(eq("dispatchPoolId", dispatchPoolId));
         }
 
-        if (query.isEmpty()) {
-            return listAll(Sort.by("code"));
-        }
+        Bson filter = conditions.isEmpty() ? new org.bson.Document() : and(conditions);
 
-        return list(query.toString(), Sort.by("code"), params.toArray());
+        return collection().find(filter)
+            .sort(Sorts.ascending("code"))
+            .into(new ArrayList<>());
     }
 
     @Override
     public List<Subscription> findActiveByEventTypeAndClient(String eventTypeId, String clientId) {
-        if (clientId == null) {
-            return list("eventTypes.eventTypeId = ?1 and clientId = null and status = ?2",
-                Sort.by("sequence").and("code"),
-                eventTypeId, SubscriptionStatus.ACTIVE);
-        }
-        return list("eventTypes.eventTypeId = ?1 and (clientId = ?2 or clientId = null) and status = ?3",
-            Sort.by("sequence").and("code"),
-            eventTypeId, clientId, SubscriptionStatus.ACTIVE);
+        Bson filter = clientId == null
+            ? and(
+                eq("eventTypes.eventTypeId", eventTypeId),
+                eq("clientId", null),
+                eq("status", SubscriptionStatus.ACTIVE)
+            )
+            : and(
+                eq("eventTypes.eventTypeId", eventTypeId),
+                or(eq("clientId", clientId), eq("clientId", null)),
+                eq("status", SubscriptionStatus.ACTIVE)
+            );
+
+        return collection().find(filter)
+            .sort(Sorts.orderBy(Sorts.ascending("sequence"), Sorts.ascending("code")))
+            .into(new ArrayList<>());
     }
 
     @Override
     public List<Subscription> findActiveByEventTypeCodeAndClient(String eventTypeCode, String clientId) {
-        if (clientId == null) {
-            return list("eventTypes.eventTypeCode = ?1 and clientId = null and status = ?2",
-                Sort.by("sequence").and("code"),
-                eventTypeCode, SubscriptionStatus.ACTIVE);
-        }
-        return list("eventTypes.eventTypeCode = ?1 and (clientId = ?2 or clientId = null) and status = ?3",
-            Sort.by("sequence").and("code"),
-            eventTypeCode, clientId, SubscriptionStatus.ACTIVE);
-    }
+        Bson filter = clientId == null
+            ? and(
+                eq("eventTypes.eventTypeCode", eventTypeCode),
+                eq("clientId", null),
+                eq("status", SubscriptionStatus.ACTIVE)
+            )
+            : and(
+                eq("eventTypes.eventTypeCode", eventTypeCode),
+                or(eq("clientId", clientId), eq("clientId", null)),
+                eq("status", SubscriptionStatus.ACTIVE)
+            );
 
-    // Delegate to Panache methods via interface
-    @Override
-    public Subscription findById(String id) {
-        return PanacheMongoRepositoryBase.super.findById(id);
-    }
-
-    @Override
-    public Optional<Subscription> findByIdOptional(String id) {
-        return PanacheMongoRepositoryBase.super.findByIdOptional(id);
+        return collection().find(filter)
+            .sort(Sorts.orderBy(Sorts.ascending("sequence"), Sorts.ascending("code")))
+            .into(new ArrayList<>());
     }
 
     @Override
     public List<Subscription> listAll() {
-        return PanacheMongoRepositoryBase.super.listAll();
+        return collection().find()
+            .sort(Sorts.ascending("code"))
+            .into(new ArrayList<>());
     }
 
     @Override
     public long count() {
-        return PanacheMongoRepositoryBase.super.count();
+        return collection().countDocuments();
     }
 
     @Override
     public void persist(Subscription subscription) {
-        PanacheMongoRepositoryBase.super.persist(subscription);
+        collection().insertOne(subscription);
     }
 
     @Override
     public void update(Subscription subscription) {
-        PanacheMongoRepositoryBase.super.update(subscription);
+        collection().replaceOne(eq("_id", subscription.id()), subscription);
     }
 
     @Override
     public void delete(Subscription subscription) {
-        PanacheMongoRepositoryBase.super.delete(subscription);
+        collection().deleteOne(eq("_id", subscription.id()));
     }
 
     @Override
     public boolean deleteById(String id) {
-        return PanacheMongoRepositoryBase.super.deleteById(id);
+        return collection().deleteOne(eq("_id", id)).getDeletedCount() > 0;
     }
 }

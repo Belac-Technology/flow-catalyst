@@ -1,7 +1,5 @@
 package tech.flowcatalyst.platform.principal;
 
-import io.quarkus.mongodb.panache.common.MongoEntity;
-import io.quarkus.mongodb.panache.PanacheMongoEntityBase;
 import org.bson.codecs.pojo.annotations.BsonId;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -13,8 +11,7 @@ import java.util.stream.Collectors;
  * Unified identity model for both users and service accounts.
  * Follows the architecture documented in docs/auth-architecture.md
  */
-@MongoEntity(collection = "principals")
-public class Principal extends PanacheMongoEntityBase {
+public class Principal {
 
     @BsonId
     public String id;

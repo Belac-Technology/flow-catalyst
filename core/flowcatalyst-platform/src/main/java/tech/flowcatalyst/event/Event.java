@@ -1,7 +1,7 @@
 package tech.flowcatalyst.event;
 
-import io.quarkus.mongodb.panache.common.MongoEntity;
-import io.quarkus.mongodb.panache.PanacheMongoEntityBase;
+
+
 import org.bson.codecs.pojo.annotations.BsonId;
 import java.time.Instant;
 import java.util.List;
@@ -15,8 +15,8 @@ import java.util.List;
  *
  * CloudEvents spec: https://cloudevents.io/
  */
-@MongoEntity(collection = "events")
-public class Event extends PanacheMongoEntityBase {
+
+public class Event {
 
     /**
      * CloudEvents spec version we're implementing.

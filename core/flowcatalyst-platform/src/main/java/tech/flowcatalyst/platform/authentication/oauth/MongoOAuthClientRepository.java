@@ -1,12 +1,18 @@
 package tech.flowcatalyst.platform.authentication.oauth;
 
-import io.quarkus.mongodb.panache.PanacheMongoRepositoryBase;
+import com.mongodb.client.MongoClient;
+import com.mongodb.client.MongoCollection;
+import com.mongodb.client.result.DeleteResult;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Typed;
-import tech.flowcatalyst.platform.shared.Instrumented;
+import jakarta.inject.Inject;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+
+import static com.mongodb.client.model.Filters.*;
 
 /**
  * MongoDB implementation of OAuthClientRepository.
@@ -14,87 +20,74 @@ import java.util.Optional;
  */
 @ApplicationScoped
 @Typed(OAuthClientRepository.class)
-@Instrumented(collection = "oauth_clients")
-class MongoOAuthClientRepository implements PanacheMongoRepositoryBase<OAuthClient, String>, OAuthClientRepository {
+class MongoOAuthClientRepository implements OAuthClientRepository {
 
-    @Override
-    public Optional<OAuthClient> findByClientId(String clientId) {
-        return find("clientId = ?1 and active = true", clientId).firstResultOptional();
-    }
+    @Inject
+    MongoClient mongoClient;
 
-    @Override
-    public Optional<OAuthClient> findByClientIdIncludingInactive(String clientId) {
-        return find("clientId", clientId).firstResultOptional();
-    }
+    @ConfigProperty(name = "quarkus.mongodb.database")
+    String database;
 
-    @Override
-    public List<OAuthClient> findByTenantId(Long tenantId) {
-        return find("tenantId = ?1 and active = true", tenantId).list();
-    }
-
-    @Override
-    public List<OAuthClient> findAllActive() {
-        return find("active", true).list();
-    }
-
-    @Override
-    public List<OAuthClient> findByApplicationIdAndActive(String applicationId, boolean active) {
-        return find("?1 in applicationIds AND active = ?2", applicationId, active).list();
-    }
-
-    @Override
-    public List<OAuthClient> findByApplicationId(String applicationId) {
-        return find("?1 in applicationIds", applicationId).list();
-    }
-
-    @Override
-    public List<OAuthClient> findByActive(boolean active) {
-        return find("active", active).list();
-    }
-
-    // Delegate to Panache methods via interface
-    @Override
-    public OAuthClient findById(String id) {
-        return PanacheMongoRepositoryBase.super.findById(id);
+    private MongoCollection<OAuthClient> collection() {
+        return mongoClient.getDatabase(database).getCollection("oauth_clients", OAuthClient.class);
     }
 
     @Override
     public Optional<OAuthClient> findByIdOptional(String id) {
-        return PanacheMongoRepositoryBase.super.findByIdOptional(id);
+        return Optional.ofNullable(collection().find(eq("_id", id)).first());
+    }
+
+    @Override
+    public Optional<OAuthClient> findByClientId(String clientId) {
+        return Optional.ofNullable(collection().find(and(eq("clientId", clientId), eq("active", true))).first());
+    }
+
+    @Override
+    public Optional<OAuthClient> findByClientIdIncludingInactive(String clientId) {
+        return Optional.ofNullable(collection().find(eq("clientId", clientId)).first());
+    }
+
+    @Override
+    public List<OAuthClient> findByApplicationIdAndActive(String applicationId, boolean active) {
+        return collection().find(and(in("applicationIds", applicationId), eq("active", active)))
+            .into(new ArrayList<>());
+    }
+
+    @Override
+    public List<OAuthClient> findByApplicationId(String applicationId) {
+        return collection().find(in("applicationIds", applicationId))
+            .into(new ArrayList<>());
+    }
+
+    @Override
+    public List<OAuthClient> findByActive(boolean active) {
+        return collection().find(eq("active", active))
+            .into(new ArrayList<>());
     }
 
     @Override
     public List<OAuthClient> listAll() {
-        return PanacheMongoRepositoryBase.super.listAll();
-    }
-
-    @Override
-    public long count() {
-        return PanacheMongoRepositoryBase.super.count();
+        return collection().find().into(new ArrayList<>());
     }
 
     @Override
     public void persist(OAuthClient client) {
-        PanacheMongoRepositoryBase.super.persist(client);
+        collection().insertOne(client);
     }
 
     @Override
     public void update(OAuthClient client) {
-        PanacheMongoRepositoryBase.super.update(client);
+        collection().replaceOne(eq("_id", client.id), client);
     }
 
     @Override
     public void delete(OAuthClient client) {
-        PanacheMongoRepositoryBase.super.delete(client);
-    }
-
-    @Override
-    public boolean deleteById(String id) {
-        return PanacheMongoRepositoryBase.super.deleteById(id);
+        collection().deleteOne(eq("_id", client.id));
     }
 
     @Override
     public long deleteByServiceAccountPrincipalId(String principalId) {
-        return delete("serviceAccountPrincipalId", principalId);
+        DeleteResult result = collection().deleteMany(eq("serviceAccountPrincipalId", principalId));
+        return result.getDeletedCount();
     }
 }

@@ -1,7 +1,5 @@
 package tech.flowcatalyst.platform.application;
 
-import io.quarkus.mongodb.panache.common.MongoEntity;
-import io.quarkus.mongodb.panache.PanacheMongoEntityBase;
 import org.bson.codecs.pojo.annotations.BsonId;
 import java.time.Instant;
 import java.util.Map;
@@ -14,8 +12,7 @@ import java.util.Map;
  * - Enabled/disabled status per application
  * - Custom configuration settings
  */
-@MongoEntity(collection = "application_client_config")
-public class ApplicationClientConfig extends PanacheMongoEntityBase {
+public class ApplicationClientConfig {
 
     @BsonId
     public String id;

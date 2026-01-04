@@ -1,7 +1,7 @@
 package tech.flowcatalyst.serviceaccount.entity;
 
-import io.quarkus.mongodb.panache.PanacheMongoEntityBase;
-import io.quarkus.mongodb.panache.common.MongoEntity;
+
+
 import org.bson.codecs.pojo.annotations.BsonId;
 import tech.flowcatalyst.platform.principal.Principal;
 
@@ -27,8 +27,8 @@ import java.util.stream.Collectors;
  *   <li>Signing outbound webhooks (HMAC-SHA256)</li>
  * </ul>
  */
-@MongoEntity(collection = "service_accounts")
-public class ServiceAccount extends PanacheMongoEntityBase {
+
+public class ServiceAccount {
 
     @BsonId
     public String id;

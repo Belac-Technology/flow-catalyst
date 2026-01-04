@@ -1,12 +1,17 @@
 package tech.flowcatalyst.platform.authorization;
 
-import io.quarkus.mongodb.panache.PanacheMongoRepositoryBase;
+import com.mongodb.client.MongoClient;
+import com.mongodb.client.MongoCollection;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Typed;
-import tech.flowcatalyst.platform.shared.Instrumented;
+import jakarta.inject.Inject;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+
+import static com.mongodb.client.model.Filters.*;
 
 /**
  * MongoDB implementation of AuthRoleRepository.
@@ -14,87 +19,55 @@ import java.util.Optional;
  */
 @ApplicationScoped
 @Typed(AuthRoleRepository.class)
-@Instrumented(collection = "auth_roles")
-class MongoAuthRoleRepository implements PanacheMongoRepositoryBase<AuthRole, String>, AuthRoleRepository {
+class MongoAuthRoleRepository implements AuthRoleRepository {
 
-    @Override
-    public Optional<AuthRole> findByName(String name) {
-        return find("name", name).firstResultOptional();
+    @Inject
+    MongoClient mongoClient;
+
+    @ConfigProperty(name = "quarkus.mongodb.database")
+    String database;
+
+    private MongoCollection<AuthRole> collection() {
+        return mongoClient.getDatabase(database).getCollection("roles", AuthRole.class);
     }
 
     @Override
-    public List<AuthRole> findByApplicationId(String applicationId) {
-        return find("applicationId", applicationId).list();
+    public Optional<AuthRole> findByName(String name) {
+        return Optional.ofNullable(collection().find(eq("name", name)).first());
     }
 
     @Override
     public List<AuthRole> findByApplicationCode(String applicationCode) {
-        return find("applicationCode", applicationCode).list();
+        return collection().find(eq("applicationCode", applicationCode)).into(new ArrayList<>());
     }
 
     @Override
     public List<AuthRole> findBySource(AuthRole.RoleSource source) {
-        return find("source", source).list();
-    }
-
-    @Override
-    public List<AuthRole> findClientManagedRoles() {
-        return find("clientManaged", true).list();
-    }
-
-    @Override
-    public boolean existsByName(String name) {
-        return count("name", name) > 0;
-    }
-
-    @Override
-    public long deleteByName(String name) {
-        return delete("name", name);
-    }
-
-    @Override
-    public long deleteByApplicationIdAndSource(String applicationId, AuthRole.RoleSource source) {
-        return delete("applicationId = ?1 and source = ?2", applicationId, source);
-    }
-
-    // Delegate to Panache methods via interface
-    @Override
-    public AuthRole findById(String id) {
-        return PanacheMongoRepositoryBase.super.findById(id);
-    }
-
-    @Override
-    public Optional<AuthRole> findByIdOptional(String id) {
-        return PanacheMongoRepositoryBase.super.findByIdOptional(id);
+        return collection().find(eq("source", source.name())).into(new ArrayList<>());
     }
 
     @Override
     public List<AuthRole> listAll() {
-        return PanacheMongoRepositoryBase.super.listAll();
+        return collection().find().into(new ArrayList<>());
     }
 
     @Override
-    public long count() {
-        return PanacheMongoRepositoryBase.super.count();
+    public boolean existsByName(String name) {
+        return collection().countDocuments(eq("name", name)) > 0;
     }
 
     @Override
     public void persist(AuthRole role) {
-        PanacheMongoRepositoryBase.super.persist(role);
+        collection().insertOne(role);
     }
 
     @Override
     public void update(AuthRole role) {
-        PanacheMongoRepositoryBase.super.update(role);
+        collection().replaceOne(eq("_id", role.id), role);
     }
 
     @Override
     public void delete(AuthRole role) {
-        PanacheMongoRepositoryBase.super.delete(role);
-    }
-
-    @Override
-    public boolean deleteById(String id) {
-        return PanacheMongoRepositoryBase.super.deleteById(id);
+        collection().deleteOne(eq("_id", role.id));
     }
 }

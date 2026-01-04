@@ -1,12 +1,17 @@
 package tech.flowcatalyst.platform.principal;
 
-import io.quarkus.mongodb.panache.PanacheMongoRepositoryBase;
+import com.mongodb.client.MongoClient;
+import com.mongodb.client.MongoCollection;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Typed;
-import tech.flowcatalyst.platform.shared.Instrumented;
+import jakarta.inject.Inject;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+
+import static com.mongodb.client.model.Filters.*;
 
 /**
  * MongoDB implementation of AnchorDomainRepository.
@@ -14,62 +19,40 @@ import java.util.Optional;
  */
 @ApplicationScoped
 @Typed(AnchorDomainRepository.class)
-@Instrumented(collection = "anchor_domains")
-class MongoAnchorDomainRepository implements PanacheMongoRepositoryBase<AnchorDomain, String>, AnchorDomainRepository {
+class MongoAnchorDomainRepository implements AnchorDomainRepository {
 
-    @Override
-    public Optional<AnchorDomain> findByDomain(String domain) {
-        return find("domain", domain).firstResultOptional();
-    }
+    @Inject
+    MongoClient mongoClient;
 
-    @Override
-    public boolean existsByDomain(String domain) {
-        return find("domain", domain).count() > 0;
-    }
+    @ConfigProperty(name = "quarkus.mongodb.database")
+    String database;
 
-    @Override
-    public boolean isAnchorDomain(String domain) {
-        return existsByDomain(domain);
-    }
-
-    // Delegate to Panache methods via interface
-    @Override
-    public AnchorDomain findById(String id) {
-        return PanacheMongoRepositoryBase.super.findById(id);
+    private MongoCollection<AnchorDomain> collection() {
+        return mongoClient.getDatabase(database).getCollection("anchor_domains", AnchorDomain.class);
     }
 
     @Override
     public Optional<AnchorDomain> findByIdOptional(String id) {
-        return PanacheMongoRepositoryBase.super.findByIdOptional(id);
+        return Optional.ofNullable(collection().find(eq("_id", id)).first());
     }
 
     @Override
     public List<AnchorDomain> listAll() {
-        return PanacheMongoRepositoryBase.super.listAll();
+        return collection().find().into(new ArrayList<>());
     }
 
     @Override
-    public long count() {
-        return PanacheMongoRepositoryBase.super.count();
+    public boolean existsByDomain(String domain) {
+        return collection().countDocuments(eq("domain", domain)) > 0;
     }
 
     @Override
     public void persist(AnchorDomain domain) {
-        PanacheMongoRepositoryBase.super.persist(domain);
-    }
-
-    @Override
-    public void update(AnchorDomain domain) {
-        PanacheMongoRepositoryBase.super.update(domain);
+        collection().insertOne(domain);
     }
 
     @Override
     public void delete(AnchorDomain domain) {
-        PanacheMongoRepositoryBase.super.delete(domain);
-    }
-
-    @Override
-    public boolean deleteById(String id) {
-        return PanacheMongoRepositoryBase.super.deleteById(id);
+        collection().deleteOne(eq("_id", domain.id));
     }
 }

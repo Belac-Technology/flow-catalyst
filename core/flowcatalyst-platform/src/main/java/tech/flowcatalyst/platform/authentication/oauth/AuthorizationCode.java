@@ -1,7 +1,7 @@
 package tech.flowcatalyst.platform.authentication.oauth;
 
-import io.quarkus.mongodb.panache.common.MongoEntity;
-import io.quarkus.mongodb.panache.PanacheMongoEntityBase;
+
+
 import org.bson.codecs.pojo.annotations.BsonId;
 import java.time.Instant;
 
@@ -13,8 +13,8 @@ import java.time.Instant;
  * - Single-use (marked as used after exchange)
  * - Bound to client, redirect URI, and PKCE challenge
  */
-@MongoEntity(collection = "authorization_codes")
-public class AuthorizationCode extends PanacheMongoEntityBase {
+
+public class AuthorizationCode {
 
     /**
      * The authorization code value (64 char random string).

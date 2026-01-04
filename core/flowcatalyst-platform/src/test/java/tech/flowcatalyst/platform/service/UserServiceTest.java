@@ -730,11 +730,4 @@ class UserServiceTest {
         int atIndex = email.indexOf('@');
         return email.substring(atIndex + 1).toLowerCase();
     }
-
-    @SuppressWarnings("unchecked")
-    private <T> io.quarkus.mongodb.panache.PanacheQuery<T> mockPanacheQuery(List<T> results) {
-        io.quarkus.mongodb.panache.PanacheQuery<T> mockQuery = mock(io.quarkus.mongodb.panache.PanacheQuery.class);
-        when(mockQuery.list()).thenReturn(results);
-        return mockQuery;
-    }
 }

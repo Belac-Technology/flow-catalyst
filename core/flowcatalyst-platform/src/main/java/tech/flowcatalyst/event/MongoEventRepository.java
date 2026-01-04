@@ -1,12 +1,18 @@
 package tech.flowcatalyst.event;
 
-import io.quarkus.mongodb.panache.PanacheMongoRepositoryBase;
+import com.mongodb.client.MongoClient;
+import com.mongodb.client.MongoCollection;
+import com.mongodb.client.model.Sorts;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Typed;
-import tech.flowcatalyst.platform.shared.Instrumented;
+import jakarta.inject.Inject;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+
+import static com.mongodb.client.model.Filters.eq;
 
 /**
  * MongoDB implementation of EventRepository.
@@ -16,12 +22,26 @@ import java.util.Optional;
  */
 @ApplicationScoped
 @Typed(EventRepository.class)
-@Instrumented(collection = "events")
-class MongoEventRepository implements PanacheMongoRepositoryBase<Event, String>, EventRepository {
+class MongoEventRepository implements EventRepository {
+
+    @Inject
+    MongoClient mongoClient;
+
+    @ConfigProperty(name = "quarkus.mongodb.database")
+    String database;
+
+    private MongoCollection<Event> collection() {
+        return mongoClient.getDatabase(database).getCollection("events", Event.class);
+    }
+
+    @Override
+    public Event findById(String id) {
+        return collection().find(eq("_id", id)).first();
+    }
 
     @Override
     public Optional<Event> findByIdOptional(String id) {
-        return Optional.ofNullable(findById(id));
+        return Optional.ofNullable(collection().find(eq("_id", id)).first());
     }
 
     @Override
@@ -29,7 +49,7 @@ class MongoEventRepository implements PanacheMongoRepositoryBase<Event, String>,
         if (deduplicationId == null) {
             return Optional.empty();
         }
-        return find("deduplicationId", deduplicationId).firstResultOptional();
+        return Optional.ofNullable(collection().find(eq("deduplicationId", deduplicationId)).first());
     }
 
     @Override
@@ -37,59 +57,57 @@ class MongoEventRepository implements PanacheMongoRepositoryBase<Event, String>,
         if (deduplicationId == null) {
             return false;
         }
-        return count("deduplicationId", deduplicationId) > 0;
+        return collection().countDocuments(eq("deduplicationId", deduplicationId)) > 0;
     }
 
     @Override
     public void insert(Event event) {
-        persist(event);
+        collection().insertOne(event);
     }
 
     @Override
     public List<Event> findRecentPaged(int page, int size) {
-        return findAll(io.quarkus.panache.common.Sort.by("time").descending())
-            .page(page, size)
-            .list();
-    }
-
-    // Delegate to Panache methods via interface
-    @Override
-    public Event findById(String id) {
-        return PanacheMongoRepositoryBase.super.findById(id);
+        return collection().find()
+            .sort(Sorts.descending("time"))
+            .skip(page * size)
+            .limit(size)
+            .into(new ArrayList<>());
     }
 
     @Override
     public List<Event> listAll() {
-        return PanacheMongoRepositoryBase.super.listAll();
+        return collection().find().into(new ArrayList<>());
     }
 
     @Override
     public long count() {
-        return PanacheMongoRepositoryBase.super.count();
+        return collection().countDocuments();
     }
 
     @Override
     public void persist(Event event) {
-        PanacheMongoRepositoryBase.super.persist(event);
+        collection().insertOne(event);
     }
 
     @Override
     public void persistAll(List<Event> events) {
-        PanacheMongoRepositoryBase.super.persist(events);
+        if (events != null && !events.isEmpty()) {
+            collection().insertMany(events);
+        }
     }
 
     @Override
     public void update(Event event) {
-        PanacheMongoRepositoryBase.super.update(event);
+        collection().replaceOne(eq("_id", event.id), event);
     }
 
     @Override
     public void delete(Event event) {
-        PanacheMongoRepositoryBase.super.delete(event);
+        collection().deleteOne(eq("_id", event.id));
     }
 
     @Override
     public boolean deleteById(String id) {
-        return PanacheMongoRepositoryBase.super.deleteById(id);
+        return collection().deleteOne(eq("_id", id)).getDeletedCount() > 0;
     }
 }

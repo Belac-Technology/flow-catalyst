@@ -1,6 +1,5 @@
 package tech.flowcatalyst.schema;
 
-import io.quarkus.mongodb.panache.common.MongoEntity;
 import lombok.Builder;
 import lombok.With;
 import org.bson.codecs.pojo.annotations.BsonId;
@@ -22,7 +21,6 @@ import java.time.Instant;
  *
  * <p>Use {@link #create(SchemaType, String)} for safe construction with defaults.
  */
-@MongoEntity(collection = "schemas")
 @Builder(toBuilder = true)
 @With
 public record Schema(

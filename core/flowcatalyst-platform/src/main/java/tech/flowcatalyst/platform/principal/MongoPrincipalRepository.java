@@ -1,13 +1,18 @@
 package tech.flowcatalyst.platform.principal;
 
-import io.quarkus.mongodb.panache.PanacheMongoRepositoryBase;
+import com.mongodb.client.MongoClient;
+import com.mongodb.client.MongoCollection;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Typed;
-import tech.flowcatalyst.platform.shared.Instrumented;
+import jakarta.inject.Inject;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+
+import static com.mongodb.client.model.Filters.*;
 
 /**
  * MongoDB implementation of PrincipalRepository.
@@ -15,117 +20,130 @@ import java.util.Optional;
  */
 @ApplicationScoped
 @Typed(PrincipalRepository.class)
-@Instrumented(collection = "principals")
-class MongoPrincipalRepository implements PanacheMongoRepositoryBase<Principal, String>, PrincipalRepository {
+class MongoPrincipalRepository implements PrincipalRepository {
 
-    @Override
-    public Optional<Principal> findByEmail(String email) {
-        return find("userIdentity.email", email).firstResultOptional();
+    @Inject
+    MongoClient mongoClient;
+
+    @ConfigProperty(name = "quarkus.mongodb.database")
+    String database;
+
+    private MongoCollection<Principal> collection() {
+        return mongoClient.getDatabase(database).getCollection("principals", Principal.class);
     }
 
-    @Override
-    public Optional<Principal> findByServiceAccountClientId(String clientId) {
-        return find("serviceAccount.clientId", clientId).firstResultOptional();
-    }
-
-    @Override
-    public Optional<Principal> findByExternalIdpId(String externalIdpId) {
-        return find("userIdentity.externalIdpId", externalIdpId).firstResultOptional();
-    }
-
-    @Override
-    public Optional<Principal> findByServiceAccountCode(String code) {
-        return find("serviceAccount.code", code).firstResultOptional();
-    }
-
-    @Override
-    public List<Principal> findByType(PrincipalType type) {
-        return find("type", type).list();
-    }
-
-    @Override
-    public List<Principal> findByClientId(String clientId) {
-        return find("clientId", clientId).list();
-    }
-
-    @Override
-    public List<Principal> findByIds(Collection<String> ids) {
-        return find("id in ?1", ids).list();
-    }
-
-    @Override
-    public List<Principal> findByClientIdAndType(String clientId, PrincipalType type) {
-        return find("clientId = ?1 AND type = ?2", clientId, type).list();
-    }
-
-    @Override
-    public List<Principal> findByClientIdAndTypeAndActive(String clientId, PrincipalType type, boolean active) {
-        return find("clientId = ?1 AND type = ?2 AND active = ?3", clientId, type, active).list();
-    }
-
-    @Override
-    public List<Principal> findByClientIdAndActive(String clientId, boolean active) {
-        return find("clientId = ?1 AND active = ?2", clientId, active).list();
-    }
-
-    @Override
-    public List<Principal> findByActive(boolean active) {
-        return find("active", active).list();
-    }
-
-    @Override
-    public List<Principal> findUsersByClientId(String clientId) {
-        return find("clientId = ?1 AND type = ?2", clientId, PrincipalType.USER).list();
-    }
-
-    @Override
-    public List<Principal> findActiveUsersByClientId(String clientId) {
-        return find("clientId = ?1 AND type = ?2 AND active = true", clientId, PrincipalType.USER).list();
-    }
-
-    @Override
-    public long countByEmailDomain(String emailDomain) {
-        return count("userIdentity.emailDomain", emailDomain);
-    }
-
-    // Delegate to Panache methods via interface
     @Override
     public Principal findById(String id) {
-        return PanacheMongoRepositoryBase.super.findById(id);
+        return collection().find(eq("_id", id)).first();
     }
 
     @Override
     public Optional<Principal> findByIdOptional(String id) {
-        return PanacheMongoRepositoryBase.super.findByIdOptional(id);
+        return Optional.ofNullable(collection().find(eq("_id", id)).first());
+    }
+
+    @Override
+    public Optional<Principal> findByEmail(String email) {
+        return Optional.ofNullable(collection().find(eq("userIdentity.email", email)).first());
+    }
+
+    @Override
+    public Optional<Principal> findByServiceAccountCode(String code) {
+        return Optional.ofNullable(collection().find(eq("serviceAccount.code", code)).first());
+    }
+
+    @Override
+    public List<Principal> findByType(PrincipalType type) {
+        return collection().find(eq("type", type.name())).into(new ArrayList<>());
+    }
+
+    @Override
+    public List<Principal> findByClientId(String clientId) {
+        return collection().find(eq("clientId", clientId)).into(new ArrayList<>());
+    }
+
+    @Override
+    public List<Principal> findByIds(Collection<String> ids) {
+        return collection().find(in("_id", ids)).into(new ArrayList<>());
+    }
+
+    @Override
+    public List<Principal> findUsersByClientId(String clientId) {
+        return collection().find(and(
+            eq("clientId", clientId),
+            eq("type", PrincipalType.USER.name())
+        )).into(new ArrayList<>());
+    }
+
+    @Override
+    public List<Principal> findActiveUsersByClientId(String clientId) {
+        return collection().find(and(
+            eq("clientId", clientId),
+            eq("type", PrincipalType.USER.name()),
+            eq("active", true)
+        )).into(new ArrayList<>());
+    }
+
+    @Override
+    public List<Principal> findByClientIdAndTypeAndActive(String clientId, PrincipalType type, Boolean active) {
+        return collection().find(and(
+            eq("clientId", clientId),
+            eq("type", type.name()),
+            eq("active", active)
+        )).into(new ArrayList<>());
+    }
+
+    @Override
+    public List<Principal> findByClientIdAndType(String clientId, PrincipalType type) {
+        return collection().find(and(
+            eq("clientId", clientId),
+            eq("type", type.name())
+        )).into(new ArrayList<>());
+    }
+
+    @Override
+    public List<Principal> findByClientIdAndActive(String clientId, Boolean active) {
+        return collection().find(and(
+            eq("clientId", clientId),
+            eq("active", active)
+        )).into(new ArrayList<>());
+    }
+
+    @Override
+    public List<Principal> findByActive(Boolean active) {
+        return collection().find(eq("active", active)).into(new ArrayList<>());
     }
 
     @Override
     public List<Principal> listAll() {
-        return PanacheMongoRepositoryBase.super.listAll();
+        return collection().find().into(new ArrayList<>());
     }
 
     @Override
-    public long count() {
-        return PanacheMongoRepositoryBase.super.count();
+    public Optional<Principal> findByServiceAccountClientId(String clientId) {
+        return Optional.ofNullable(collection().find(and(
+            eq("type", PrincipalType.SERVICE.name()),
+            eq("serviceAccount.clientId", clientId)
+        )).first());
+    }
+
+    @Override
+    public long countByEmailDomain(String domain) {
+        return collection().countDocuments(regex("userIdentity.email", ".*@" + domain + "$", "i"));
     }
 
     @Override
     public void persist(Principal principal) {
-        PanacheMongoRepositoryBase.super.persist(principal);
+        collection().insertOne(principal);
     }
 
     @Override
     public void update(Principal principal) {
-        PanacheMongoRepositoryBase.super.update(principal);
-    }
-
-    @Override
-    public void delete(Principal principal) {
-        PanacheMongoRepositoryBase.super.delete(principal);
+        collection().replaceOne(eq("_id", principal.id), principal);
     }
 
     @Override
     public boolean deleteById(String id) {
-        return PanacheMongoRepositoryBase.super.deleteById(id);
+        return collection().deleteOne(eq("_id", id)).getDeletedCount() > 0;
     }
 }

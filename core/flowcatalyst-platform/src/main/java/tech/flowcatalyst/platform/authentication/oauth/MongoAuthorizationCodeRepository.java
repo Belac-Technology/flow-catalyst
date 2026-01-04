@@ -1,13 +1,17 @@
 package tech.flowcatalyst.platform.authentication.oauth;
 
-import io.quarkus.mongodb.panache.PanacheMongoRepositoryBase;
+import com.mongodb.client.MongoClient;
+import com.mongodb.client.MongoCollection;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Typed;
-import tech.flowcatalyst.platform.shared.Instrumented;
+import jakarta.inject.Inject;
+import org.bson.Document;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import java.time.Instant;
-import java.util.List;
 import java.util.Optional;
+
+import static com.mongodb.client.model.Filters.*;
 
 /**
  * MongoDB implementation of AuthorizationCodeRepository.
@@ -15,68 +19,37 @@ import java.util.Optional;
  */
 @ApplicationScoped
 @Typed(AuthorizationCodeRepository.class)
-@Instrumented(collection = "authorization_codes")
-class MongoAuthorizationCodeRepository implements PanacheMongoRepositoryBase<AuthorizationCode, String>, AuthorizationCodeRepository {
+class MongoAuthorizationCodeRepository implements AuthorizationCodeRepository {
+
+    @Inject
+    MongoClient mongoClient;
+
+    @ConfigProperty(name = "quarkus.mongodb.database")
+    String database;
+
+    private MongoCollection<AuthorizationCode> collection() {
+        return mongoClient.getDatabase(database).getCollection("authorization_codes", AuthorizationCode.class);
+    }
 
     @Override
     public Optional<AuthorizationCode> findValidCode(String code) {
-        return find("code = ?1 and used = false and expiresAt > ?2", code, Instant.now())
-            .firstResultOptional();
-    }
-
-    @Override
-    public void markAsUsed(String code) {
-        update("used = true").where("code", code);
-    }
-
-    @Override
-    public long deleteExpired() {
-        return delete("expiresAt < ?1", Instant.now());
-    }
-
-    @Override
-    public long deleteByPrincipalId(String principalId) {
-        return delete("principalId", principalId);
-    }
-
-    // Delegate to Panache methods via interface
-    @Override
-    public AuthorizationCode findById(String id) {
-        return PanacheMongoRepositoryBase.super.findById(id);
-    }
-
-    @Override
-    public Optional<AuthorizationCode> findByIdOptional(String id) {
-        return PanacheMongoRepositoryBase.super.findByIdOptional(id);
-    }
-
-    @Override
-    public List<AuthorizationCode> listAll() {
-        return PanacheMongoRepositoryBase.super.listAll();
-    }
-
-    @Override
-    public long count() {
-        return PanacheMongoRepositoryBase.super.count();
+        return Optional.ofNullable(collection().find(and(
+            eq("code", code),
+            eq("used", false),
+            gt("expiresAt", Instant.now())
+        )).first());
     }
 
     @Override
     public void persist(AuthorizationCode code) {
-        PanacheMongoRepositoryBase.super.persist(code);
+        collection().insertOne(code);
     }
 
     @Override
-    public void update(AuthorizationCode code) {
-        PanacheMongoRepositoryBase.super.update(code);
-    }
-
-    @Override
-    public void delete(AuthorizationCode code) {
-        PanacheMongoRepositoryBase.super.delete(code);
-    }
-
-    @Override
-    public boolean deleteById(String id) {
-        return PanacheMongoRepositoryBase.super.deleteById(id);
+    public void markAsUsed(String code) {
+        collection().updateOne(
+            eq("code", code),
+            new Document("$set", new Document("used", true))
+        );
     }
 }

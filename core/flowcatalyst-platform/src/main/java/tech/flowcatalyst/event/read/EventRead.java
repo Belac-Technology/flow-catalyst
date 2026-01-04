@@ -1,7 +1,7 @@
 package tech.flowcatalyst.event.read;
 
-import io.quarkus.mongodb.panache.PanacheMongoEntityBase;
-import io.quarkus.mongodb.panache.common.MongoEntity;
+
+
 import org.bson.codecs.pojo.annotations.BsonId;
 
 import java.time.Instant;
@@ -13,8 +13,8 @@ import java.util.List;
  * This collection is populated by the stream processor and has rich indexes
  * for efficient querying. The raw events collection is write-optimized.
  */
-@MongoEntity(collection = "events_read")
-public class EventRead extends PanacheMongoEntityBase {
+
+public class EventRead {
 
     @BsonId
     public String id;

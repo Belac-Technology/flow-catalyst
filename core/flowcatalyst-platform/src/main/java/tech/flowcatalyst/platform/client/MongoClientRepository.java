@@ -1,76 +1,76 @@
 package tech.flowcatalyst.platform.client;
 
-import io.quarkus.mongodb.panache.PanacheMongoRepositoryBase;
+import com.mongodb.client.MongoClient;
+import com.mongodb.client.MongoCollection;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Typed;
-import tech.flowcatalyst.platform.shared.Instrumented;
+import jakarta.inject.Inject;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
-/**
- * MongoDB implementation of ClientRepository.
- * Package-private to prevent direct injection - use ClientRepository interface.
- */
+import static com.mongodb.client.model.Filters.*;
+
 @ApplicationScoped
 @Typed(ClientRepository.class)
-@Instrumented(collection = "clients")
-class MongoClientRepository implements PanacheMongoRepositoryBase<Client, String>, ClientRepository {
+class MongoClientRepository implements ClientRepository {
 
-    @Override
-    public Optional<Client> findByIdentifier(String identifier) {
-        return find("identifier", identifier).firstResultOptional();
+    @Inject
+    MongoClient mongoClient;
+
+    @ConfigProperty(name = "quarkus.mongodb.database")
+    String database;
+
+    private MongoCollection<Client> collection() {
+        return mongoClient.getDatabase(database).getCollection("clients", Client.class);
     }
 
-    @Override
-    public List<Client> findAllActive() {
-        return find("status", ClientStatus.ACTIVE).list();
-    }
-
-    @Override
-    public List<Client> findByIds(Set<String> ids) {
-        return find("id in ?1", ids).list();
-    }
-
-    // Delegate to Panache methods via interface
     @Override
     public Client findById(String id) {
-        return PanacheMongoRepositoryBase.super.findById(id);
+        return collection().find(eq("_id", id)).first();
     }
 
     @Override
     public Optional<Client> findByIdOptional(String id) {
-        return PanacheMongoRepositoryBase.super.findByIdOptional(id);
+        return Optional.ofNullable(collection().find(eq("_id", id)).first());
+    }
+
+    @Override
+    public Optional<Client> findByIdentifier(String identifier) {
+        return Optional.ofNullable(collection().find(eq("identifier", identifier)).first());
+    }
+
+    @Override
+    public List<Client> findAllActive() {
+        return collection().find(eq("status", ClientStatus.ACTIVE.name()))
+            .into(new ArrayList<>());
+    }
+
+    @Override
+    public List<Client> findByIds(Set<String> ids) {
+        return collection().find(in("_id", ids)).into(new ArrayList<>());
     }
 
     @Override
     public List<Client> listAll() {
-        return PanacheMongoRepositoryBase.super.listAll();
-    }
-
-    @Override
-    public long count() {
-        return PanacheMongoRepositoryBase.super.count();
+        return collection().find().into(new ArrayList<>());
     }
 
     @Override
     public void persist(Client client) {
-        PanacheMongoRepositoryBase.super.persist(client);
+        collection().insertOne(client);
     }
 
     @Override
     public void update(Client client) {
-        PanacheMongoRepositoryBase.super.update(client);
+        collection().replaceOne(eq("_id", client.id), client);
     }
 
     @Override
     public void delete(Client client) {
-        PanacheMongoRepositoryBase.super.delete(client);
-    }
-
-    @Override
-    public boolean deleteById(String id) {
-        return PanacheMongoRepositoryBase.super.deleteById(id);
+        collection().deleteOne(eq("_id", client.id));
     }
 }

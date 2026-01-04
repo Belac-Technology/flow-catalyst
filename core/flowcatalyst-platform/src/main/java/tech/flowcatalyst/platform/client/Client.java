@@ -1,7 +1,5 @@
 package tech.flowcatalyst.platform.client;
 
-import io.quarkus.mongodb.panache.common.MongoEntity;
-import io.quarkus.mongodb.panache.PanacheMongoEntityBase;
 import org.bson.codecs.pojo.annotations.BsonId;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -11,8 +9,7 @@ import java.util.List;
  * Client organization.
  * Only customers get clients (partners don't).
  */
-@MongoEntity(collection = "clients")
-public class Client extends PanacheMongoEntityBase {
+public class Client {
 
     @BsonId
     public String id;
