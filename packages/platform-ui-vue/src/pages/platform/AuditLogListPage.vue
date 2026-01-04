@@ -106,8 +106,7 @@ function formatDateTime(isoString: string): string {
   return new Date(isoString).toLocaleString();
 }
 
-function formatOperationName(operation: string | null): string {
-  if (!operation) return 'Unknown';
+function formatOperationName(operation: string): string {
   // Convert camelCase/PascalCase to readable format
   return operation
     .replace(/([A-Z])/g, ' $1')

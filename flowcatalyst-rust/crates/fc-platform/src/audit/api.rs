@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use chrono::{DateTime, Utc};
 
-use crate::{AuditLog, AuditAction};
+use crate::AuditLog;
 use crate::AuditLogRepository;
 use crate::shared::error::PlatformError;
 use crate::shared::middleware::Authenticated;
@@ -51,12 +51,12 @@ impl From<AuditLog> for AuditLogResponse {
     fn from(log: AuditLog) -> Self {
         Self {
             id: log.id,
-            operation: format!("{:?}", log.action),
+            operation: log.operation,
             entity_type: log.entity_type,
             entity_id: log.entity_id,
             principal_id: log.principal_id.clone(),
-            principal_name: log.principal_email.or(log.principal_id),
-            performed_at: log.created_at.to_rfc3339(),
+            principal_name: log.principal_id, // TODO: Resolve principal name from repository
+            performed_at: log.performed_at.to_rfc3339(),
         }
     }
 }
@@ -65,13 +65,13 @@ impl From<AuditLog> for AuditLogDetailResponse {
     fn from(log: AuditLog) -> Self {
         Self {
             id: log.id,
-            operation: format!("{:?}", log.action),
+            operation: log.operation,
             entity_type: log.entity_type,
-            entity_id: log.entity_id.clone(),
-            operation_json: Some(log.description),
+            entity_id: log.entity_id,
+            operation_json: log.operation_json,
             principal_id: log.principal_id.clone(),
-            principal_name: log.principal_email.or(log.principal_id),
-            performed_at: log.created_at.to_rfc3339(),
+            principal_name: log.principal_id, // TODO: Resolve principal name from repository
+            performed_at: log.performed_at.to_rfc3339(),
         }
     }
 }
@@ -144,30 +144,6 @@ pub struct AuditLogsState {
     pub audit_log_repo: Arc<AuditLogRepository>,
 }
 
-fn parse_action(s: &str) -> Option<AuditAction> {
-    match s.to_uppercase().as_str() {
-        "CREATE" => Some(AuditAction::Create),
-        "UPDATE" => Some(AuditAction::Update),
-        "DELETE" => Some(AuditAction::Delete),
-        "ARCHIVE" => Some(AuditAction::Archive),
-        "LOGIN" => Some(AuditAction::Login),
-        "LOGOUT" => Some(AuditAction::Logout),
-        "TOKEN_ISSUED" => Some(AuditAction::TokenIssued),
-        "TOKEN_REVOKED" => Some(AuditAction::TokenRevoked),
-        "PERMISSION_GRANTED" => Some(AuditAction::PermissionGranted),
-        "PERMISSION_REVOKED" => Some(AuditAction::PermissionRevoked),
-        "ROLE_ASSIGNED" => Some(AuditAction::RoleAssigned),
-        "ROLE_UNASSIGNED" => Some(AuditAction::RoleUnassigned),
-        "CLIENT_ACCESS_GRANTED" => Some(AuditAction::ClientAccessGranted),
-        "CLIENT_ACCESS_REVOKED" => Some(AuditAction::ClientAccessRevoked),
-        "SUBSCRIPTION_PAUSED" => Some(AuditAction::SubscriptionPaused),
-        "SUBSCRIPTION_RESUMED" => Some(AuditAction::SubscriptionResumed),
-        "POOL_PAUSED" => Some(AuditAction::PoolPaused),
-        "POOL_RESUMED" => Some(AuditAction::PoolResumed),
-        "CONFIG_CHANGED" => Some(AuditAction::ConfigChanged),
-        _ => None,
-    }
-}
 
 #[allow(dead_code)]
 fn parse_datetime(s: &str) -> Option<DateTime<Utc>> {
@@ -265,7 +241,6 @@ pub async fn list_audit_logs(
 ) -> Result<Json<AuditLogListResponse>, PlatformError> {
     crate::checks::require_anchor(&auth.0)?;
 
-    let action = query.operation.as_deref().and_then(parse_action);
     let page = query.page;
     let page_size = query.page_size;
     let skip = (page * page_size) as u64;
@@ -274,11 +249,8 @@ pub async fn list_audit_logs(
     let logs = state.audit_log_repo.search(
         query.entity_type.as_deref(),
         query.entity_id.as_deref(),
-        action,
+        query.operation.as_deref(),
         query.principal_id.as_deref(),
-        None, // client_id filter not used in Java
-        None, // from_date
-        None, // to_date
         skip,
         limit,
     ).await?;
@@ -287,7 +259,7 @@ pub async fn list_audit_logs(
     let total = state.audit_log_repo.count_with_filters(
         query.entity_type.as_deref(),
         query.entity_id.as_deref(),
-        action,
+        query.operation.as_deref(),
         query.principal_id.as_deref(),
     ).await?;
 

@@ -1,11 +1,12 @@
 //! Audit Service
 //!
 //! Provides centralized audit logging for all platform mutations.
+//! Uses the same schema as Java for cross-platform compatibility.
 
 use std::sync::Arc;
 use tracing::{info, error};
 
-use crate::{AuditLog, AuditAction};
+use crate::AuditLog;
 use crate::AuditLogRepository;
 use crate::AuthContext;
 use crate::shared::error::Result;
@@ -27,9 +28,9 @@ impl AuditService {
         auth: &AuthContext,
         entity_type: &str,
         entity_id: &str,
-        description: impl Into<String>,
+        operation: impl Into<String>,
     ) -> Result<()> {
-        let log = self.build_log(auth, AuditAction::Create, entity_type, Some(entity_id), description);
+        let log = self.build_log(auth, entity_type, Some(entity_id), operation);
         self.insert(log).await
     }
 
@@ -39,9 +40,9 @@ impl AuditService {
         auth: &AuthContext,
         entity_type: &str,
         entity_id: &str,
-        description: impl Into<String>,
+        operation: impl Into<String>,
     ) -> Result<()> {
-        let log = self.build_log(auth, AuditAction::Update, entity_type, Some(entity_id), description);
+        let log = self.build_log(auth, entity_type, Some(entity_id), operation);
         self.insert(log).await
     }
 
@@ -51,9 +52,9 @@ impl AuditService {
         auth: &AuthContext,
         entity_type: &str,
         entity_id: &str,
-        description: impl Into<String>,
+        operation: impl Into<String>,
     ) -> Result<()> {
-        let log = self.build_log(auth, AuditAction::Delete, entity_type, Some(entity_id), description);
+        let log = self.build_log(auth, entity_type, Some(entity_id), operation);
         self.insert(log).await
     }
 
@@ -63,9 +64,9 @@ impl AuditService {
         auth: &AuthContext,
         entity_type: &str,
         entity_id: &str,
-        description: impl Into<String>,
+        operation: impl Into<String>,
     ) -> Result<()> {
-        let log = self.build_log(auth, AuditAction::Archive, entity_type, Some(entity_id), description);
+        let log = self.build_log(auth, entity_type, Some(entity_id), operation);
         self.insert(log).await
     }
 
@@ -74,14 +75,10 @@ impl AuditService {
         &self,
         auth: &AuthContext,
         principal_id: &str,
-        role: &str,
-        client_id: Option<&str>,
+        _role: &str,
+        _client_id: Option<&str>,
     ) -> Result<()> {
-        let desc = match client_id {
-            Some(cid) => format!("Assigned role '{}' for client {}", role, cid),
-            None => format!("Assigned global role '{}'", role),
-        };
-        let log = self.build_log(auth, AuditAction::RoleAssigned, "Principal", Some(principal_id), desc);
+        let log = self.build_log(auth, "Principal", Some(principal_id), "AssignRoleCommand");
         self.insert(log).await
     }
 
@@ -90,10 +87,9 @@ impl AuditService {
         &self,
         auth: &AuthContext,
         principal_id: &str,
-        role: &str,
+        _role: &str,
     ) -> Result<()> {
-        let desc = format!("Removed role '{}'", role);
-        let log = self.build_log(auth, AuditAction::RoleUnassigned, "Principal", Some(principal_id), desc);
+        let log = self.build_log(auth, "Principal", Some(principal_id), "UnassignRoleCommand");
         self.insert(log).await
     }
 
@@ -102,10 +98,9 @@ impl AuditService {
         &self,
         auth: &AuthContext,
         principal_id: &str,
-        client_id: &str,
+        _client_id: &str,
     ) -> Result<()> {
-        let desc = format!("Granted access to client {}", client_id);
-        let log = self.build_log(auth, AuditAction::ClientAccessGranted, "Principal", Some(principal_id), desc);
+        let log = self.build_log(auth, "Principal", Some(principal_id), "GrantClientAccessCommand");
         self.insert(log).await
     }
 
@@ -114,152 +109,51 @@ impl AuditService {
         &self,
         auth: &AuthContext,
         principal_id: &str,
-        client_id: &str,
+        _client_id: &str,
     ) -> Result<()> {
-        let desc = format!("Revoked access to client {}", client_id);
-        let log = self.build_log(auth, AuditAction::ClientAccessRevoked, "Principal", Some(principal_id), desc);
-        self.insert(log).await
-    }
-
-    /// Log subscription paused
-    pub async fn log_subscription_paused(
-        &self,
-        auth: &AuthContext,
-        subscription_id: &str,
-        subscription_code: &str,
-    ) -> Result<()> {
-        let desc = format!("Paused subscription '{}'", subscription_code);
-        let log = self.build_log(auth, AuditAction::SubscriptionPaused, "Subscription", Some(subscription_id), desc);
-        self.insert(log).await
-    }
-
-    /// Log subscription resumed
-    pub async fn log_subscription_resumed(
-        &self,
-        auth: &AuthContext,
-        subscription_id: &str,
-        subscription_code: &str,
-    ) -> Result<()> {
-        let desc = format!("Resumed subscription '{}'", subscription_code);
-        let log = self.build_log(auth, AuditAction::SubscriptionResumed, "Subscription", Some(subscription_id), desc);
-        self.insert(log).await
-    }
-
-    /// Log dispatch pool paused
-    pub async fn log_pool_paused(
-        &self,
-        auth: &AuthContext,
-        pool_id: &str,
-        pool_code: &str,
-    ) -> Result<()> {
-        let desc = format!("Paused dispatch pool '{}'", pool_code);
-        let log = self.build_log(auth, AuditAction::PoolPaused, "DispatchPool", Some(pool_id), desc);
-        self.insert(log).await
-    }
-
-    /// Log dispatch pool resumed
-    pub async fn log_pool_resumed(
-        &self,
-        auth: &AuthContext,
-        pool_id: &str,
-        pool_code: &str,
-    ) -> Result<()> {
-        let desc = format!("Resumed dispatch pool '{}'", pool_code);
-        let log = self.build_log(auth, AuditAction::PoolResumed, "DispatchPool", Some(pool_id), desc);
+        let log = self.build_log(auth, "Principal", Some(principal_id), "RevokeClientAccessCommand");
         self.insert(log).await
     }
 
     /// Log a login attempt
     pub async fn log_login(
         &self,
-        email: &str,
+        _email: &str,
         success: bool,
-        ip_address: Option<&str>,
+        _ip_address: Option<&str>,
     ) -> Result<()> {
-        let desc = if success {
-            format!("Successful login for {}", email)
-        } else {
-            format!("Failed login attempt for {}", email)
-        };
-
-        let mut log = AuditLog::new(AuditAction::Login, "Session", desc);
-        if let Some(ip) = ip_address {
-            log = log.with_request_context(None, Some(ip.to_string()), None);
-        }
+        let operation = if success { "LoginCommand" } else { "FailedLoginCommand" };
+        let log = AuditLog::new("Session", None, operation, None, None);
         self.insert(log).await
     }
 
     /// Log a logout
     pub async fn log_logout(&self, auth: &AuthContext) -> Result<()> {
-        let log = self.build_log(auth, AuditAction::Logout, "Session", None, "User logged out");
+        let log = self.build_log(auth, "Session", None, "LogoutCommand");
         self.insert(log).await
     }
 
-    /// Log a token issued
-    pub async fn log_token_issued(
-        &self,
-        auth: &AuthContext,
-        token_type: &str,
-    ) -> Result<()> {
-        let desc = format!("{} token issued", token_type);
-        let log = self.build_log(auth, AuditAction::TokenIssued, "Token", None, desc);
-        self.insert(log).await
-    }
-
-    /// Log a token revoked
-    pub async fn log_token_revoked(
-        &self,
-        auth: &AuthContext,
-        token_type: &str,
-    ) -> Result<()> {
-        let desc = format!("{} token revoked", token_type);
-        let log = self.build_log(auth, AuditAction::TokenRevoked, "Token", None, desc);
-        self.insert(log).await
-    }
-
-    /// Log a configuration change
-    pub async fn log_config_changed(
-        &self,
-        auth: &AuthContext,
-        config_type: &str,
-        description: impl Into<String>,
-    ) -> Result<()> {
-        let log = self.build_log(auth, AuditAction::ConfigChanged, config_type, None, description);
-        self.insert(log).await
-    }
-
-    /// Build an audit log from auth context
+    /// Build an audit log from auth context (matches Java schema)
     fn build_log(
         &self,
         auth: &AuthContext,
-        action: AuditAction,
         entity_type: &str,
         entity_id: Option<&str>,
-        description: impl Into<String>,
+        operation: impl Into<String>,
     ) -> AuditLog {
-        let mut log = match entity_id {
-            Some(id) => AuditLog::for_entity(action, entity_type, id, description),
-            None => AuditLog::new(action, entity_type, description),
-        };
-
-        log = log.with_principal(&auth.principal_id, auth.email.clone());
-
-        // Use first accessible client if not anchor (anchor has "*")
-        if !auth.is_anchor() {
-            if let Some(client_id) = auth.accessible_clients.first() {
-                if client_id != "*" {
-                    log = log.with_client(client_id);
-                }
-            }
-        }
-
-        log
+        AuditLog::new(
+            entity_type,
+            entity_id.map(String::from),
+            operation,
+            None,
+            Some(auth.principal_id.clone()),
+        )
     }
 
     /// Insert an audit log
     async fn insert(&self, log: AuditLog) -> Result<()> {
         info!(
-            action = ?log.action,
+            operation = %log.operation,
             entity_type = %log.entity_type,
             entity_id = ?log.entity_id,
             principal_id = ?log.principal_id,

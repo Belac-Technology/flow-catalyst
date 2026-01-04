@@ -8,7 +8,7 @@ export interface AuditLog {
   id: string;
   entityType: string;
   entityId: string;
-  operation: string | null;
+  operation: string;
   principalId: string | null;
   principalName: string | null;
   performedAt: string;

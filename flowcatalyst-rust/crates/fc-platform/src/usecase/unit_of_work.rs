@@ -15,7 +15,7 @@ use tracing::{debug, error};
 use super::domain_event::DomainEvent;
 use super::error::UseCaseError;
 use super::result::UseCaseResult;
-use crate::{Event, ContextData, AuditLog, AuditAction};
+use crate::{Event, ContextData, AuditLog};
 
 /// Unit of Work for atomic control plane operations.
 ///
@@ -156,34 +156,6 @@ impl MongoUnitOfWork {
         subject.split('.').nth(2).map(String::from)
     }
 
-    /// Derive audit action from command name.
-    fn derive_audit_action(command_name: &str) -> AuditAction {
-        let name = command_name.to_lowercase();
-        if name.contains("create") {
-            AuditAction::Create
-        } else if name.contains("update") {
-            AuditAction::Update
-        } else if name.contains("delete") {
-            AuditAction::Delete
-        } else if name.contains("archive") {
-            AuditAction::Archive
-        } else if name.contains("activate") {
-            AuditAction::ConfigChanged
-        } else if name.contains("deactivate") {
-            AuditAction::ConfigChanged
-        } else if name.contains("grant") {
-            AuditAction::PermissionGranted
-        } else if name.contains("revoke") {
-            AuditAction::PermissionRevoked
-        } else if name.contains("assign") {
-            AuditAction::RoleAssigned
-        } else if name.contains("unassign") {
-            AuditAction::RoleUnassigned
-        } else {
-            AuditAction::Other
-        }
-    }
-
     /// Create an Event entity from a DomainEvent.
     fn create_event<E: DomainEvent>(event: &E) -> Event {
         let data_json = event.to_data_json();
@@ -218,7 +190,7 @@ impl MongoUnitOfWork {
         }
     }
 
-    /// Create an AuditLog entry from a command and event.
+    /// Create an AuditLog entry from a command and event (matches Java schema).
     fn create_audit_log<E: DomainEvent, C: Serialize>(
         event: &E,
         command: &C,
@@ -226,24 +198,18 @@ impl MongoUnitOfWork {
         let command_name = std::any::type_name::<C>()
             .rsplit("::")
             .next()
-            .unwrap_or("Unknown");
+            .unwrap_or("Unknown")
+            .to_string();
 
-        let command_json = serde_json::to_value(command)
-            .ok();
+        let operation_json = serde_json::to_string(command).ok();
 
-        let mut audit = AuditLog::for_entity(
-            Self::derive_audit_action(command_name),
+        AuditLog::new(
             Self::extract_aggregate_type(event.subject()),
-            Self::extract_entity_id(event.subject()).unwrap_or_default(),
-            format!("{} executed", command_name),
-        );
-
-        audit.principal_id = Some(event.principal_id().to_string());
-        audit.request_id = Some(event.correlation_id().to_string());
-        audit.metadata = command_json;
-        audit.created_at = event.time();
-
-        audit
+            Self::extract_entity_id(event.subject()),
+            command_name,
+            operation_json,
+            Some(event.principal_id().to_string()),
+        ).with_performed_at(event.time())
     }
 }
 
