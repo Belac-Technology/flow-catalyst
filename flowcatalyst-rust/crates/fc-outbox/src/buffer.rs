@@ -137,7 +137,6 @@ impl GlobalBuffer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::Utc;
     use fc_common::MediationType;
 
     fn create_test_message(id: &str) -> Message {
@@ -149,8 +148,6 @@ mod tests {
             mediation_type: MediationType::HTTP,
             mediation_target: "http://localhost".to_string(),
             message_group_id: None,
-            payload: serde_json::json!({}),
-            created_at: Utc::now(),
         }
     }
 

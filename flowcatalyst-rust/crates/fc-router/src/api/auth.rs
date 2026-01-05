@@ -12,7 +12,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
-use jsonwebtoken::{decode, decode_header, DecodingKey, Validation, Algorithm};
+use jsonwebtoken::{decode, decode_header, DecodingKey, Validation};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -110,10 +110,7 @@ impl AuthConfig {
 /// OIDC Discovery document
 #[derive(Debug, Deserialize)]
 struct OidcDiscovery {
-    issuer: String,
     jwks_uri: String,
-    #[serde(default)]
-    id_token_signing_alg_values_supported: Vec<String>,
 }
 
 /// JWKS (JSON Web Key Set)
@@ -126,15 +123,11 @@ struct Jwks {
 #[derive(Debug, Clone, Deserialize)]
 struct Jwk {
     kty: String,
-    #[serde(rename = "use", default)]
-    use_: Option<String>,
     kid: Option<String>,
-    alg: Option<String>,
     n: Option<String>,  // RSA modulus
     e: Option<String>,  // RSA exponent
     x: Option<String>,  // EC x coordinate
     y: Option<String>,  // EC y coordinate
-    crv: Option<String>, // EC curve
 }
 
 /// Cached JWKS with expiration
@@ -263,38 +256,6 @@ impl OidcValidator {
                     .map_err(|e| format!("Failed to create EC decoding key: {}", e))
             }
             other => Err(format!("Unsupported key type: {}", other)),
-        }
-    }
-
-    /// Determine the algorithm from JWK
-    fn jwk_to_algorithm(&self, jwk: &Jwk) -> Result<Algorithm, String> {
-        // Try to get algorithm from JWK, or infer from key type
-        if let Some(ref alg) = jwk.alg {
-            match alg.as_str() {
-                "RS256" => Ok(Algorithm::RS256),
-                "RS384" => Ok(Algorithm::RS384),
-                "RS512" => Ok(Algorithm::RS512),
-                "ES256" => Ok(Algorithm::ES256),
-                "ES384" => Ok(Algorithm::ES384),
-                "PS256" => Ok(Algorithm::PS256),
-                "PS384" => Ok(Algorithm::PS384),
-                "PS512" => Ok(Algorithm::PS512),
-                other => Err(format!("Unsupported algorithm: {}", other)),
-            }
-        } else {
-            // Infer from key type
-            match jwk.kty.as_str() {
-                "RSA" => Ok(Algorithm::RS256), // Default RSA algorithm
-                "EC" => {
-                    // Infer from curve
-                    match jwk.crv.as_deref() {
-                        Some("P-256") => Ok(Algorithm::ES256),
-                        Some("P-384") => Ok(Algorithm::ES384),
-                        _ => Ok(Algorithm::ES256), // Default
-                    }
-                }
-                _ => Err("Cannot infer algorithm from key type".to_string()),
-            }
         }
     }
 

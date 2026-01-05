@@ -9,19 +9,23 @@ pub mod logging;
 // Core Message Types
 // ============================================================================
 
-/// The core message structure that flows through the system
+/// The core message structure that flows through the system.
+///
+/// This struct is compatible with Java's MessagePointer using camelCase field names.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Message {
     pub id: String,
+    #[serde(default)]
     pub pool_code: String,
     pub auth_token: Option<String>,
-    /// Signing secret for HMAC-SHA256 webhook signatures
+    /// Signing secret for HMAC-SHA256 webhook signatures (Rust extension, not in Java)
+    #[serde(default)]
     pub signing_secret: Option<String>,
     pub mediation_type: MediationType,
     pub mediation_target: String,
+    #[serde(default)]
     pub message_group_id: Option<String>,
-    pub payload: serde_json::Value,
-    pub created_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]

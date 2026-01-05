@@ -122,8 +122,6 @@ fn create_message_with_group(id: &str, pool_code: &str, group_id: Option<&str>) 
         mediation_type: MediationType::HTTP,
         mediation_target: "http://localhost:8080/test".to_string(),
         message_group_id: group_id.map(|s| s.to_string()),
-        payload: serde_json::json!({"message_id": id}),
-        created_at: Utc::now(),
     }
 }
 

@@ -1970,7 +1970,6 @@ dependencies = [
  "bson",
  "chrono",
  "fc-common",
- "fc-queue",
  "futures",
  "hmac",
  "jsonwebtoken",

@@ -74,7 +74,7 @@ impl From<&Message> for BatchItem {
             mediation_type: format!("{:?}", msg.mediation_type),
             mediation_target: msg.mediation_target.clone(),
             message_group_id: msg.message_group_id.clone(),
-            payload: msg.payload.clone(),
+            payload: serde_json::Value::Null,
         }
     }
 }
@@ -396,7 +396,6 @@ impl BatchHttpDispatcher {
 mod tests {
     use super::*;
     use fc_common::MediationType;
-    use chrono::Utc;
 
     fn create_test_message(id: &str) -> Message {
         Message {
@@ -407,8 +406,6 @@ mod tests {
             mediation_type: MediationType::HTTP,
             mediation_target: "http://target.example.com/webhook".to_string(),
             message_group_id: Some("group-1".to_string()),
-            payload: serde_json::json!({"key": "value"}),
-            created_at: Utc::now(),
         }
     }
 

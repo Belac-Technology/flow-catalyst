@@ -398,7 +398,6 @@ impl MessageGroupProcessor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::Utc;
     use fc_common::MediationType;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -447,8 +446,6 @@ mod tests {
             mediation_type: MediationType::HTTP,
             mediation_target: "http://localhost".to_string(),
             message_group_id: Some("group-1".to_string()),
-            payload: serde_json::json!({}),
-            created_at: Utc::now(),
         }
     }
 

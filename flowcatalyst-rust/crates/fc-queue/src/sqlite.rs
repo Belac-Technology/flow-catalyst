@@ -411,8 +411,6 @@ mod tests {
             mediation_type: MediationType::HTTP,
             mediation_target: "http://localhost:8080".to_string(),
             message_group_id: None,
-            payload: serde_json::json!({"test": "data"}),
-            created_at: Utc::now(),
         };
 
         // Publish
@@ -444,8 +442,6 @@ mod tests {
             mediation_type: MediationType::HTTP,
             mediation_target: "http://localhost:8080".to_string(),
             message_group_id: None,
-            payload: serde_json::json!({}),
-            created_at: Utc::now(),
         };
 
         queue.publish(message).await.unwrap();
@@ -473,8 +469,6 @@ mod tests {
                 mediation_type: MediationType::HTTP,
                 mediation_target: "http://localhost:8080".to_string(),
                 message_group_id: Some("group-1".to_string()),
-                payload: serde_json::json!({"order": i}),
-                created_at: Utc::now(),
             };
             queue.publish(message).await.unwrap();
         }
@@ -505,8 +499,6 @@ mod tests {
             mediation_type: MediationType::HTTP,
             mediation_target: "http://localhost:8080".to_string(),
             message_group_id: None,
-            payload: serde_json::json!({}),
-            created_at: Utc::now(),
         };
 
         // Publish same message twice

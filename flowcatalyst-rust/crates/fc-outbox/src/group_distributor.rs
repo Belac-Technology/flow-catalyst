@@ -315,7 +315,6 @@ impl GroupDistributor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::Utc;
     use fc_common::MediationType;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use crate::message_group_processor::{BatchDispatchResult, BatchItemResult};
@@ -359,8 +358,6 @@ mod tests {
             mediation_type: MediationType::HTTP,
             mediation_target: "http://localhost".to_string(),
             message_group_id: group.map(String::from),
-            payload: serde_json::json!({}),
-            created_at: Utc::now(),
         }
     }
 

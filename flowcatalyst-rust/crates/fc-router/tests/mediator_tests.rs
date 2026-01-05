@@ -25,8 +25,6 @@ fn create_test_message(target: &str) -> Message {
         mediation_type: MediationType::HTTP,
         mediation_target: target.to_string(),
         message_group_id: None,
-        payload: serde_json::json!({"test": true, "value": 42}),
-        created_at: Utc::now(),
     }
 }
 
@@ -39,8 +37,6 @@ fn create_test_message_with_auth(target: &str, token: &str) -> Message {
         mediation_type: MediationType::HTTP,
         mediation_target: target.to_string(),
         message_group_id: None,
-        payload: serde_json::json!({"secure": true}),
-        created_at: Utc::now(),
     }
 }
 

@@ -19,7 +19,6 @@ use fc_common::{
     MediationResult, MediationOutcome,
 };
 use fc_router::{ProcessPool, Mediator};
-use chrono::Utc;
 
 /// Mock mediator that tracks calls and can simulate delays/failures
 struct MockMediator {
@@ -99,8 +98,6 @@ fn create_test_message(id: &str, group_id: Option<&str>) -> Message {
         mediation_type: MediationType::HTTP,
         mediation_target: "http://localhost:8080/test".to_string(),
         message_group_id: group_id.map(|s| s.to_string()),
-        payload: serde_json::json!({"test": true}),
-        created_at: Utc::now(),
     }
 }
 

@@ -302,8 +302,6 @@ impl HttpMediator {
             .pool_max_idle_per_host(10);
 
         // Configure HTTP version
-        // For HTTP/2: use http2_prior_knowledge for h2c (HTTP/2 over cleartext)
-        // or let ALPN negotiate for HTTPS
         match config.http_version {
             HttpVersion::Http1 => {
                 // Force HTTP/1.1 only
@@ -311,10 +309,10 @@ impl HttpMediator {
                 info!("HttpMediator configured for HTTP/1.1");
             }
             HttpVersion::Http2 => {
-                // Prefer HTTP/2 with ALPN negotiation, fallback to HTTP/1.1
-                // For h2c (cleartext HTTP/2), use http2_prior_knowledge
-                builder = builder.http2_prior_knowledge();
-                info!("HttpMediator configured for HTTP/2");
+                // For HTTPS: let ALPN negotiate HTTP/2 (this is the default behavior)
+                // Do NOT use http2_prior_knowledge() for HTTPS - that's for h2c (cleartext)
+                // reqwest will automatically negotiate HTTP/2 via ALPN for HTTPS
+                info!("HttpMediator configured for HTTP/2 (ALPN negotiation)");
             }
         }
 
@@ -398,6 +396,8 @@ impl HttpMediator {
         debug!(
             message_id = %message.id,
             target = %message.mediation_target,
+            has_auth_token = message.auth_token.is_some(),
+            auth_token_preview = message.auth_token.as_ref().map(|t| if t.len() > 20 { format!("{}...", &t[..20]) } else { t.clone() }),
             "Mediating message"
         );
 
@@ -581,7 +581,14 @@ impl HttpMediator {
                 } else {
                     error!(
                         message_id = %message.id,
+                        target = %message.mediation_target,
                         error = %e,
+                        error_debug = ?e,
+                        is_request = e.is_request(),
+                        is_redirect = e.is_redirect(),
+                        is_status = e.is_status(),
+                        is_body = e.is_body(),
+                        is_decode = e.is_decode(),
                         "Request failed"
                     );
                     MediationOutcome::error_connection(format!("Request failed: {}", e))

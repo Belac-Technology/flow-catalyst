@@ -189,8 +189,6 @@ impl OutboxProcessor {
                 mediation_type: MediationType::HTTP,
                 mediation_target: item.mediation_target.clone().unwrap_or_else(|| "http://localhost:8080".to_string()),
                 message_group_id: item.message_group.clone(),
-                payload: item.payload.clone(),
-                created_at: item.created_at,
             };
 
             match self.queue_publisher.publish(message).await {

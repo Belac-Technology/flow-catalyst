@@ -1247,8 +1247,6 @@ async fn publish_message(
         mediation_type: MediationType::HTTP,
         mediation_target: req.mediation_target.unwrap_or_else(|| "http://localhost:8080/echo".to_string()),
         message_group_id: req.message_group_id,
-        payload: req.payload,
-        created_at: Utc::now(),
     };
 
     match state.publisher.publish(message).await {
@@ -1279,8 +1277,6 @@ async fn simple_publish_message(
         mediation_type: MediationType::HTTP,
         mediation_target: req.mediation_target.unwrap_or_else(|| "http://localhost:8080/echo".to_string()),
         message_group_id: req.message_group_id,
-        payload: req.payload,
-        created_at: Utc::now(),
     };
 
     match state.publisher.publish(message).await {
@@ -1876,8 +1872,6 @@ async fn seed_messages(
             mediation_type: MediationType::HTTP,
             mediation_target: target.to_string(),
             message_group_id,
-            payload: serde_json::json!({ "seeded": true, "index": i }),
-            created_at: Utc::now(),
         };
 
         if state.publisher.publish(message).await.is_ok() {

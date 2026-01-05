@@ -1,13 +1,12 @@
 [package]
 name = "fc-platform"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 description = "FlowCatalyst Platform - Core domain models, services, and APIs"
 
 [dependencies]
 # Workspace dependencies
 fc-common = { path = "../fc-common" }
-fc-queue = { path = "../fc-queue" }
 
 # Async runtime
 tokio = { workspace = true }

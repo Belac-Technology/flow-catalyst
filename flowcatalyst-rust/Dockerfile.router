@@ -1,10 +1,18 @@
 # FlowCatalyst Message Router - Rust
 # Multi-stage build with cargo-chef for cached dependency builds
 
-# Stage 1: Chef base
-FROM rust:1.83-bookworm AS chef
-RUN cargo install cargo-chef
+# Stage 1: Plan dependencies
+FROM lukemathwalker/cargo-chef:latest-rust-1.92-bookworm AS chef
 WORKDIR /app
+
+FROM chef AS planner
+COPY Cargo.toml Cargo.lock ./
+COPY crates ./crates
+COPY bin ./bin
+RUN cargo chef prepare --recipe-path recipe.json
+
+# Stage 2: Build dependencies (cached layer)
+FROM chef AS builder
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y \
@@ -12,15 +20,6 @@ RUN apt-get update && apt-get install -y \
     libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Stage 2: Plan dependencies
-FROM chef AS planner
-COPY Cargo.toml Cargo.lock ./
-COPY crates ./crates
-COPY bin ./bin
-RUN cargo chef prepare --recipe-path recipe.json
-
-# Stage 3: Build dependencies (cached layer)
-FROM chef AS builder
 COPY --from=planner /app/recipe.json recipe.json
 RUN cargo chef cook --release --recipe-path recipe.json
 
@@ -30,7 +29,7 @@ COPY crates ./crates
 COPY bin ./bin
 RUN cargo build --release --bin fc-router-bin
 
-# Stage 4: Runtime
+# Stage 3: Runtime
 FROM debian:bookworm-slim
 
 RUN apt-get update && apt-get install -y \

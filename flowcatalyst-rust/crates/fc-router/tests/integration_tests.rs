@@ -101,8 +101,6 @@ fn create_test_message(id: &str, pool_code: &str, target: &str) -> Message {
         mediation_type: MediationType::HTTP,
         mediation_target: target.to_string(),
         message_group_id: None,
-        payload: serde_json::json!({"message_id": id, "data": "test"}),
-        created_at: Utc::now(),
     }
 }
 

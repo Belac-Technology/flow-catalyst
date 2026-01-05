@@ -117,8 +117,6 @@ fn create_test_message(id: &str, pool_code: &str) -> Message {
         mediation_type: MediationType::HTTP,
         mediation_target: "http://localhost:8080/test".to_string(),
         message_group_id: None,
-        payload: serde_json::json!({"message_id": id}),
-        created_at: Utc::now(),
     }
 }
 

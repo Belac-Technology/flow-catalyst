@@ -528,8 +528,6 @@ impl EnhancedOutboxProcessor {
                 mediation_type: MediationType::HTTP,
                 mediation_target: item.mediation_target.clone().unwrap_or_default(),
                 message_group_id: item.message_group.clone(),
-                payload: item.payload.clone(),
-                created_at: item.created_at,
             };
 
             if let Err(_) = self.buffer.push(message).await {
