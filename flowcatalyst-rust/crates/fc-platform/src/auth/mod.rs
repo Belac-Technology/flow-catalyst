@@ -39,7 +39,7 @@ pub use config_repository::ClientAuthConfigRepository;
 pub use config_api::{anchor_domains_router, client_auth_configs_router, idp_role_mappings_router, AuthConfigState};
 pub use auth_api::auth_router;
 pub use auth_service::AuthService;
-pub use oauth_api::oauth_router;
+pub use oauth_api::{oauth_router, OAuthState};
 pub use oauth_clients_api::oauth_clients_router;
 pub use oidc_login_api::oidc_login_router;
 pub use oidc_service::OidcService;

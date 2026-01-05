@@ -53,6 +53,7 @@ use fc_platform::api::{
     MonitoringState, monitoring_router, LeaderState, CircuitBreakerRegistry, InFlightTracker,
     DebugState, debug_events_router, debug_dispatch_jobs_router,
     AuthState, auth_router,
+    OAuthState, oauth_router,
     platform_config_router,
     ServiceAccountsState, service_accounts_router,
 };
@@ -62,6 +63,7 @@ use fc_platform::repository::{
     ApplicationRepository, RoleRepository, OAuthClientRepository,
     AnchorDomainRepository, ClientAuthConfigRepository, ClientAccessGrantRepository, IdpRoleMappingRepository,
     AuditLogRepository, ApplicationClientConfigRepository, OidcLoginStateRepository, RefreshTokenRepository,
+    AuthorizationCodeRepository,
 };
 use fc_platform::usecase::MongoUnitOfWork;
 use fc_platform::operations::{
@@ -77,6 +79,7 @@ use fc_platform::operations::{
 };
 use fc_platform::service::PasswordService;
 use fc_platform::service::OidcSyncService;
+use fc_platform::service::OidcService;
 use fc_platform::api::{OidcLoginApiState, oidc_login_router};
 use fc_platform::seed::DevDataSeeder;
 
@@ -141,6 +144,7 @@ async fn main() -> Result<()> {
     let application_client_config_repo = Arc::new(ApplicationClientConfigRepository::new(&db));
     let oidc_login_state_repo = Arc::new(OidcLoginStateRepository::new(&db));
     let refresh_token_repo = Arc::new(RefreshTokenRepository::new(&db));
+    let auth_code_repo = Arc::new(AuthorizationCodeRepository::new(&db));
     info!("Repositories initialized");
 
     // Sync code-defined roles to database (always, not just in dev mode)
@@ -179,6 +183,7 @@ async fn main() -> Result<()> {
         principal_repo.clone(),
         idp_role_mapping_repo.clone(),
     ));
+    let oidc_service = Arc::new(OidcService::new());
     info!("Auth services initialized");
 
     // Create AppState
@@ -218,7 +223,7 @@ async fn main() -> Result<()> {
     };
     let roles_state = RolesState { role_repo: role_repo.clone(), application_repo: Some(application_repo.clone()) };
     let subscriptions_state = SubscriptionsState { subscription_repo };
-    let oauth_clients_state = OAuthClientsState { oauth_client_repo };
+    let oauth_clients_state = OAuthClientsState { oauth_client_repo: oauth_client_repo.clone() };
     let auth_config_state = AuthConfigState {
         anchor_domain_repo: anchor_domain_repo.clone(),
         client_auth_config_repo: client_auth_config_repo.clone(),
@@ -242,6 +247,14 @@ async fn main() -> Result<()> {
         auth_service.clone(),
         principal_repo.clone(),
         password_service,
+        refresh_token_repo.clone(),
+    );
+    let oauth_state = OAuthState::new(
+        oauth_client_repo.clone(),
+        principal_repo.clone(),
+        auth_service.clone(),
+        oidc_service,
+        auth_code_repo,
         refresh_token_repo,
     );
     let audit_logs_state = AuditLogsState { audit_log_repo };
@@ -400,6 +413,7 @@ async fn main() -> Result<()> {
         .nest("/api/admin/dispatch-pools", dispatch_pools_router(dispatch_pools_state))
         .nest("/api/admin/service-accounts", service_accounts_router(service_accounts_state))
         .nest("/auth", oidc_login_router(oidc_login_state))
+        .nest("/oauth", oauth_router(oauth_state))
         .nest("/api/config", platform_config_router())
         // OpenAPI / Swagger UI with auto-collected paths
         .merge(SwaggerUi::new("/swagger-ui").url("/q/openapi", openapi))

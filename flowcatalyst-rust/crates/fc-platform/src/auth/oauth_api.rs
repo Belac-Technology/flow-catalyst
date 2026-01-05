@@ -22,8 +22,8 @@ use tokio::sync::RwLock;
 use chrono::Utc;
 use tracing::{info, warn, error};
 
-use crate::{Principal, AuthorizationCode};
-use crate::{OAuthClientRepository, PrincipalRepository, AuthorizationCodeRepository};
+use crate::{Principal, AuthorizationCode, RefreshToken};
+use crate::{OAuthClientRepository, PrincipalRepository, AuthorizationCodeRepository, RefreshTokenRepository};
 use crate::AuthService;
 use crate::OidcService;
 use crate::shared::error::PlatformError;
@@ -93,6 +93,8 @@ pub struct OAuthState {
     pub oidc_service: Arc<OidcService>,
     /// Authorization code storage (MongoDB for distributed deployment)
     pub auth_code_repo: Arc<AuthorizationCodeRepository>,
+    /// Refresh token storage for token rotation
+    pub refresh_token_repo: Arc<RefreshTokenRepository>,
     /// Pending authorization states (for CSRF protection)
     pub pending_states: Arc<RwLock<HashMap<String, PendingAuth>>>,
 }
@@ -116,6 +118,7 @@ impl OAuthState {
         auth_service: Arc<AuthService>,
         oidc_service: Arc<OidcService>,
         auth_code_repo: Arc<AuthorizationCodeRepository>,
+        refresh_token_repo: Arc<RefreshTokenRepository>,
     ) -> Self {
         Self {
             oauth_client_repo,
@@ -123,6 +126,7 @@ impl OAuthState {
             auth_service,
             oidc_service,
             auth_code_repo,
+            refresh_token_repo,
             pending_states: Arc::new(RwLock::new(HashMap::new())),
         }
     }
@@ -434,12 +438,139 @@ async fn handle_authorization_code_grant(state: OAuthState, req: TokenRequest) -
     ).into_response()
 }
 
-async fn handle_refresh_token_grant(_state: OAuthState, _req: TokenRequest) -> Response {
+async fn handle_refresh_token_grant(state: OAuthState, req: TokenRequest) -> Response {
+    // Validate refresh_token parameter
+    let refresh_token_str = match req.refresh_token {
+        Some(t) => t,
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: "invalid_request".to_string(),
+                    error_description: Some("Missing refresh_token parameter".to_string()),
+                }),
+            ).into_response();
+        }
+    };
+
+    // Hash the provided token and look it up
+    let token_hash = RefreshToken::hash_token(&refresh_token_str);
+
+    let stored_token = match state.refresh_token_repo.find_valid_by_hash(&token_hash).await {
+        Ok(Some(t)) => t,
+        Ok(None) => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(ErrorResponse {
+                    error: "invalid_grant".to_string(),
+                    error_description: Some("Invalid or expired refresh token".to_string()),
+                }),
+            ).into_response();
+        }
+        Err(e) => {
+            error!(error = %e, "Failed to lookup refresh token");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "server_error".to_string(),
+                    error_description: None,
+                }),
+            ).into_response();
+        }
+    };
+
+    // Revoke the old token (token rotation for security)
+    if let Err(e) = state.refresh_token_repo.revoke_by_hash(&token_hash).await {
+        error!(error = %e, "Failed to revoke old refresh token");
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: "server_error".to_string(),
+                error_description: None,
+            }),
+        ).into_response();
+    }
+
+    // Find the principal
+    let principal = match state.principal_repo.find_by_id(&stored_token.principal_id).await {
+        Ok(Some(p)) => p,
+        Ok(None) => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(ErrorResponse {
+                    error: "invalid_grant".to_string(),
+                    error_description: Some("Principal not found".to_string()),
+                }),
+            ).into_response();
+        }
+        Err(e) => {
+            error!(error = %e, "Failed to lookup principal");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "server_error".to_string(),
+                    error_description: None,
+                }),
+            ).into_response();
+        }
+    };
+
+    // Check if principal is still active
+    if !principal.active {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(ErrorResponse {
+                error: "invalid_grant".to_string(),
+                error_description: Some("Account is not active".to_string()),
+            }),
+        ).into_response();
+    }
+
+    // Generate new access token
+    let access_token = match state.auth_service.generate_access_token(&principal) {
+        Ok(t) => t,
+        Err(e) => {
+            error!(error = %e, "Failed to generate access token");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "server_error".to_string(),
+                    error_description: None,
+                }),
+            ).into_response();
+        }
+    };
+
+    // Generate new refresh token (rotation)
+    let (raw_token, token_entity) = RefreshToken::generate_token_pair(&principal.id);
+    let token_entity = token_entity
+        .with_accessible_clients(stored_token.accessible_clients.clone());
+
+    if let Err(e) = state.refresh_token_repo.insert(&token_entity).await {
+        error!(error = %e, "Failed to store new refresh token");
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: "server_error".to_string(),
+                error_description: None,
+            }),
+        ).into_response();
+    }
+
+    info!(principal_id = %principal.id, "Token refreshed via refresh_token grant");
+
     (
-        StatusCode::BAD_REQUEST,
-        Json(ErrorResponse {
-            error: "unsupported_grant_type".to_string(),
-            error_description: Some("Refresh token grant not yet implemented".to_string()),
+        StatusCode::OK,
+        [
+            (header::CACHE_CONTROL, "no-store"),
+            (header::PRAGMA, "no-cache"),
+        ],
+        Json(TokenResponse {
+            access_token,
+            token_type: "Bearer".to_string(),
+            expires_in: 3600,
+            refresh_token: Some(raw_token),
+            scope: None,
         }),
     ).into_response()
 }

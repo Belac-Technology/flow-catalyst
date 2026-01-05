@@ -164,6 +164,7 @@ pub mod api {
     pub use crate::service_account::api::{service_accounts_router, ServiceAccountsState};
     pub use crate::audit::api::{audit_logs_router, AuditLogsState};
     pub use crate::auth::oauth_clients_api::{oauth_clients_router, OAuthClientsState};
+    pub use crate::auth::oauth_api::{oauth_router, OAuthState};
     pub use crate::auth::{anchor_domains_router, client_auth_configs_router, idp_role_mappings_router, AuthConfigState};
     pub use crate::auth::auth_api::{auth_router, AuthState};
     pub use crate::auth::oidc_login_api::{oidc_login_router, OidcLoginApiState};
