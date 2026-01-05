@@ -28,10 +28,10 @@ use fc_router::{
     QueueManager, HttpMediator, LifecycleManager, LifecycleConfig,
     WarningService, WarningServiceConfig, HealthService, HealthServiceConfig,
     CircuitBreakerRegistry as RouterCircuitBreakerRegistry,
+    api::create_router as create_api_router,
 };
 use fc_queue::sqlite::SqliteQueue;
 use fc_queue::{QueuePublisher, EmbeddedQueue};
-use fc_api::create_router as create_api_router;
 use fc_outbox::{OutboxProcessor, OutboxRepository};
 
 // Platform imports

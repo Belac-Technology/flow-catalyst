@@ -28,10 +28,10 @@ use fc_router::{
     ConfigSyncService, ConfigSyncConfig,
     StandbyProcessor, StandbyRouterConfig,
     NotificationConfig, create_notification_service_with_scheduler,
+    api::create_router,
 };
 use fc_common::{RouterConfig, PoolConfig, QueueConfig, WarningSeverity};
 use fc_queue::sqs::SqsQueueConsumer;
-use fc_api::create_router;
 use anyhow::Result;
 use tracing::{info, warn, error};
 use tokio::{signal, net::TcpListener};

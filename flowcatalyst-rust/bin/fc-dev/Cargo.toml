@@ -9,7 +9,6 @@ fc-common = { path = "../../crates/fc-common" }
 fc-router = { path = "../../crates/fc-router" }
 # Queue uses SQLite as embedded SQS replacement for local dev
 fc-queue = { path = "../../crates/fc-queue", features = ["sqlite"] }
-fc-api = { path = "../../crates/fc-api" }
 # Outbox supports all database backends - reads from developer's app database
 fc-outbox = { path = "../../crates/fc-outbox", features = ["sqlite", "postgres", "mongo"] }
 fc-stream = { path = "../../crates/fc-stream" }

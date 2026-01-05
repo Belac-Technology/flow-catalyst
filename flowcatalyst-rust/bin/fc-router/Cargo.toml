@@ -7,7 +7,6 @@ edition = "2021"
 fc-common = { path = "../../crates/fc-common" }
 fc-router = { path = "../../crates/fc-router" }
 fc-queue = { path = "../../crates/fc-queue", features = ["sqs"] }
-fc-api = { path = "../../crates/fc-api" }
 aws-config = { workspace = true }
 aws-sdk-sqs = { workspace = true }
 tokio = { workspace = true }

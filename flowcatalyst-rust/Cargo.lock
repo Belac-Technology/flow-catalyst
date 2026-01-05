@@ -1858,38 +1858,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "37909eebbb50d72f9059c3b6d82c0463f2ff062c9e95845c43a6c9c0355411be"
 
 [[package]]
-name = "fc-api"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "axum",
- "base64 0.22.1",
- "bytes",
- "chrono",
- "fc-common",
- "fc-queue",
- "fc-router",
- "fc-standby",
- "fc-stream",
- "metrics",
- "metrics-exporter-prometheus",
- "parking_lot",
- "rand 0.8.5",
- "serde",
- "serde_json",
- "tokio",
- "tokio-test",
- "tower 0.4.13",
- "tower-http 0.5.2",
- "tracing",
- "urlencoding",
- "utoipa",
- "utoipa-axum",
- "utoipa-swagger-ui",
- "uuid",
-]
-
-[[package]]
 name = "fc-common"
 version = "0.1.0"
 dependencies = [
@@ -1927,7 +1895,6 @@ dependencies = [
  "async-trait",
  "axum",
  "clap",
- "fc-api",
  "fc-common",
  "fc-outbox",
  "fc-platform",
@@ -2083,19 +2050,26 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "axum",
+ "base64 0.22.1",
+ "bytes",
  "chrono",
  "dashmap",
  "fc-common",
  "fc-queue",
  "fc-standby",
+ "fc-stream",
  "futures",
  "governor",
  "hex",
  "hmac",
  "indexmap 2.12.1",
+ "jsonwebtoken",
  "metrics",
+ "metrics-exporter-prometheus",
  "nonzero_ext",
  "parking_lot",
+ "rand 0.8.5",
  "reqwest",
  "serde",
  "serde_json",
@@ -2104,9 +2078,14 @@ dependencies = [
  "thiserror 1.0.69",
  "tokio",
  "tokio-test",
+ "tower 0.4.13",
+ "tower-http 0.5.2",
  "tracing",
  "tracing-subscriber",
+ "urlencoding",
  "utoipa",
+ "utoipa-axum",
+ "utoipa-swagger-ui",
  "uuid",
  "wiremock",
 ]
@@ -2121,7 +2100,6 @@ dependencies = [
  "aws-sdk-sqs",
  "axum",
  "dotenvy",
- "fc-api",
  "fc-common",
  "fc-queue",
  "fc-router",

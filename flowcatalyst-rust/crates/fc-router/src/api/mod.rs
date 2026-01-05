@@ -1,4 +1,4 @@
-//! FlowCatalyst API
+//! FlowCatalyst Router HTTP API
 //!
 //! HTTP API endpoints for:
 //! - Message publishing
@@ -27,7 +27,7 @@ use fc_common::{
     Message, MediationType, HealthStatus, HealthReport, PoolStats, PoolConfig,
     Warning, WarningSeverity, WarningCategory,
 };
-use fc_router::{
+use crate::{
     QueueManager, WarningService, HealthService, QueueMetrics, InFlightMessageInfo,
     CircuitBreakerRegistry, CircuitBreakerState,
 };
@@ -40,7 +40,7 @@ pub mod model;
 pub mod auth;
 
 use model::{PublishMessageRequest, PublishMessageResponse, PoolStatusResponse};
-pub use auth::{AuthConfig, AuthMode, AuthState, auth_middleware, is_public_path};
+pub use auth::{AuthConfig, AuthMode, AuthState, OidcValidator, TokenClaims, auth_middleware, create_auth_state, is_public_path};
 
 /// Application state shared across handlers
 #[derive(Clone)]
@@ -1214,7 +1214,7 @@ async fn dashboard_in_flight_messages_handler(
 
 /// Serve dashboard HTML
 async fn dashboard_html_handler() -> impl IntoResponse {
-    const DASHBOARD_HTML: &str = include_str!("../resources/dashboard.html");
+    const DASHBOARD_HTML: &str = include_str!("../../resources/dashboard.html");
     Html(DASHBOARD_HTML)
 }
 

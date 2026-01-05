@@ -11,6 +11,7 @@
 //! - CircuitBreakerRegistry: Per-endpoint circuit breaker tracking for monitoring
 //! - ConfigSync: Dynamic configuration sync from central service
 //! - Standby: Active/standby high availability with Redis leader election
+//! - API: HTTP API endpoints for monitoring, health, and message publishing
 
 pub mod error;
 pub mod manager;
@@ -26,6 +27,7 @@ pub mod config_sync;
 pub mod standby;
 pub mod notification;
 pub mod queue_health_monitor;
+pub mod api;
 
 pub use error::RouterError;
 pub use manager::{QueueManager, InFlightMessageInfo};

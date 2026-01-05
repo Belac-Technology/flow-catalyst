@@ -5,7 +5,6 @@ members = [
     "crates/fc-queue",
     "crates/fc-router",
     "crates/fc-standby",
-    "crates/fc-api",
     "crates/fc-outbox",
     "crates/fc-stream",
     "crates/fc-platform",
