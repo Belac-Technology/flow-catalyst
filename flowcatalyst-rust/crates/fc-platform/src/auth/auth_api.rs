@@ -328,8 +328,6 @@ pub async fn check_domain(
         .unwrap_or("")
         .to_lowercase();
 
-    // TODO: Look up domain configuration from database
-    // For now, default to internal auth
     Json(DomainCheckResponse {
         domain,
         auth_method: AuthMethod::Internal,

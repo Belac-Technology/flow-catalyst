@@ -3,6 +3,8 @@ use chrono::{DateTime, Utc};
 use std::time::Instant;
 use utoipa::ToSchema;
 
+pub mod logging;
+
 // ============================================================================
 // Core Message Types
 // ============================================================================
@@ -452,6 +454,10 @@ pub enum WarningCategory {
     QueueConnectivity,
     /// Pool capacity issues
     PoolCapacity,
+    /// Pool health/limit issues
+    PoolHealth,
+    /// Queue health issues (backlog, growth)
+    QueueHealth,
     /// Consumer health issues
     ConsumerHealth,
     /// Memory/resource issues

@@ -27,7 +27,7 @@ serde_json = "1.0"
 axum = { version = "0.7", features = ["macros"] }
 axum-extra = { version = "0.9", features = ["cookie"] }
 reqwest = { version = "0.12.9", features = ["json", "rustls-tls"] }
-sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "sqlite", "postgres", "mysql", "chrono", "uuid"] }
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "sqlite", "postgres", "mysql", "chrono", "uuid"] }
 mongodb = "3.1"
 bson = { version = "2.15", features = ["chrono-0_4"] }
 aws-sdk-sqs = "1.91"
@@ -36,7 +36,7 @@ async-trait = "0.1"
 anyhow = "1.0"
 thiserror = "1.0"
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 uuid = { version = "1.7", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 metrics = "0.22"

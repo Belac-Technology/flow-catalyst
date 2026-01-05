@@ -66,10 +66,16 @@ tasks.named("processResources") {
 
 // ==========================================================================
 // Exclude heavy dependencies not needed for dev build (~60MB savings)
+// Note: aws-crt cannot be excluded when building native images (GraalVM needs it for analysis)
 // ==========================================================================
+val isNativeBuild = project.hasProperty("quarkus.native.enabled") ||
+    System.getProperty("quarkus.native.enabled") == "true"
+
 configurations.all {
     exclude(group = "org.mongodb", module = "mongodb-crypt")           // 20MB - client-side encryption
-    exclude(group = "software.amazon.awssdk.crt", module = "aws-crt")  // 18MB - using URL client instead
+    if (!isNativeBuild) {
+        exclude(group = "software.amazon.awssdk.crt", module = "aws-crt")  // 18MB - using URL client instead
+    }
     exclude(group = "org.hibernate.orm", module = "hibernate-core")    // 13MB - not using JPA/Hibernate
     exclude(group = "net.bytebuddy", module = "byte-buddy")            // 8.6MB - runtime code gen
 }

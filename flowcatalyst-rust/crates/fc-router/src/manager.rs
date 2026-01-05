@@ -18,6 +18,7 @@ use tracing::{info, warn, error, debug};
 use fc_common::{
     QueuedMessage, BatchMessage, AckNack, InFlightMessage,
     PoolConfig, RouterConfig, PoolStats, StallConfig, StalledMessageInfo,
+    WarningCategory, WarningSeverity,
 };
 use fc_queue::{QueueConsumer, QueueMetrics};
 use chrono::Utc;
@@ -25,16 +26,19 @@ use utoipa::ToSchema;
 
 use crate::pool::ProcessPool;
 use crate::mediator::Mediator;
+use crate::warning::WarningService;
 use crate::error::RouterError;
 use crate::Result;
 
 /// Central orchestrator for message routing
 pub struct QueueManager {
     /// In-pipeline message tracking for deduplication
-    in_pipeline: DashMap<String, InFlightMessage>,
+    /// Wrapped in Arc so spawned tasks can share the same map
+    in_pipeline: Arc<DashMap<String, InFlightMessage>>,
 
     /// App message ID to pipeline key mapping for deduplication
-    app_message_to_pipeline_key: DashMap<String, String>,
+    /// Wrapped in Arc so spawned tasks can share the same map
+    app_message_to_pipeline_key: Arc<DashMap<String, String>>,
 
     /// Process pools by code
     pools: DashMap<String, Arc<ProcessPool>>,
@@ -77,6 +81,9 @@ pub struct QueueManager {
 
     /// Stall detection configuration
     stall_config: StallConfig,
+
+    /// Warning service for generating operational warnings
+    warning_service: Option<Arc<WarningService>>,
 }
 
 impl QueueManager {
@@ -97,8 +104,8 @@ impl QueueManager {
         let (shutdown_tx, _) = broadcast::channel(1);
 
         Self {
-            in_pipeline: DashMap::new(),
-            app_message_to_pipeline_key: DashMap::new(),
+            in_pipeline: Arc::new(DashMap::new()),
+            app_message_to_pipeline_key: Arc::new(DashMap::new()),
             pools: DashMap::new(),
             draining_pools: DashMap::new(),
             consumers: RwLock::new(HashMap::new()),
@@ -112,7 +119,18 @@ impl QueueManager {
             max_pools,
             pool_warning_threshold,
             stall_config,
+            warning_service: None,
         }
+    }
+
+    /// Set the warning service
+    pub fn set_warning_service(&mut self, warning_service: Arc<WarningService>) {
+        self.warning_service = Some(warning_service);
+    }
+
+    /// Get warning service reference
+    pub fn warning_service(&self) -> Option<&Arc<WarningService>> {
+        self.warning_service.as_ref()
     }
 
     /// Add a queue consumer
@@ -223,6 +241,15 @@ impl QueueManager {
                         max_pools = self.max_pools,
                         "Cannot create pool: maximum pool limit reached"
                     );
+                    if let Some(ref ws) = self.warning_service {
+                        ws.add_warning(
+                            WarningCategory::PoolHealth,
+                            WarningSeverity::Critical,
+                            format!("Max pool limit reached ({}/{}) - cannot create pool [{}]",
+                                current_count, self.max_pools, pool_config.code),
+                            "QueueManager".to_string(),
+                        );
+                    }
                     continue;
                 }
 
@@ -234,6 +261,15 @@ impl QueueManager {
                         threshold = self.pool_warning_threshold,
                         "Pool count approaching limit"
                     );
+                    if let Some(ref ws) = self.warning_service {
+                        ws.add_warning(
+                            WarningCategory::PoolHealth,
+                            WarningSeverity::Warn,
+                            format!("Pool count {} approaching limit {} (threshold: {})",
+                                current_count, self.max_pools, self.pool_warning_threshold),
+                            "QueueManager".to_string(),
+                        );
+                    }
                 }
 
                 // Create new pool
@@ -397,6 +433,14 @@ impl QueueManager {
                     requested = pool_messages.len(),
                     "Pool at capacity, NACKing all messages for this pool"
                 );
+                if let Some(ref ws) = self.warning_service {
+                    ws.add_warning(
+                        WarningCategory::QueueHealth,
+                        WarningSeverity::Warn,
+                        format!("Pool [{}] queue full, NACKing {} messages from batch", pool_code, pool_messages.len()),
+                        "QueueManager".to_string(),
+                    );
+                }
                 for msg in pool_messages {
                     let _ = consumer.nack(&msg.receipt_handle, Some(5)).await;
                 }
@@ -484,7 +528,16 @@ impl QueueManager {
                             .map(|entry| (entry.receipt_handle.clone(), entry.broker_message_id.clone()))
                             .unwrap_or((receipt_handle_for_callback, broker_message_id));
 
-                        match ack_rx.await {
+                        // Wait for ACK/NACK from pool
+                        let ack_result = ack_rx.await;
+
+                        // Cleanup from in-flight tracking IMMEDIATELY after receiving signal
+                        // This ensures messages don't appear stuck even if subsequent SQS calls fail/timeout
+                        in_pipeline.remove(&pipeline_key_clone);
+                        app_message_to_pipeline_key.remove(&app_message_id_clone);
+
+                        // Now perform SQS operations (fire-and-forget style for cleanup)
+                        match ack_result {
                             Ok(AckNack::Ack) => {
                                 if let Err(e) = consumer_clone.ack(&current_handle).await {
                                     // ACK failed - likely receipt handle expired
@@ -517,10 +570,6 @@ impl QueueManager {
                                 let _ = consumer_clone.nack(&current_handle, None).await;
                             }
                         }
-
-                        // Cleanup from both maps (mirrors Java's cleanup in ack/nack)
-                        in_pipeline.remove(&pipeline_key_clone);
-                        app_message_to_pipeline_key.remove(&app_message_id_clone);
                     });
 
                     // Actually submit to pool

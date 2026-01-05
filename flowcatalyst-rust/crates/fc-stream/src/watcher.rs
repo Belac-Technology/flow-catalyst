@@ -445,32 +445,6 @@ fn is_stale_resume_token_error<E: std::fmt::Display>(e: &E) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
-    use std::sync::atomic::{AtomicUsize, Ordering};
-
-    struct CountingProcessor {
-        count: AtomicUsize,
-    }
-
-    impl CountingProcessor {
-        fn new() -> Self {
-            Self {
-                count: AtomicUsize::new(0),
-            }
-        }
-
-        fn count(&self) -> usize {
-            self.count.load(Ordering::SeqCst)
-        }
-    }
-
-    #[async_trait]
-    impl BatchProcessor for CountingProcessor {
-        async fn process(&self, documents: Vec<Document>) -> Result<()> {
-            self.count.fetch_add(documents.len(), Ordering::SeqCst);
-            Ok(())
-        }
-    }
 
     #[test]
     fn test_stale_resume_token_detection() {

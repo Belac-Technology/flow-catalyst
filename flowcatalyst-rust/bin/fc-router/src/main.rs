@@ -6,10 +6,17 @@
 //! ## Production Features
 //!
 //! - **Dynamic Configuration Sync**: Periodically fetches configuration from a central
-//!   service and hot-reloads without restart. Enable with `FLOWCATALYST_CONFIG_SYNC_ENABLED=true`.
+//!   service and hot-reloads without restart.
 //!
 //! - **Active/Standby HA**: Uses Redis-based leader election for high availability.
 //!   Only the leader processes messages. Enable with `FLOWCATALYST_STANDBY_ENABLED=true`.
+//!
+//! ## Development Mode
+//!
+//! Set `FLOWCATALYST_DEV_MODE=true` to enable development mode with:
+//! - Built-in LocalStack SQS queue configuration
+//! - Test endpoints for simulating various response scenarios
+//! - Message seeding endpoints
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -18,31 +25,48 @@ use fc_router::{
     WarningService, WarningServiceConfig,
     HealthService, HealthServiceConfig,
     CircuitBreakerRegistry,
-    // New production features
     ConfigSyncService, ConfigSyncConfig,
     StandbyProcessor, StandbyRouterConfig,
+    NotificationConfig, create_notification_service_with_scheduler,
 };
+use fc_common::{RouterConfig, PoolConfig, QueueConfig, WarningSeverity};
 use fc_queue::sqs::SqsQueueConsumer;
-use fc_common::{RouterConfig, PoolConfig, QueueConfig};
 use fc_api::create_router;
 use anyhow::Result;
 use tracing::{info, warn, error};
-use tracing_subscriber::EnvFilter;
 use tokio::{signal, net::TcpListener};
 use tower_http::cors::{CorsLayer, Any};
 use tower_http::trace::TraceLayer;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env().add_directive(tracing::Level::INFO.into()))
-        .init();
+    // Load .env file if present (for local development)
+    let _ = dotenvy::dotenv();
+
+    fc_common::logging::init_logging("fc-router");
 
     info!("Starting FlowCatalyst Message Router (Production)");
 
     // 1. Setup AWS Config
-    let aws_config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
-    let sqs_client = aws_sdk_sqs::Client::new(&aws_config);
+    // In dev mode, configure to use LocalStack endpoint
+    let dev_mode = std::env::var("FLOWCATALYST_DEV_MODE")
+        .map(|v| v == "true" || v == "1")
+        .unwrap_or(false);
+
+    let sqs_client = if dev_mode {
+        let endpoint_url = std::env::var("LOCALSTACK_ENDPOINT")
+            .unwrap_or_else(|_| "http://localhost:4566".to_string());
+        info!(endpoint = %endpoint_url, "Configuring SQS client for LocalStack");
+
+        let config = aws_config::defaults(aws_config::BehaviorVersion::latest())
+            .endpoint_url(&endpoint_url)
+            .load()
+            .await;
+        aws_sdk_sqs::Client::new(&config)
+    } else {
+        let config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
+        aws_sdk_sqs::Client::new(&config)
+    };
 
     // 2. Initialize Warning and Health Services
     let warning_service = Arc::new(WarningService::new(WarningServiceConfig::default()));
@@ -51,28 +75,27 @@ async fn main() -> Result<()> {
         warning_service.clone(),
     ));
 
+    // 2b. Initialize Notification Service (Teams webhooks)
+    let notification_config = load_notification_config();
+    let notification_scheduler = create_notification_service_with_scheduler(&notification_config);
+    if let Some(ref ns) = notification_scheduler {
+        info!(
+            batch_interval = notification_config.batch_interval_seconds,
+            "Notification service enabled (Teams webhook with batching)"
+        );
+        // Wire up notification service to warning service
+        warning_service.set_notification_service(ns.service.clone());
+    } else {
+        info!("Notification service disabled - no channels configured");
+    }
+
     // 3. Initialize Mediator (production mode: HTTP/2, 15 minute timeout)
     let mediator = Arc::new(HttpMediator::production());
 
     // 4. Create QueueManager
     let queue_manager = Arc::new(QueueManager::new(mediator.clone()));
 
-    // 5. Setup SQS Consumer
-    let queue_url = std::env::var("QUEUE_URL")
-        .unwrap_or_else(|_| "http://localhost:4566/000000000000/dev-queue".to_string());
-    let visibility_timeout = std::env::var("VISIBILITY_TIMEOUT")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(30);
-
-    let consumer = Arc::new(SqsQueueConsumer::from_queue_url(
-        sqs_client.clone(),
-        queue_url.clone(),
-        visibility_timeout,
-    ).await);
-    queue_manager.add_consumer(consumer).await;
-
-    // 6. Initialize Standby Processor (Active/Passive HA)
+    // 5. Initialize Standby Processor (Active/Passive HA)
     let standby_config = load_standby_config();
     let standby = if standby_config.enabled {
         info!(
@@ -98,7 +121,7 @@ async fn main() -> Result<()> {
         None
     };
 
-    // 7. Wait for leadership if in standby mode
+    // 6. Wait for leadership if in standby mode
     if let Some(ref standby_proc) = standby {
         if !standby_proc.is_leader() {
             info!("Waiting to become leader before starting message processing...");
@@ -107,9 +130,32 @@ async fn main() -> Result<()> {
         }
     }
 
-    // 8. Initialize Config Sync Service
-    let config_sync_config = load_config_sync_config();
-    let config_sync = if config_sync_config.enabled {
+    // 7. Initialize Configuration
+    // Dev mode uses built-in LocalStack config, production requires config URL
+    let dev_mode = std::env::var("FLOWCATALYST_DEV_MODE")
+        .map(|v| v == "true" || v == "1")
+        .unwrap_or(false);
+
+    let (router_config, config_sync) = if dev_mode {
+        info!("Development mode enabled - using built-in LocalStack configuration");
+        let config = create_dev_config();
+        info!(
+            queues = config.queues.len(),
+            pools = config.processing_pools.len(),
+            "Loaded dev configuration"
+        );
+        (config, None)
+    } else {
+        // Production mode - fetch config from URL
+        let config_url = std::env::var("FLOWCATALYST_CONFIG_URL")
+            .map_err(|_| anyhow::anyhow!("FLOWCATALYST_CONFIG_URL is required (or set FLOWCATALYST_DEV_MODE=true)"))?;
+
+        if config_url.is_empty() {
+            return Err(anyhow::anyhow!("FLOWCATALYST_CONFIG_URL cannot be empty"));
+        }
+
+        let config_sync_config = load_config_sync_config(&config_url);
+
         info!(
             url = %config_sync_config.config_url,
             interval = ?config_sync_config.sync_interval,
@@ -121,41 +167,46 @@ async fn main() -> Result<()> {
             warning_service.clone(),
         ));
 
-        // Perform initial sync
-        if let Err(e) = sync_service.initial_sync().await {
-            error!(error = %e, "Initial configuration sync failed");
-            return Err(anyhow::anyhow!("Initial config sync failed: {}", e));
-        }
-
-        Some(sync_service)
-    } else {
-        // Apply default configuration if config sync is disabled
-        info!("Config sync disabled - using environment-based configuration");
-        let pool_concurrency = std::env::var("POOL_CONCURRENCY")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(10);
-
-        let router_config = RouterConfig {
-            processing_pools: vec![
-                PoolConfig {
-                    code: "DEFAULT".to_string(),
-                    concurrency: pool_concurrency,
-                    rate_limit_per_minute: None,
-                },
-            ],
-            queues: vec![
-                QueueConfig {
-                    name: "sqs-queue".to_string(),
-                    uri: queue_url.clone(),
-                    connections: 1,
-                    visibility_timeout: visibility_timeout as u32,
-                },
-            ],
+        // Perform initial sync - router cannot start without configuration
+        let config = match sync_service.initial_sync().await {
+            Ok(config) => config,
+            Err(e) => {
+                error!(error = %e, "Initial configuration sync failed - cannot start router");
+                return Err(anyhow::anyhow!("Initial config sync failed: {}", e));
+            }
         };
-        queue_manager.apply_config(router_config).await?;
-        None
+
+        (config, Some(sync_service))
     };
+
+    // 8. Create SQS consumers from config
+    let mut first_queue_url: Option<String> = None;
+    for queue_config in &router_config.queues {
+        info!(
+            queue_name = %queue_config.name,
+            queue_uri = %queue_config.uri,
+            connections = queue_config.connections,
+            visibility_timeout = queue_config.visibility_timeout,
+            "Creating SQS consumer from config"
+        );
+
+        let consumer = Arc::new(SqsQueueConsumer::from_queue_url(
+            sqs_client.clone(),
+            queue_config.uri.clone(),
+            queue_config.visibility_timeout as i32,
+        ).await);
+        queue_manager.add_consumer(consumer).await;
+
+        // Track first queue URL for publisher
+        if first_queue_url.is_none() {
+            first_queue_url = Some(queue_config.uri.clone());
+        }
+    }
+
+    if router_config.queues.is_empty() {
+        error!("No queues configured - cannot start router");
+        return Err(anyhow::anyhow!("No queues configured in config sync response"));
+    }
 
     // 9. Start lifecycle manager with all features
     let lifecycle = LifecycleManager::start_with_features(
@@ -173,8 +224,9 @@ async fn main() -> Result<()> {
         .and_then(|v| v.parse().ok())
         .unwrap_or(8080);
 
-    // Create a simple publisher that publishes to SQS
-    let publisher = Arc::new(SqsPublisher::new(sqs_client, queue_url));
+    // Create a simple publisher that publishes to the first queue
+    let publisher_queue_url = first_queue_url.expect("At least one queue must be configured");
+    let publisher = Arc::new(SqsPublisher::new(sqs_client, publisher_queue_url));
 
     // Create circuit breaker registry for endpoint tracking
     let circuit_breaker_registry = Arc::new(CircuitBreakerRegistry::default());
@@ -291,42 +343,100 @@ fn load_standby_config() -> StandbyRouterConfig {
     }
 }
 
-/// Load config sync configuration from environment variables
-fn load_config_sync_config() -> ConfigSyncConfig {
-    let enabled = std::env::var("FLOWCATALYST_CONFIG_SYNC_ENABLED")
-        .map(|v| v.parse().unwrap_or(false))
+/// Load notification configuration from environment variables
+fn load_notification_config() -> NotificationConfig {
+    let teams_enabled = std::env::var("NOTIFICATION_TEAMS_ENABLED")
+        .map(|v| v == "true" || v == "1")
         .unwrap_or(false);
 
-    let config_url = std::env::var("FLOWCATALYST_CONFIG_SYNC_URL")
-        .unwrap_or_default();
+    let teams_webhook_url = std::env::var("NOTIFICATION_TEAMS_WEBHOOK_URL").ok();
 
-    let interval_secs = std::env::var("FLOWCATALYST_CONFIG_SYNC_INTERVAL")
+    let min_severity = std::env::var("NOTIFICATION_MIN_SEVERITY")
+        .map(|s| match s.to_uppercase().as_str() {
+            "INFO" => WarningSeverity::Info,
+            "WARN" | "WARNING" => WarningSeverity::Warn,
+            "ERROR" => WarningSeverity::Error,
+            "CRITICAL" => WarningSeverity::Critical,
+            _ => WarningSeverity::Warn,
+        })
+        .unwrap_or(WarningSeverity::Warn);
+
+    let batch_interval_seconds = std::env::var("NOTIFICATION_BATCH_INTERVAL")
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(300); // 5 minutes default
 
-    let max_retries = std::env::var("FLOWCATALYST_CONFIG_SYNC_MAX_RETRIES")
+    NotificationConfig {
+        teams_enabled,
+        teams_webhook_url,
+        min_severity,
+        batch_interval_seconds,
+    }
+}
+
+/// Load config sync configuration from environment variables
+fn load_config_sync_config(config_url: &str) -> ConfigSyncConfig {
+    let interval_secs = std::env::var("FLOWCATALYST_CONFIG_INTERVAL")
         .ok()
         .and_then(|v| v.parse().ok())
-        .unwrap_or(12);
-
-    let retry_delay_secs = std::env::var("FLOWCATALYST_CONFIG_SYNC_RETRY_DELAY")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(5);
-
-    let fail_on_initial_error = std::env::var("FLOWCATALYST_CONFIG_SYNC_FAIL_ON_ERROR")
-        .map(|v| v.parse().unwrap_or(true))
-        .unwrap_or(true);
+        .unwrap_or(300); // 5 minutes default
 
     ConfigSyncConfig {
-        enabled: enabled && !config_url.is_empty(),
-        config_url,
+        enabled: true,
+        config_url: config_url.to_string(),
         sync_interval: Duration::from_secs(interval_secs),
-        max_retry_attempts: max_retries,
-        retry_delay: Duration::from_secs(retry_delay_secs),
+        max_retry_attempts: 12,
+        retry_delay: Duration::from_secs(5),
         request_timeout: Duration::from_secs(30),
-        fail_on_initial_sync_error: fail_on_initial_error,
+        fail_on_initial_sync_error: true,
+    }
+}
+
+/// Create development configuration with LocalStack SQS queues
+fn create_dev_config() -> RouterConfig {
+    // LocalStack uses this URL format for SQS queues
+    // Can be overridden via LOCALSTACK_SQS_HOST env var
+    let sqs_host = std::env::var("LOCALSTACK_SQS_HOST")
+        .unwrap_or_else(|_| "http://sqs.eu-west-1.localhost.localstack.cloud:4566".to_string());
+
+    RouterConfig {
+        processing_pools: vec![
+            PoolConfig {
+                code: "DEFAULT".to_string(),
+                concurrency: 10,
+                rate_limit_per_minute: None,
+            },
+            PoolConfig {
+                code: "HIGH".to_string(),
+                concurrency: 20,
+                rate_limit_per_minute: None,
+            },
+            PoolConfig {
+                code: "LOW".to_string(),
+                concurrency: 5,
+                rate_limit_per_minute: Some(60),
+            },
+        ],
+        queues: vec![
+            QueueConfig {
+                name: "fc-high-priority.fifo".to_string(),
+                uri: format!("{}/000000000000/fc-high-priority.fifo", sqs_host),
+                connections: 2,
+                visibility_timeout: 120,
+            },
+            QueueConfig {
+                name: "fc-default.fifo".to_string(),
+                uri: format!("{}/000000000000/fc-default.fifo", sqs_host),
+                connections: 2,
+                visibility_timeout: 120,
+            },
+            QueueConfig {
+                name: "fc-low-priority.fifo".to_string(),
+                uri: format!("{}/000000000000/fc-low-priority.fifo", sqs_host),
+                connections: 1,
+                visibility_timeout: 120,
+            },
+        ],
     }
 }
 
@@ -405,10 +515,20 @@ impl QueuePublisher for SqsPublisher {
         let message_id = message.id.clone();
         let body = serde_json::to_string(&message)?;
 
-        self.client.send_message()
+        let mut request = self.client.send_message()
             .queue_url(&self.queue_url)
-            .message_body(body)
-            .send()
+            .message_body(body);
+
+        // FIFO queues require message_group_id and message_deduplication_id
+        if self.queue_url.ends_with(".fifo") {
+            let group_id = message.message_group_id.clone()
+                .unwrap_or_else(|| "default".to_string());
+            request = request
+                .message_group_id(group_id)
+                .message_deduplication_id(&message_id);
+        }
+
+        request.send()
             .await
             .map_err(|e| QueueError::Sqs(e.to_string()))?;
 

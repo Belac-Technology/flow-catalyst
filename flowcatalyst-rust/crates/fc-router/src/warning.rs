@@ -5,6 +5,7 @@
 //! - Automatic cleanup of old warnings
 //! - Warning acknowledgment
 //! - Filtering by severity/category
+//! - Optional notification integration (Teams, email, etc.)
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -13,6 +14,7 @@ use parking_lot::RwLock;
 use tracing::{debug, info};
 
 use fc_common::{Warning, WarningCategory, WarningSeverity};
+use crate::notification::NotificationService;
 
 /// Configuration for warning service
 #[derive(Debug, Clone)]
@@ -39,6 +41,7 @@ impl Default for WarningServiceConfig {
 pub struct WarningService {
     warnings: RwLock<HashMap<String, Warning>>,
     config: WarningServiceConfig,
+    notification_service: RwLock<Option<Arc<dyn NotificationService>>>,
 }
 
 impl WarningService {
@@ -46,6 +49,22 @@ impl WarningService {
         Self {
             warnings: RwLock::new(HashMap::new()),
             config,
+            notification_service: RwLock::new(None),
+        }
+    }
+
+    /// Set the notification service for sending alerts
+    pub fn set_notification_service(&self, service: Arc<dyn NotificationService>) {
+        *self.notification_service.write() = Some(service);
+        info!("Notification service attached to WarningService");
+    }
+
+    /// Create a new warning service with notification support
+    pub fn with_notification(config: WarningServiceConfig, notification: Arc<dyn NotificationService>) -> Self {
+        Self {
+            warnings: RwLock::new(HashMap::new()),
+            config,
+            notification_service: RwLock::new(Some(notification)),
         }
     }
 
@@ -74,7 +93,16 @@ impl WarningService {
             "Added warning"
         );
 
-        warnings.insert(id.clone(), warning);
+        warnings.insert(id.clone(), warning.clone());
+
+        // Send notification if service is configured
+        if let Some(ref notification_service) = *self.notification_service.read() {
+            let ns = notification_service.clone();
+            tokio::spawn(async move {
+                ns.notify_warning(&warning).await;
+            });
+        }
+
         id
     }
 
@@ -276,7 +304,11 @@ impl WarningService {
 
 impl Default for WarningService {
     fn default() -> Self {
-        Self::new(WarningServiceConfig::default())
+        Self {
+            warnings: RwLock::new(HashMap::new()),
+            config: WarningServiceConfig::default(),
+            notification_service: RwLock::new(None),
+        }
     }
 }
 

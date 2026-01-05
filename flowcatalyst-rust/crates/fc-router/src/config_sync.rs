@@ -317,7 +317,7 @@ impl ConfigSyncService {
                 info!("Configuration sync completed successfully");
                 ConfigSyncResult {
                     success: true,
-                    pools_updated: 0, // TODO: Get actual counts from reload_config
+                    pools_updated: 0,
                     pools_created: 0,
                     pools_removed: 0,
                     error: None,
@@ -353,20 +353,34 @@ impl ConfigSyncService {
     }
 
     /// Perform initial sync (blocks until successful or fails)
-    pub async fn initial_sync(&self) -> Result<(), String> {
+    /// Returns the fetched RouterConfig on success so consumers can be created from queue URLs
+    pub async fn initial_sync(&self) -> Result<RouterConfig, String> {
         info!("Performing initial configuration sync...");
 
-        let result = self.sync().await;
+        // Fetch config first
+        let config = self.fetch_config().await?;
 
-        if result.success {
-            info!("Initial configuration sync completed successfully");
-            Ok(())
-        } else if self.config.fail_on_initial_sync_error {
-            Err(result.error.unwrap_or_else(|| "Unknown error".to_string()))
-        } else {
-            warn!("Initial config sync failed, continuing with default config");
-            Ok(())
+        // Apply to queue manager
+        if let Err(e) = self.queue_manager.reload_config(config.clone()).await {
+            let error = format!("Failed to apply config: {}", e);
+            if self.config.fail_on_initial_sync_error {
+                return Err(error);
+            } else {
+                warn!("{}", error);
+            }
         }
+
+        // Update hash
+        let new_hash = Self::compute_config_hash(&config);
+        *self.last_config_hash.lock() = Some(new_hash);
+
+        info!(
+            pools = config.processing_pools.len(),
+            queues = config.queues.len(),
+            "Initial configuration sync completed successfully"
+        );
+
+        Ok(config)
     }
 
     /// Get the sync interval

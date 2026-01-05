@@ -222,6 +222,20 @@ public class HttpMediator implements Mediator {
                     "HttpMediator"
                 );
                 return MediationOutcome.errorConfig();
+            } else if (statusCode == 429) {
+                // 429 Too Many Requests - rate limiting from target endpoint, NACK for retry
+                // This is a transient error, not a configuration error
+                Integer retryAfterSeconds = extractRetryAfterHeader(response);
+                if (retryAfterSeconds != null) {
+                    LOG.warnf("Message [%s] received 429 Too Many Requests with Retry-After=%ds - will NACK and retry after delay",
+                        message.id(), retryAfterSeconds);
+                } else {
+                    // Default to 30 seconds if no Retry-After header
+                    retryAfterSeconds = 30;
+                    LOG.warnf("Message [%s] received 429 Too Many Requests (no Retry-After header) - will NACK and retry in %ds",
+                        message.id(), retryAfterSeconds);
+                }
+                return MediationOutcome.errorProcess(retryAfterSeconds);
             } else if (statusCode >= 401 && statusCode < 500) {
                 // All other 4xx errors indicate configuration problems:
                 // 401 Unauthorized, 403 Forbidden, 405 Method Not Allowed, etc.
@@ -300,6 +314,29 @@ public class HttpMediator implements Mediator {
             case 451 -> "Unavailable For Legal Reasons";
             default -> "Client Error";
         };
+    }
+
+    /**
+     * Extract Retry-After header value in seconds.
+     * Supports both delta-seconds format (e.g., "120") and HTTP-date format.
+     *
+     * @param response the HTTP response
+     * @return the retry delay in seconds, or null if not present or invalid
+     */
+    private Integer extractRetryAfterHeader(HttpResponse<String> response) {
+        return response.headers()
+            .firstValue("Retry-After")
+            .map(value -> {
+                try {
+                    // Try to parse as integer (delta-seconds)
+                    return Integer.parseInt(value);
+                } catch (NumberFormatException e) {
+                    // Could be HTTP-date format, but for simplicity we'll use default
+                    LOG.debugf("Retry-After header '%s' is not in delta-seconds format, using default", value);
+                    return null;
+                }
+            })
+            .orElse(null);
     }
 
     /**

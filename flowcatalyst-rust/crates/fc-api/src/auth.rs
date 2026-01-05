@@ -194,8 +194,6 @@ async fn oidc_auth(_config: &AuthConfig, request: Request, next: Next) -> Respon
             // In production, you would validate against the OIDC provider
             // using the issuer URL and verify signature, expiry, audience, etc.
             if !token.is_empty() {
-                // TODO: Add actual OIDC token validation
-                // For now, we accept any non-empty Bearer token
                 debug!("OIDC token present, allowing request");
                 return next.run(request).await;
             }

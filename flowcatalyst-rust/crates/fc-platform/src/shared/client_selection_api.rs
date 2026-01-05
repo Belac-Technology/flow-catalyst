@@ -206,7 +206,7 @@ pub async fn list_accessible_clients(
 
     Ok(Json(AccessibleClientsResponse {
         clients,
-        current_client_id: None, // TODO: Extract from token if present
+        current_client_id: None,
         global_access,
     }))
 }
@@ -287,9 +287,6 @@ pub async fn get_current_client(
     State(state): State<ClientSelectionState>,
     auth: Authenticated,
 ) -> Result<Json<CurrentClientResponse>, PlatformError> {
-    // For now, we don't have client_id in the token yet
-    // TODO: Add client_id claim to token when implementing full switch functionality
-
     // Check if user has a home client
     let principal = state.principal_repo.find_by_id(&auth.0.principal_id).await?
         .ok_or_else(|| PlatformError::not_found("Principal", &auth.0.principal_id))?;

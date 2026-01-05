@@ -25,6 +25,12 @@ pub struct QueueMetrics {
     pub in_flight_messages: u64,
     /// Queue identifier
     pub queue_identifier: String,
+    /// Total messages polled from this queue
+    pub total_polled: u64,
+    /// Total messages successfully acknowledged (consumed)
+    pub total_acked: u64,
+    /// Total messages negatively acknowledged (failed/retried)
+    pub total_nacked: u64,
 }
 
 /// Trait for consuming messages from a queue

@@ -15,7 +15,6 @@ use tokio::sync::broadcast;
 use tokio::net::TcpListener;
 use anyhow::Result;
 use tracing::{info, error};
-use tracing_subscriber::EnvFilter;
 use axum::{
     routing::get,
     response::Json,
@@ -133,13 +132,8 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Initialize logging
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::from_default_env()
-                .add_directive(tracing::Level::INFO.into())
-        )
-        .init();
+    // Initialize logging (JSON if LOG_FORMAT=json, text otherwise)
+    fc_common::logging::init_logging("fc-dev");
 
     let args = Args::parse();
 
@@ -336,7 +330,7 @@ async fn main() -> Result<()> {
     let principals_state = PrincipalsState {
         principal_repo: principal_repo.clone(),
         audit_service: Some(audit_service),
-        password_service: None, // TODO: Configure password service for password reset
+        password_service: None,
         anchor_domain_repo: Some(anchor_domain_repo.clone()),
         client_auth_config_repo: Some(client_auth_config_repo.clone()),
     };

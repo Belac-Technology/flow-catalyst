@@ -39,8 +39,8 @@ dependencies {
     implementation("io.quarkus:quarkus-oidc")
 
     // Hot Standby (optional, only loaded if standby.enabled=true)
-    // Using Redisson for proper distributed lock support with clean API
-    implementation("org.redisson:redisson-quarkus-30:3.45.0")
+    // Redis client for distributed locks - native image compatible
+    // (Redisson removed due to native image issues)
 
     // Health checks
     implementation("io.quarkus:quarkus-smallrye-health")
@@ -95,6 +95,7 @@ dependencies {
     testImplementation("io.quarkus:quarkus-test-common")
     testImplementation("org.wiremock:wiremock:3.3.1")
 }
+
 
 group = "tech.flowcatalyst"
 version = "1.0.0-SNAPSHOT"

@@ -11,15 +11,18 @@
 
 use async_trait::async_trait;
 use chrono::Utc;
-use fc_common::{Message, MediationType, MediationResult, MediationOutcome};
+use fc_common::{Message, MediationType, MediationResult, MediationOutcome, WarningCategory, WarningSeverity};
 use hmac::{Hmac, Mac};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 use parking_lot::RwLock;
 use tracing::{info, warn, error, debug};
+
+use crate::warning::WarningService;
 
 /// FlowCatalyst webhook signature header (matches Java: X-FLOWCATALYST-SIGNATURE)
 pub const SIGNATURE_HEADER: &str = "X-FLOWCATALYST-SIGNATURE";
@@ -274,6 +277,7 @@ pub struct HttpMediator {
     client: Client,
     config: HttpMediatorConfig,
     circuit_breaker: CircuitBreaker,
+    warning_service: Option<Arc<WarningService>>,
 }
 
 impl HttpMediator {
@@ -328,7 +332,35 @@ impl HttpMediator {
             "HttpMediator initialized"
         );
 
-        Self { client, config, circuit_breaker }
+        Self { client, config, circuit_breaker, warning_service: None }
+    }
+
+    /// Set the warning service for generating configuration warnings
+    pub fn with_warning_service(mut self, warning_service: Arc<WarningService>) -> Self {
+        self.warning_service = Some(warning_service);
+        self
+    }
+
+    /// Set warning service after construction
+    pub fn set_warning_service(&mut self, warning_service: Arc<WarningService>) {
+        self.warning_service = Some(warning_service);
+    }
+
+    /// Generate a configuration warning
+    fn warn_config(&self, message_id: &str, target: &str, status_code: u16, description: &str) {
+        if let Some(ref ws) = self.warning_service {
+            let severity = if status_code == 501 {
+                WarningSeverity::Critical
+            } else {
+                WarningSeverity::Error
+            };
+            ws.add_warning(
+                WarningCategory::Configuration,
+                severity,
+                format!("HTTP {} {} for message {}: Target: {}", status_code, description, message_id, target),
+                "HttpMediator".to_string(),
+            );
+        }
     }
 
     /// Get circuit breaker state
@@ -436,15 +468,18 @@ impl HttpMediator {
                         status_code = status_code,
                         "Bad request - configuration error"
                     );
+                    self.warn_config(&message.id, &message.mediation_target, status_code, "Bad Request");
                     MediationOutcome::error_config(status_code, "HTTP 400: Bad request".to_string())
                 } else if status_code == 401 || status_code == 403 {
                     // Auth errors - configuration error
                     self.circuit_breaker.record_success();
+                    let desc = if status_code == 401 { "Unauthorized" } else { "Forbidden" };
                     warn!(
                         message_id = %message.id,
                         status_code = status_code,
                         "Authentication/authorization error"
                     );
+                    self.warn_config(&message.id, &message.mediation_target, status_code, desc);
                     MediationOutcome::error_config(status_code, format!("HTTP {}: Auth error", status_code))
                 } else if status_code == 404 {
                     // Not found - configuration error
@@ -454,6 +489,7 @@ impl HttpMediator {
                         status_code = status_code,
                         "Endpoint not found"
                     );
+                    self.warn_config(&message.id, &message.mediation_target, status_code, "Not Found");
                     MediationOutcome::error_config(status_code, "HTTP 404: Not found".to_string())
                 } else if status_code == 429 {
                     // Too Many Requests - TRANSIENT error, respect Retry-After
@@ -480,13 +516,14 @@ impl HttpMediator {
                         error_message: Some("HTTP 429: Too Many Requests".to_string()),
                     }
                 } else if status_code == 501 {
-                    // Not implemented - configuration error
+                    // Not implemented - configuration error (CRITICAL)
                     self.circuit_breaker.record_success();
                     warn!(
                         message_id = %message.id,
                         status_code = status_code,
                         "Not implemented"
                     );
+                    self.warn_config(&message.id, &message.mediation_target, status_code, "Not Implemented");
                     MediationOutcome::error_config(status_code, "HTTP 501: Not implemented".to_string())
                 } else if status.is_client_error() {
                     // Other 4xx - treat as config error (but NOT 429 which is handled above)

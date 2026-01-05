@@ -12,6 +12,7 @@ path = "src/main.rs"
 fc-scheduler = { path = "../../crates/fc-scheduler" }
 fc-config = { path = "../../crates/fc-config" }
 fc-standby = { path = "../../crates/fc-standby" }
+fc-common = { path = "../../crates/fc-common" }
 
 tokio = { workspace = true }
 mongodb = { workspace = true }

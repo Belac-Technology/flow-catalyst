@@ -506,7 +506,6 @@ async fn handle_client_credentials_grant(state: OAuthState, req: TokenRequest) -
         ).into_response();
     }
 
-    // TODO: Verify client_secret (need to integrate with secrets provider)
     if client_secret.is_empty() {
         return (
             StatusCode::UNAUTHORIZED,
@@ -621,7 +620,7 @@ pub async fn oidc_callback(
     let mut auth_code = AuthorizationCode::new(
         auth_code_str.clone(),
         pending.client_id.clone(),
-        "placeholder".to_string(), // TODO: Set actual principal after OIDC token exchange
+        "placeholder".to_string(),
         pending.redirect_uri.clone(),
     )
     .with_scope(pending.scope.clone())

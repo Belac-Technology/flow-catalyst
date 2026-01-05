@@ -617,8 +617,9 @@
                 const queueCount = Object.keys(this.data.queueStats).length;
                 document.getElementById('activeQueues').textContent = queueCount;
 
-                const totalProcessed = Object.values(this.data.queueStats)
-                    .reduce((sum, stats) => sum + (stats.totalMessages || 0), 0);
+                // Use pool stats for total processed (queue stats don't track totals yet)
+                const totalProcessed = Object.values(this.data.poolStats)
+                    .reduce((sum, stats) => sum + (stats.totalProcessed || 0), 0);
                 document.getElementById('totalProcessed').textContent = totalProcessed.toLocaleString();
 
                 document.getElementById('activeWarnings').textContent = this.data.warnings.length;

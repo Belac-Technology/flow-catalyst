@@ -83,14 +83,6 @@ impl MockQueueConsumer {
             running: AtomicBool::new(true),
         }
     }
-
-    fn acked_handles(&self) -> Vec<String> {
-        self.acked.lock().clone()
-    }
-
-    fn nacked_handles(&self) -> Vec<(String, Option<u32>)> {
-        self.nacked.lock().clone()
-    }
 }
 
 #[async_trait]

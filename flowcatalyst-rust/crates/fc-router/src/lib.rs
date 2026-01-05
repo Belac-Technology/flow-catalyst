@@ -24,6 +24,8 @@ pub mod metrics;
 pub mod circuit_breaker_registry;
 pub mod config_sync;
 pub mod standby;
+pub mod notification;
+pub mod queue_health_monitor;
 
 pub use error::RouterError;
 pub use manager::{QueueManager, InFlightMessageInfo};
@@ -38,6 +40,14 @@ pub use config_sync::{ConfigSyncService, ConfigSyncConfig, ConfigSyncResult, spa
 pub use standby::{
     StandbyProcessor, StandbyAwareProcessor, StandbyRouterConfig,
     LeadershipStatus, spawn_leadership_monitor,
+};
+pub use notification::{
+    NotificationService, NotificationConfig, TeamsWebhookNotificationService,
+    BatchingNotificationService, NoOpNotificationService, create_notification_service,
+    create_notification_service_with_scheduler, NotificationServiceWithScheduler,
+};
+pub use queue_health_monitor::{
+    QueueHealthMonitor, QueueHealthConfig, spawn_queue_health_monitor,
 };
 
 // Re-export QueueMetrics for API

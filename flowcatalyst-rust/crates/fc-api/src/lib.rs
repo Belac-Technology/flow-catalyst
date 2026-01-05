@@ -890,7 +890,7 @@ async fn dashboard_health_handler(State(state): State<AppState>) -> Json<Dashboa
     })
 }
 
-/// Queue stats for dashboard
+/// Queue stats for dashboard (matches Java QueueStats)
 #[derive(Serialize, ToSchema)]
 struct DashboardQueueStats {
     name: String,
@@ -902,27 +902,31 @@ struct DashboardQueueStats {
     total_failed: u64,
     #[serde(rename = "successRate")]
     success_rate: f64,
-    #[serde(rename = "successRate5min")]
-    success_rate_5min: f64,
-    #[serde(rename = "successRate30min")]
-    success_rate_30min: f64,
+    #[serde(rename = "currentSize")]
+    current_size: u64,
+    throughput: f64,
+    #[serde(rename = "pendingMessages")]
+    pending_messages: u64,
+    #[serde(rename = "messagesNotVisible")]
+    messages_not_visible: u64,
+    // 5 minute window metrics
     #[serde(rename = "totalMessages5min")]
     total_messages_5min: u64,
     #[serde(rename = "totalConsumed5min")]
     total_consumed_5min: u64,
     #[serde(rename = "totalFailed5min")]
     total_failed_5min: u64,
+    #[serde(rename = "successRate5min")]
+    success_rate_5min: f64,
+    // 30 minute window metrics
     #[serde(rename = "totalMessages30min")]
     total_messages_30min: u64,
     #[serde(rename = "totalConsumed30min")]
     total_consumed_30min: u64,
     #[serde(rename = "totalFailed30min")]
     total_failed_30min: u64,
-    #[serde(rename = "pendingMessages")]
-    pending_messages: u64,
-    #[serde(rename = "messagesNotVisible")]
-    messages_not_visible: u64,
-    throughput: f64,
+    #[serde(rename = "successRate30min")]
+    success_rate_30min: f64,
 }
 
 /// Queue stats endpoint for dashboard
@@ -939,26 +943,37 @@ async fn dashboard_queue_stats_handler(State(state): State<AppState>) -> Json<Ha
     let mut result = HashMap::new();
 
     for m in metrics {
-        let total = m.pending_messages + m.in_flight_messages;
-        let consumed = total.saturating_sub(m.pending_messages);
+        // pending_messages = messages waiting in queue
+        // in_flight_messages = messages currently being processed
+        let current_size = m.pending_messages + m.in_flight_messages;
+
+        // Calculate success rate from acked vs total processed
+        let total_processed = m.total_acked + m.total_nacked;
+        let success_rate = if total_processed > 0 {
+            m.total_acked as f64 / total_processed as f64
+        } else {
+            1.0
+        };
 
         let stats = DashboardQueueStats {
             name: m.queue_identifier.clone(),
-            total_messages: total,
-            total_consumed: consumed,
-            total_failed: 0,
-            success_rate: if total > 0 { consumed as f64 / total as f64 } else { 1.0 },
-            success_rate_5min: 1.0,
-            success_rate_30min: 1.0,
-            total_messages_5min: 0,
-            total_consumed_5min: 0,
-            total_failed_5min: 0,
-            total_messages_30min: 0,
-            total_consumed_30min: 0,
-            total_failed_30min: 0,
+            total_messages: m.total_polled,
+            total_consumed: m.total_acked,
+            total_failed: m.total_nacked,
+            success_rate,
+            current_size,
+            throughput: 0.0,   // TODO: Calculate throughput
             pending_messages: m.pending_messages,
             messages_not_visible: m.in_flight_messages,
-            throughput: 0.0,
+            // TODO: Windowed metrics require time-bucketed tracking
+            total_messages_5min: m.total_polled,  // Using total for now
+            total_consumed_5min: m.total_acked,
+            total_failed_5min: m.total_nacked,
+            success_rate_5min: success_rate,
+            total_messages_30min: m.total_polled,
+            total_consumed_30min: m.total_acked,
+            total_failed_30min: m.total_nacked,
+            success_rate_30min: success_rate,
         };
         result.insert(m.queue_identifier, stats);
     }
@@ -966,7 +981,7 @@ async fn dashboard_queue_stats_handler(State(state): State<AppState>) -> Json<Ha
     Json(result)
 }
 
-/// Pool stats for dashboard
+/// Pool stats for dashboard (matches Java PoolStats)
 #[derive(Serialize, ToSchema)]
 struct DashboardPoolStats {
     #[serde(rename = "poolCode")]
@@ -981,18 +996,6 @@ struct DashboardPoolStats {
     total_rate_limited: u64,
     #[serde(rename = "successRate")]
     success_rate: f64,
-    #[serde(rename = "successRate5min")]
-    success_rate_5min: f64,
-    #[serde(rename = "successRate30min")]
-    success_rate_30min: f64,
-    #[serde(rename = "totalProcessed5min")]
-    total_processed_5min: u64,
-    #[serde(rename = "totalSucceeded5min")]
-    total_succeeded_5min: u64,
-    #[serde(rename = "totalProcessed30min")]
-    total_processed_30min: u64,
-    #[serde(rename = "totalSucceeded30min")]
-    total_succeeded_30min: u64,
     #[serde(rename = "activeWorkers")]
     active_workers: u32,
     #[serde(rename = "availablePermits")]
@@ -1005,6 +1008,24 @@ struct DashboardPoolStats {
     max_queue_capacity: u32,
     #[serde(rename = "averageProcessingTimeMs")]
     average_processing_time_ms: f64,
+    // 5 minute window metrics
+    #[serde(rename = "totalProcessed5min")]
+    total_processed_5min: u64,
+    #[serde(rename = "totalSucceeded5min")]
+    total_succeeded_5min: u64,
+    #[serde(rename = "totalFailed5min")]
+    total_failed_5min: u64,
+    #[serde(rename = "successRate5min")]
+    success_rate_5min: f64,
+    // 30 minute window metrics
+    #[serde(rename = "totalProcessed30min")]
+    total_processed_30min: u64,
+    #[serde(rename = "totalSucceeded30min")]
+    total_succeeded_30min: u64,
+    #[serde(rename = "totalFailed30min")]
+    total_failed_30min: u64,
+    #[serde(rename = "successRate30min")]
+    success_rate_30min: f64,
 }
 
 /// Pool stats endpoint for dashboard
@@ -1021,25 +1042,49 @@ async fn dashboard_pool_stats_handler(State(state): State<AppState>) -> Json<Has
     let mut result = HashMap::new();
 
     for s in pool_stats {
+        // Extract metrics from the enhanced metrics if available
+        let (total_success, total_failure, success_rate, avg_processing_time,
+             success_5min, failure_5min, rate_5min,
+             success_30min, failure_30min, rate_30min) = if let Some(ref m) = s.metrics {
+            (
+                m.total_success,
+                m.total_failure,
+                m.success_rate,
+                m.processing_time.avg_ms,
+                m.last_5_min.success_count,
+                m.last_5_min.failure_count,
+                m.last_5_min.success_rate,
+                m.last_30_min.success_count,
+                m.last_30_min.failure_count,
+                m.last_30_min.success_rate,
+            )
+        } else {
+            (0, 0, 1.0, 0.0, 0, 0, 1.0, 0, 0, 1.0)
+        };
+
         let stats = DashboardPoolStats {
             pool_code: s.pool_code.clone(),
-            total_processed: 0,
-            total_succeeded: 0,
-            total_failed: 0,
-            total_rate_limited: 0,
-            success_rate: 1.0,
-            success_rate_5min: 1.0,
-            success_rate_30min: 1.0,
-            total_processed_5min: 0,
-            total_succeeded_5min: 0,
-            total_processed_30min: 0,
-            total_succeeded_30min: 0,
+            total_processed: total_success + total_failure,
+            total_succeeded: total_success,
+            total_failed: total_failure,
+            total_rate_limited: 0, // TODO: track rate limited count
+            success_rate,
             active_workers: s.active_workers,
             available_permits: s.concurrency.saturating_sub(s.active_workers),
             max_concurrency: s.concurrency,
             queue_size: s.queue_size,
             max_queue_capacity: s.queue_capacity,
-            average_processing_time_ms: 0.0,
+            average_processing_time_ms: avg_processing_time,
+            // 5 minute window
+            total_processed_5min: success_5min + failure_5min,
+            total_succeeded_5min: success_5min,
+            total_failed_5min: failure_5min,
+            success_rate_5min: rate_5min,
+            // 30 minute window
+            total_processed_30min: success_30min + failure_30min,
+            total_succeeded_30min: success_30min,
+            total_failed_30min: failure_30min,
+            success_rate_30min: rate_30min,
         };
         result.insert(s.pool_code, stats);
     }
@@ -1674,6 +1719,9 @@ async fn stream_readiness_handler(State(state): State<AppState>) -> Response {
 // ============================================================================
 
 /// Get local configuration
+///
+/// In dev mode (FLOWCATALYST_DEV_MODE=true), returns LocalStack queue URLs.
+/// Otherwise returns current pool configuration.
 #[utoipa::path(
     get,
     path = "/api/config",
@@ -1684,18 +1732,72 @@ async fn stream_readiness_handler(State(state): State<AppState>) -> Response {
 )]
 async fn get_local_config(State(state): State<AppState>) -> Json<serde_json::Value> {
     let pool_stats = state.queue_manager.get_pool_stats();
+    let dev_mode = std::env::var("FLOWCATALYST_DEV_MODE")
+        .map(|v| v == "true" || v == "1")
+        .unwrap_or(false);
 
-    let pools: Vec<serde_json::Value> = pool_stats
-        .iter()
-        .map(|p| serde_json::json!({
-            "code": p.pool_code,
-            "concurrency": p.concurrency,
-            "rateLimitPerMinute": p.rate_limit_per_minute,
-        }))
-        .collect();
+    let pools: Vec<serde_json::Value> = if dev_mode && pool_stats.is_empty() {
+        // Return default dev pools
+        vec![
+            serde_json::json!({
+                "code": "DEFAULT",
+                "concurrency": 10,
+                "rateLimitPerMinute": null,
+            }),
+            serde_json::json!({
+                "code": "HIGH",
+                "concurrency": 20,
+                "rateLimitPerMinute": null,
+            }),
+            serde_json::json!({
+                "code": "LOW",
+                "concurrency": 5,
+                "rateLimitPerMinute": 60,
+            }),
+        ]
+    } else {
+        pool_stats
+            .iter()
+            .map(|p| serde_json::json!({
+                "code": p.pool_code,
+                "concurrency": p.concurrency,
+                "rateLimitPerMinute": p.rate_limit_per_minute,
+            }))
+            .collect()
+    };
+
+    let queues: Vec<serde_json::Value> = if dev_mode {
+        // Return LocalStack queue URLs for development
+        // LocalStack uses this URL format for SQS queues
+        let sqs_host = std::env::var("LOCALSTACK_SQS_HOST")
+            .unwrap_or_else(|_| "http://sqs.eu-west-1.localhost.localstack.cloud:4566".to_string());
+
+        vec![
+            serde_json::json!({
+                "name": "fc-high-priority.fifo",
+                "uri": format!("{}/000000000000/fc-high-priority.fifo", sqs_host),
+                "connections": 2,
+                "visibilityTimeout": 120,
+            }),
+            serde_json::json!({
+                "name": "fc-default.fifo",
+                "uri": format!("{}/000000000000/fc-default.fifo", sqs_host),
+                "connections": 2,
+                "visibilityTimeout": 120,
+            }),
+            serde_json::json!({
+                "name": "fc-low-priority.fifo",
+                "uri": format!("{}/000000000000/fc-low-priority.fifo", sqs_host),
+                "connections": 1,
+                "visibilityTimeout": 120,
+            }),
+        ]
+    } else {
+        vec![]
+    };
 
     Json(serde_json::json!({
-        "queues": [],
+        "queues": queues,
         "connections": 1,
         "processingPools": pools,
     }))

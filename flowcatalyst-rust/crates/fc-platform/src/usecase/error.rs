@@ -237,7 +237,6 @@ impl std::error::Error for UseCaseError {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::details;
 
     #[test]
     fn test_validation_error() {

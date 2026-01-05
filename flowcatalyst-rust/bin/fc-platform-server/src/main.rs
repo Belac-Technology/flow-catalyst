@@ -31,7 +31,6 @@ use tower_http::cors::{CorsLayer, Any};
 use tower_http::trace::TraceLayer;
 use anyhow::Result;
 use tracing::info;
-use tracing_subscriber::EnvFilter;
 use tokio::{signal, net::TcpListener};
 use utoipa_swagger_ui::SwaggerUi;
 
@@ -95,13 +94,7 @@ fn env_or_parse<T: std::str::FromStr>(key: &str, default: T) -> T {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Initialize logging
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::from_default_env()
-                .add_directive(tracing::Level::INFO.into())
-        )
-        .init();
+    fc_common::logging::init_logging("fc-platform-server");
 
     info!("Starting FlowCatalyst Platform Server");
 
@@ -219,7 +212,7 @@ async fn main() -> Result<()> {
     let principals_state = PrincipalsState {
         principal_repo: principal_repo.clone(),
         audit_service: Some(audit_service),
-        password_service: None, // TODO: Configure password service for password reset
+        password_service: None,
         anchor_domain_repo: Some(anchor_domain_repo.clone()),
         client_auth_config_repo: Some(client_auth_config_repo.clone()),
     };

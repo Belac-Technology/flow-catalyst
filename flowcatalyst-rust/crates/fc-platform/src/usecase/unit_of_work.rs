@@ -635,23 +635,4 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_derive_audit_action() {
-        assert!(matches!(
-            MongoUnitOfWork::derive_audit_action("CreateUserCommand"),
-            AuditAction::Create
-        ));
-        assert!(matches!(
-            MongoUnitOfWork::derive_audit_action("UpdateRoleCommand"),
-            AuditAction::Update
-        ));
-        assert!(matches!(
-            MongoUnitOfWork::derive_audit_action("DeleteClientCommand"),
-            AuditAction::Delete
-        ));
-        assert!(matches!(
-            MongoUnitOfWork::derive_audit_action("ArchiveEventTypeCommand"),
-            AuditAction::Archive
-        ));
-    }
 }

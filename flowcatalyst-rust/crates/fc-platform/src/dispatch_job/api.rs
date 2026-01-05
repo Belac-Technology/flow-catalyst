@@ -598,9 +598,6 @@ pub async fn create_dispatch_job(
     // Insert into database
     state.dispatch_job_repo.insert(&job).await?;
 
-    // TODO: Send to queue via SQS
-    // This requires implementing the queue integration
-
     Ok((axum::http::StatusCode::CREATED, Json(job.into())))
 }
 
@@ -706,8 +703,6 @@ pub async fn batch_create_dispatch_jobs(
 
     // Bulk insert
     state.dispatch_job_repo.insert_many(&created_jobs).await?;
-
-    // TODO: Send to queue via SQS batch
 
     let count = created_jobs.len();
     let job_responses: Vec<DispatchJobResponse> = created_jobs.into_iter().map(Into::into).collect();

@@ -26,8 +26,8 @@ dependencies {
     // MongoDB for change streams and projection writes
     implementation("io.quarkus:quarkus-mongodb-client")
 
-    // Redis for checkpoints (uses same Redisson as standby)
-    implementation("org.redisson:redisson-quarkus-30:3.45.0")
+    // Redis for checkpoints - native image compatible
+    implementation("io.quarkus:quarkus-redis-client")
 
     // Observability
     implementation("io.quarkus:quarkus-micrometer-registry-prometheus")

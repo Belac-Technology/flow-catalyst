@@ -71,10 +71,6 @@ impl TestQueueConsumer {
     fn add_message(&self, msg: QueuedMessage) {
         self.messages.lock().push(msg);
     }
-
-    fn acked_handles(&self) -> Vec<String> {
-        self.acked.lock().clone()
-    }
 }
 
 #[async_trait]

@@ -35,15 +35,6 @@ impl TimingMediator {
     fn call_count(&self) -> u32 {
         self.call_count.load(Ordering::SeqCst)
     }
-
-    fn call_times(&self) -> Vec<Instant> {
-        self.call_times.lock().clone()
-    }
-
-    fn reset(&self) {
-        self.call_times.lock().clear();
-        self.call_count.store(0, Ordering::SeqCst);
-    }
 }
 
 #[async_trait]
@@ -75,10 +66,6 @@ impl TestQueueConsumer {
 
     fn add_message(&self, msg: QueuedMessage) {
         self.messages.lock().push(msg);
-    }
-
-    fn acked_count(&self) -> usize {
-        self.acked.lock().len()
     }
 }
 

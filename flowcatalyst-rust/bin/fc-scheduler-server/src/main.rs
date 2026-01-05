@@ -9,7 +9,6 @@ use fc_scheduler::{DispatchScheduler, QueueMessage, QueuePublisher, SchedulerCon
 use mongodb::Client as MongoClient;
 use serde::Serialize;
 use tracing::info;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 struct DevQueuePublisher;
 
@@ -31,12 +30,7 @@ struct HealthResponse {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::registry()
-        .with(tracing_subscriber::EnvFilter::new(
-            std::env::var("RUST_LOG").unwrap_or_else(|_| "info,fc_scheduler=debug".into()),
-        ))
-        .with(tracing_subscriber::fmt::layer())
-        .init();
+    fc_common::logging::init_logging("fc-scheduler-server");
 
     info!("Starting FlowCatalyst Dispatch Scheduler");
 

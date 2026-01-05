@@ -141,7 +141,7 @@ impl<U: UnitOfWork> CreateUserUseCase<U> {
             .name(&principal.name)
             .scope(command.scope)
             .client_id(command.client_id.as_deref())
-            .is_anchor_user(false) // TODO: Check anchor domain repository
+            .is_anchor_user(false)
             .build();
 
         // Atomic commit

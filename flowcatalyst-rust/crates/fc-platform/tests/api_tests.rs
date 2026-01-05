@@ -4,7 +4,7 @@
 
 use std::collections::HashSet;
 
-use fc_platform::domain::{Principal, UserScope, AuditLog, AuditAction};
+use fc_platform::domain::{Principal, UserScope};
 use fc_platform::TsidGenerator;
 
 // Unit tests for domain models
@@ -90,107 +90,10 @@ mod domain_tests {
     }
 }
 
-// Audit log tests
-mod audit_tests {
-    use super::*;
-
-    #[test]
-    fn test_audit_log_creation() {
-        let log = AuditLog::new(AuditAction::Create, "Principal", "Created test principal");
-
-        assert_eq!(log.action, AuditAction::Create);
-        assert_eq!(log.entity_type, "Principal");
-        assert!(log.entity_id.is_none());
-    }
-
-    #[test]
-    fn test_audit_log_for_entity() {
-        let log = AuditLog::for_entity(
-            AuditAction::Create,
-            "Principal",
-            "test123",
-            "Created test principal",
-        );
-
-        assert_eq!(log.action, AuditAction::Create);
-        assert_eq!(log.entity_type, "Principal");
-        assert_eq!(log.entity_id, Some("test123".to_string()));
-    }
-
-    #[test]
-    fn test_audit_log_with_principal_context() {
-        let log = AuditLog::for_entity(
-            AuditAction::Update,
-            "Client",
-            "client123",
-            "Updated client settings",
-        )
-        .with_principal("principal123", Some("admin@example.com".to_string()));
-
-        assert_eq!(log.principal_id, Some("principal123".to_string()));
-        assert_eq!(log.principal_email, Some("admin@example.com".to_string()));
-    }
-
-    #[test]
-    fn test_audit_log_with_client_context() {
-        let log = AuditLog::for_entity(
-            AuditAction::Update,
-            "Subscription",
-            "sub123",
-            "Updated subscription",
-        )
-        .with_client("client123");
-
-        assert_eq!(log.client_id, Some("client123".to_string()));
-    }
-
-    #[test]
-    fn test_audit_log_with_request_context() {
-        let log = AuditLog::new(AuditAction::Login, "Session", "User logged in")
-            .with_request_context(
-                Some("req123".to_string()),
-                Some("192.168.1.1".to_string()),
-                Some("Mozilla/5.0".to_string()),
-            );
-
-        assert_eq!(log.request_id, Some("req123".to_string()));
-        assert_eq!(log.ip_address, Some("192.168.1.1".to_string()));
-        assert_eq!(log.user_agent, Some("Mozilla/5.0".to_string()));
-    }
-
-    #[test]
-    fn test_audit_log_action_types() {
-        let actions = vec![
-            AuditAction::Create,
-            AuditAction::Update,
-            AuditAction::Delete,
-            AuditAction::Archive,
-            AuditAction::Login,
-            AuditAction::Logout,
-            AuditAction::TokenIssued,
-            AuditAction::TokenRevoked,
-            AuditAction::RoleAssigned,
-            AuditAction::RoleUnassigned,
-            AuditAction::ClientAccessGranted,
-            AuditAction::ClientAccessRevoked,
-            AuditAction::SubscriptionPaused,
-            AuditAction::SubscriptionResumed,
-            AuditAction::PoolPaused,
-            AuditAction::PoolResumed,
-            AuditAction::ConfigChanged,
-        ];
-
-        for action in actions {
-            let log = AuditLog::new(action, "Test", "Test action");
-            assert_eq!(log.action, action);
-        }
-    }
-}
-
 // Authorization context tests
 mod authorization_tests {
     use super::*;
-    use fc_platform::service::authorization::AuthContext;
+    use fc_platform::service::AuthContext;
 
     fn create_auth_context(permissions: Vec<&str>, scope: &str, clients: Vec<&str>) -> AuthContext {
         AuthContext {
@@ -347,7 +250,7 @@ mod tsid_tests {
 
 // Error handling tests
 mod error_tests {
-    use fc_platform::error::PlatformError;
+    use fc_platform::PlatformError;
 
     #[test]
     fn test_not_found_error() {

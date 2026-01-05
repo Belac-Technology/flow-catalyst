@@ -294,8 +294,7 @@ pub async fn create_event(
 
     state.event_repo.insert(&event).await?;
 
-    // TODO: Create dispatch jobs for matching subscriptions
-    // This requires implementing EventDispatchService with subscription matching
+    // Dispatch jobs are created via the outbox processor calling the dispatch jobs endpoint
     let dispatch_job_count = 0;
 
     Ok((
@@ -507,8 +506,7 @@ pub async fn batch_create_events(
         state.event_repo.insert_many(&new_events).await?;
     }
 
-    // TODO: Create dispatch jobs for matching subscriptions
-    // This requires implementing EventDispatchService with subscription matching
+    // Dispatch jobs are created via the outbox processor calling the dispatch jobs endpoint
     let dispatch_job_count = 0;
 
     let count = all_events.len();

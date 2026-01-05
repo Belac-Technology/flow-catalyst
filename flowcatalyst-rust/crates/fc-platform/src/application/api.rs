@@ -492,7 +492,6 @@ pub async fn provision_service_account<U: UnitOfWork>(
     }
 
     // Create the service account
-    // TODO: Use ProvisionServiceAccountUseCase to emit events and audit logs
     let sa_code = format!("app:{}", app.code);
     let sa_name = format!("{} Service Account", app.name);
 

@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use aws_sdk_sqs::{Client, types::Message as SqsMessage, types::QueueAttributeName};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use tracing::{debug, info, error};
 
 use fc_common::{Message, QueuedMessage};
@@ -14,6 +14,12 @@ pub struct SqsQueueConsumer {
     visibility_timeout_seconds: i32,
     wait_time_seconds: i32,
     running: AtomicBool,
+    /// Total messages polled from queue
+    total_polled: AtomicU64,
+    /// Total messages successfully ACKed
+    total_acked: AtomicU64,
+    /// Total messages NACKed
+    total_nacked: AtomicU64,
 }
 
 impl SqsQueueConsumer {
@@ -30,6 +36,9 @@ impl SqsQueueConsumer {
             visibility_timeout_seconds,
             wait_time_seconds: 20, // Long polling
             running: AtomicBool::new(true),
+            total_polled: AtomicU64::new(0),
+            total_acked: AtomicU64::new(0),
+            total_nacked: AtomicU64::new(0),
         }
     }
 
@@ -111,6 +120,7 @@ impl QueueConsumer for SqsQueueConsumer {
         }
 
         if !messages.is_empty() {
+            self.total_polled.fetch_add(messages.len() as u64, Ordering::Relaxed);
             debug!(
                 queue = %self.queue_name,
                 count = messages.len(),
@@ -130,6 +140,7 @@ impl QueueConsumer for SqsQueueConsumer {
             .await
             .map_err(|e| QueueError::Sqs(e.to_string()))?;
 
+        self.total_acked.fetch_add(1, Ordering::Relaxed);
         debug!(
             receipt_handle = %receipt_handle,
             queue = %self.queue_name,
@@ -152,6 +163,7 @@ impl QueueConsumer for SqsQueueConsumer {
             .await
             .map_err(|e| QueueError::Sqs(e.to_string()))?;
 
+        self.total_nacked.fetch_add(1, Ordering::Relaxed);
         debug!(
             receipt_handle = %receipt_handle,
             queue = %self.queue_name,
@@ -222,6 +234,9 @@ impl QueueConsumer for SqsQueueConsumer {
             pending_messages,
             in_flight_messages,
             queue_identifier: self.queue_name.clone(),
+            total_polled: self.total_polled.load(Ordering::Relaxed),
+            total_acked: self.total_acked.load(Ordering::Relaxed),
+            total_nacked: self.total_nacked.load(Ordering::Relaxed),
         }))
     }
 }

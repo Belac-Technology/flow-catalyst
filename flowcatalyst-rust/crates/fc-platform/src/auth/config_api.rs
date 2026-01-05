@@ -984,8 +984,6 @@ pub async fn update_granted_clients(
     let mut config = state.client_auth_config_repo.find_by_id(&id).await?
         .ok_or_else(|| PlatformError::not_found("ClientAuthConfig", &id))?;
 
-    // For now, store granted clients in additional_client_ids
-    // TODO: Add dedicated granted_client_ids field if needed
     config.additional_client_ids = req.granted_client_ids;
     config.updated_at = chrono::Utc::now();
 

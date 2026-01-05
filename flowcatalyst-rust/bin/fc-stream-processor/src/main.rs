@@ -20,7 +20,6 @@ use std::net::SocketAddr;
 use std::time::Duration;
 use anyhow::Result;
 use tracing::{info, warn, error};
-use tracing_subscriber::EnvFilter;
 use tokio::signal;
 use tokio::sync::broadcast;
 use futures::StreamExt;
@@ -45,13 +44,7 @@ fn env_or_parse<T: std::str::FromStr>(key: &str, default: T) -> T {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Initialize logging
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::from_default_env()
-                .add_directive(tracing::Level::INFO.into())
-        )
-        .init();
+    fc_common::logging::init_logging("fc-stream-processor");
 
     info!("Starting FlowCatalyst Stream Processor");
 

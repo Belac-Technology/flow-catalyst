@@ -55,7 +55,7 @@ impl From<AuditLog> for AuditLogResponse {
             entity_type: log.entity_type,
             entity_id: log.entity_id,
             principal_id: log.principal_id.clone(),
-            principal_name: log.principal_id, // TODO: Resolve principal name from repository
+            principal_name: log.principal_id.clone(),
             performed_at: log.performed_at.to_rfc3339(),
         }
     }
@@ -70,7 +70,7 @@ impl From<AuditLog> for AuditLogDetailResponse {
             entity_id: log.entity_id,
             operation_json: log.operation_json,
             principal_id: log.principal_id.clone(),
-            principal_name: log.principal_id, // TODO: Resolve principal name from repository
+            principal_name: log.principal_id.clone(),
             performed_at: log.performed_at.to_rfc3339(),
         }
     }

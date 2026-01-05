@@ -1,12 +1,14 @@
 package tech.flowcatalyst.streamprocessor.checkpoint;
 
 import io.quarkus.arc.properties.IfBuildProperty;
+import io.quarkus.redis.datasource.RedisDataSource;
+import io.quarkus.redis.datasource.keys.KeyCommands;
+import io.quarkus.redis.datasource.value.ValueCommands;
+import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
 import org.bson.BsonDocument;
-import org.redisson.api.RBucket;
-import org.redisson.api.RedissonClient;
 
 import java.util.Optional;
 import java.util.logging.Logger;
@@ -21,6 +23,8 @@ import java.util.logging.Logger;
  *
  * <p>Each stream has its own checkpoint key in Redis, prefixed with
  * {@code flowcatalyst:stream-processor:checkpoint:}</p>
+ *
+ * <p>Uses Quarkus Redis client for native image compatibility.</p>
  */
 @ApplicationScoped
 @IfBuildProperty(name = "stream-processor.checkpoint.redis.enabled", stringValue = "true")
@@ -30,19 +34,34 @@ public class RedisCheckpointStore implements CheckpointStore {
     private static final String CHECKPOINT_PREFIX = "flowcatalyst:stream-processor:checkpoint:";
 
     @Inject
-    Instance<RedissonClient> redissonClient;
+    Instance<RedisDataSource> redisDataSourceInstance;
+
+    private ValueCommands<String, String> valueCommands;
+    private KeyCommands<String> keyCommands;
+    private boolean initialized = false;
+
+    @PostConstruct
+    void init() {
+        if (redisDataSourceInstance.isResolvable()) {
+            RedisDataSource redis = redisDataSourceInstance.get();
+            this.valueCommands = redis.value(String.class, String.class);
+            this.keyCommands = redis.key(String.class);
+            this.initialized = true;
+            LOG.info("RedisCheckpointStore initialized with Quarkus Redis client");
+        } else {
+            LOG.warning("Redis client not available for checkpoint store");
+        }
+    }
 
     @Override
     public Optional<BsonDocument> getCheckpoint(String checkpointKey) throws CheckpointUnavailableException {
-        if (!redissonClient.isResolvable()) {
+        if (!initialized) {
             throw new CheckpointUnavailableException("Redis client not available");
         }
 
         String json;
         try {
-            RBucket<String> bucket = redissonClient.get()
-                    .getBucket(CHECKPOINT_PREFIX + checkpointKey);
-            json = bucket.get();
+            json = valueCommands.get(CHECKPOINT_PREFIX + checkpointKey);
         } catch (Exception e) {
             throw new CheckpointUnavailableException(
                     "[" + checkpointKey + "] Failed to load checkpoint from Redis: " + e.getMessage(), e);
@@ -65,15 +84,13 @@ public class RedisCheckpointStore implements CheckpointStore {
 
     @Override
     public void saveCheckpoint(String checkpointKey, BsonDocument resumeToken) {
-        if (!redissonClient.isResolvable()) {
+        if (!initialized) {
             LOG.warning("[" + checkpointKey + "] Redis not available - checkpoint not saved");
             return;
         }
 
         try {
-            RBucket<String> bucket = redissonClient.get()
-                    .getBucket(CHECKPOINT_PREFIX + checkpointKey);
-            bucket.set(resumeToken.toJson());
+            valueCommands.set(CHECKPOINT_PREFIX + checkpointKey, resumeToken.toJson());
             LOG.fine("[" + checkpointKey + "] Checkpoint saved to Redis");
         } catch (Exception e) {
             LOG.warning("[" + checkpointKey + "] Failed to save checkpoint to Redis: " + e.getMessage());
@@ -82,15 +99,13 @@ public class RedisCheckpointStore implements CheckpointStore {
 
     @Override
     public void clearCheckpoint(String checkpointKey) {
-        if (!redissonClient.isResolvable()) {
+        if (!initialized) {
             LOG.warning("[" + checkpointKey + "] Redis not available - checkpoint not cleared");
             return;
         }
 
         try {
-            RBucket<String> bucket = redissonClient.get()
-                    .getBucket(CHECKPOINT_PREFIX + checkpointKey);
-            bucket.delete();
+            keyCommands.del(CHECKPOINT_PREFIX + checkpointKey);
             LOG.info("[" + checkpointKey + "] Checkpoint cleared from Redis");
         } catch (Exception e) {
             LOG.warning("[" + checkpointKey + "] Failed to clear checkpoint from Redis: " + e.getMessage());

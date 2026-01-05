@@ -34,7 +34,6 @@ use std::time::Duration;
 use std::net::SocketAddr;
 use anyhow::Result;
 use tracing::info;
-use tracing_subscriber::EnvFilter;
 use tokio::signal;
 use tokio::sync::broadcast;
 use async_trait::async_trait;
@@ -64,13 +63,7 @@ fn env_required(key: &str) -> Result<String> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Initialize logging
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::from_default_env()
-                .add_directive(tracing::Level::INFO.into())
-        )
-        .init();
+    fc_common::logging::init_logging("fc-outbox-processor");
 
     info!("Starting FlowCatalyst Outbox Processor");
 

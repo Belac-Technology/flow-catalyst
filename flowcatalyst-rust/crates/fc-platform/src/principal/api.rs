@@ -242,7 +242,7 @@ pub struct PrincipalResponse {
 impl From<Principal> for PrincipalResponse {
     fn from(p: Principal) -> Self {
         let (email, idp_type) = match &p.user_identity {
-            Some(i) => (Some(i.email.clone()), Some("INTERNAL".to_string())), // TODO: track idpType
+            Some(i) => (Some(i.email.clone()), Some("INTERNAL".to_string())),
             None => (None, None),
         };
 

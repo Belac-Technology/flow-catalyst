@@ -1,9 +1,9 @@
 .PHONY: build-router-latest
 
 # ECR Registry configuration
-ECR_REGISTRY ?= 392314734354.dkr.ecr.eu-west-1.amazonaws.com
+ECR_REGISTRY ?= NONE
 ECR_REPO ?= flowcatalyst/router
-ECR_IMAGE ?= $(ECR_REGISTRY)/$(ECR_REPO):latest
+ECR_IMAGE ?= NONE
 
 # Router build configuration
 ROUTER_PROJECT ?= core/flowcatalyst-message-router

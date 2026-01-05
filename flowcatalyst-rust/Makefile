@@ -19,8 +19,13 @@ help:
 	@echo "  check        Fast compile check (no binary output)"
 	@echo ""
 	@echo "Build:"
-	@echo "  build        Build all binaries (debug)"
-	@echo "  release      Build all binaries (release, optimized)"
+	@echo "  build          Build all binaries (debug)"
+	@echo "  release        Build all binaries (release, optimized)"
+	@echo "  build-dev      Build fc-dev only"
+	@echo "  build-router   Build fc-router only"
+	@echo "  build-platform Build fc-platform-server only"
+	@echo "  build-outbox   Build fc-outbox-processor only"
+	@echo "  build-stream   Build fc-stream-processor only"
 	@echo ""
 	@echo "Quality:"
 	@echo "  test         Run all tests"
@@ -86,6 +91,14 @@ build-router:
 # Build only fc-platform-server
 build-platform:
 	cargo build --bin fc-platform-server
+
+# Build only fc-outbox-processor
+build-outbox:
+	cargo build --bin fc-outbox-processor
+
+# Build only fc-stream-processor
+build-stream:
+	cargo build --bin fc-stream-processor
 
 # ============================================================================
 # Testing

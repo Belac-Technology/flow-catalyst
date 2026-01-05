@@ -305,6 +305,10 @@ impl QueueConsumer for SqliteQueue {
             pending_messages: pending_messages as u64,
             in_flight_messages: in_flight_messages as u64,
             queue_identifier: self.queue_name.clone(),
+            // SQLite queue doesn't track these metrics yet
+            total_polled: 0,
+            total_acked: 0,
+            total_nacked: 0,
         }))
     }
 }

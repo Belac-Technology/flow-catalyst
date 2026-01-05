@@ -20,8 +20,8 @@ dependencies {
     implementation("io.quarkus:quarkus-scheduler")
     implementation("io.quarkus:quarkus-smallrye-health")
 
-    // Redis for distributed locks
-    implementation("org.redisson:redisson-quarkus-30:3.45.0")
+    // Redis for distributed locks (native image compatible)
+    implementation("io.quarkus:quarkus-redis-client")
 
     // Testing
     testImplementation("io.quarkus:quarkus-junit5")
