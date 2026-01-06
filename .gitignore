@@ -81,3 +81,4 @@ dist/
 # bun.lockb
 *.hprof
 data/flowcatalyst-queue.db
+Makefile

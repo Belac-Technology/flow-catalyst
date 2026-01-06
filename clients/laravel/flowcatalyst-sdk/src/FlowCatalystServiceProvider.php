@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace FlowCatalyst;
 
+use FlowCatalyst\Auth\Contracts\OidcUserHandler;
+use FlowCatalyst\Auth\DefaultOidcUserHandler;
 use FlowCatalyst\Client\Auth\OidcTokenManager;
 use FlowCatalyst\Client\FlowCatalystClient;
 use FlowCatalyst\Outbox\Contracts\OutboxDriver;
@@ -27,6 +29,7 @@ class FlowCatalystServiceProvider extends ServiceProvider
         $this->registerTokenManager();
         $this->registerClient();
         $this->registerOutbox();
+        $this->registerOidcUserAuth();
     }
 
     /**
@@ -37,6 +40,7 @@ class FlowCatalystServiceProvider extends ServiceProvider
         $this->publishConfig();
         $this->publishMigrations();
         $this->registerMiddleware();
+        $this->registerOidcRoutes();
     }
 
     /**
@@ -138,5 +142,46 @@ class FlowCatalystServiceProvider extends ServiceProvider
             'flowcatalyst.webhook',
             \FlowCatalyst\Http\Middleware\ValidateWebhookSignature::class
         );
+    }
+
+    /**
+     * Register the OIDC user authentication handler.
+     *
+     * Applications can override this by binding their own OidcUserHandler
+     * implementation in their AppServiceProvider.
+     */
+    protected function registerOidcUserAuth(): void
+    {
+        // Only bind if not already bound (allows app to override)
+        if (!$this->app->bound(OidcUserHandler::class)) {
+            $this->app->singleton(OidcUserHandler::class, DefaultOidcUserHandler::class);
+        }
+    }
+
+    /**
+     * Register the OIDC authentication routes.
+     */
+    protected function registerOidcRoutes(): void
+    {
+        if (!config('flowcatalyst.oidc.enabled', false)) {
+            return;
+        }
+
+        $this->app['router']->group([
+            'middleware' => config('flowcatalyst.oidc.middleware', ['web']),
+        ], function ($router) {
+            $loginRoute = config('flowcatalyst.oidc.login_route', '/flowcatalyst/login');
+            $callbackRoute = config('flowcatalyst.oidc.callback_route', '/flowcatalyst/callback');
+            $logoutRoute = config('flowcatalyst.oidc.logout_route', '/flowcatalyst/logout');
+
+            $router->get($loginRoute, [\FlowCatalyst\Auth\Http\Controllers\OidcAuthController::class, 'login'])
+                ->name('flowcatalyst.login');
+
+            $router->get($callbackRoute, [\FlowCatalyst\Auth\Http\Controllers\OidcAuthController::class, 'callback'])
+                ->name('flowcatalyst.callback');
+
+            $router->match(['get', 'post'], $logoutRoute, [\FlowCatalyst\Auth\Http\Controllers\OidcAuthController::class, 'logout'])
+                ->name('flowcatalyst.logout');
+        });
     }
 }

@@ -76,6 +76,108 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | OIDC User Authentication
+    |--------------------------------------------------------------------------
+    |
+    | Configuration for authenticating users via FlowCatalyst's OIDC server.
+    | This is separate from the service account credentials above which are
+    | used for API access.
+    |
+    | User authentication flow:
+    | 1. User clicks login -> redirected to FlowCatalyst
+    | 2. User authenticates -> redirected back with code
+    | 3. Code exchanged for tokens -> your OidcUserHandler is called
+    |
+    | For API access to FlowCatalyst, use the service account credentials
+    | (client_id/client_secret above with client_credentials grant).
+    |
+    */
+    'oidc' => [
+        /*
+        |----------------------------------------------------------------------
+        | Enable OIDC User Authentication
+        |----------------------------------------------------------------------
+        |
+        | Set to false to disable the OIDC routes entirely.
+        |
+        */
+        'enabled' => env('FLOWCATALYST_OIDC_ENABLED', false),
+
+        /*
+        |----------------------------------------------------------------------
+        | OIDC Client ID (for user authentication)
+        |----------------------------------------------------------------------
+        |
+        | The OAuth client ID for user authentication. This is different from
+        | the service account client_id used for API access.
+        |
+        | Create an OAuth client in FlowCatalyst with:
+        | - Grant types: authorization_code
+        | - Redirect URI: https://your-app.com/flowcatalyst/callback
+        |
+        */
+        'client_id' => env('FLOWCATALYST_OIDC_CLIENT_ID'),
+
+        /*
+        |----------------------------------------------------------------------
+        | OIDC Client Secret (optional for public clients)
+        |----------------------------------------------------------------------
+        |
+        | For confidential clients, provide the client secret.
+        | For public clients (SPAs), leave empty and use PKCE only.
+        |
+        */
+        'client_secret' => env('FLOWCATALYST_OIDC_CLIENT_SECRET'),
+
+        /*
+        |----------------------------------------------------------------------
+        | Requested Scopes
+        |----------------------------------------------------------------------
+        |
+        | The scopes to request during authentication.
+        | Default: openid profile email
+        |
+        */
+        'scope' => env('FLOWCATALYST_OIDC_SCOPE', 'openid profile email'),
+
+        /*
+        |----------------------------------------------------------------------
+        | Route Configuration
+        |----------------------------------------------------------------------
+        |
+        | Customize the routes used for OIDC authentication.
+        |
+        */
+        'login_route' => env('FLOWCATALYST_OIDC_LOGIN_ROUTE', '/flowcatalyst/login'),
+        'callback_route' => env('FLOWCATALYST_OIDC_CALLBACK_ROUTE', '/flowcatalyst/callback'),
+        'logout_route' => env('FLOWCATALYST_OIDC_LOGOUT_ROUTE', '/flowcatalyst/logout'),
+
+        /*
+        |----------------------------------------------------------------------
+        | Redirect URLs
+        |----------------------------------------------------------------------
+        |
+        | Where to redirect after login/logout.
+        | These can be overridden by implementing OidcUserHandler.
+        |
+        */
+        'redirect_after_login' => env('FLOWCATALYST_REDIRECT_AFTER_LOGIN', '/dashboard'),
+        'redirect_after_logout' => env('FLOWCATALYST_REDIRECT_AFTER_LOGOUT', '/'),
+        'error_redirect' => env('FLOWCATALYST_ERROR_REDIRECT', '/'),
+
+        /*
+        |----------------------------------------------------------------------
+        | Route Middleware
+        |----------------------------------------------------------------------
+        |
+        | Middleware to apply to the OIDC routes.
+        |
+        */
+        'middleware' => ['web'],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Outbox Configuration
     |--------------------------------------------------------------------------
     |
