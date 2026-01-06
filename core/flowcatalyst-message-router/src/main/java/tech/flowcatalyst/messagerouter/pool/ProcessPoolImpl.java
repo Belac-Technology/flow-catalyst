@@ -675,6 +675,8 @@ public class ProcessPoolImpl implements ProcessPool {
      * </ul>
      */
     private void waitForRateLimitPermit() {
+        boolean recordedRateLimit = false;
+
         while (running.get()) {
             // Store in local variable to detect config changes
             RateLimiter limiter = this.rateLimiter;
@@ -684,6 +686,13 @@ public class ProcessPoolImpl implements ProcessPool {
 
             if (limiter.acquirePermission()) {
                 return; // Got permit, proceed with processing
+            }
+
+            // Record rate limit event once per wait (not every poll)
+            if (!recordedRateLimit) {
+                poolMetrics.recordRateLimitExceeded(poolCode);
+                recordedRateLimit = true;
+                LOG.debugf("Pool [%s] rate limited - waiting for permit", poolCode);
             }
 
             // No permit available - wait briefly then re-check

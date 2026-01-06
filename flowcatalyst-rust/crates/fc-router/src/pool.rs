@@ -431,7 +431,7 @@ impl ProcessPool {
 
             // Wait for rate limit permit (blocking with config-change awareness)
             // Messages stay in memory instead of being NACKed back to SQS
-            Self::wait_for_rate_limit_permit(&rate_limiter).await;
+            Self::wait_for_rate_limit_permit(&rate_limiter, &metrics_collector).await;
 
             // Acquire semaphore permit
             let permit = match semaphore.acquire().await {
@@ -614,7 +614,10 @@ impl ProcessPool {
     /// - Permits available: check() succeeds immediately
     async fn wait_for_rate_limit_permit(
         rate_limiter: &Arc<parking_lot::RwLock<Option<Arc<RateLimiter<NotKeyed, InMemoryState, DefaultClock>>>>>,
+        metrics_collector: &Arc<PoolMetricsCollector>,
     ) {
+        let mut recorded_rate_limit = false;
+
         loop {
             // Read current rate limiter (may have changed via config update)
             let limiter = rate_limiter.read().clone();
@@ -625,6 +628,14 @@ impl ProcessPool {
                     if rl.check().is_ok() {
                         return; // Got permit, proceed with processing
                     }
+
+                    // Record rate limit event once per wait (not every poll)
+                    if !recorded_rate_limit {
+                        metrics_collector.record_rate_limited();
+                        recorded_rate_limit = true;
+                        debug!("Rate limited - waiting for permit");
+                    }
+
                     // No permit available - wait briefly then re-check
                     // This handles: rate limit removed, rate limit changed, permits available
                     tokio::time::sleep(Duration::from_millis(100)).await;

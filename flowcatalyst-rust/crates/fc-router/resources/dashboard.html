@@ -6,7 +6,6 @@
     <title>FlowCatalyst Dashboard</title>
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2347a3f3'/%3E%3Cpath d='M17.5 13V6L8 17h6.5v7L24 13h-6.5z' fill='white' stroke='white' stroke-width='0.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body class="bg-gray-100 min-h-screen">
     <div class="container mx-auto px-4 py-8">
@@ -174,13 +173,6 @@
                         <h3 class="text-lg font-semibold text-gray-900">Queue Statistics</h3>
                         <p class="text-sm text-gray-600">Messages processed per queue</p>
                     </div>
-                    <!-- Queue Success Rate Chart -->
-                    <div class="px-6 py-4 border-b border-gray-200 bg-gray-50">
-                        <h4 class="text-base font-semibold text-gray-900 mb-4">Queue Success Rate</h4>
-                        <div class="h-64">
-                            <canvas id="queueSuccessChart"></canvas>
-                        </div>
-                    </div>
                     <!-- Queue Filter -->
                     <div class="px-6 py-4 border-b border-gray-200 bg-white">
                         <input type="text" id="queueFilterInput" placeholder="Filter by queue name..."
@@ -234,13 +226,6 @@
                                     <option value="deferred">Deferred Rate (Rate Limited %)</option>
                                 </select>
                             </div>
-                        </div>
-                    </div>
-                    <!-- Pool Rate Chart -->
-                    <div class="px-6 py-4 border-b border-gray-200 bg-gray-50">
-                        <h4 id="poolChartTitle" class="text-base font-semibold text-gray-900 mb-4">Pool Success Rate</h4>
-                        <div class="h-64">
-                            <canvas id="poolSuccessChart"></canvas>
                         </div>
                     </div>
                     <!-- Pool Filter -->
@@ -363,7 +348,6 @@
     <script>
         class Dashboard {
             constructor() {
-                this.charts = {};
                 this.basicAuth = null;
                 this.timePeriod = '30min';
                 this.poolRateView = 'success'; // 'success' or 'deferred'
@@ -381,8 +365,8 @@
                     poolName: ''
                 };
                 this.sort = {
-                    queue: { column: null, direction: 'asc' },
-                    pool: { column: null, direction: 'asc' }
+                    queue: { column: 'successRate', direction: 'asc' },
+                    pool: { column: 'successRate', direction: 'asc' }
                 };
 
                 this.checkAuth();
@@ -491,66 +475,7 @@
             }
 
             async init() {
-                this.initCharts();
                 await this.loadData();
-            }
-
-            initCharts() {
-                // Queue Success Rate Chart - Horizontal
-                const queueSuccessCtx = document.getElementById('queueSuccessChart').getContext('2d');
-                this.charts.queueSuccess = new Chart(queueSuccessCtx, {
-                    type: 'bar',
-                    data: {
-                        labels: [],
-                        datasets: [{
-                            label: 'Success Rate (%)',
-                            data: [],
-                            backgroundColor: 'rgba(16, 185, 129, 0.8)',
-                            borderColor: 'rgba(16, 185, 129, 1)',
-                            borderWidth: 1
-                        }]
-                    },
-                    options: {
-                        indexAxis: 'y',
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        scales: {
-                            x: {
-                                beginAtZero: true,
-                                max: 100,
-                                title: { display: true, text: 'Success Rate (%)' }
-                            }
-                        }
-                    }
-                });
-
-                // Pool Success Rate Chart - Horizontal
-                const poolSuccessCtx = document.getElementById('poolSuccessChart').getContext('2d');
-                this.charts.poolSuccess = new Chart(poolSuccessCtx, {
-                    type: 'bar',
-                    data: {
-                        labels: [],
-                        datasets: [{
-                            label: 'Success Rate (%)',
-                            data: [],
-                            backgroundColor: 'rgba(59, 130, 246, 0.8)',
-                            borderColor: 'rgba(59, 130, 246, 1)',
-                            borderWidth: 1
-                        }]
-                    },
-                    options: {
-                        indexAxis: 'y',
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        scales: {
-                            x: {
-                                beginAtZero: true,
-                                max: 100,
-                                title: { display: true, text: 'Success Rate (%)' }
-                            }
-                        }
-                    }
-                });
             }
 
             setupTabListeners() {
@@ -766,10 +691,32 @@
             updateUI() {
                 this.updateStatus();
                 this.updateMetrics();
-                this.updateCharts();
                 this.updateQueueStatsTable();
                 this.updatePoolStatsTable();
                 this.updateWarningsTable();
+                this.updateSortIndicators();
+            }
+
+            updateSortIndicators() {
+                // Update queue table sort indicator
+                const queueTable = document.getElementById('queueStatsTable')?.closest('table');
+                if (queueTable && this.sort.queue.column) {
+                    queueTable.querySelectorAll('th[data-sort] .sort-indicator').forEach(ind => ind.textContent = '');
+                    const queueTh = queueTable.querySelector(`th[data-sort="${this.sort.queue.column}"]`);
+                    if (queueTh) {
+                        queueTh.querySelector('.sort-indicator').textContent = this.sort.queue.direction === 'asc' ? '▲' : '▼';
+                    }
+                }
+
+                // Update pool table sort indicator
+                const poolTable = document.getElementById('poolStatsTable')?.closest('table');
+                if (poolTable && this.sort.pool.column) {
+                    poolTable.querySelectorAll('th[data-sort] .sort-indicator').forEach(ind => ind.textContent = '');
+                    const poolTh = poolTable.querySelector(`th[data-sort="${this.sort.pool.column}"]`);
+                    if (poolTh) {
+                        poolTh.querySelector('.sort-indicator').textContent = this.sort.pool.direction === 'asc' ? '▲' : '▼';
+                    }
+                }
             }
 
             updateStatus() {
@@ -817,63 +764,12 @@
                 return parts[parts.length - 1];
             }
 
-            updateCharts() {
-                // Queue Success Rate Chart
-                const queueEntries = Object.entries(this.data.queueStats);
-                const queueNames = queueEntries.map(([_, stats]) => this.extractQueueName(stats.name));
-                const queueSuccessRates = queueEntries.map(([_, stats]) => (stats.successRate || 1) * 100);
-
-                this.charts.queueSuccess.data.labels = queueNames;
-                this.charts.queueSuccess.data.datasets[0].data = queueSuccessRates;
-                this.charts.queueSuccess.update();
-
-                // Pool Chart - Success Rate or Deferred Rate based on toggle
-                this.updatePoolChart();
-            }
-
-            updatePoolChart() {
-                const poolEntries = Object.entries(this.data.poolStats);
-                const poolNames = poolEntries.map(([_, stats]) => stats.poolCode);
-
-                if (this.poolRateView === 'deferred') {
-                    // Deferred Rate = Rate Limited / (Total Processed + Rate Limited) * 100
-                    const deferredRates = poolEntries.map(([_, stats]) => {
-                        const rateLimited = this.getRateLimited(stats);
-                        const processed = this.getTotal(stats, 'totalProcessed');
-                        const total = processed + rateLimited;
-                        return total > 0 ? (rateLimited / total) * 100 : 0;
-                    });
-
-                    this.charts.poolSuccess.data.labels = poolNames;
-                    this.charts.poolSuccess.data.datasets[0].label = 'Deferred Rate (%)';
-                    this.charts.poolSuccess.data.datasets[0].data = deferredRates;
-                    this.charts.poolSuccess.data.datasets[0].backgroundColor = 'rgba(249, 115, 22, 0.8)';
-                    this.charts.poolSuccess.data.datasets[0].borderColor = 'rgba(249, 115, 22, 1)';
-                } else {
-                    // Success Rate
-                    const successRates = poolEntries.map(([_, stats]) => (this.getSuccessRate(stats) || 1) * 100);
-
-                    this.charts.poolSuccess.data.labels = poolNames;
-                    this.charts.poolSuccess.data.datasets[0].label = 'Success Rate (%)';
-                    this.charts.poolSuccess.data.datasets[0].data = successRates;
-                    this.charts.poolSuccess.data.datasets[0].backgroundColor = 'rgba(59, 130, 246, 0.8)';
-                    this.charts.poolSuccess.data.datasets[0].borderColor = 'rgba(59, 130, 246, 1)';
-                }
-
-                this.charts.poolSuccess.update();
-            }
-
             updatePoolRateView() {
-                // Update chart title
-                const title = this.poolRateView === 'deferred' ? 'Pool Deferred Rate' : 'Pool Success Rate';
-                document.getElementById('poolChartTitle').textContent = title;
-
                 // Update table header
                 const headerText = this.poolRateView === 'deferred' ? 'Deferred Rate' : 'Success Rate';
                 document.getElementById('poolRateHeaderText').textContent = headerText;
 
-                // Update chart and table
-                this.updatePoolChart();
+                // Update table
                 this.updatePoolStatsTable();
             }
 
