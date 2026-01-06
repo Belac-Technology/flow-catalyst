@@ -1006,9 +1006,10 @@ public class QueueManager implements MessageCallback {
         }
 
         // Nack all duplicates (SQS redelivery - let SQS retry later)
+        // These are deferred, not failures - the original is still processing
         for (BatchMessage dup : duplicates) {
             dup.callback().nack(dup.message());
-            queueMetrics.recordMessageProcessed(getQueueIdentifier(dup), false);
+            queueMetrics.recordMessageDeferred(getQueueIdentifier(dup));
         }
 
         // ACK all requeued duplicates (external process requeued while original still processing)
@@ -1073,16 +1074,16 @@ public class QueueManager implements MessageCallback {
             messagesToRoute.put(poolCode, poolMessages);
         }
 
-        // Nack all pool-full messages
+        // Nack all pool-full messages (deferred - will retry when capacity available)
         for (BatchMessage batchMsg : toNackPoolFull) {
             batchMsg.callback().nack(batchMsg.message());
-            queueMetrics.recordMessageProcessed(getQueueIdentifier(batchMsg), false);
+            queueMetrics.recordMessageDeferred(getQueueIdentifier(batchMsg));
         }
 
-        // Nack all rate-limited messages
+        // Nack all rate-limited messages (deferred - will retry when rate limit allows)
         for (BatchMessage batchMsg : toNackRateLimited) {
             batchMsg.callback().nack(batchMsg.message());
-            queueMetrics.recordMessageProcessed(getQueueIdentifier(batchMsg), false);
+            queueMetrics.recordMessageDeferred(getQueueIdentifier(batchMsg));
         }
 
         // Phase 3: Route messages with messageGroup sequential nacking
@@ -1112,11 +1113,12 @@ public class QueueManager implements MessageCallback {
                     MessageCallback callback = batchMsg.callback();
 
                     // If we're nacking remaining messages in this group, nack and continue
+                    // These are deferred - they'll be retried after the earlier message succeeds
                     if (nackRemaining) {
                         LOG.debugf("Nacking message [%s] - previous message in group [%s] was nacked",
                             message.id(), groupId);
                         callback.nack(message);
-                        queueMetrics.recordMessageProcessed(getQueueIdentifier(batchMsg), false);
+                        queueMetrics.recordMessageDeferred(getQueueIdentifier(batchMsg));
                         continue;
                     }
 
@@ -1157,9 +1159,9 @@ public class QueueManager implements MessageCallback {
                         messageCallbacks.remove(pipelineKey);
                         appMessageIdToPipelineKey.remove(enrichedMessage.id());
 
-                        // Nack this message
+                        // Nack this message (deferred - pool submission failed, will retry)
                         callback.nack(enrichedMessage);
-                        queueMetrics.recordMessageProcessed(getQueueIdentifier(batchMsg), false);
+                        queueMetrics.recordMessageDeferred(getQueueIdentifier(batchMsg));
 
                         // Set flag to nack all remaining messages in this group
                         nackRemaining = true;

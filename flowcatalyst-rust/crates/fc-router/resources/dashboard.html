@@ -190,13 +190,27 @@
                         <table class="min-w-full divide-y divide-gray-200">
                             <thead class="bg-gray-50">
                                 <tr>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Queue</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Pending</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">In-Flight</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Success</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Failed</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Success Rate</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none" data-sort="queue" data-table="queue">
+                                        <div class="flex items-center">Queue <span class="sort-indicator ml-1"></span></div>
+                                    </th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none" data-sort="pending" data-table="queue">
+                                        <div class="flex items-center">Pending <span class="sort-indicator ml-1"></span></div>
+                                    </th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none" data-sort="inFlight" data-table="queue">
+                                        <div class="flex items-center">In-Flight <span class="sort-indicator ml-1"></span></div>
+                                    </th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none" data-sort="total" data-table="queue">
+                                        <div class="flex items-center">Total <span class="sort-indicator ml-1"></span></div>
+                                    </th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none" data-sort="success" data-table="queue">
+                                        <div class="flex items-center">Success <span class="sort-indicator ml-1"></span></div>
+                                    </th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none" data-sort="failed" data-table="queue">
+                                        <div class="flex items-center">Failed <span class="sort-indicator ml-1"></span></div>
+                                    </th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none" data-sort="successRate" data-table="queue">
+                                        <div class="flex items-center">Success Rate <span class="sort-indicator ml-1"></span></div>
+                                    </th>
                                 </tr>
                             </thead>
                             <tbody id="queueStatsTable" class="bg-white divide-y divide-gray-200">
@@ -227,14 +241,30 @@
                         <table class="min-w-full divide-y divide-gray-200">
                             <thead class="bg-gray-50">
                                 <tr>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Pool</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Workers</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Queue</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rate Limited</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Success</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Success Rate</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Avg Time</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none" data-sort="pool" data-table="pool">
+                                        <div class="flex items-center">Pool <span class="sort-indicator ml-1"></span></div>
+                                    </th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none" data-sort="workers" data-table="pool">
+                                        <div class="flex items-center">Workers <span class="sort-indicator ml-1"></span></div>
+                                    </th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none" data-sort="queueSize" data-table="pool">
+                                        <div class="flex items-center">Queue <span class="sort-indicator ml-1"></span></div>
+                                    </th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none" data-sort="rateLimited" data-table="pool">
+                                        <div class="flex items-center">Rate Limited <span class="sort-indicator ml-1"></span></div>
+                                    </th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none" data-sort="total" data-table="pool">
+                                        <div class="flex items-center">Total <span class="sort-indicator ml-1"></span></div>
+                                    </th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none" data-sort="success" data-table="pool">
+                                        <div class="flex items-center">Success <span class="sort-indicator ml-1"></span></div>
+                                    </th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none" data-sort="successRate" data-table="pool">
+                                        <div class="flex items-center">Success Rate <span class="sort-indicator ml-1"></span></div>
+                                    </th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none" data-sort="avgTime" data-table="pool">
+                                        <div class="flex items-center">Avg Time <span class="sort-indicator ml-1"></span></div>
+                                    </th>
                                 </tr>
                             </thead>
                             <tbody id="poolStatsTable" class="bg-white divide-y divide-gray-200">
@@ -337,6 +367,10 @@
                     search: '',
                     queueName: '',
                     poolName: ''
+                };
+                this.sort = {
+                    queue: { column: null, direction: 'asc' },
+                    pool: { column: null, direction: 'asc' }
                 };
 
                 this.checkAuth();
@@ -557,6 +591,139 @@
                     this.filters.poolName = e.target.value.toLowerCase();
                     this.updatePoolStatsTable();
                 });
+
+                // Setup sortable column headers
+                document.querySelectorAll('th[data-sort]').forEach(th => {
+                    th.addEventListener('click', () => {
+                        const column = th.dataset.sort;
+                        const table = th.dataset.table;
+                        this.handleSort(table, column, th);
+                    });
+                });
+            }
+
+            handleSort(table, column, clickedTh) {
+                const sortState = this.sort[table];
+
+                // Toggle direction if same column, otherwise reset to asc
+                if (sortState.column === column) {
+                    sortState.direction = sortState.direction === 'asc' ? 'desc' : 'asc';
+                } else {
+                    sortState.column = column;
+                    sortState.direction = 'asc';
+                }
+
+                // Update sort indicators
+                const tableEl = clickedTh.closest('table');
+                tableEl.querySelectorAll('th[data-sort] .sort-indicator').forEach(indicator => {
+                    indicator.textContent = '';
+                });
+                clickedTh.querySelector('.sort-indicator').textContent = sortState.direction === 'asc' ? '▲' : '▼';
+
+                // Re-render the table
+                if (table === 'queue') {
+                    this.updateQueueStatsTable();
+                } else if (table === 'pool') {
+                    this.updatePoolStatsTable();
+                }
+            }
+
+            sortQueueEntries(entries) {
+                const { column, direction } = this.sort.queue;
+                if (!column) return entries;
+
+                const multiplier = direction === 'asc' ? 1 : -1;
+
+                return [...entries].sort((a, b) => {
+                    const statsA = a[1];
+                    const statsB = b[1];
+                    let valA, valB;
+
+                    switch (column) {
+                        case 'queue':
+                            valA = this.extractQueueName(statsA.name).toLowerCase();
+                            valB = this.extractQueueName(statsB.name).toLowerCase();
+                            return multiplier * valA.localeCompare(valB);
+                        case 'pending':
+                            valA = statsA.pendingMessages || 0;
+                            valB = statsB.pendingMessages || 0;
+                            break;
+                        case 'inFlight':
+                            valA = statsA.messagesNotVisible || 0;
+                            valB = statsB.messagesNotVisible || 0;
+                            break;
+                        case 'total':
+                            valA = statsA.totalMessages || 0;
+                            valB = statsB.totalMessages || 0;
+                            break;
+                        case 'success':
+                            valA = statsA.totalConsumed || 0;
+                            valB = statsB.totalConsumed || 0;
+                            break;
+                        case 'failed':
+                            valA = statsA.totalFailed || 0;
+                            valB = statsB.totalFailed || 0;
+                            break;
+                        case 'successRate':
+                            valA = statsA.successRate || 1;
+                            valB = statsB.successRate || 1;
+                            break;
+                        default:
+                            return 0;
+                    }
+                    return multiplier * (valA - valB);
+                });
+            }
+
+            sortPoolEntries(entries) {
+                const { column, direction } = this.sort.pool;
+                if (!column) return entries;
+
+                const multiplier = direction === 'asc' ? 1 : -1;
+
+                return [...entries].sort((a, b) => {
+                    const statsA = a[1];
+                    const statsB = b[1];
+                    let valA, valB;
+
+                    switch (column) {
+                        case 'pool':
+                            valA = statsA.poolCode.toLowerCase();
+                            valB = statsB.poolCode.toLowerCase();
+                            return multiplier * valA.localeCompare(valB);
+                        case 'workers':
+                            valA = statsA.activeWorkers || 0;
+                            valB = statsB.activeWorkers || 0;
+                            break;
+                        case 'queueSize':
+                            valA = statsA.queueSize || 0;
+                            valB = statsB.queueSize || 0;
+                            break;
+                        case 'rateLimited':
+                            valA = statsA.totalRateLimited || 0;
+                            valB = statsB.totalRateLimited || 0;
+                            break;
+                        case 'total':
+                            valA = statsA.totalProcessed || 0;
+                            valB = statsB.totalProcessed || 0;
+                            break;
+                        case 'success':
+                            valA = statsA.totalSucceeded || 0;
+                            valB = statsB.totalSucceeded || 0;
+                            break;
+                        case 'successRate':
+                            valA = statsA.successRate || 1;
+                            valB = statsB.successRate || 1;
+                            break;
+                        case 'avgTime':
+                            valA = statsA.averageProcessingTimeMs || 0;
+                            valB = statsB.averageProcessingTimeMs || 0;
+                            break;
+                        default:
+                            return 0;
+                    }
+                    return multiplier * (valA - valB);
+                });
             }
 
             async loadData() {
@@ -674,6 +841,9 @@
                     return;
                 }
 
+                // Apply sorting
+                queueEntries = this.sortQueueEntries(queueEntries);
+
                 tbody.innerHTML = queueEntries.map(([_, stats]) => {
                     const rate = (stats.successRate || 1) * 100;
                     return `
@@ -716,6 +886,9 @@
                     tbody.innerHTML = '<tr><td colspan="8" class="text-center py-4 text-gray-500">No pools match filter</td></tr>';
                     return;
                 }
+
+                // Apply sorting
+                poolEntries = this.sortPoolEntries(poolEntries);
 
                 tbody.innerHTML = poolEntries.map(([_, stats]) => {
                     const rate = (stats.successRate || 1) * 100;

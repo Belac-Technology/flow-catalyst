@@ -65,11 +65,18 @@ pub struct ProcessPool {
     config: PoolConfig,
     mediator: Arc<dyn Mediator>,
 
+    /// Current concurrency level (may differ from config after updates)
+    concurrency: AtomicU32,
+
     /// Pool-level concurrency semaphore
     semaphore: Arc<Semaphore>,
 
     /// Per-message-group queues for FIFO ordering (uses Arc<str> to avoid cloning)
     message_group_queues: DashMap<Arc<str>, mpsc::Sender<PoolTask>>,
+
+    /// Track active group threads for liveness detection (Java: activeGroupThreads)
+    /// When a worker exits (normally or abnormally), it removes itself from this map
+    active_group_threads: DashSet<Arc<str>>,
 
     /// Track in-flight message groups
     in_flight_groups: DashSet<Arc<str>>,
@@ -80,8 +87,11 @@ pub struct ProcessPool {
     /// Track remaining messages per batch+group for cleanup (Java: batchGroupMessageCount)
     batch_group_message_count: Arc<DashMap<BatchGroupKey, AtomicU32>>,
 
-    /// Rate limiter (optional)
-    rate_limiter: Option<Arc<RateLimiter<NotKeyed, InMemoryState, DefaultClock>>>,
+    /// Rate limiter (optional, behind RwLock for in-place updates)
+    rate_limiter: parking_lot::RwLock<Option<Arc<RateLimiter<NotKeyed, InMemoryState, DefaultClock>>>>,
+
+    /// Current rate limit value for comparison during updates
+    rate_limit_per_minute: parking_lot::RwLock<Option<u32>>,
 
     /// Running state
     running: AtomicBool,
@@ -94,11 +104,14 @@ pub struct ProcessPool {
 
     /// Enhanced metrics collector
     metrics_collector: Arc<PoolMetricsCollector>,
+
+    /// Warning service for generating warnings (optional)
+    warning_service: Option<Arc<crate::warning::WarningService>>,
 }
 
 impl ProcessPool {
     pub fn new(config: PoolConfig, mediator: Arc<dyn Mediator>) -> Self {
-        let concurrency = config.concurrency as usize;
+        let concurrency_val = config.concurrency;
 
         let rate_limiter = config.rate_limit_per_minute.and_then(|rpm| {
             NonZeroU32::new(rpm).map(|nz| {
@@ -109,17 +122,32 @@ impl ProcessPool {
         Self {
             config: config.clone(),
             mediator,
-            semaphore: Arc::new(Semaphore::new(concurrency)),
+            concurrency: AtomicU32::new(concurrency_val),
+            semaphore: Arc::new(Semaphore::new(concurrency_val as usize)),
             message_group_queues: DashMap::new(),
+            active_group_threads: DashSet::new(),
             in_flight_groups: DashSet::new(),
             failed_batch_groups: DashSet::new(),
             batch_group_message_count: Arc::new(DashMap::new()),
-            rate_limiter,
+            rate_limiter: parking_lot::RwLock::new(rate_limiter),
+            rate_limit_per_minute: parking_lot::RwLock::new(config.rate_limit_per_minute),
             running: AtomicBool::new(false),
             queue_size: Arc::new(AtomicU32::new(0)),
             active_workers: Arc::new(AtomicU32::new(0)),
             metrics_collector: Arc::new(PoolMetricsCollector::new()),
+            warning_service: None,
         }
+    }
+
+    /// Set the warning service for generating warnings
+    pub fn with_warning_service(mut self, warning_service: Arc<crate::warning::WarningService>) -> Self {
+        self.warning_service = Some(warning_service);
+        self
+    }
+
+    /// Set warning service after construction
+    pub fn set_warning_service(&mut self, warning_service: Arc<crate::warning::WarningService>) {
+        self.warning_service = Some(warning_service);
     }
 
     /// Start the pool
@@ -216,11 +244,30 @@ impl ProcessPool {
         };
 
         if let Err(e) = group_tx.send(task).await {
-            error!(error = %e, "Failed to send to group queue");
-            self.queue_size.fetch_sub(1, Ordering::SeqCst);
-            // Decrement batch+group count on send failure
-            if let Some(ref key) = batch_group_key_for_error {
-                self.decrement_and_cleanup_batch_group(key);
+            // Channel closed - worker exited during idle timeout, race condition
+            // Remove stale entry and retry with a fresh queue/worker
+            debug!(
+                error = %e,
+                group_id = %group_id,
+                "Group channel closed (idle worker exited), retrying with new worker"
+            );
+            self.message_group_queues.remove(&group_id);
+
+            let new_tx = self.get_or_create_group_queue(&group_id);
+            let retry_task = PoolTask {
+                message: e.0.message,
+                receipt_handle: e.0.receipt_handle,
+                ack_tx: e.0.ack_tx,
+                batch_id: e.0.batch_id,
+                batch_group_key: e.0.batch_group_key,
+            };
+
+            if let Err(e2) = new_tx.send(retry_task).await {
+                error!(error = %e2, group_id = %group_id, "Failed to send to group queue on retry");
+                self.queue_size.fetch_sub(1, Ordering::SeqCst);
+                if let Some(ref key) = batch_group_key_for_error {
+                    self.decrement_and_cleanup_batch_group(key);
+                }
             }
         }
 
@@ -228,17 +275,58 @@ impl ProcessPool {
     }
 
     /// Get or create a message group queue and worker
+    /// Mirrors Java's pattern: get queue, check thread liveness, restart if dead
     fn get_or_create_group_queue(&self, group_id: &Arc<str>) -> mpsc::Sender<PoolTask> {
-        // Check if queue exists using the Arc<str> directly
+        // Check if queue exists AND thread is alive
+        let mut is_restart = false;
         if let Some(tx) = self.message_group_queues.get(group_id) {
-            return tx.clone();
+            if self.active_group_threads.contains(group_id) {
+                // Queue exists and worker is alive - return existing sender
+                return tx.clone();
+            }
+            // Queue exists but worker is dead - fall through to recreate
+            is_restart = true;
+            drop(tx); // Release the DashMap guard before removing
         }
 
-        // Create new group queue
+        // Either queue doesn't exist, or worker is dead - create fresh channel and start worker
+        // Remove any stale entry first
+        self.message_group_queues.remove(group_id);
+
+        // Generate warning on worker restart (Java: GROUP_THREAD_RESTART)
+        if is_restart {
+            warn!(
+                group_id = %group_id,
+                pool_code = %self.config.code,
+                "Virtual thread for message group appears to have died - restarting"
+            );
+            if let Some(ref ws) = self.warning_service {
+                use fc_common::{WarningCategory, WarningSeverity};
+                ws.add_warning(
+                    WarningCategory::PoolHealth,
+                    WarningSeverity::Warn,
+                    format!("Virtual thread for group [{}] in pool [{}] died and was restarted",
+                        group_id, self.config.code),
+                    format!("ProcessPool:{}", self.config.code),
+                );
+            }
+        }
+
         let (tx, rx) = mpsc::channel(100);
         self.message_group_queues.insert(Arc::clone(group_id), tx.clone());
 
-        // Spawn worker for this group - clone Arc<str> instead of allocating new String
+        // Start the worker
+        self.start_group_worker(group_id, rx);
+
+        tx
+    }
+
+    /// Start a dedicated worker task for a message group
+    /// Called when creating a new group or restarting a dead worker
+    fn start_group_worker(&self, group_id: &Arc<str>, rx: mpsc::Receiver<PoolTask>) {
+        // Mark thread as active BEFORE spawning (Java pattern)
+        self.active_group_threads.insert(Arc::clone(group_id));
+
         let group_id_clone = Arc::clone(group_id);
         let pool_code: Arc<str> = Arc::from(self.config.code.as_str());
         let semaphore = self.semaphore.clone();
@@ -248,9 +336,12 @@ impl ProcessPool {
         let in_flight_groups = self.in_flight_groups.clone();
         let failed_batch_groups = self.failed_batch_groups.clone();
         let batch_group_message_count = self.batch_group_message_count.clone();
-        let rate_limiter = self.rate_limiter.clone();
+        let rate_limiter = self.rate_limiter.read().clone();
         let message_group_queues = self.message_group_queues.clone();
+        let active_group_threads = self.active_group_threads.clone();
         let metrics_collector = self.metrics_collector.clone();
+
+        debug!(group_id = %group_id, pool_code = %self.config.code, "Spawning group worker task");
 
         tokio::spawn(async move {
             Self::run_group_worker(
@@ -266,11 +357,10 @@ impl ProcessPool {
                 batch_group_message_count,
                 rate_limiter,
                 message_group_queues,
+                active_group_threads,
                 metrics_collector,
             ).await;
         });
-
-        tx
     }
 
     /// Worker loop for a message group
@@ -287,9 +377,10 @@ impl ProcessPool {
         batch_group_message_count: Arc<DashMap<BatchGroupKey, AtomicU32>>,
         rate_limiter: Option<Arc<RateLimiter<NotKeyed, InMemoryState, DefaultClock>>>,
         message_group_queues: DashMap<Arc<str>, mpsc::Sender<PoolTask>>,
+        active_group_threads: DashSet<Arc<str>>,
         metrics_collector: Arc<PoolMetricsCollector>,
     ) {
-        debug!(group_id = %group_id, pool_code = %pool_code, "Group worker started");
+        info!(group_id = %group_id, pool_code = %pool_code, "Group worker started");
 
         // Idle timeout for cleanup
         let idle_timeout = Duration::from_secs(300); // 5 minutes
@@ -471,7 +562,9 @@ impl ProcessPool {
             drop(permit);
         }
 
-        debug!(group_id = %group_id, pool_code = %pool_code, "Group worker exited");
+        // Worker exiting - remove from active threads so it can be restarted if needed
+        active_group_threads.remove(&group_id);
+        info!(group_id = %group_id, pool_code = %pool_code, "Group worker exited");
     }
 
     /// Decrement batch+group message count and cleanup tracking maps when count reaches zero.
@@ -523,6 +616,7 @@ impl ProcessPool {
     /// Check if rate limited
     pub fn is_rate_limited(&self) -> bool {
         self.rate_limiter
+            .read()
             .as_ref()
             .map(|rl| rl.check().is_err())
             .unwrap_or(false)
@@ -548,17 +642,18 @@ impl ProcessPool {
 
     /// Get pool statistics
     pub fn get_stats(&self) -> PoolStats {
+        let current_concurrency = self.concurrency.load(Ordering::SeqCst);
         PoolStats {
             pool_code: self.config.code.clone(),
-            concurrency: self.config.concurrency,
+            concurrency: current_concurrency,
             active_workers: self.active_workers.load(Ordering::SeqCst),
             queue_size: self.queue_size.load(Ordering::SeqCst),
             queue_capacity: std::cmp::max(
-                self.config.concurrency * QUEUE_CAPACITY_MULTIPLIER,
+                current_concurrency * QUEUE_CAPACITY_MULTIPLIER,
                 MIN_QUEUE_CAPACITY,
             ),
             message_group_count: self.message_group_queues.len() as u32,
-            rate_limit_per_minute: self.config.rate_limit_per_minute,
+            rate_limit_per_minute: *self.rate_limit_per_minute.read(),
             is_rate_limited: self.is_rate_limited(),
             metrics: Some(self.metrics_collector.get_metrics()),
         }
@@ -581,12 +676,12 @@ impl ProcessPool {
 
     /// Get current concurrency setting
     pub fn concurrency(&self) -> u32 {
-        self.config.concurrency
+        self.concurrency.load(Ordering::SeqCst)
     }
 
     /// Get current rate limit setting
     pub fn rate_limit_per_minute(&self) -> Option<u32> {
-        self.config.rate_limit_per_minute
+        *self.rate_limit_per_minute.read()
     }
 
     /// Get current queue size
@@ -600,19 +695,26 @@ impl ProcessPool {
     }
 
     /// Update concurrency at runtime
-    /// Note: This updates the semaphore permit count. New permits take effect immediately
-    /// for waiting workers. Reducing permits will naturally happen as workers release them.
-    pub async fn update_concurrency(&self, new_concurrency: u32) {
-        let old_concurrency = self.config.concurrency;
+    /// Mirrors Java's updateConcurrency behavior:
+    /// - Increase: Immediately releases permits to semaphore
+    /// - Decrease: Tries to acquire excess permits with timeout
+    pub async fn update_concurrency(&self, new_concurrency: u32) -> bool {
+        let old_concurrency = self.concurrency.load(Ordering::SeqCst);
         if new_concurrency == old_concurrency {
-            return;
+            return true;
+        }
+
+        if new_concurrency == 0 {
+            warn!(pool_code = %self.config.code, "Rejecting invalid concurrency limit: 0");
+            return false;
         }
 
         let diff = (new_concurrency as i32) - (old_concurrency as i32);
 
         if diff > 0 {
-            // Increasing concurrency - add permits
+            // Increasing concurrency - add permits immediately
             self.semaphore.add_permits(diff as usize);
+            self.concurrency.store(new_concurrency, Ordering::SeqCst);
             info!(
                 pool_code = %self.config.code,
                 old = old_concurrency,
@@ -620,33 +722,83 @@ impl ProcessPool {
                 added_permits = diff,
                 "Increased pool concurrency"
             );
+            true
         } else {
-            // Decreasing concurrency - we can't remove permits directly,
-            // but the pool will naturally drain down to the new limit.
-            // Log a warning that this is a gradual process.
-            warn!(
-                pool_code = %self.config.code,
-                old = old_concurrency,
-                new = new_concurrency,
-                "Decreasing concurrency will take effect gradually as workers complete"
-            );
-        }
+            // Decreasing concurrency - try to acquire excess permits with timeout
+            // This mirrors Java's semaphore.tryAcquire(permitDifference, timeoutSeconds, TimeUnit.SECONDS)
+            let permits_to_acquire = (-diff) as usize;
+            let timeout = Duration::from_secs(60); // 60 second timeout like Java
 
-        // Note: We can't mutate config here since it's not mutable.
-        // The new semaphore state will enforce the new concurrency.
+            match tokio::time::timeout(timeout, self.acquire_permits(permits_to_acquire)).await {
+                Ok(permits) => {
+                    // Successfully acquired permits - now "forget" them to reduce capacity
+                    // (Tokio semaphore doesn't have a remove_permits, so we just hold them forever)
+                    std::mem::forget(permits);
+                    self.concurrency.store(new_concurrency, Ordering::SeqCst);
+                    info!(
+                        pool_code = %self.config.code,
+                        old = old_concurrency,
+                        new = new_concurrency,
+                        acquired_permits = permits_to_acquire,
+                        "Decreased pool concurrency"
+                    );
+                    true
+                }
+                Err(_) => {
+                    // Timeout - keep current limit
+                    warn!(
+                        pool_code = %self.config.code,
+                        old = old_concurrency,
+                        new = new_concurrency,
+                        timeout_secs = 60,
+                        active_workers = self.active_workers.load(Ordering::SeqCst),
+                        "Concurrency decrease timed out waiting for idle slots - retaining current limit"
+                    );
+                    false
+                }
+            }
+        }
+    }
+
+    /// Helper to acquire multiple permits (needed for concurrency decrease)
+    async fn acquire_permits(&self, count: usize) -> Vec<tokio::sync::SemaphorePermit<'_>> {
+        let mut permits = Vec::with_capacity(count);
+        for _ in 0..count {
+            permits.push(self.semaphore.acquire().await.expect("semaphore closed"));
+        }
+        permits
     }
 
     /// Update rate limit at runtime
-    /// Creates a new rate limiter with the updated limit
+    /// Atomically replaces the rate limiter (mirrors Java's updateRateLimit)
     pub fn update_rate_limit(&self, new_rate_limit: Option<u32>) {
-        // Note: We can't update rate_limiter in place since it's not behind a lock.
-        // For a full implementation, rate_limiter should be behind an RwLock.
-        // For now, log the change - the manager will recreate the pool if needed.
+        let old_rate_limit = *self.rate_limit_per_minute.read();
+
+        // Check if actually changed
+        if old_rate_limit == new_rate_limit {
+            return;
+        }
+
+        // Create new rate limiter
+        let new_limiter = new_rate_limit.and_then(|rpm| {
+            if rpm == 0 {
+                None // Disable rate limiting
+            } else {
+                NonZeroU32::new(rpm).map(|nz| {
+                    Arc::new(RateLimiter::direct(Quota::per_minute(nz)))
+                })
+            }
+        });
+
+        // Atomically replace
+        *self.rate_limiter.write() = new_limiter;
+        *self.rate_limit_per_minute.write() = new_rate_limit;
+
         info!(
             pool_code = %self.config.code,
-            old = ?self.config.rate_limit_per_minute,
-            new = ?new_rate_limit,
-            "Rate limit update requested - will take effect on next message batch"
+            old = ?old_rate_limit.map(|r| format!("{}/min", r)).unwrap_or_else(|| "none".to_string()),
+            new = ?new_rate_limit.map(|r| format!("{}/min", r)).unwrap_or_else(|| "none".to_string()),
+            "Rate limit updated in-place"
         );
     }
 }

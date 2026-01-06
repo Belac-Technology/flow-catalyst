@@ -18,8 +18,10 @@ pub struct SqsQueueConsumer {
     total_polled: AtomicU64,
     /// Total messages successfully ACKed
     total_acked: AtomicU64,
-    /// Total messages NACKed
+    /// Total messages NACKed (actual failures)
     total_nacked: AtomicU64,
+    /// Total messages deferred (rate limiting, capacity - not failures)
+    total_deferred: AtomicU64,
 }
 
 impl SqsQueueConsumer {
@@ -39,6 +41,7 @@ impl SqsQueueConsumer {
             total_polled: AtomicU64::new(0),
             total_acked: AtomicU64::new(0),
             total_nacked: AtomicU64::new(0),
+            total_deferred: AtomicU64::new(0),
         }
     }
 
@@ -173,6 +176,29 @@ impl QueueConsumer for SqsQueueConsumer {
         Ok(())
     }
 
+    async fn defer(&self, receipt_handle: &str, delay_seconds: Option<u32>) -> Result<()> {
+        // Same SQS operation as nack, but tracked separately as not a failure
+        let visibility_timeout = delay_seconds.unwrap_or(0) as i32;
+
+        self.client
+            .change_message_visibility()
+            .queue_url(&self.queue_url)
+            .receipt_handle(receipt_handle)
+            .visibility_timeout(visibility_timeout)
+            .send()
+            .await
+            .map_err(|e| QueueError::Sqs(e.to_string()))?;
+
+        self.total_deferred.fetch_add(1, Ordering::Relaxed);
+        debug!(
+            receipt_handle = %receipt_handle,
+            queue = %self.queue_name,
+            visibility_timeout = visibility_timeout,
+            "Message deferred in SQS (not counted as failure)"
+        );
+        Ok(())
+    }
+
     async fn extend_visibility(&self, receipt_handle: &str, seconds: u32) -> Result<()> {
         self.client
             .change_message_visibility()
@@ -237,6 +263,7 @@ impl QueueConsumer for SqsQueueConsumer {
             total_polled: self.total_polled.load(Ordering::Relaxed),
             total_acked: self.total_acked.load(Ordering::Relaxed),
             total_nacked: self.total_nacked.load(Ordering::Relaxed),
+            total_deferred: self.total_deferred.load(Ordering::Relaxed),
         }))
     }
 }

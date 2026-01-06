@@ -31,6 +31,8 @@ pub struct QueueMetrics {
     pub total_acked: u64,
     /// Total messages negatively acknowledged (failed/retried)
     pub total_nacked: u64,
+    /// Total messages deferred (rate limiting, capacity - not counted as failures)
+    pub total_deferred: u64,
 }
 
 /// Trait for consuming messages from a queue
@@ -46,7 +48,15 @@ pub trait QueueConsumer: Send + Sync {
     async fn ack(&self, receipt_handle: &str) -> Result<()>;
 
     /// Negative acknowledge a message (make visible again after delay)
+    /// This is counted as a failure in metrics.
     async fn nack(&self, receipt_handle: &str, delay_seconds: Option<u32>) -> Result<()>;
+
+    /// Defer a message (make visible again after delay) without counting as a failure.
+    /// Use this for rate limiting, capacity limits, or other non-error backpressure scenarios.
+    /// Default implementation calls nack() - override to track separately.
+    async fn defer(&self, receipt_handle: &str, delay_seconds: Option<u32>) -> Result<()> {
+        self.nack(receipt_handle, delay_seconds).await
+    }
 
     /// Extend visibility timeout for a message
     async fn extend_visibility(&self, receipt_handle: &str, seconds: u32) -> Result<()>;

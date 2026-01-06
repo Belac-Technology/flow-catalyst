@@ -42,6 +42,11 @@ public class MicrometerQueueMetricsService implements QueueMetricsService {
     }
 
     @Override
+    public void recordMessageDeferred(String queueIdentifier) {
+        getOrCreateMetrics(queueIdentifier).messagesDeferred.increment();
+    }
+
+    @Override
     public void recordQueueDepth(String queueIdentifier, long depth) {
         getOrCreateMetrics(queueIdentifier).currentDepth.set(depth);
     }
@@ -89,6 +94,11 @@ public class MicrometerQueueMetricsService implements QueueMetricsService {
                 .description("Total messages failed")
                 .register(meterRegistry);
 
+            Counter deferred = Counter.builder("flowcatalyst.queue.messages.deferred")
+                .tag("queue", queueId)
+                .description("Total messages deferred (rate limiting, capacity - not failures)")
+                .register(meterRegistry);
+
             // Create AtomicLongs first, then register - gauge() can return null after extended runtime
             // if weak references are cleaned up or there are gauge conflicts
             AtomicLong depth = new AtomicLong(0);
@@ -112,7 +122,7 @@ public class MicrometerQueueMetricsService implements QueueMetricsService {
                 notVisible
             );
 
-            return new QueueMetricsHolder(received, consumed, failed, depth, pending, notVisible);
+            return new QueueMetricsHolder(received, consumed, failed, deferred, depth, pending, notVisible);
         });
     }
 
@@ -120,6 +130,7 @@ public class MicrometerQueueMetricsService implements QueueMetricsService {
         long totalMessages = (long) metrics.messagesReceived.count();
         long totalConsumed = (long) metrics.messagesConsumed.count();
         long totalFailed = (long) metrics.messagesFailed.count();
+        long totalDeferred = (long) metrics.messagesDeferred.count();
         long currentSize = metrics.currentDepth.get();
 
         double successRate = totalMessages > 0
@@ -188,7 +199,8 @@ public class MicrometerQueueMetricsService implements QueueMetricsService {
             totalMessages30min,
             consumed30min,
             failed30min,
-            successRate30min
+            successRate30min,
+            totalDeferred
         );
     }
 
@@ -196,6 +208,7 @@ public class MicrometerQueueMetricsService implements QueueMetricsService {
         final Counter messagesReceived;
         final Counter messagesConsumed;
         final Counter messagesFailed;
+        final Counter messagesDeferred;
         final AtomicLong currentDepth;
         final AtomicLong pendingMessages;
         final AtomicLong messagesNotVisible;
@@ -203,11 +216,12 @@ public class MicrometerQueueMetricsService implements QueueMetricsService {
         volatile long lastProcessedTime;
         final List<TimestampedQueueOutcome> recordedOutcomes;
 
-        QueueMetricsHolder(Counter received, Counter consumed, Counter failed, AtomicLong depth,
-                          AtomicLong pending, AtomicLong notVisible) {
+        QueueMetricsHolder(Counter received, Counter consumed, Counter failed, Counter deferred,
+                          AtomicLong depth, AtomicLong pending, AtomicLong notVisible) {
             this.messagesReceived = received;
             this.messagesConsumed = consumed;
             this.messagesFailed = failed;
+            this.messagesDeferred = deferred;
             this.currentDepth = depth;
             this.pendingMessages = pending;
             this.messagesNotVisible = notVisible;

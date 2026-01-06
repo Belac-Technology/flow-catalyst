@@ -24,6 +24,14 @@ public interface QueueMetricsService {
     void recordMessageProcessed(String queueIdentifier, boolean success);
 
     /**
+     * Record that a message was deferred (rate limiting, capacity, duplicate).
+     * Deferred messages are NOT counted as failures - they will be retried later.
+     *
+     * @param queueIdentifier the queue name or URI
+     */
+    void recordMessageDeferred(String queueIdentifier);
+
+    /**
      * Record the current queue depth
      *
      * @param queueIdentifier the queue name or URI

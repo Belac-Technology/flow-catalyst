@@ -30,6 +30,17 @@ use crate::warning::WarningService;
 use crate::error::RouterError;
 use crate::Result;
 
+/// Factory trait for creating queue consumers
+/// Implementations can create SQS, ActiveMQ, or other consumer types
+#[async_trait::async_trait]
+pub trait ConsumerFactory {
+    /// Create a consumer for the given queue configuration
+    async fn create_consumer(
+        &self,
+        config: &fc_common::QueueConfig,
+    ) -> Result<Arc<dyn QueueConsumer + Send + Sync>>;
+}
+
 /// Central orchestrator for message routing
 pub struct QueueManager {
     /// In-pipeline message tracking for deduplication
@@ -49,8 +60,18 @@ pub struct QueueManager {
     /// Queue consumers (RwLock for async-safe access)
     consumers: RwLock<HashMap<String, Arc<dyn QueueConsumer + Send + Sync>>>,
 
+    /// Consumers that are draining (removed from config, waiting for in-flight to complete)
+    draining_consumers: RwLock<HashMap<String, Arc<dyn QueueConsumer + Send + Sync>>>,
+
     /// Current pool configurations (for detecting changes)
     pool_configs: RwLock<HashMap<String, PoolConfig>>,
+
+    /// Current queue configurations (for detecting changes during sync)
+    queue_configs: RwLock<HashMap<String, fc_common::QueueConfig>>,
+
+    /// Consumer factory for creating new queue consumers during config sync
+    /// If None, new queues in config will be logged but not auto-created
+    consumer_factory: Option<Arc<dyn ConsumerFactory + Send + Sync>>,
 
     /// Mediator for message delivery
     mediator: Arc<dyn Mediator + 'static>,
@@ -109,7 +130,10 @@ impl QueueManager {
             pools: DashMap::new(),
             draining_pools: DashMap::new(),
             consumers: RwLock::new(HashMap::new()),
+            draining_consumers: RwLock::new(HashMap::new()),
             pool_configs: RwLock::new(HashMap::new()),
+            queue_configs: RwLock::new(HashMap::new()),
+            consumer_factory: None,
             mediator,
             default_pool_code: "DEFAULT-POOL".to_string(),  // Java: DEFAULT_POOL_CODE
             running: AtomicBool::new(true),
@@ -121,6 +145,11 @@ impl QueueManager {
             stall_config,
             warning_service: None,
         }
+    }
+
+    /// Set the consumer factory for creating new queue consumers during config sync
+    pub fn set_consumer_factory(&mut self, factory: Arc<dyn ConsumerFactory + Send + Sync>) {
+        self.consumer_factory = Some(factory);
     }
 
     /// Set the warning service
@@ -279,16 +308,108 @@ impl QueueManager {
             }
         }
 
+        // Step 3: Sync queue consumers (Java: Step 4)
+        let (queues_created, queues_removed) = self.sync_queue_consumers(&config).await?;
+
+        // Get counts before logging (avoid await in info! macro)
+        let total_active_consumers = self.consumers.read().await.len();
+
         info!(
             pools_updated = pools_updated,
             pools_created = pools_created,
             pools_removed = pools_removed,
-            total_active = self.pools.len(),
-            total_draining = self.draining_pools.len(),
+            queues_created = queues_created,
+            queues_removed = queues_removed,
+            total_active_pools = self.pools.len(),
+            total_draining_pools = self.draining_pools.len(),
+            total_active_consumers = total_active_consumers,
             "Configuration reload complete"
         );
 
         Ok(true)
+    }
+
+    /// Sync queue consumers based on configuration changes
+    /// Mirrors Java's queue consumer sync logic in syncConfig()
+    async fn sync_queue_consumers(&self, config: &RouterConfig) -> Result<(usize, usize)> {
+        let mut queues_created = 0;
+        let mut queues_removed = 0;
+
+        // Build map of new queue configs
+        let new_queue_configs: HashMap<String, fc_common::QueueConfig> = config.queues
+            .iter()
+            .map(|q| {
+                // Use name as identifier, fall back to uri if name is empty
+                let identifier = if q.name.is_empty() { q.uri.clone() } else { q.name.clone() };
+                (identifier, q.clone())
+            })
+            .collect();
+
+        let mut queue_configs = self.queue_configs.write().await;
+        let mut consumers = self.consumers.write().await;
+        let mut draining = self.draining_consumers.write().await;
+
+        // Phase out consumers for queues that no longer exist
+        let existing_queues: Vec<String> = consumers.keys().cloned().collect();
+        for queue_id in existing_queues {
+            if !new_queue_configs.contains_key(&queue_id) {
+                info!(queue_id = %queue_id, "Phasing out consumer for removed queue");
+
+                if let Some(consumer) = consumers.remove(&queue_id) {
+                    // Stop consumer (sets running=false, initiates graceful shutdown)
+                    consumer.stop().await;
+
+                    // Move to draining consumers for async cleanup
+                    draining.insert(queue_id.clone(), consumer);
+                    queue_configs.remove(&queue_id);
+                    queues_removed += 1;
+
+                    info!(queue_id = %queue_id, "Consumer moved to draining state");
+                }
+            }
+        }
+
+        // Start consumers for new queues (if factory is available)
+        if let Some(ref factory) = self.consumer_factory {
+            for (queue_id, queue_config) in &new_queue_configs {
+                if !consumers.contains_key::<String>(queue_id) {
+                    info!(queue_id = %queue_id, "Creating new queue consumer");
+
+                    match factory.create_consumer(queue_config).await {
+                        Ok(consumer) => {
+                            // Consumer is ready to poll - polling will be initiated by lifecycle manager
+                            consumers.insert(queue_id.clone(), consumer);
+                            queue_configs.insert(queue_id.clone(), queue_config.clone());
+                            queues_created += 1;
+                            info!(queue_id = %queue_id, "Queue consumer created and ready");
+                        }
+                        Err(e) => {
+                            error!(queue_id = %queue_id, error = %e, "Failed to create queue consumer");
+                            if let Some(ref ws) = self.warning_service {
+                                ws.add_warning(
+                                    WarningCategory::ConsumerHealth,
+                                    WarningSeverity::Critical,
+                                    format!("Failed to create consumer for queue [{}]: {}", queue_id, e),
+                                    "QueueManager".to_string(),
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            // No factory - just log new queues that couldn't be created
+            for queue_id in new_queue_configs.keys() {
+                if !consumers.contains_key::<String>(queue_id) {
+                    warn!(
+                        queue_id = %queue_id,
+                        "New queue in config but no consumer factory available - consumer will not be auto-created"
+                    );
+                }
+            }
+        }
+
+        Ok((queues_created, queues_removed))
     }
 
     /// Cleanup draining pools that have finished
@@ -388,14 +509,15 @@ impl QueueManager {
         // Phase 1: Filter duplicates (takes ownership to avoid cloning payloads)
         let filtered = self.filter_duplicates(messages_to_process);
 
-        // Handle duplicates - NACK them (let SQS retry later, original still processing)
+        // Handle duplicates - defer them (let SQS retry later, original still processing)
+        // This is not an error, just a redelivery due to visibility timeout
         for dup in filtered.duplicates {
             debug!(
                 message_id = %dup.message.message.id,
                 pipeline_key = %dup.existing_pipeline_key,
-                "Duplicate message (redelivery), NACKing"
+                "Duplicate message (redelivery), deferring"
             );
-            let _ = consumer.nack(&dup.message.receipt_handle, None).await;
+            let _ = consumer.defer(&dup.message.receipt_handle, None).await;
         }
 
         // Handle requeued - these were already completed, ACK them
@@ -431,27 +553,29 @@ impl QueueManager {
                     pool_code = %pool_code,
                     available = available,
                     requested = pool_messages.len(),
-                    "Pool at capacity, NACKing all messages for this pool"
+                    "Pool at capacity, deferring all messages for this pool"
                 );
                 if let Some(ref ws) = self.warning_service {
                     ws.add_warning(
                         WarningCategory::QueueHealth,
                         WarningSeverity::Warn,
-                        format!("Pool [{}] queue full, NACKing {} messages from batch", pool_code, pool_messages.len()),
+                        format!("Pool [{}] queue full, deferring {} messages from batch", pool_code, pool_messages.len()),
                         "QueueManager".to_string(),
                     );
                 }
+                // Use defer instead of nack - capacity limits are not errors
                 for msg in pool_messages {
-                    let _ = consumer.nack(&msg.receipt_handle, Some(5)).await;
+                    let _ = consumer.defer(&msg.receipt_handle, Some(5)).await;
                 }
                 continue;
             }
 
             // Check rate limiting for this pool
             if pool.is_rate_limited() {
-                warn!(pool_code = %pool_code, "Pool rate limited, NACKing all messages for this pool");
+                warn!(pool_code = %pool_code, "Pool rate limited, deferring all messages for this pool");
+                // Use defer instead of nack - rate limiting is not an error
                 for msg in pool_messages {
-                    let _ = consumer.nack(&msg.receipt_handle, Some(10)).await;
+                    let _ = consumer.defer(&msg.receipt_handle, Some(10)).await;
                 }
                 continue;
             }

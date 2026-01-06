@@ -54,9 +54,12 @@ public record QueueStats(
     @JsonProperty("totalFailed30min") long totalFailed30min,
 
     @Schema(description = "Success rate based on last 30 minutes (0.0 to 1.0)", examples = {"0.9966666666666667", "1.0", "0.99"})
-    @JsonProperty("successRate30min") double successRate30min
+    @JsonProperty("successRate30min") double successRate30min,
+
+    @Schema(description = "Total number of deferred messages (rate limiting, capacity - not failures)", examples = {"100", "0", "50"})
+    @JsonProperty("totalDeferred") long totalDeferred
 ) {
     public static QueueStats empty(String name) {
-        return new QueueStats(name, 0, 0, 0, 0.0, 0, 0.0, 0, 0, 0, 0, 0, 0.0, 0, 0, 0, 0.0);
+        return new QueueStats(name, 0, 0, 0, 0.0, 0, 0.0, 0, 0, 0, 0, 0, 0.0, 0, 0, 0, 0.0, 0);
     }
 }

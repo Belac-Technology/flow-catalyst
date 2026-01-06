@@ -86,7 +86,7 @@ build-dev:
 
 # Build only fc-router
 build-router:
-	cargo build --bin fc-router
+	cargo build --bin fc-router-bin
 
 # Build only fc-platform-server
 build-platform:

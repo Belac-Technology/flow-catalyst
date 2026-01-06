@@ -900,6 +900,8 @@ struct DashboardQueueStats {
     total_consumed: u64,
     #[serde(rename = "totalFailed")]
     total_failed: u64,
+    #[serde(rename = "totalDeferred")]
+    total_deferred: u64,
     #[serde(rename = "successRate")]
     success_rate: f64,
     #[serde(rename = "currentSize")]
@@ -947,7 +949,8 @@ async fn dashboard_queue_stats_handler(State(state): State<AppState>) -> Json<Ha
         // in_flight_messages = messages currently being processed
         let current_size = m.pending_messages + m.in_flight_messages;
 
-        // Calculate success rate from acked vs total processed
+        // Calculate success rate from acked vs (acked + nacked), excluding deferred
+        // Deferred messages (rate limiting, capacity) are not counted as failures
         let total_processed = m.total_acked + m.total_nacked;
         let success_rate = if total_processed > 0 {
             m.total_acked as f64 / total_processed as f64
@@ -960,6 +963,7 @@ async fn dashboard_queue_stats_handler(State(state): State<AppState>) -> Json<Ha
             total_messages: m.total_polled,
             total_consumed: m.total_acked,
             total_failed: m.total_nacked,
+            total_deferred: m.total_deferred,
             success_rate,
             current_size,
             throughput: 0.0,   // TODO: Calculate throughput
