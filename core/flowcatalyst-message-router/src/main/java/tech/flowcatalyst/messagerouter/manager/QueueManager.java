@@ -1021,10 +1021,9 @@ public class QueueManager implements MessageCallback {
             queueMetrics.recordMessageProcessed(getQueueIdentifier(requeuedDup), true);
         }
 
-        // Phase 2: Check pool buffer capacity and rate limits
+        // Phase 2: Check pool buffer capacity
         Map<String, List<BatchMessage>> messagesToRoute = new HashMap<>();
         List<BatchMessage> toNackPoolFull = new ArrayList<>();
-        List<BatchMessage> toNackRateLimited = new ArrayList<>();
 
         for (Map.Entry<String, List<BatchMessage>> entry : messagesByPool.entrySet()) {
             String poolCode = entry.getKey();
@@ -1062,26 +1061,13 @@ public class QueueManager implements MessageCallback {
                 continue;
             }
 
-            // Check rate limiting for this pool
-            if (pool.isRateLimited()) {
-                LOG.warnf("Pool [%s] rate limited - nacking all %d messages for this pool in batch",
-                    poolCode, poolMessages.size());
-                toNackRateLimited.addAll(poolMessages);
-                continue;
-            }
-
             // Pool is available - add to routing list
+            // Note: Rate limiting is now handled inside the pool worker (blocking wait)
             messagesToRoute.put(poolCode, poolMessages);
         }
 
         // Nack all pool-full messages (deferred - will retry when capacity available)
         for (BatchMessage batchMsg : toNackPoolFull) {
-            batchMsg.callback().nack(batchMsg.message());
-            queueMetrics.recordMessageDeferred(getQueueIdentifier(batchMsg));
-        }
-
-        // Nack all rate-limited messages (deferred - will retry when rate limit allows)
-        for (BatchMessage batchMsg : toNackRateLimited) {
             batchMsg.callback().nack(batchMsg.message());
             queueMetrics.recordMessageDeferred(getQueueIdentifier(batchMsg));
         }

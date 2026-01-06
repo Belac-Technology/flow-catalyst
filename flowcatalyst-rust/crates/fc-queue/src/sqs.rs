@@ -25,6 +25,11 @@ pub struct SqsQueueConsumer {
 }
 
 impl SqsQueueConsumer {
+    /// Default long poll wait time in seconds.
+    /// 5 seconds balances efficiency with shutdown responsiveness.
+    /// AWS SQS max is 20 seconds.
+    pub const DEFAULT_WAIT_TIME_SECONDS: i32 = 5;
+
     pub fn new(
         client: Client,
         queue_url: String,
@@ -36,7 +41,7 @@ impl SqsQueueConsumer {
             queue_url,
             queue_name,
             visibility_timeout_seconds,
-            wait_time_seconds: 20, // Long polling
+            wait_time_seconds: Self::DEFAULT_WAIT_TIME_SECONDS,
             running: AtomicBool::new(true),
             total_polled: AtomicU64::new(0),
             total_acked: AtomicU64::new(0),
@@ -54,6 +59,13 @@ impl SqsQueueConsumer {
             .to_string();
 
         Self::new(client, queue_url, queue_name, visibility_timeout_seconds)
+    }
+
+    /// Set the long poll wait time in seconds (max 20).
+    /// Shorter times mean faster shutdown response but more API calls.
+    pub fn with_wait_time_seconds(mut self, seconds: i32) -> Self {
+        self.wait_time_seconds = seconds.clamp(0, 20);
+        self
     }
 
     fn parse_sqs_message(&self, sqs_msg: &SqsMessage) -> Result<(Message, String, Option<String>)> {

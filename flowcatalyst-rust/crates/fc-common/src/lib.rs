@@ -569,6 +569,8 @@ pub struct EnhancedPoolMetrics {
     pub total_success: u64,
     /// Total messages failed (all time)
     pub total_failure: u64,
+    /// Total messages rate limited (all time)
+    pub total_rate_limited: u64,
     /// Success rate (0.0 - 1.0)
     pub success_rate: f64,
     /// Processing time metrics (all time)
@@ -621,6 +623,8 @@ pub struct WindowedMetrics {
     pub success_count: u64,
     /// Messages failed in this window
     pub failure_count: u64,
+    /// Messages rate limited in this window
+    pub rate_limited_count: u64,
     /// Success rate in this window (0.0 - 1.0)
     pub success_rate: f64,
     /// Throughput (messages per second)
@@ -638,6 +642,7 @@ impl Default for WindowedMetrics {
         Self {
             success_count: 0,
             failure_count: 0,
+            rate_limited_count: 0,
             success_rate: 0.0,
             throughput_per_sec: 0.0,
             processing_time: ProcessingTimeMetrics::default(),

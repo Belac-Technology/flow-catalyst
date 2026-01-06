@@ -57,9 +57,13 @@ pub struct PoolMetricsCollector {
     /// All-time counters
     total_success: AtomicU64,
     total_failure: AtomicU64,
+    total_rate_limited: AtomicU64,
 
     /// Samples for percentile calculation (protected by RwLock)
     samples: RwLock<VecDeque<MetricSample>>,
+
+    /// Rate-limited event timestamps for windowed counting
+    rate_limited_events: RwLock<VecDeque<Instant>>,
 }
 
 impl PoolMetricsCollector {
@@ -72,7 +76,9 @@ impl PoolMetricsCollector {
             config,
             total_success: AtomicU64::new(0),
             total_failure: AtomicU64::new(0),
+            total_rate_limited: AtomicU64::new(0),
             samples: RwLock::new(VecDeque::with_capacity(10000)),
+            rate_limited_events: RwLock::new(VecDeque::with_capacity(1000)),
         }
     }
 
@@ -86,6 +92,27 @@ impl PoolMetricsCollector {
     pub fn record_failure(&self, duration_ms: u64) {
         self.total_failure.fetch_add(1, Ordering::Relaxed);
         self.add_sample(duration_ms, false);
+    }
+
+    /// Record a rate-limited event
+    pub fn record_rate_limited(&self) {
+        self.total_rate_limited.fetch_add(1, Ordering::Relaxed);
+
+        let mut events = self.rate_limited_events.write();
+        let now = Instant::now();
+
+        // Remove old events beyond long window
+        let cutoff = now - self.config.long_window;
+        while events.front().map(|t| *t < cutoff).unwrap_or(false) {
+            events.pop_front();
+        }
+
+        events.push_back(now);
+    }
+
+    /// Get all-time rate limited count
+    pub fn total_rate_limited(&self) -> u64 {
+        self.total_rate_limited.load(Ordering::Relaxed)
     }
 
     /// Add a sample to the sliding window
@@ -126,10 +153,12 @@ impl PoolMetricsCollector {
     /// Get enhanced metrics snapshot
     pub fn get_metrics(&self) -> EnhancedPoolMetrics {
         let samples = self.samples.read();
+        let rate_limited_events = self.rate_limited_events.read();
         let now = Instant::now();
 
         let total_success = self.total_success.load(Ordering::Relaxed);
         let total_failure = self.total_failure.load(Ordering::Relaxed);
+        let total_rate_limited = self.total_rate_limited.load(Ordering::Relaxed);
         let total = total_success + total_failure;
 
         let success_rate = if total > 0 {
@@ -156,19 +185,33 @@ impl PoolMetricsCollector {
             .filter(|s| s.timestamp >= long_cutoff)
             .collect();
 
-        let last_5_min = Self::calculate_windowed_metrics(
+        // Count rate limited events in windows
+        let rate_limited_5min = rate_limited_events
+            .iter()
+            .filter(|t| **t >= short_cutoff)
+            .count() as u64;
+
+        let rate_limited_30min = rate_limited_events
+            .iter()
+            .filter(|t| **t >= long_cutoff)
+            .count() as u64;
+
+        let mut last_5_min = Self::calculate_windowed_metrics(
             &short_samples,
             self.config.short_window,
         );
+        last_5_min.rate_limited_count = rate_limited_5min;
 
-        let last_30_min = Self::calculate_windowed_metrics(
+        let mut last_30_min = Self::calculate_windowed_metrics(
             &long_samples,
             self.config.long_window,
         );
+        last_30_min.rate_limited_count = rate_limited_30min;
 
         EnhancedPoolMetrics {
             total_success,
             total_failure,
+            total_rate_limited,
             success_rate,
             processing_time,
             last_5_min,
@@ -238,6 +281,7 @@ impl PoolMetricsCollector {
         WindowedMetrics {
             success_count,
             failure_count,
+            rate_limited_count: 0, // Set by caller from rate_limited_events
             success_rate,
             throughput_per_sec,
             processing_time,
@@ -263,7 +307,9 @@ impl PoolMetricsCollector {
     pub fn reset(&self) {
         self.total_success.store(0, Ordering::Relaxed);
         self.total_failure.store(0, Ordering::Relaxed);
+        self.total_rate_limited.store(0, Ordering::Relaxed);
         self.samples.write().clear();
+        self.rate_limited_events.write().clear();
     }
 }
 

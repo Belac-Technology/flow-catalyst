@@ -570,15 +570,8 @@ impl QueueManager {
                 continue;
             }
 
-            // Check rate limiting for this pool
-            if pool.is_rate_limited() {
-                warn!(pool_code = %pool_code, "Pool rate limited, deferring all messages for this pool");
-                // Use defer instead of nack - rate limiting is not an error
-                for msg in pool_messages {
-                    let _ = consumer.defer(&msg.receipt_handle, Some(10)).await;
-                }
-                continue;
-            }
+            // Note: Rate limiting is now handled inside the pool worker (blocking wait)
+            // Messages stay in pool queue instead of being deferred back to SQS
 
             // Phase 3: Group by messageGroupId for FIFO ordering enforcement
             // This mirrors Java's messagesByGroup logic in routeMessageBatch

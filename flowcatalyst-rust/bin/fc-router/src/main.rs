@@ -250,6 +250,8 @@ async fn main() -> Result<()> {
     });
 
     // 11. Start QueueManager in background (respecting standby status)
+    // Create a shutdown channel for the manager loop
+    let (manager_shutdown_tx, mut manager_shutdown_rx) = tokio::sync::oneshot::channel::<()>();
     let manager_handle = {
         let manager = queue_manager.clone();
         let standby_for_loop = standby.clone();
@@ -258,24 +260,32 @@ async fn main() -> Result<()> {
             // If we have standby, wait for leadership before processing
             if let Some(ref standby_proc) = standby_for_loop {
                 loop {
-                    if standby_proc.should_process() {
-                        info!("Leader status confirmed - starting message consumption");
-                        if let Err(e) = manager.clone().start().await {
-                            error!("QueueManager error: {}", e);
+                    tokio::select! {
+                        _ = &mut manager_shutdown_rx => {
+                            info!("Manager loop received shutdown signal");
+                            break;
                         }
-                        // If start() returns, check if we lost leadership
-                        if !standby_proc.should_process() {
-                            warn!("Lost leadership during processing - pausing");
-                            standby_proc.wait_for_leadership().await;
-                            info!("Re-acquired leadership - resuming");
-                        }
-                    } else {
-                        // Not leader, wait
-                        tokio::time::sleep(Duration::from_secs(1)).await;
+                        _ = async {
+                            if standby_proc.should_process() {
+                                info!("Leader status confirmed - starting message consumption");
+                                if let Err(e) = manager.clone().start().await {
+                                    error!("QueueManager error: {}", e);
+                                }
+                                // If start() returns, check if we lost leadership
+                                if !standby_proc.should_process() {
+                                    warn!("Lost leadership during processing - pausing");
+                                    standby_proc.wait_for_leadership().await;
+                                    info!("Re-acquired leadership - resuming");
+                                }
+                            } else {
+                                // Not leader, wait
+                                tokio::time::sleep(Duration::from_secs(1)).await;
+                            }
+                        } => {}
                     }
                 }
             } else {
-                // No standby mode - just run
+                // No standby mode - just run (start() already listens to shutdown_tx)
                 if let Err(e) = manager.clone().start().await {
                     error!("QueueManager error: {}", e);
                 }
@@ -293,14 +303,22 @@ async fn main() -> Result<()> {
     info!("Shutdown signal received...");
 
     // Graceful shutdown
+    // Signal the manager loop to exit
+    let _ = manager_shutdown_tx.send(());
+
     lifecycle.shutdown().await;
     queue_manager.shutdown().await;
 
     server_task.abort();
-    let _ = tokio::time::timeout(
-        std::time::Duration::from_secs(30),
-        manager_handle,
-    ).await;
+
+    // Wait for manager handle with timeout, then abort if still running
+    match tokio::time::timeout(std::time::Duration::from_secs(30), manager_handle).await {
+        Ok(_) => info!("Manager task completed gracefully"),
+        Err(_) => {
+            warn!("Manager task did not complete within 30s timeout");
+            // The task will be cancelled when the runtime shuts down
+        }
+    }
 
     info!("FlowCatalyst Router shutdown complete");
     Ok(())

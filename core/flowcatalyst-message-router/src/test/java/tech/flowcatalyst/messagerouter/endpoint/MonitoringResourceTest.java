@@ -107,7 +107,8 @@ class MonitoringResourceTest {
             100,  // totalMessages30min
             80,   // totalConsumed30min
             20,   // totalFailed30min
-            0.8   // successRate30min
+            0.8,  // successRate30min
+            0     // totalDeferred
         );
 
         when(queueMetricsService.getAllQueueStats())
@@ -152,7 +153,9 @@ class MonitoringResourceTest {
             100L,           // totalProcessed30min
             90L,            // totalSucceeded30min
             10L,            // totalFailed30min
-            0.9             // successRate30min
+            0.9,            // successRate30min
+            2L,             // totalRateLimited5min
+            5L              // totalRateLimited30min
         );
 
         when(poolMetricsService.getAllPoolStats())
@@ -441,8 +444,8 @@ class MonitoringResourceTest {
     @Test
     void shouldHandleMultipleQueueStats() {
         // Given
-        QueueStats queue1 = new QueueStats("queue-1", 100, 80, 20, 0.8, 10, 1.5, 50, 15, 100, 80, 20, 0.8, 100, 80, 20, 0.8);
-        QueueStats queue2 = new QueueStats("queue-2", 200, 180, 20, 0.9, 5, 2.0, 75, 20, 200, 180, 20, 0.9, 200, 180, 20, 0.9);
+        QueueStats queue1 = new QueueStats("queue-1", 100, 80, 20, 0.8, 10, 1.5, 50, 15, 100, 80, 20, 0.8, 100, 80, 20, 0.8, 0);
+        QueueStats queue2 = new QueueStats("queue-2", 200, 180, 20, 0.9, 5, 2.0, 75, 20, 200, 180, 20, 0.9, 200, 180, 20, 0.9, 0);
 
         when(queueMetricsService.getAllQueueStats())
             .thenReturn(Map.of("queue-1", queue1, "queue-2", queue2));

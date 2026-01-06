@@ -1021,6 +1021,8 @@ struct DashboardPoolStats {
     total_failed_5min: u64,
     #[serde(rename = "successRate5min")]
     success_rate_5min: f64,
+    #[serde(rename = "totalRateLimited5min")]
+    total_rate_limited_5min: u64,
     // 30 minute window metrics
     #[serde(rename = "totalProcessed30min")]
     total_processed_30min: u64,
@@ -1030,6 +1032,8 @@ struct DashboardPoolStats {
     total_failed_30min: u64,
     #[serde(rename = "successRate30min")]
     success_rate_30min: f64,
+    #[serde(rename = "totalRateLimited30min")]
+    total_rate_limited_30min: u64,
 }
 
 /// Pool stats endpoint for dashboard
@@ -1066,12 +1070,23 @@ async fn dashboard_pool_stats_handler(State(state): State<AppState>) -> Json<Has
             (0, 0, 1.0, 0.0, 0, 0, 1.0, 0, 0, 1.0)
         };
 
+        // Extract rate limited counts from metrics if available
+        let (rate_limited_total, rate_limited_5min, rate_limited_30min) = if let Some(ref m) = s.metrics {
+            (
+                m.total_rate_limited,
+                m.last_5_min.rate_limited_count,
+                m.last_30_min.rate_limited_count,
+            )
+        } else {
+            (0, 0, 0)
+        };
+
         let stats = DashboardPoolStats {
             pool_code: s.pool_code.clone(),
             total_processed: total_success + total_failure,
             total_succeeded: total_success,
             total_failed: total_failure,
-            total_rate_limited: 0, // TODO: track rate limited count
+            total_rate_limited: rate_limited_total,
             success_rate,
             active_workers: s.active_workers,
             available_permits: s.concurrency.saturating_sub(s.active_workers),
@@ -1084,11 +1099,13 @@ async fn dashboard_pool_stats_handler(State(state): State<AppState>) -> Json<Has
             total_succeeded_5min: success_5min,
             total_failed_5min: failure_5min,
             success_rate_5min: rate_5min,
+            total_rate_limited_5min: rate_limited_5min,
             // 30 minute window
             total_processed_30min: success_30min + failure_30min,
             total_succeeded_30min: success_30min,
             total_failed_30min: failure_30min,
             success_rate_30min: rate_30min,
+            total_rate_limited_30min: rate_limited_30min,
         };
         result.insert(s.pool_code, stats);
     }

@@ -12,6 +12,7 @@ import tech.flowcatalyst.messagerouter.model.MessagePointer;
 import tech.flowcatalyst.messagerouter.model.MediationType;
 import tech.flowcatalyst.messagerouter.warning.WarningService;
 
+import java.time.Duration;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.CountDownLatch;
@@ -131,6 +132,8 @@ class ProcessPoolImplTest {
     @Test
     void shouldEnforceRateLimit() {
         // Given - create a pool with rate limiting enabled
+        // Rate limit is 1 per minute, so first message processes immediately,
+        // second message waits in memory (blocking wait) until rate limit allows
         ProcessPoolImpl rateLimitedPool = new ProcessPoolImpl(
             "RATE-LIMITED-POOL",
             5,
@@ -160,16 +163,17 @@ class ProcessPoolImplTest {
         rateLimitedPool.submit(message1);
         rateLimitedPool.submit(message2);
 
-        // Then - one should be acked, one should be nacked due to rate limit
-        await().untilAsserted(() -> {
-            // One message should be processed successfully
+        // Then - first message processes immediately, second waits for rate limit
+        // With blocking wait approach, messages stay in memory instead of being NACKed
+        await().atMost(Duration.ofSeconds(2)).untilAsserted(() -> {
+            // First message should be processed successfully
             verify(mockMediator, times(1)).process(any(MessagePointer.class));
             verify(mockCallback, times(1)).ack(any(MessagePointer.class));
-
-            // One message should be rate limited and nacked
-            verify(mockCallback, times(1)).nack(any(MessagePointer.class));
-            verify(mockPoolMetrics).recordRateLimitExceeded("RATE-LIMITED-POOL");
         });
+
+        // Second message should NOT be nacked - it's waiting for rate limit permit
+        // (blocking wait keeps it in memory instead of NACKing back to queue)
+        verify(mockCallback, never()).nack(any(MessagePointer.class));
 
         rateLimitedPool.drain();
     }

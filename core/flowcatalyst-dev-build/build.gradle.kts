@@ -72,7 +72,8 @@ val isNativeBuild = project.hasProperty("quarkus.native.enabled") ||
     System.getProperty("quarkus.native.enabled") == "true"
 
 configurations.all {
-    exclude(group = "org.mongodb", module = "mongodb-crypt")           // 20MB - client-side encryption
+    // Note: mongodb-crypt is optional - driver works without it, just no CSFLE support
+    // We DON'T exclude it here - GraalVM needs the class references to build
     if (!isNativeBuild) {
         exclude(group = "software.amazon.awssdk.crt", module = "aws-crt")  // 18MB - using URL client instead
     }
@@ -104,6 +105,13 @@ dependencies {
     implementation("io.quarkus:quarkus-jdbc-postgresql")
     implementation("io.quarkus:quarkus-jdbc-mysql")
     implementation("io.quarkus:quarkus-agroal")
+
+    // ==========================================================================
+    // GraalVM Native Image Support
+    // mongodb-crypt needed for native-image class analysis (MongoCrypts references)
+    // Not used at runtime - CSFLE is not enabled
+    // ==========================================================================
+    compileOnly("org.mongodb:mongodb-crypt:1.12.0")
 
     // ==========================================================================
     // Testing

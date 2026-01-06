@@ -65,5 +65,11 @@ public record PoolStats(
     long totalFailed30min,
 
     @Schema(description = "Success rate based on last 30 minutes (0.0 to 1.0)", examples = {"0.9967532467532468", "1.0", "0.0"})
-    double successRate30min
+    double successRate30min,
+
+    @Schema(description = "Number of rate-limited messages in last 5 minutes", examples = {"0", "5", "20"})
+    long totalRateLimited5min,
+
+    @Schema(description = "Number of rate-limited messages in last 30 minutes", examples = {"0", "10", "50"})
+    long totalRateLimited30min
 ) {}

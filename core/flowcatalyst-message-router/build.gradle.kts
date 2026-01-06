@@ -51,7 +51,9 @@ dependencies {
     implementation("com.github.jnr:jnr-unixsocket:0.38.22") // Required by aws-crt for native builds
     implementation("software.amazon.awssdk:url-connection-client")
     implementation("org.apache.activemq:activemq-client:6.1.7")
-    implementation("io.nats:jnats:2.20.5")
+    implementation("io.nats:jnats:2.24.1") {
+        exclude(group = "net.i2p.crypto", module = "eddsa") // Not needed - NKey auth not used, breaks GraalVM native
+    }
 
     // Embedded Queue (for developer builds) - Pure Java SQLite for native image support
     implementation("io.quarkiverse.jdbc:quarkus-jdbc-sqlite4j:0.0.8")

@@ -87,11 +87,11 @@ pub struct ProcessPool {
     /// Track remaining messages per batch+group for cleanup (Java: batchGroupMessageCount)
     batch_group_message_count: Arc<DashMap<BatchGroupKey, AtomicU32>>,
 
-    /// Rate limiter (optional, behind RwLock for in-place updates)
-    rate_limiter: parking_lot::RwLock<Option<Arc<RateLimiter<NotKeyed, InMemoryState, DefaultClock>>>>,
+    /// Rate limiter (optional, behind Arc<RwLock> for sharing with workers and in-place updates)
+    rate_limiter: Arc<parking_lot::RwLock<Option<Arc<RateLimiter<NotKeyed, InMemoryState, DefaultClock>>>>>,
 
     /// Current rate limit value for comparison during updates
-    rate_limit_per_minute: parking_lot::RwLock<Option<u32>>,
+    rate_limit_per_minute: Arc<parking_lot::RwLock<Option<u32>>>,
 
     /// Running state
     running: AtomicBool,
@@ -129,8 +129,8 @@ impl ProcessPool {
             in_flight_groups: DashSet::new(),
             failed_batch_groups: DashSet::new(),
             batch_group_message_count: Arc::new(DashMap::new()),
-            rate_limiter: parking_lot::RwLock::new(rate_limiter),
-            rate_limit_per_minute: parking_lot::RwLock::new(config.rate_limit_per_minute),
+            rate_limiter: Arc::new(parking_lot::RwLock::new(rate_limiter)),
+            rate_limit_per_minute: Arc::new(parking_lot::RwLock::new(config.rate_limit_per_minute)),
             running: AtomicBool::new(false),
             queue_size: Arc::new(AtomicU32::new(0)),
             active_workers: Arc::new(AtomicU32::new(0)),
@@ -336,7 +336,7 @@ impl ProcessPool {
         let in_flight_groups = self.in_flight_groups.clone();
         let failed_batch_groups = self.failed_batch_groups.clone();
         let batch_group_message_count = self.batch_group_message_count.clone();
-        let rate_limiter = self.rate_limiter.read().clone();
+        let rate_limiter = self.rate_limiter.clone(); // Share Arc with worker for config updates
         let message_group_queues = self.message_group_queues.clone();
         let active_group_threads = self.active_group_threads.clone();
         let metrics_collector = self.metrics_collector.clone();
@@ -375,7 +375,7 @@ impl ProcessPool {
         in_flight_groups: DashSet<Arc<str>>,
         failed_batch_groups: DashSet<BatchGroupKey>,
         batch_group_message_count: Arc<DashMap<BatchGroupKey, AtomicU32>>,
-        rate_limiter: Option<Arc<RateLimiter<NotKeyed, InMemoryState, DefaultClock>>>,
+        rate_limiter: Arc<parking_lot::RwLock<Option<Arc<RateLimiter<NotKeyed, InMemoryState, DefaultClock>>>>>,
         message_group_queues: DashMap<Arc<str>, mpsc::Sender<PoolTask>>,
         active_group_threads: DashSet<Arc<str>>,
         metrics_collector: Arc<PoolMetricsCollector>,
@@ -429,26 +429,9 @@ impl ProcessPool {
                 }
             }
 
-            // Check rate limiting before acquiring semaphore
-            if let Some(ref rl) = rate_limiter {
-                if rl.check().is_err() {
-                    debug!(
-                        message_id = %task.message.id,
-                        pool_code = %pool_code,
-                        "Rate limited, NACKing"
-                    );
-                    // Decrement batch+group count on rate limit
-                    if let Some(ref key) = task.batch_group_key {
-                        Self::decrement_and_cleanup_batch_group_static(
-                            key,
-                            &batch_group_message_count,
-                            &failed_batch_groups,
-                        );
-                    }
-                    let _ = task.ack_tx.send(AckNack::Nack { delay_seconds: Some(1) });
-                    continue;
-                }
-            }
+            // Wait for rate limit permit (blocking with config-change awareness)
+            // Messages stay in memory instead of being NACKed back to SQS
+            Self::wait_for_rate_limit_permit(&rate_limiter).await;
 
             // Acquire semaphore permit
             let permit = match semaphore.acquire().await {
@@ -620,6 +603,34 @@ impl ProcessPool {
             .as_ref()
             .map(|rl| rl.check().is_err())
             .unwrap_or(false)
+    }
+
+    /// Waits for a rate limit permit, handling config changes gracefully.
+    /// Uses a timed poll loop to detect when rate limiter is replaced or removed.
+    ///
+    /// This method handles the following scenarios:
+    /// - Rate limit removed (100→null): Returns immediately on next check
+    /// - Rate limit changed (100→200): Uses new limiter on next poll
+    /// - Permits available: check() succeeds immediately
+    async fn wait_for_rate_limit_permit(
+        rate_limiter: &Arc<parking_lot::RwLock<Option<Arc<RateLimiter<NotKeyed, InMemoryState, DefaultClock>>>>>,
+    ) {
+        loop {
+            // Read current rate limiter (may have changed via config update)
+            let limiter = rate_limiter.read().clone();
+
+            match limiter {
+                None => return, // No rate limiting configured, proceed immediately
+                Some(rl) => {
+                    if rl.check().is_ok() {
+                        return; // Got permit, proceed with processing
+                    }
+                    // No permit available - wait briefly then re-check
+                    // This handles: rate limit removed, rate limit changed, permits available
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                }
+            }
+        }
     }
 
     /// Drain the pool (stop accepting new work)

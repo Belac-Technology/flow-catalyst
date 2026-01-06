@@ -212,7 +212,9 @@ class InfrastructureHealthServiceTest {
             100L,  // totalProcessed30min
             90L,   // totalSucceeded30min
             10L,   // totalFailed30min
-            0.9    // successRate30min
+            0.9,   // successRate30min
+            0L,    // totalRateLimited5min
+            0L     // totalRateLimited30min
         );
     }
 }

@@ -560,27 +560,10 @@ public class ProcessPoolImpl implements ProcessPool {
                         continue; // Skip to next message
                     }
 
-                    // 4. Check rate limiting BEFORE acquiring semaphore
-                    // This prevents rate-limited messages from blocking concurrency slots
-                    if (shouldRateLimit(message)) {
-                        LOG.warn("Rate limit exceeded, nacking message without acquiring semaphore");
-                        poolMetrics.recordRateLimitExceeded(poolCode);
-
-                        // Fast-fail: Set 1-second visibility for quick retry if supported
-                        if (messageCallback instanceof tech.flowcatalyst.messagerouter.callback.MessageVisibilityControl visibilityControl) {
-                            visibilityControl.setFastFailVisibility(message);
-                        }
-
-                        nackSafely(message);
-
-                        // Decrement batch+group count on rate limit nack
-                        if (batchGroupKey != null) {
-                            decrementAndCleanupBatchGroup(batchGroupKey);
-                        }
-
-                        updateGauges(); // Update gauges since we polled from queue
-                        continue; // Don't acquire semaphore, move to next message
-                    }
+                    // 4. Wait for rate limit permit (blocking with config-change awareness)
+                    // Virtual threads make this blocking wait cheap - no wasted resources
+                    // Messages stay in memory instead of being NACKed back to SQS
+                    waitForRateLimitPermit();
 
                     // 5. Acquire semaphore permit for pool-level concurrency control
                     // This ensures we don't exceed the configured concurrency limit
@@ -679,16 +662,39 @@ public class ProcessPoolImpl implements ProcessPool {
     }
 
     /**
-     * Check if message should be rate limited using pool-level rate limiter
+     * Waits for a rate limit permit, handling config changes gracefully.
+     * Uses a timed poll loop to detect when rate limiter is replaced or removed.
+     * Virtual threads make this blocking wait cheap.
+     *
+     * <p>This method handles the following scenarios:
+     * <ul>
+     *   <li>Rate limit removed (100→null): Returns immediately on next check</li>
+     *   <li>Rate limit changed (100→200): Uses new limiter on next poll</li>
+     *   <li>Permits available: acquirePermission() succeeds immediately</li>
+     *   <li>Shutdown: running flag false, exits loop</li>
+     * </ul>
      */
-    private boolean shouldRateLimit(MessagePointer message) {
-        // Use pool-level rate limiter (null if rate limiting not configured for this pool)
-        // Store in local variable to avoid race condition with updateRateLimit()
-        RateLimiter limiter = this.rateLimiter;
-        if (limiter == null) {
-            return false;
+    private void waitForRateLimitPermit() {
+        while (running.get()) {
+            // Store in local variable to detect config changes
+            RateLimiter limiter = this.rateLimiter;
+            if (limiter == null) {
+                return; // No rate limiting configured, proceed immediately
+            }
+
+            if (limiter.acquirePermission()) {
+                return; // Got permit, proceed with processing
+            }
+
+            // No permit available - wait briefly then re-check
+            // This handles: rate limit removed, rate limit changed, permits available
+            try {
+                Thread.sleep(100); // 100ms poll interval - cheap with virtual threads
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
         }
-        return !limiter.acquirePermission();
     }
 
     /**

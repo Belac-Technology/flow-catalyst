@@ -85,6 +85,12 @@ public class MicrometerPoolMetricsService implements PoolMetricsService {
     public void recordRateLimitExceeded(String poolCode) {
         PoolMetricsHolder metrics = getOrCreateMetrics(poolCode);
         metrics.messagesRateLimited.increment();
+
+        // Track timestamped rate-limited event for 30-minute rolling window
+        long now = System.currentTimeMillis();
+        synchronized(metrics.rateLimitedEvents) {
+            metrics.rateLimitedEvents.add(now);
+        }
     }
 
     @Override
@@ -117,7 +123,7 @@ public class MicrometerPoolMetricsService implements PoolMetricsService {
     public PoolStats getPoolStats(String poolCode) {
         PoolMetricsHolder metrics = poolMetrics.get(poolCode);
         if (metrics == null) {
-            return new PoolStats(poolCode, 0, 0, 0, 0, 1.0, 0, 0, 0, 0, 0, 0.0, 0, 0, 0, 1.0, 0, 0, 0, 1.0);
+            return new PoolStats(poolCode, 0, 0, 0, 0, 1.0, 0, 0, 0, 0, 0, 0.0, 0, 0, 0, 1.0, 0, 0, 0, 1.0, 0, 0);
         }
 
         long totalProcessed = (long) (metrics.messagesSucceeded.count() + metrics.messagesFailed.count());
@@ -158,6 +164,21 @@ public class MicrometerPoolMetricsService implements PoolMetricsService {
             }
         }
 
+        // Calculate rolling window rate-limited counts
+        long rateLimited5min = 0;
+        long rateLimited30min = 0;
+
+        synchronized(metrics.rateLimitedEvents) {
+            metrics.rateLimitedEvents.removeIf(timestamp -> timestamp < thirtyMinutesAgoMs);
+
+            for (Long timestamp : metrics.rateLimitedEvents) {
+                if (timestamp >= fiveMinutesAgoMs) {
+                    rateLimited5min++;
+                }
+                rateLimited30min++;
+            }
+        }
+
         long totalProcessed5min = succeeded5min + failed5min;
         double successRate5min = totalProcessed5min > 0
             ? (double) succeeded5min / totalProcessed5min
@@ -188,7 +209,9 @@ public class MicrometerPoolMetricsService implements PoolMetricsService {
             totalProcessed30min,
             succeeded30min,
             failed30min,
-            successRate30min
+            successRate30min,
+            rateLimited5min,
+            rateLimited30min
         );
     }
 
@@ -316,7 +339,8 @@ public class MicrometerPoolMetricsService implements PoolMetricsService {
                 new AtomicInteger(0), // maxQueueCapacity - will be set on init
                 new AtomicLong(0),
                 new AtomicLong(0), // lastActivityTimestamp
-                new ArrayList<>() // recordedOutcomes for 30-minute rolling window
+                new ArrayList<>(), // recordedOutcomes for 30-minute rolling window
+                new ArrayList<>()  // rateLimitedEvents for 30-minute rolling window
             );
         });
     }
@@ -339,7 +363,8 @@ public class MicrometerPoolMetricsService implements PoolMetricsService {
         AtomicInteger maxQueueCapacity,
         AtomicLong totalProcessingTimeMs,
         AtomicLong lastActivityTimestamp,
-        List<TimestampedOutcome> recordedOutcomes
+        List<TimestampedOutcome> recordedOutcomes,
+        List<Long> rateLimitedEvents  // Timestamps of rate-limited events for rolling window
     ) {}
 
     /**
